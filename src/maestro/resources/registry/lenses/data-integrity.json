@@ -1,0 +1,41 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "data-integrity",
+  "domain": "data",
+  "summary": "Check persistence meaning, migration safety, cardinality, and recoverability.",
+  "priority": 80,
+  "triggers": [
+    "database",
+    "migration",
+    "schema",
+    "entity",
+    "repository",
+    "data",
+    "db",
+    "데이터",
+    "마이그레이션",
+    "엔티티",
+    "저장"
+  ],
+  "questions": [
+    "Can existing stored values still be read and interpreted correctly?",
+    "Are cardinality, nullability, ordering, and duplicate behavior explicit?",
+    "Is rollback or forward recovery possible?"
+  ],
+  "required_evidence": [
+    "current persistence model",
+    "representative stored data or fixtures",
+    "migration and rollback decision"
+  ],
+  "reject_when": [
+    "stored meaning changes without a migration decision",
+    "a destructive transformation lacks backup, rollback, or owner approval"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

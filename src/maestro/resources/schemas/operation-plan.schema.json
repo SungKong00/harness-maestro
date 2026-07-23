@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/operation-plan.schema.json",
+  "title": "Harness Maestro Operation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "repo_realpath",
+    "base_fingerprint",
+    "operations",
+    "preconditions",
+    "conflicts",
+    "warnings",
+    "plan_id",
+    "plan_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_operation_plan_v1"
+    },
+    "command": {
+      "enum": [
+        "init"
+      ]
+    },
+    "repo_realpath": {
+      "type": "string"
+    },
+    "base_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "op",
+          "path",
+          "before_sha256",
+          "after_sha256",
+          "content"
+        ],
+        "properties": {
+          "op": {
+            "enum": [
+              "create",
+              "replace_managed_content"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "before_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after_sha256": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{20}$"
+    },
+    "plan_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

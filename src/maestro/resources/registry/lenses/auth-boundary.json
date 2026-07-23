@@ -1,0 +1,40 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "auth-boundary",
+  "domain": "security",
+  "summary": "Find authentication, authorization, ownership, and fail-open bypass paths.",
+  "priority": 100,
+  "triggers": [
+    "auth",
+    "authentication",
+    "authorization",
+    "permission",
+    "ownership",
+    "principal",
+    "인증",
+    "인가",
+    "권한",
+    "소유권"
+  ],
+  "questions": [
+    "Can another entry, fallback, or absence path reach the effect without the same authorization check?",
+    "Is any policy enforced only in UI, documentation, or one controller path?",
+    "Does missing context fail closed?"
+  ],
+  "required_evidence": [
+    "all reachable entry paths",
+    "current security policy",
+    "representative allow and deny tests"
+  ],
+  "reject_when": [
+    "authorization exists only in a client or presentation layer",
+    "a missing annotation, principal, or configuration silently allows the effect"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

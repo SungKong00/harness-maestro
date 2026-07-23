@@ -1,0 +1,41 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "user-flow",
+  "domain": "experience",
+  "summary": "Check end-to-end user states, error recovery, accessibility, and stale-client behavior.",
+  "priority": 40,
+  "triggers": [
+    "ui",
+    "screen",
+    "flow",
+    "accessibility",
+    "resume",
+    "reconnect",
+    "화면",
+    "사용자",
+    "접근성",
+    "재접속",
+    "복구"
+  ],
+  "questions": [
+    "What does the user see before, during, after, and on failure?",
+    "Can the flow recover after refresh, resume, reconnect, or lost events?",
+    "Are errors actionable and accessible?"
+  ],
+  "required_evidence": [
+    "user flow or screen states",
+    "server or source-of-truth behavior",
+    "failure and recovery scenario"
+  ],
+  "reject_when": [
+    "the client assumes an event was never lost",
+    "a stale local state cannot be reconciled with the source of truth"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

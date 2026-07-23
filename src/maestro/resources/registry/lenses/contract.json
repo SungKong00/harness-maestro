@@ -1,0 +1,40 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "contract",
+  "domain": "engineering",
+  "summary": "Check that public behavior, schemas, examples, and implementation agree.",
+  "priority": 50,
+  "triggers": [
+    "api",
+    "contract",
+    "schema",
+    "response",
+    "request",
+    "swagger",
+    "openapi",
+    "계약",
+    "응답",
+    "요청"
+  ],
+  "questions": [
+    "Which public fields, status codes, errors, and examples can change?",
+    "Do generated or documented schemas match executable behavior?",
+    "Is a compatibility or migration decision required?"
+  ],
+  "required_evidence": [
+    "current interface or schema",
+    "relevant implementation",
+    "contract-focused verification"
+  ],
+  "reject_when": [
+    "a public contract changes without an explicit compatibility decision",
+    "documentation is treated as proof without executable or source evidence"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

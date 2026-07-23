@@ -1,0 +1,32 @@
+{
+  "schema_version": "maestro_department_v1",
+  "kind": "department",
+  "department_id": "software-development",
+  "summary": "Select review lenses for evidence-backed software development work.",
+  "candidate_lenses": [
+    "contract",
+    "auth-boundary",
+    "data-integrity",
+    "transaction-concurrency",
+    "rollback-observability",
+    "user-flow",
+    "delivery-feasibility",
+    "test-proof"
+  ],
+  "routing": {
+    "default_max_lenses": 2,
+    "high_risk_max_lenses": 3,
+    "load_all": false,
+    "lens_count_implies_agent_count": false
+  },
+  "deliberation": {
+    "blind_first": true,
+    "free_form_debate": false,
+    "majority_vote": false,
+    "conflict_only_rebuttal": true,
+    "max_rebuttal_rounds": 1,
+    "stop_on_no_new_evidence": true,
+    "human_gate_for_irreversible": true
+  }
+}
+

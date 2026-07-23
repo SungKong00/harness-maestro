@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/project-state.schema.json",
+  "title": "Harness Maestro Project State",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/project"
+    },
+    {
+      "$ref": "#/$defs/managed"
+    },
+    {
+      "$ref": "#/$defs/lock"
+    }
+  ],
+  "$defs": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "project_id",
+        "state_root",
+        "documentation",
+        "adapters",
+        "profiles",
+        "commands",
+        "approval_required_for"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_project_v1"
+        },
+        "kind": {
+          "const": "project"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": ".*\\S.*"
+        },
+        "state_root": {
+          "const": ".maestro/state"
+        },
+        "documentation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default_authority",
+            "external_topics"
+          ],
+          "properties": {
+            "default_authority": {
+              "const": "markdown"
+            },
+            "external_topics": {
+              "type": "object"
+            }
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "const": [
+            "generic-repo"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "profiles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "command",
+              "status"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "const": "candidate"
+              }
+            }
+          }
+        },
+        "approval_required_for": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "external_write"
+              }
+            },
+            {
+              "contains": {
+                "const": "authority_change"
+              }
+            },
+            {
+              "contains": {
+                "const": "adapter_change"
+              }
+            },
+            {
+              "contains": {
+                "const": "harness_promotion"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "managed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "entries"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_managed_v1"
+        },
+        "kind": {
+          "const": "managed"
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "ownership",
+              "sha256",
+              "preserve_on_drift"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ownership": {
+                "enum": [
+                  "managed_block",
+                  "seeded",
+                  "user_owned"
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "preserve_on_drift": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "framework",
+        "registry",
+        "managed",
+        "adapters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_lock_v1"
+        },
+        "kind": {
+          "const": "lock"
+        },
+        "framework": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "harness-maestro"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "sha256"
+          ],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "managed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

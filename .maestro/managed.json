@@ -1,0 +1,30 @@
+{
+  "entries": [
+    {
+      "ownership": "managed_block",
+      "path": ".gitignore",
+      "preserve_on_drift": true,
+      "sha256": "c36a0f213f96f4eec7ca83536276d33e7b5124241e0a552bc7cd054d817b26d4"
+    },
+    {
+      "ownership": "managed_block",
+      "path": "AGENTS.md",
+      "preserve_on_drift": true,
+      "sha256": "ead8d30d9c67c97011a718bd1ec4096065b367bd8a4e73f016840516e7a72216"
+    },
+    {
+      "ownership": "user_owned",
+      "path": "docs/README.md",
+      "preserve_on_drift": true,
+      "sha256": "43dfb9ea766e4a21568229f2ec2bc9240fdc32bc1ee84bb0f5865fc9c4577b96"
+    },
+    {
+      "ownership": "user_owned",
+      "path": "docs/governance/document-lifecycle.md",
+      "preserve_on_drift": true,
+      "sha256": "79ffa799b031f50ab88db0087a2cd8baf588c52f408b0b03427a7660f1c5528d"
+    }
+  ],
+  "kind": "managed",
+  "schema_version": "maestro_managed_v1"
+}

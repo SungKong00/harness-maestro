@@ -1,0 +1,42 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "delivery-feasibility",
+  "domain": "feasibility",
+  "summary": "Check whether a choice fits real budget, staffing, schedule, regulation, and reversal limits.",
+  "priority": 30,
+  "triggers": [
+    "architecture",
+    "technology",
+    "budget",
+    "schedule",
+    "staff",
+    "regulation",
+    "아키텍처",
+    "기술",
+    "예산",
+    "일정",
+    "인력",
+    "규제"
+  ],
+  "questions": [
+    "Can the current team deliver and operate this within the stated constraints?",
+    "Which dependency, approval, or cost assumption could falsify the plan?",
+    "How reversible is the choice?"
+  ],
+  "required_evidence": [
+    "explicit constraints",
+    "comparable implementation or estimate",
+    "reversal and ownership boundary"
+  ],
+  "reject_when": [
+    "a hard budget, schedule, staffing, or regulatory constraint is exceeded",
+    "an irreversible commitment is made from unsupported estimates"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

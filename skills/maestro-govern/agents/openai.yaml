@@ -1,0 +1,7 @@
+interface:
+  display_name: "Maestro Govern"
+  short_description: "Review harness improvement candidates safely"
+  default_prompt: "Use $maestro-govern to report repeated harness gaps without changing the live installation."
+policy:
+  allow_implicit_invocation: false
+

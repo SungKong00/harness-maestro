@@ -1,0 +1,42 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "transaction-concurrency",
+  "domain": "data",
+  "summary": "Check transaction boundaries, competing operations, retries, and idempotency.",
+  "priority": 90,
+  "triggers": [
+    "transaction",
+    "concurrency",
+    "lock",
+    "race",
+    "retry",
+    "idempot",
+    "idempotent",
+    "idempotency",
+    "동시성",
+    "트랜잭션",
+    "락",
+    "재시도",
+    "중복"
+  ],
+  "questions": [
+    "Which operations read or write the state used by this decision?",
+    "Do all competing operation classes participate in the same coordination rule?",
+    "Can retry, duplicate delivery, or partial failure repeat the effect?"
+  ],
+  "required_evidence": [
+    "effect and state access paths",
+    "transaction or coordination boundary",
+    "representative competing-operation proof"
+  ],
+  "reject_when": [
+    "only the primary path is coordinated while another writer is unclassified",
+    "idempotency is claimed without a stable key or persisted decision"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}

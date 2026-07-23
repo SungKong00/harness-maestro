@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/command-result.schema.json",
+  "title": "Harness Maestro Command Result",
+  "type": "object",
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^maestro_"
+    },
+    "writes_performed": {
+      "type": "boolean"
+    }
+  }
+}
+

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Maestro Adapter Builder"
+  short_description: "Inspect and initialize project adapters safely"
+  default_prompt: "Use $maestro-adapter-builder to inspect this repository and prepare a dry-run adapter plan."
+policy:
+  allow_implicit_invocation: false
+

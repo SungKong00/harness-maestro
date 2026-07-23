@@ -1,0 +1,65 @@
+{
+  "schema_version": "maestro_research_policy_v1",
+  "kind": "research_policy",
+  "depth_does_not_imply_lane_count": true,
+  "default_lane_limit": 1,
+  "maximum_initial_lanes": 3,
+  "maximum_follow_up_waves": 1,
+  "follow_up_requires_material_conflict_and_new_evidence": true,
+  "lanes": [
+    {
+      "lane_id": "official",
+      "purpose": "Version-matched specifications, official documentation, release notes, and migration guides."
+    },
+    {
+      "lane_id": "repository",
+      "purpose": "Current project artifacts, maintainer examples, and comparable maintained implementations."
+    },
+    {
+      "lane_id": "field",
+      "purpose": "Operational pitfalls, community disagreement, and scale-specific trade-offs."
+    },
+    {
+      "lane_id": "skeptic",
+      "purpose": "Counterevidence capable of reversing or materially qualifying the leading recommendation."
+    }
+  ],
+  "source_tiers": [
+    {
+      "tier": 0,
+      "authority": "Current user instruction, current repository, repository-local policy, and direct execution evidence.",
+      "adoption": "Project-specific fact or policy; verify freshness when possible."
+    },
+    {
+      "tier": 1,
+      "authority": "Version-matched official documentation, standards, specifications, release notes, and migration guides.",
+      "adoption": "May support framework behavior rules."
+    },
+    {
+      "tier": 2,
+      "authority": "Official examples, maintainer repositories, and canonical samples.",
+      "adoption": "May support idiomatic examples and checklist items."
+    },
+    {
+      "tier": 3,
+      "authority": "Maintained widely used repositories, books, and respected engineering publications.",
+      "adoption": "May support contextual recommendations and trade-offs."
+    },
+    {
+      "tier": 4,
+      "authority": "Community answers, conference posts, personal blogs, and field reports.",
+      "adoption": "Use for warnings, disagreements, and questions rather than universal rules."
+    },
+    {
+      "tier": 5,
+      "authority": "Uncited, copied, stale, SEO-driven, or unmaintained material.",
+      "adoption": "Search lead only; never final support."
+    }
+  ],
+  "claim_kinds": [
+    "fact",
+    "policy",
+    "preference",
+    "prediction"
+  ]
+}

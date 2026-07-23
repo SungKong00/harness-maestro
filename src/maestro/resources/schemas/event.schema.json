@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/event.schema.json",
+  "title": "Harness Maestro Compact Operational Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "timestamp",
+    "project_id",
+    "checkout_id",
+    "run_id",
+    "framework_version",
+    "registry_digest",
+    "lens_definition_digests",
+    "executor_definition_digests",
+    "risk",
+    "route_depth",
+    "selected_lenses",
+    "executor_runs",
+    "primary_executor_id",
+    "executor_ids",
+    "kind",
+    "outcome",
+    "fingerprint",
+    "evidence_refs",
+    "duration_ms",
+    "tokens",
+    "correction_count",
+    "agent_calls",
+    "human_fix_required",
+    "finding_severity",
+    "decision_changed",
+    "verifier_result",
+    "command_artifact_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_event_v1"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checkout_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "framework_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "registry_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "lens_definition_digests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "executor_definition_digests": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "route_depth": {
+      "enum": [
+        "fast",
+        "standard",
+        "deep"
+      ]
+    },
+    "selected_lenses": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "executor_runs": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "primary_executor_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executor_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "kind": {
+      "enum": [
+        "review_finding",
+        "verification_failure",
+        "correction",
+        "run_summary"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "failed",
+        "corrected",
+        "blocked",
+        "no_change"
+      ]
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "duration_ms": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total"
+          ],
+          "properties": {
+            "input": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "output": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "cached": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "reasoning": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "parent_context_total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "total_system": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "experiment_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "experiment_arm": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "correction_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "correction_summary": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "agent_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "human_fix_required": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "finding_severity": {
+      "enum": [
+        "medium",
+        "high",
+        "critical",
+        null
+      ]
+    },
+    "decision_changed": {
+      "type": "boolean"
+    },
+    "verifier_result": {
+      "enum": [
+        "passed",
+        "failed",
+        "not_run"
+      ]
+    },
+    "command_artifact_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verifier_result": {
+            "enum": [
+              "passed",
+              "failed"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "executor_ids": {
+            "contains": {
+              "const": "verifier"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "review_finding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "selected_lenses": {
+            "minItems": 1
+          },
+          "finding_severity": {
+            "enum": [
+              "medium",
+              "high",
+              "critical"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "verification_failure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "verifier_result": {
+            "const": "failed"
+          },
+          "executor_ids": {
+            "contains": {
+              "const": "verifier"
+            }
+          },
+          "command_artifact_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "correction"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "correction_count": {
+            "minimum": 1
+          }
+        }
+      }
+    }
+  ]
+}

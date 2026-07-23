@@ -1,0 +1,43 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "rollback-observability",
+  "domain": "operations",
+  "summary": "Check failure visibility, operational ownership, recovery, and rollback.",
+  "priority": 70,
+  "triggers": [
+    "deploy",
+    "deployment",
+    "deploying",
+    "release",
+    "logging",
+    "monitoring",
+    "rollback",
+    "scheduler",
+    "batch",
+    "배포",
+    "로그",
+    "롤백",
+    "장애",
+    "운영"
+  ],
+  "questions": [
+    "Will an operator know that the change failed and who owns recovery?",
+    "Can a success signal be emitted before the durable effect commits?",
+    "What is the smallest safe rollback or disable path?"
+  ],
+  "required_evidence": [
+    "failure signal or runtime check",
+    "operational owner",
+    "rollback or containment procedure"
+  ],
+  "reject_when": [
+    "success is reported before a durable commit",
+    "sensitive data is added to diagnostics without a concrete need and protection"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}

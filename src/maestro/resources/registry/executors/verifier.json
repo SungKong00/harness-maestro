@@ -1,0 +1,39 @@
+{
+  "schema_version": "maestro_executor_v1",
+  "kind": "executor",
+  "executor_id": "verifier",
+  "summary": "Compare a completion contract with raw artifacts and deterministic command results.",
+  "model_policy": {
+    "default_class": "balanced",
+    "allowed_classes": [
+      "economy",
+      "balanced",
+      "frontier"
+    ],
+    "default_reasoning_effort": "medium",
+    "maximum_auto_reasoning_effort": "xhigh",
+    "automatic_escalations": 1,
+    "fixed_model": false
+  },
+  "capabilities": [
+    "inspect.fs",
+    "exec.project-verifier"
+  ],
+  "forbidden_capabilities": [
+    "mutate.fs",
+    "mutate.external"
+  ],
+  "context_policy": {
+    "fresh_context_supported": true,
+    "return_packet_only": true,
+    "hide_other_lens_conclusions": false
+  },
+  "accepts": [
+    "CompletionContract",
+    "ChangeReceipt",
+    "CommandEvidence"
+  ],
+  "returns": [
+    "VerificationVerdict"
+  ]
+}

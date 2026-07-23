@@ -1,0 +1,21 @@
+{
+  "adapters": [
+    {
+      "id": "generic-repo",
+      "version": 1
+    }
+  ],
+  "framework": {
+    "name": "harness-maestro",
+    "version": "0.1.0"
+  },
+  "kind": "lock",
+  "managed": {
+    "sha256": "02907a50bf32704e48a77f0901a1c3d7e04bdc57f896426561c4a25afe2c9fb2"
+  },
+  "registry": {
+    "sha256": "fabd193a4da3a5561639716586427a6cc74ab6222e07c8d4fbc312c5bd93d3b4",
+    "version": 1
+  },
+  "schema_version": "maestro_lock_v1"
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "maestro_lens_v1",
+  "kind": "lens",
+  "lens_id": "test-proof",
+  "domain": "engineering",
+  "summary": "Check that verification proves the claimed behavior and fails under representative faults.",
+  "priority": 60,
+  "triggers": [
+    "test",
+    "verify",
+    "proof",
+    "coverage",
+    "ci",
+    "테스트",
+    "검증",
+    "증명",
+    "커버리지"
+  ],
+  "questions": [
+    "Which behavior invariant does each test prove?",
+    "Would a plausible wrong implementation make the test fail?",
+    "Which HTTP, database, framework, or external boundary remains unproved?"
+  ],
+  "required_evidence": [
+    "test command and result",
+    "target path or invariant",
+    "representative fault or negative case"
+  ],
+  "reject_when": [
+    "a mock interaction is presented as proof of externally visible behavior",
+    "a unit test is presented as proof of framework wiring or production behavior"
+  ],
+  "finding_limits": {
+    "max_findings": 5,
+    "minimum_severity": "medium"
+  },
+  "output": "FindingPacket"
+}
+

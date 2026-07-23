@@ -1,0 +1,7 @@
+interface:
+  display_name: "Maestro"
+  short_description: "Route and verify project work"
+  default_prompt: "Use $maestro to route this project task with the smallest safe workflow."
+policy:
+  allow_implicit_invocation: true
+

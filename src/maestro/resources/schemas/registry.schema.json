@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/registry.schema.json",
+  "title": "Harness Maestro Registry Item",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/lens"
+    },
+    {
+      "$ref": "#/$defs/executor"
+    },
+    {
+      "$ref": "#/$defs/department"
+    },
+    {
+      "$ref": "#/$defs/adapter"
+    }
+  ],
+  "$defs": {
+    "lens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "lens_id",
+        "domain",
+        "summary",
+        "priority",
+        "triggers",
+        "questions",
+        "required_evidence",
+        "reject_when",
+        "finding_limits",
+        "output"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_lens_v1"
+        },
+        "kind": {
+          "const": "lens"
+        },
+        "lens_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reject_when": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "finding_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_findings",
+            "minimum_severity"
+          ],
+          "properties": {
+            "max_findings": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "minimum_severity": {
+              "enum": [
+                "medium",
+                "high",
+                "critical"
+              ]
+            }
+          }
+        },
+        "output": {
+          "const": "FindingPacket"
+        }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "executor_id",
+        "summary",
+        "model_policy",
+        "capabilities",
+        "forbidden_capabilities",
+        "context_policy",
+        "accepts",
+        "returns"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_executor_v1"
+        },
+        "kind": {
+          "const": "executor"
+        },
+        "executor_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default_class",
+            "allowed_classes",
+            "default_reasoning_effort",
+            "maximum_auto_reasoning_effort",
+            "automatic_escalations",
+            "fixed_model"
+          ],
+          "properties": {
+            "default_class": {
+              "enum": [
+                "economy",
+                "balanced",
+                "frontier"
+              ]
+            },
+            "allowed_classes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "economy",
+                  "balanced",
+                  "frontier"
+                ]
+              }
+            },
+            "default_reasoning_effort": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "maximum_auto_reasoning_effort": {
+              "enum": [
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            },
+            "automatic_escalations": {
+              "const": 1
+            },
+            "fixed_model": {
+              "const": false
+            }
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "forbidden_capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "context_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fresh_context_supported",
+            "return_packet_only",
+            "hide_other_lens_conclusions"
+          ],
+          "properties": {
+            "fresh_context_supported": {
+              "type": "boolean"
+            },
+            "return_packet_only": {
+              "type": "boolean"
+            },
+            "hide_other_lens_conclusions": {
+              "type": "boolean"
+            }
+          }
+        },
+        "accepts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "returns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "department": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "department_id",
+        "summary",
+        "candidate_lenses",
+        "routing",
+        "deliberation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_department_v1"
+        },
+        "kind": {
+          "const": "department"
+        },
+        "department_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_lenses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        "routing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default_max_lenses",
+            "high_risk_max_lenses",
+            "load_all",
+            "lens_count_implies_agent_count"
+          ],
+          "properties": {
+            "default_max_lenses": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2
+            },
+            "high_risk_max_lenses": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "load_all": {
+              "const": false
+            },
+            "lens_count_implies_agent_count": {
+              "const": false
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "default_max_lenses": {
+                    "const": 1
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "high_risk_max_lenses": {
+                    "minimum": 1
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "default_max_lenses": {
+                    "const": 2
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "high_risk_max_lenses": {
+                    "minimum": 2
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "deliberation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "blind_first",
+            "free_form_debate",
+            "majority_vote",
+            "conflict_only_rebuttal",
+            "max_rebuttal_rounds",
+            "stop_on_no_new_evidence",
+            "human_gate_for_irreversible"
+          ],
+          "properties": {
+            "blind_first": {
+              "const": true
+            },
+            "free_form_debate": {
+              "const": false
+            },
+            "majority_vote": {
+              "const": false
+            },
+            "conflict_only_rebuttal": {
+              "const": true
+            },
+            "max_rebuttal_rounds": {
+              "const": 1
+            },
+            "stop_on_no_new_evidence": {
+              "const": true
+            },
+            "human_gate_for_irreversible": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "adapter_id",
+        "summary",
+        "version",
+        "detection",
+        "authority_policy",
+        "writes"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_adapter_v1"
+        },
+        "kind": {
+          "const": "adapter"
+        },
+        "adapter_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "network",
+            "subprocess_project_code",
+            "markers"
+          ],
+          "properties": {
+            "mode": {
+              "const": "static"
+            },
+            "network": {
+              "const": false
+            },
+            "subprocess_project_code": {
+              "const": false
+            },
+            "markers": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "authority_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default",
+            "external_authority_requires_approval",
+            "dual_editable_master"
+          ],
+          "properties": {
+            "default": {
+              "const": "markdown"
+            },
+            "external_authority_requires_approval": {
+              "const": true
+            },
+            "dual_editable_master": {
+              "const": false
+            }
+          }
+        },
+        "writes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preview_required",
+            "force_supported",
+            "delete_supported"
+          ],
+          "properties": {
+            "preview_required": {
+              "const": true
+            },
+            "force_supported": {
+              "const": false
+            },
+            "delete_supported": {
+              "const": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

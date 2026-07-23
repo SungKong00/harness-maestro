@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/research-packet.schema.json",
+  "title": "Harness Maestro Research Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "question",
+    "lane_id",
+    "sources",
+    "claims",
+    "conflicts",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_research_packet_v1"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "tier",
+          "title",
+          "checked_at"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artifact_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "required": [
+              "artifact_ref"
+            ],
+            "properties": {
+              "artifact_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "kind",
+          "text",
+          "source_refs",
+          "artifact_refs",
+          "adoption"
+        ],
+        "anyOf": [
+          {
+            "properties": {
+              "source_refs": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "artifact_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "fact",
+              "policy",
+              "preference",
+              "prediction"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "adoption": {
+            "enum": [
+              "rule",
+              "checklist",
+              "warning",
+              "optional-pattern",
+              "reject",
+              "open-question"
+            ]
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

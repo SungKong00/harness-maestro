@@ -1,0 +1,33 @@
+{
+  "schema_version": "maestro_adapter_v1",
+  "kind": "adapter",
+  "adapter_id": "generic-repo",
+  "summary": "Inspect common repository manifests without executing project code.",
+  "version": 1,
+  "detection": {
+    "mode": "static",
+    "network": false,
+    "subprocess_project_code": false,
+    "markers": [
+      "gradlew",
+      "mvnw",
+      "pom.xml",
+      "build.gradle",
+      "build.gradle.kts",
+      "package.json",
+      "pyproject.toml",
+      "requirements.txt",
+      "Cargo.toml"
+    ]
+  },
+  "authority_policy": {
+    "default": "markdown",
+    "external_authority_requires_approval": true,
+    "dual_editable_master": false
+  },
+  "writes": {
+    "preview_required": true,
+    "force_supported": false,
+    "delete_supported": false
+  }
+}

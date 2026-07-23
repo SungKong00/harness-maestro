@@ -1,0 +1,30 @@
+{
+  "schema_version": "maestro_domain_index_v1",
+  "domains": [
+    {
+      "domain": "engineering",
+      "summary": "API contracts, implementation boundaries, and proof quality."
+    },
+    {
+      "domain": "security",
+      "summary": "Authentication, authorization, ownership, privacy, and untrusted input."
+    },
+    {
+      "domain": "data",
+      "summary": "Persistence, migration, consistency, transactions, and concurrency."
+    },
+    {
+      "domain": "operations",
+      "summary": "Deployment, observability, failure isolation, recovery, and rollback."
+    },
+    {
+      "domain": "experience",
+      "summary": "User flow, recovery, accessibility, and error experience."
+    },
+    {
+      "domain": "feasibility",
+      "summary": "Budget, staffing, schedule, regulation, and reversibility."
+    }
+  ]
+}
+

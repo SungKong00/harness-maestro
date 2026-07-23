@@ -1,0 +1,29 @@
+{
+  "adapters": [
+    "generic-repo"
+  ],
+  "approval_required_for": [
+    "external_write",
+    "authority_change",
+    "adapter_change",
+    "harness_promotion"
+  ],
+  "commands": [
+    {
+      "command": "python3 -m unittest discover -s tests -v",
+      "name": "test",
+      "status": "candidate"
+    }
+  ],
+  "documentation": {
+    "default_authority": "markdown",
+    "external_topics": {}
+  },
+  "kind": "project",
+  "profiles": [
+    "python"
+  ],
+  "project_id": "harness-maestro",
+  "schema_version": "maestro_project_v1",
+  "state_root": ".maestro/state"
+}
