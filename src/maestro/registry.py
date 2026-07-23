@@ -58,23 +58,8 @@ ADAPTER_ALLOWED = {
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REGISTRY_FORMAT_VERSION = 1
 MODEL_CLASSES = ("economy", "balanced", "frontier")
-MODEL_CLASS_CONFIG = {
-    "economy": {
-        "model": "gpt-5.6-luna",
-        "reasoning_effort": "low",
-        "fallback": "gpt-5.6-terra with low reasoning",
-    },
-    "balanced": {
-        "model": "gpt-5.6-terra",
-        "reasoning_effort": "medium",
-        "fallback": "gpt-5.6-sol with medium reasoning",
-    },
-    "frontier": {
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "high",
-        "fallback": "NEEDS_DECISION when gpt-5.6-sol is unavailable",
-    },
-}
+
+
 def resource_root() -> Any:
     return resources.files("maestro.resources")
 
@@ -111,6 +96,49 @@ def load_domain_index_document() -> dict[str, Any]:
     return _load_file(item)
 
 
+def load_host_profile(host_id: str) -> dict[str, Any]:
+    if not _valid_id(host_id):
+        raise MaestroError("HOST_UNKNOWN", f"Invalid host ID: {host_id!r}")
+    profiles = {
+        item["host_id"]: item
+        for item in (_load_file(path) for path in _json_files("hosts"))
+        if isinstance(item.get("host_id"), str)
+    }
+    profile = profiles.get(host_id)
+    if profile is None:
+        raise MaestroError("HOST_UNKNOWN", f"Unknown host profile: {host_id}")
+    errors = validate_host_profile(profile)
+    if errors:
+        raise MaestroError("HOST_PROFILE_INVALID", "; ".join(errors))
+    return profile
+
+
+def validate_host_profile(profile: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if set(profile) != {"schema_version", "host_id", "classes"}:
+        errors.append("host profile fields are invalid")
+    if profile.get("schema_version") != "maestro_host_profile_v1":
+        errors.append("host profile schema_version is invalid")
+    if not _valid_id(profile.get("host_id")):
+        errors.append("host profile host_id is invalid")
+    classes = profile.get("classes")
+    if not isinstance(classes, dict) or set(classes) != set(MODEL_CLASSES):
+        errors.append("host profile classes are invalid")
+        return errors
+    for class_id, config in classes.items():
+        if (
+            not isinstance(config, dict)
+            or set(config) != {"model", "reasoning_effort", "fallback"}
+            or any(
+                not isinstance(config.get(key), str) or not config[key].strip()
+                for key in ("model", "reasoning_effort", "fallback")
+            )
+            or config.get("reasoning_effort") not in {"low", "medium", "high"}
+        ):
+            errors.append(f"host profile class {class_id} is invalid")
+    return errors
+
+
 def _domain_index_errors(value: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if set(value) != {"schema_version", "domains"}:
@@ -137,6 +165,10 @@ def registry_digest() -> str:
         canonical_json(
             {
                 "domain_index": load_domain_index_document(),
+                "host_profiles": [
+                    _load_file(item)
+                    for item in _json_files("hosts")
+                ],
                 "registry": registry,
             }
         )
@@ -811,6 +843,7 @@ def _model_route(
     risk: str,
     lens_ids: list[str],
     executor: dict[str, Any],
+    host_id: str,
 ) -> dict[str, Any]:
     task_class, selected_class, selection_reason = _classify_model_task(
         goal,
@@ -818,11 +851,13 @@ def _model_route(
         lens_ids,
     )
     policy = executor["model_policy"]
+    host_profile = load_host_profile(host_id)
     if selected_class == "none":
         return {
             "executor": executor["executor_id"],
             "task_class": task_class,
             "risk": risk,
+            "host": host_id,
             "selected_class": None,
             "selected_model": None,
             "reasoning_effort": None,
@@ -843,7 +878,7 @@ def _model_route(
             "MODEL_CLASS_UNAVAILABLE",
             f"Executor {executor['executor_id']} does not allow {selected_class}.",
         )
-    config = MODEL_CLASS_CONFIG[selected_class]
+    config = host_profile["classes"][selected_class]
     reasoning_effort = (
         policy["default_reasoning_effort"]
         if selected_class == policy["default_class"]
@@ -869,6 +904,7 @@ def _model_route(
         "executor": executor["executor_id"],
         "task_class": task_class,
         "risk": risk,
+        "host": host_id,
         "selected_class": selected_class,
         "selected_model": config["model"],
         "reasoning_effort": reasoning_effort,
@@ -887,6 +923,7 @@ def route_goal(
     explicit_lenses: list[str] | None = None,
     department_id: str = "software-development",
     conflict_evidence: str | None = None,
+    host_id: str = "codex",
 ) -> dict[str, Any]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -1011,6 +1048,7 @@ def route_goal(
         risk,
         lens_ids,
         executors[binding["executor"]],
+        host_id,
     )
 
     return {

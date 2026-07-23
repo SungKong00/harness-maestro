@@ -21,7 +21,8 @@ specialist 사용 규칙에 적용한다. 실행 중인 하네스를 스스로 �
 아니라, 운영 신호를 격리된 후보로 바꾸고 검증한 뒤 사람이 승격하는 절차다.
 
 여기서 Convention은 전역 Harness 규칙과 여러 프로젝트에 배포되는 규칙을 뜻한다.
-현재 프로젝트 안에서만 소유하고 반복 사용할 Convention은
+현재 프로젝트 안에서만 소유하고 반복 사용할 Convention은 project manifest가
+`verified-project-conventions`를 켠 경우
 [문서 생명주기](document-lifecycle.md)의 프로젝트 규칙 기준을 따르며, 검증된
 구현과 같은 작업에서 갱신할 수 있다.
 
@@ -58,7 +59,8 @@ observed → candidate → pilot → active → deprecated → retired
 
 ## 후보 생성
 
-`maestro govern report`는 현재 project와 checkout에 속한 최근 JSONL만 읽고 반복
+`maestro record`는 작업 종료 시 RunReceipt 한 건을 현재 project와 checkout에
+기록한다. `maestro govern report`는 그 범위에 속한 최근 JSONL만 읽고 반복
 fingerprint를 보여 준다. 보고서는 다음 행동을 자동 수행하지 않는다.
 
 - Skill·Lens·Executor 생성 또는 수정

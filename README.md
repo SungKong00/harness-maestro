@@ -1,6 +1,6 @@
 # Harness Maestro
 
-Harness Maestro is a small, project-agnostic control layer for installing repository guidance, selecting only relevant documentation and review lenses, diagnosing drift, and reporting improvement candidates without mutating the live harness.
+Harness Maestro is a small, project-agnostic control layer for installing repository guidance, selecting only relevant documentation and review lenses, diagnosing drift, recording compact run evidence, and improving verified conventions inside the current project without mutating the global harness.
 
 The current `v0` intentionally stops before autonomous multi-agent execution, external synchronization, or self-promotion. It produces validated configuration and execution plans that a Codex workflow can follow.
 
@@ -15,19 +15,19 @@ request
   -> one implementation owner writes
   -> isolated reviewers are used only for high-risk conflicts
   -> deterministic verification produces the completion verdict
-  -> verified reusable project rules may update one project convention
+  -> when enabled, verified reusable project rules update at most one project convention
   -> global harness improvements remain candidates
   -> compact JSONL observations may later inform a read-only govern report
 ```
 
-The CLI does not launch agents in v0. It safely initializes a project, selects documents, and returns a deterministic route. The `$maestro` skill applies that route using the agent host that invoked it.
+The CLI does not launch agents. It safely initializes a project, selects documents, returns a deterministic route, and records one compact completion receipt. The `$maestro` skill applies that route using the agent host that invoked it.
 
 ## Core model
 
 - **Lens** — what to inspect and which evidence can reject a decision.
 - **Executor** — which model, tools, permissions, and context policy perform work.
 - **Department** — rules for selecting Lens cards; not a permanent agent organization.
-- **Adapter** — project-specific facts, commands, and authority choices.
+- **Adapter** — project-specific facts, commands, and authority choices. The built-in document provider is Markdown; a project may instead point to its own local Adapter instructions.
 - **Maestro** — routes the smallest safe workflow and preserves evidence.
 
 Fast work uses zero or one Lens in the main context. Standard work binds one or two Lenses to one read-only reviewer pass. Deep work may run up to three selected Lenses in fresh, isolated reviewer contexts. Rebuttal is limited to one material conflict round and never uses majority vote as correctness.
@@ -77,16 +77,19 @@ maestro doctor --repo /path/to/project --json
 rm -- "$maestro_plan"
 ```
 
-`init` previews by default. Only `--apply-plan` writes. `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only.
+`init` and `upgrade` preview by default. Only `--apply-plan` writes. `status`, `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only. `record` appends exactly one validated project-scoped JSONL receipt.
 For diagnosis or review, print the preview to stdout and do not create a plan artifact.
 
 Initialization adds or updates only:
 
 - a delimited Maestro block in `AGENTS.md` and `.gitignore`;
 - `.maestro/project.json`, `.maestro/managed.json`, and `.maestro/lock.json`;
-- `docs/README.md` and `docs/governance/document-lifecycle.md` when absent.
+- `docs/README.md` and `docs/governance/document-lifecycle.md` when absent;
+- draft `docs/project.md` and `docs/architecture.md` when an equivalent document is not already mapped.
 
 Content outside the managed blocks is preserved. Commands found in manifests are recorded as candidates and are not executed or approved automatically.
+
+The initialized project enables `verified-project-conventions`: after verification, `$maestro` may update or create at most one reusable rule under `docs/conventions/` in the same authorized project change. It never auto-edits global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions. Set the mode to `off` to make project conventions candidate-only.
 
 ## Invoke it
 
@@ -114,10 +117,15 @@ The two administrative skills do not run implicitly. Governance reports cannot p
 
 ```bash
 maestro docs --repo /path/to/project --task "인증 API 수정" --json
-maestro route --goal "인증 정책 변경" --risk high --json
+maestro route --goal "인증 정책 변경" --risk high --host codex --json
+maestro status --repo /path/to/project --json
+maestro upgrade --repo /path/to/project --json
+maestro record --repo /path/to/project --receipt /tmp/run-receipt.json --json
 maestro adapt --repo /path/to/project --json
 maestro govern report --repo /path/to/project --window 20 --json
 ```
+
+For a user-defined document system, place an instruction contract inside the repository and set `documentation.provider` to `custom` with its `custom_adapter.instructions_path`. Core validates and returns that handoff; it does not execute arbitrary Adapter commands or attempt to implement every external provider.
 
 To try the checkout without installation, prefix commands with `PYTHONPATH=src python3 -m maestro`.
 

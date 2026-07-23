@@ -10,19 +10,25 @@
       "ownership": "managed_block",
       "path": "AGENTS.md",
       "preserve_on_drift": true,
-      "sha256": "ead8d30d9c67c97011a718bd1ec4096065b367bd8a4e73f016840516e7a72216"
+      "sha256": "f8a64f7f21b2d6253cfac4eeb2ae0473e2192f6c837fda651470bb8f6421b869"
     },
     {
       "ownership": "user_owned",
       "path": "docs/README.md",
       "preserve_on_drift": true,
-      "sha256": "43dfb9ea766e4a21568229f2ec2bc9240fdc32bc1ee84bb0f5865fc9c4577b96"
+      "sha256": "b69cd37ce5a6e7a4880b4acb5fde1f0c9311367afece4dcdf07eaf397cb22537"
     },
     {
       "ownership": "user_owned",
       "path": "docs/governance/document-lifecycle.md",
       "preserve_on_drift": true,
-      "sha256": "79ffa799b031f50ab88db0087a2cd8baf588c52f408b0b03427a7660f1c5528d"
+      "sha256": "e06ff11aaafc8dcd3f5227dd93df4be1cdd8290dffabc0213a60b4fa9dea9b96"
+    },
+    {
+      "ownership": "seeded",
+      "path": "docs/project.md",
+      "preserve_on_drift": true,
+      "sha256": "4c91b575d38c2beb9efd0b84694ee8048b4109c54711a2ec339c2a3198c075a7"
     }
   ],
   "kind": "managed",

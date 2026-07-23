@@ -26,7 +26,8 @@
         "adapters",
         "profiles",
         "commands",
-        "approval_required_for"
+        "approval_required_for",
+        "self_improvement"
       ],
       "properties": {
         "schema_version": {
@@ -46,17 +47,85 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "default_authority",
+            "provider",
+            "entrypoint",
+            "core_documents",
             "external_topics"
           ],
           "properties": {
-            "default_authority": {
-              "const": "markdown"
+            "provider": {
+              "enum": [
+                "markdown",
+                "custom"
+              ]
+            },
+            "entrypoint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "core_documents": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "project",
+                "architecture"
+              ],
+              "properties": {
+                "project": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "architecture": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             },
             "external_topics": {
               "type": "object"
+            },
+            "custom_adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "instructions_path"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "instructions_path": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "provider": {
+                    "const": "custom"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "custom_adapter"
+                ]
+              },
+              "else": {
+                "not": {
+                  "required": [
+                    "custom_adapter"
+                  ]
+                }
+              }
+            }
+          ]
         },
         "adapters": {
           "type": "array",
@@ -130,6 +199,53 @@
               }
             }
           ]
+        },
+        "self_improvement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "max_updates_per_run"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "off",
+                "verified-project-conventions"
+              ]
+            },
+            "max_updates_per_run": {
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "mode": {
+                    "const": "verified-project-conventions"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "max_updates_per_run": {
+                    "const": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "max_updates_per_run": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -151,7 +267,7 @@
         "entries": {
           "type": "array",
           "minItems": 4,
-          "maxItems": 4,
+          "maxItems": 6,
           "uniqueItems": true,
           "items": {
             "type": "object",

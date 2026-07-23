@@ -22,7 +22,8 @@
     },
     "command": {
       "enum": [
-        "init"
+        "init",
+        "upgrade"
       ]
     },
     "repo_realpath": {

@@ -32,7 +32,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 
 | 구성요소 | 책임 | v0 경계 |
 |---|---|---|
-| CLI | 초기화 계획, 진단, 문서 선택, 라우팅, 읽기 전용 보고 | 결정론적이며 외부 서비스에 쓰지 않음 |
+| CLI | 초기화·업그레이드 계획, 상태, 문서 선택, 라우팅, RunReceipt, 읽기 전용 보고 | 결정론적이며 외부 서비스에 쓰지 않음 |
 | Registry | Lens, Executor, Department, Adapter 계약 | package 안에서 버전 관리하고 검증 |
 | Project state | 프로젝트 ID, 문서 권위, 후보 명령 | 저장소의 `.maestro/`에 추적 |
 | Runtime state | 실행 이벤트, 실제 token·시간·finding | `.maestro/state/`에 두고 Git에서 제외 |
@@ -48,9 +48,13 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro adapt --repo <path> --json` | manifest 파일에서 stack·명령·Notion 흔적 후보를 정적 탐지 | 없음 |
 | `maestro init --repo <path> --json` | 초기화 operation plan과 digest를 생성 | 없음 |
 | `maestro init --repo <path> --apply-plan <plan> --json` | 검토한 동일 plan만 적용 | 저장소 내부의 소유 경로만 |
+| `maestro upgrade --repo <path> --json` | 현재 init 계약으로 관리 파일 변경을 미리보기 | 없음 |
+| `maestro upgrade --repo <path> --apply-plan <plan> --json` | 검토한 upgrade plan만 적용 | 저장소 내부의 소유 경로만 |
+| `maestro status --repo <path> --json` | 초기화·Doctor·upgrade 필요 상태를 요약 | 없음 |
 | `maestro doctor --repo <path> --json` | 상태, managed hash, registry, 문서 링크 검사 | 없음 |
 | `maestro docs --repo <path> --task "<goal>" --json` | 관련 활성 문서의 경로와 digest 선택 | 없음 |
 | `maestro route --goal "<goal>" --risk <level> --json` | 위험도에 맞는 Lens·Executor 실행 계획 생성 | 없음 |
+| `maestro record --repo <path> --receipt <file> --json` | 작업 종료 시 compact RunReceipt 한 건 기록 | `.maestro/state/events/`에 append |
 | `maestro govern report --repo <path> --json` | 반복된 finding을 후보 신호로 집계 | 없음 |
 
 `init`은 미리보기와 적용을 분리한다. plan이 생성된 뒤 대상 파일 또는 plan 내용이
@@ -65,7 +69,8 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 2. `init` 미리보기 JSON을 저장하고 변경 경로를 검토한다.
 3. 동일 plan을 `--apply-plan`으로 적용한다.
 4. `doctor`를 실행한다.
-5. 생성된 `docs/README.md`와 `.maestro/project.json`을 검토하고 후보 명령을 실제로
+5. 생성 또는 매핑된 `docs/project.md`, `docs/architecture.md`, `docs/README.md`와
+   `.maestro/project.json`을 검토하고 후보 명령을 실제로
    확인한 뒤 권위로 채택한다.
 
 정적 탐지는 명령이 존재할 가능성만 말한다. package script나 wrapper를 자동 실행하지
@@ -79,7 +84,10 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 4. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
    증거를 반환한다.
 5. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
-6. 실행 비용과 finding은 runtime JSONL에 남기되 장문 대화를 문서로 복제하지 않는다.
+6. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 `docs/conventions/` 한 건까지만
+   같은 작업에서 갱신한다.
+7. 실행 비용과 finding은 작업 종료 RunReceipt 한 건으로 runtime JSONL에 남기되
+   checkpoint와 장문 대화를 복제하지 않는다.
 
 ## 작업 강도
 
@@ -103,6 +111,6 @@ Lens 개수는 agent 개수가 아니다. 작업을 분해해도 공유 쓰기 �
 
 ## v0가 약속하지 않는 것
 
-v0는 편향 제거, exactly-once 외부 작업, 완전한 자동 복구, 자동 skill 승격, 다수
+v0는 편향 제거, exactly-once 외부 작업, 완전한 자동 복구, 자동 global Skill 승격, 다수
 에이전트의 정답 보장을 약속하지 않는다. 보류 범위와 이유는
 [제외·보류 목록](../governance/deferred-and-excluded.md)에 있다.

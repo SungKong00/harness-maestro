@@ -7,7 +7,7 @@ import os
 import sqlite3
 import tempfile
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,13 @@ from . import __version__
 from .errors import MaestroError
 from .project import checkout_id
 from .registry import definition_digest_maps, registry_digest
-from .util import ensure_repo, read_json, safe_target
+from .util import (
+    canonical_json,
+    ensure_repo,
+    read_json,
+    safe_target,
+    sha256_text,
+)
 
 MAX_GOVERN_WINDOW = 1_000
 MAX_FINGERPRINTS_PER_RUN = 1_000
@@ -25,6 +31,30 @@ MAX_EVENT_FILE_BYTES = 2_000_000
 MAX_EVENT_TOTAL_BYTES = 64_000_000
 MAX_EVENT_RECORDS = 200_000
 MAX_EVENT_LINE_BYTES = 1_000_000
+RUN_RECEIPT_ALLOWED_FIELDS = {
+    "run_id",
+    "risk",
+    "route_depth",
+    "selected_lenses",
+    "executor_runs",
+    "primary_executor_id",
+    "executor_ids",
+    "outcome",
+    "evidence_refs",
+    "duration_ms",
+    "tokens",
+    "experiment_id",
+    "experiment_arm",
+    "correction_count",
+    "correction_summary",
+    "agent_calls",
+    "human_fix_required",
+    "decision_changed",
+    "verifier_result",
+    "command_artifact_ref",
+    "project_convention_action",
+    "project_convention_path",
+}
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -36,6 +66,294 @@ def _parse_timestamp(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def _existing_run_receipt(
+    repo: Path,
+    events_directory: Path,
+    *,
+    project_id: str,
+    checkout: str,
+    run_id: str,
+) -> tuple[str, str] | None:
+    if not events_directory.exists():
+        return None
+    paths, overflow, directory_truncated = _event_paths(events_directory)
+    if overflow or directory_truncated:
+        raise MaestroError(
+            "EVENT_STATE_TRUNCATED",
+            "Cannot prove RunReceipt idempotency because the event directory exceeds scan limits.",
+        )
+    total_bytes = 0
+    for path, safe in paths:
+        if not safe:
+            raise MaestroError(
+                "EVENT_STATE_INVALID",
+                f"Unsafe event file blocks RunReceipt idempotency: {path.name}",
+            )
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            raise MaestroError(
+                "EVENT_STATE_UNREADABLE",
+                f"Cannot inspect event file: {path.name}",
+            ) from exc
+        total_bytes += size
+        if size > MAX_EVENT_FILE_BYTES or total_bytes > MAX_EVENT_TOTAL_BYTES:
+            raise MaestroError(
+                "EVENT_STATE_TRUNCATED",
+                "Cannot prove RunReceipt idempotency because event files exceed scan limits.",
+            )
+        try:
+            lines = path.open(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise MaestroError(
+                "EVENT_STATE_UNREADABLE",
+                f"Cannot read event file: {path.name}",
+            ) from exc
+        with lines:
+            for line in lines:
+                if not line.strip():
+                    continue
+                if len(line.encode("utf-8")) > MAX_EVENT_LINE_BYTES:
+                    raise MaestroError(
+                        "EVENT_STATE_TRUNCATED",
+                        f"Event line exceeds the scan limit: {path.name}",
+                    )
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (
+                    isinstance(event, dict)
+                    and event.get("kind") == "run_summary"
+                    and event.get("project_id") == project_id
+                    and event.get("checkout_id") == checkout
+                    and event.get("run_id") == run_id
+                    and isinstance(event.get("event_id"), str)
+                ):
+                    return (
+                        event["event_id"],
+                        path.relative_to(repo).as_posix(),
+                    )
+    return None
+
+
+def record_run(
+    repo_path: str | Path,
+    receipt_path: str | Path,
+) -> dict[str, Any]:
+    repo = ensure_repo(repo_path)
+    project_path = safe_target(repo, ".maestro/project.json")
+    lock_path = safe_target(repo, ".maestro/lock.json")
+    if not project_path.is_file() or not lock_path.is_file():
+        raise MaestroError(
+            "PROJECT_UNINITIALIZED",
+            "RunReceipt recording requires initialized project and lock state.",
+        )
+    project = read_json(project_path)
+    lock = read_json(lock_path)
+    if lock.get("framework", {}).get("version") != __version__:
+        raise MaestroError(
+            "PROJECT_STATE_STALE",
+            "Review and apply a fresh upgrade plan before recording.",
+        )
+    if lock.get("registry", {}).get("sha256") != registry_digest():
+        raise MaestroError(
+            "PROJECT_STATE_STALE",
+            "Registry lock differs from the installed registry.",
+        )
+    receipt = read_json(Path(receipt_path))
+    unexpected = sorted(set(receipt) - RUN_RECEIPT_ALLOWED_FIELDS)
+    if unexpected:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"RunReceipt has unsupported fields: {unexpected}",
+        )
+    required = {
+        "run_id",
+        "risk",
+        "route_depth",
+        "selected_lenses",
+        "executor_runs",
+        "primary_executor_id",
+        "executor_ids",
+        "outcome",
+        "evidence_refs",
+        "duration_ms",
+        "tokens",
+        "correction_count",
+        "agent_calls",
+        "verifier_result",
+        "command_artifact_ref",
+    }
+    missing = sorted(required - set(receipt))
+    if missing:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"RunReceipt is missing fields: {missing}",
+        )
+    definitions = definition_digest_maps()
+    selected_lenses = receipt.get("selected_lenses")
+    executor_ids = receipt.get("executor_ids")
+    if not isinstance(selected_lenses, list) or not isinstance(executor_ids, list):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "selected_lenses and executor_ids must be lists.",
+        )
+    unknown_lenses = sorted(set(selected_lenses) - set(definitions["lenses"]))
+    unknown_executors = sorted(set(executor_ids) - set(definitions["executors"]))
+    if unknown_lenses or unknown_executors:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"Unknown lenses={unknown_lenses} executors={unknown_executors}",
+        )
+    convention_action = receipt.get("project_convention_action", "none")
+    convention_path = receipt.get("project_convention_path")
+    if convention_action in {"created", "updated"} and isinstance(
+        convention_path,
+        str,
+    ):
+        convention_target = safe_target(repo, convention_path)
+        if convention_target.is_symlink() or not convention_target.is_file():
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                f"Recorded project convention is missing or unsafe: {convention_path}",
+            )
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    fingerprint = sha256_text(
+        canonical_json(
+            {
+                "outcome": receipt.get("outcome"),
+                "verifier_result": receipt.get("verifier_result"),
+                "selected_lenses": selected_lenses,
+            }
+        )
+    )[:24]
+    current_checkout_id = checkout_id(repo)
+    event_id = sha256_text(
+        canonical_json(
+            {
+                "checkout_id": current_checkout_id,
+                "run_id": receipt.get("run_id"),
+                "kind": "run_summary",
+            }
+        )
+    )[:32]
+    event = {
+        "schema_version": "maestro_event_v1",
+        "event_id": event_id,
+        "timestamp": timestamp,
+        "project_id": project.get("project_id"),
+        "checkout_id": current_checkout_id,
+        "run_id": receipt.get("run_id"),
+        "framework_version": __version__,
+        "registry_digest": registry_digest(),
+        "lens_definition_digests": {
+            lens_id: definitions["lenses"][lens_id]
+            for lens_id in selected_lenses
+        },
+        "executor_definition_digests": {
+            executor_id: definitions["executors"][executor_id]
+            for executor_id in executor_ids
+        },
+        "risk": receipt.get("risk"),
+        "route_depth": receipt.get("route_depth"),
+        "selected_lenses": selected_lenses,
+        "executor_runs": receipt.get("executor_runs"),
+        "primary_executor_id": receipt.get("primary_executor_id"),
+        "executor_ids": executor_ids,
+        "kind": "run_summary",
+        "outcome": receipt.get("outcome"),
+        "fingerprint": fingerprint,
+        "evidence_refs": receipt.get("evidence_refs"),
+        "duration_ms": receipt.get("duration_ms"),
+        "tokens": receipt.get("tokens"),
+        "correction_count": receipt.get("correction_count"),
+        "correction_summary": receipt.get("correction_summary", []),
+        "agent_calls": receipt.get("agent_calls"),
+        "human_fix_required": receipt.get("human_fix_required"),
+        "finding_severity": None,
+        "decision_changed": receipt.get("decision_changed", False),
+        "verifier_result": receipt.get("verifier_result"),
+        "command_artifact_ref": receipt.get("command_artifact_ref"),
+        "project_convention_action": receipt.get(
+            "project_convention_action",
+            "none",
+        ),
+        "project_convention_path": receipt.get("project_convention_path"),
+    }
+    if receipt.get("experiment_id") is not None:
+        event["experiment_id"] = receipt["experiment_id"]
+    if receipt.get("experiment_arm") is not None:
+        event["experiment_arm"] = receipt["experiment_arm"]
+    if not _valid_event(event):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "RunReceipt does not satisfy the compact event contract.",
+        )
+
+    state_root = project.get("state_root")
+    if state_root != ".maestro/state":
+        raise MaestroError(
+            "PROJECT_STATE_INVALID",
+            "state_root must equal '.maestro/state'.",
+        )
+    events_directory = safe_target(repo, f"{state_root}/events")
+    existing = _existing_run_receipt(
+        repo,
+        events_directory,
+        project_id=event["project_id"],
+        checkout=current_checkout_id,
+        run_id=event["run_id"],
+    )
+    if existing is not None:
+        existing_event_id, existing_path = existing
+        return {
+            "schema_version": "maestro_command_result_v1",
+            "command": "record",
+            "status": "already_recorded",
+            "repo_root": str(repo),
+            "run_id": event["run_id"],
+            "event_id": existing_event_id,
+            "event_path": existing_path,
+            "writes_performed": False,
+        }
+    date = timestamp[:10]
+    relative_path = f"{state_root}/events/{date}.jsonl"
+    event_path = safe_target(repo, relative_path)
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    event_path = safe_target(repo, relative_path)
+    payload = (canonical_json(event) + "\n").encode("utf-8")
+    if len(payload) > MAX_EVENT_LINE_BYTES:
+        raise MaestroError(
+            "RUN_RECEIPT_TOO_LARGE",
+            f"RunReceipt exceeds {MAX_EVENT_LINE_BYTES} bytes.",
+        )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(event_path, flags, 0o600)
+        with os.fdopen(descriptor, "ab", closefd=True) as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError as exc:
+        raise MaestroError(
+            "EVENT_WRITE_FAILED",
+            f"Could not append RunReceipt: {exc}",
+        ) from exc
+    return {
+        "schema_version": "maestro_command_result_v1",
+        "command": "record",
+        "status": "recorded",
+        "repo_root": str(repo),
+        "run_id": event["run_id"],
+        "event_id": event_id,
+        "event_path": relative_path,
+        "writes_performed": True,
+    }
 
 
 def _valid_event(event: dict[str, Any]) -> bool:
@@ -72,6 +390,8 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "decision_changed",
         "verifier_result",
         "command_artifact_ref",
+        "project_convention_action",
+        "project_convention_path",
     }
     if set(event) - allowed_fields:
         return False
@@ -262,6 +582,37 @@ def _valid_event(event: dict[str, Any]) -> bool:
     if command_artifact_ref is not None and (
         not isinstance(command_artifact_ref, str)
         or not command_artifact_ref.strip()
+    ):
+        return False
+    convention_action = event.get("project_convention_action", "none")
+    if convention_action not in {
+        "none",
+        "created",
+        "updated",
+        "candidate",
+        "needs_decision",
+    }:
+        return False
+    project_convention_path = event.get("project_convention_path")
+    if project_convention_path is not None and (
+        not isinstance(project_convention_path, str)
+        or not project_convention_path.startswith("docs/conventions/")
+        or not project_convention_path.endswith(".md")
+        or ".." in Path(project_convention_path).parts
+    ):
+        return False
+    if (
+        convention_action in {"created", "updated"}
+        and project_convention_path is None
+    ):
+        return False
+    if (
+        convention_action in {
+            "none",
+            "candidate",
+            "needs_decision",
+        }
+        and project_convention_path is not None
     ):
         return False
     if event["kind"] not in {
@@ -756,6 +1107,10 @@ def govern_report(
         for event in unique_runs
         if isinstance(event.get("experiment_arm"), str)
     )
+    project_convention_actions = Counter(
+        event.get("project_convention_action", "none")
+        for event in unique_runs
+    )
     return {
         "schema_version": "maestro_govern_report_v1",
         "repo_root": str(repo),
@@ -808,6 +1163,9 @@ def govern_report(
             ),
         },
         "experiment_arms": dict(sorted(experiment_arms.items())),
+        "project_convention_actions": dict(
+            sorted(project_convention_actions.items())
+        ),
         "writes_performed": False,
         "promotion_supported": False,
         "scan_limits": {

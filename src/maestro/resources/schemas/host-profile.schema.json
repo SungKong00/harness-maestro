@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/host-profile.schema.json",
+  "title": "Harness Maestro Host Model Mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "host_id",
+    "classes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_host_profile_v1"
+    },
+    "host_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "economy",
+        "balanced",
+        "frontier"
+      ],
+      "properties": {
+        "economy": {
+          "$ref": "#/$defs/class"
+        },
+        "balanced": {
+          "$ref": "#/$defs/class"
+        },
+        "frontier": {
+          "$ref": "#/$defs/class"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "class": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "reasoning_effort",
+        "fallback"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoning_effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

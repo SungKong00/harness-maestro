@@ -8,9 +8,15 @@ from typing import Any, Sequence
 from .doctor import doctor_report
 from .documents import select_documents
 from .errors import MaestroError
-from .governance import govern_report
-from .project import apply_plan, build_init_plan, inspect_adapter
+from .governance import govern_report, record_run
+from .project import (
+    apply_plan,
+    build_init_plan,
+    build_upgrade_plan,
+    inspect_adapter,
+)
 from .registry import route_goal
+from .status import status_report
 
 
 def _emit(value: dict[str, Any], as_json: bool) -> None:
@@ -33,6 +39,18 @@ def parser() -> argparse.ArgumentParser:
     init.add_argument("--apply-plan")
     init.add_argument("--json", action="store_true")
 
+    upgrade = commands.add_parser(
+        "upgrade",
+        help="Preview or apply the same safe plan against the installed framework",
+    )
+    upgrade.add_argument("--repo", default=".")
+    upgrade.add_argument("--apply-plan")
+    upgrade.add_argument("--json", action="store_true")
+
+    status = commands.add_parser("status", help="Summarize project harness state")
+    status.add_argument("--repo", default=".")
+    status.add_argument("--json", action="store_true")
+
     doctor = commands.add_parser("doctor", help="Run read-only harness checks")
     doctor.add_argument("--repo", default=".")
     doctor.add_argument("--strict", action="store_true")
@@ -48,6 +66,7 @@ def parser() -> argparse.ArgumentParser:
     route.add_argument("--goal", required=True)
     route.add_argument("--risk", choices=["low", "medium", "high", "critical"], default="medium")
     route.add_argument("--department", default="software-development")
+    route.add_argument("--host", default="codex")
     route.add_argument("--lens", action="append", default=[])
     route.add_argument(
         "--conflict-evidence",
@@ -58,6 +77,14 @@ def parser() -> argparse.ArgumentParser:
     adapt = commands.add_parser("adapt", help="Inspect project adapter candidates without writing")
     adapt.add_argument("--repo", default=".")
     adapt.add_argument("--json", action="store_true")
+
+    record = commands.add_parser(
+        "record",
+        help="Append one validated compact RunReceipt at task completion",
+    )
+    record.add_argument("--repo", default=".")
+    record.add_argument("--receipt", required=True)
+    record.add_argument("--json", action="store_true")
 
     govern = commands.add_parser("govern", help="Read-only harness governance")
     govern_commands = govern.add_subparsers(dest="govern_command", required=True)
@@ -80,6 +107,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "upgrade":
+            result = (
+                apply_plan(
+                    args.apply_plan,
+                    args.repo,
+                    expected_command="upgrade",
+                )
+                if args.apply_plan
+                else build_upgrade_plan(args.repo)
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "status":
+            result = status_report(args.repo)
+            _emit(result, args.json)
+            return 0
         if args.command == "doctor":
             result = doctor_report(args.repo)
             _emit(result, args.json)
@@ -99,11 +142,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.lens or None,
                 args.department,
                 args.conflict_evidence,
+                args.host,
             )
             _emit(result, args.json)
             return 0
         if args.command == "adapt":
             result = inspect_adapter(args.repo)
+            _emit(result, args.json)
+            return 0
+        if args.command == "record":
+            result = record_run(args.repo, args.receipt)
             _emit(result, args.json)
             return 0
         if args.command == "govern" and args.govern_command == "report":

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/run-receipt.schema.json",
+  "title": "Harness Maestro Compact RunReceipt Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "risk",
+    "route_depth",
+    "selected_lenses",
+    "executor_runs",
+    "primary_executor_id",
+    "executor_ids",
+    "outcome",
+    "evidence_refs",
+    "duration_ms",
+    "tokens",
+    "correction_count",
+    "agent_calls",
+    "verifier_result",
+    "command_artifact_ref"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "route_depth": {
+      "enum": [
+        "fast",
+        "standard",
+        "deep"
+      ]
+    },
+    "selected_lenses": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "executor_runs": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "primary_executor_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executor_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "failed",
+        "corrected",
+        "blocked",
+        "no_change"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "duration_ms": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "experiment_id": {
+      "type": "string"
+    },
+    "experiment_arm": {
+      "type": "string"
+    },
+    "correction_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "correction_summary": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "agent_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "human_fix_required": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "decision_changed": {
+      "type": "boolean"
+    },
+    "verifier_result": {
+      "enum": [
+        "passed",
+        "failed",
+        "not_run"
+      ]
+    },
+    "command_artifact_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project_convention_action": {
+      "enum": [
+        "none",
+        "created",
+        "updated",
+        "candidate",
+        "needs_decision"
+      ]
+    },
+    "project_convention_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+    }
+  }
+}

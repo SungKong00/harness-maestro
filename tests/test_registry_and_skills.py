@@ -315,6 +315,7 @@ class RoutingContractTests(unittest.TestCase):
                 "executor",
                 "task_class",
                 "risk",
+                "host",
                 "selected_class",
                 "selected_model",
                 "reasoning_effort",
@@ -507,8 +508,12 @@ class SkillPackageTests(unittest.TestCase):
 
         self.assertIn("selected_conventions", text)
         self.assertIn("convention_status", text)
-        self.assertIn("Create at most one `docs/conventions/<topic>.md`", text)
+        self.assertIn("self_improvement", text)
+        self.assertIn("maximum of one `docs/conventions/<topic>.md`", text)
+        self.assertIn("automatically create or update", text)
+        self.assertIn("Do not let project-local self-improvement write outside", text)
         self.assertIn("global_harness_candidates", text)
+        self.assertIn("maestro record", text)
         self.assertIn("`NEEDS_DECISION` instead of convention-writing", text)
         self.assertIn("$reference-research-team", text)
         self.assertIn("$orchestrated-work-session", text)

@@ -41,6 +41,8 @@ INIT_MANAGED_PATHS = frozenset(
         ".maestro/managed.json",
         ".maestro/lock.json",
         "docs/README.md",
+        "docs/project.md",
+        "docs/architecture.md",
         "docs/governance/document-lifecycle.md",
     }
 )
@@ -70,19 +72,29 @@ CORE_APPROVAL_GATES = [
 
 AGENTS_BODY = """## Harness Maestro
 
-- Read `.maestro/project.json`, `docs/README.md`, and only task-relevant project conventions before implementation.
+- Read `.maestro/project.json`, the configured document entrypoint, and only task-relevant project conventions before implementation.
 - Use `$maestro` for explicit routing when risk, research, or multiple review lenses matter.
 - Run `maestro doctor --repo . --json` when the manifest or document index changed.
 - Default to one writer. Review lanes are read-only and may not edit the same files.
 - Keep initial lens conclusions isolated; discuss only material conflicts once.
 - Never treat majority vote as correctness. Preserve evidence-backed minority risks.
 - Record operational telemetry under the configured state root, not as one Markdown file per run.
-- Propose convention or skill improvements as candidates; do not mutate the live harness automatically."""
+- When project-local self-improvement is enabled, update at most one verified project convention per run.
+- Never auto-edit global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions."""
 
 GITIGNORE_BODY = """.maestro/state/
 .maestro/backups/"""
 
-DOCS_INDEX = """---
+def _docs_index_link(relative_path: str) -> str:
+    return (
+        relative_path.removeprefix("docs/")
+        if relative_path.startswith("docs/")
+        else f"../{relative_path}"
+    )
+
+
+def _docs_index(core_documents: dict[str, str]) -> str:
+    return f"""---
 maestro_doc: 1
 id: project-docs-index
 type: index
@@ -95,7 +107,10 @@ tags: [documentation, index]
 
 # Project documentation
 
-Markdown is the default authority unless `.maestro/project.json` explicitly assigns a topic to another source.
+The document provider and one editable authority per topic are declared in `.maestro/project.json`.
+
+- [Project context]({_docs_index_link(core_documents["project"])})
+- [Architecture]({_docs_index_link(core_documents["architecture"])})
 
 Create directories only when the first real document needs them:
 
@@ -109,6 +124,68 @@ Create directories only when the first real document needs them:
 
 Run `maestro docs --repo . --task "<goal>" --json` to select relevant documents without loading the full tree.
 Use returned `selected_conventions` as implementation and verification criteria. No matching convention is not a blocker.
+"""
+
+
+PROJECT_DOC = """---
+maestro_doc: 1
+id: project-context
+type: project
+status: draft
+authority: repository
+owner: project
+summary: Project goal, users, scope, non-goals, and priorities.
+tags: [project, scope]
+---
+
+# Project
+
+## Goal
+
+Describe why this project exists.
+
+## Users
+
+Describe the primary users or operators.
+
+## Scope and non-goals
+
+List the current scope and explicit non-goals.
+
+## Priorities
+
+List the quality or delivery priorities in order.
+"""
+
+
+ARCHITECTURE_DOC = """---
+maestro_doc: 1
+id: architecture-overview
+type: architecture
+status: draft
+authority: repository
+owner: project
+summary: Current structure, boundaries, constraints, and quality priorities.
+tags: [architecture, constraints]
+---
+
+# Architecture
+
+## Current structure
+
+Describe the major components and their responsibilities.
+
+## Boundaries
+
+Describe module, service, data, and external-system boundaries.
+
+## Constraints
+
+List constraints that materially affect implementation choices.
+
+## Quality priorities
+
+List the qualities that should win when trade-offs are required.
 """
 
 DOCUMENT_POLICY = """---
@@ -126,9 +203,9 @@ tags: [documentation, governance, lifecycle]
 
 Keep operational events in JSONL under the configured state root. Promote content to Markdown only when it is reusable, evidence-backed, owned, and not already represented by an active document.
 
-A verified project convention may be created or updated in the same authorized implementation run. Security policy, external contracts, data policy, irreversible decisions, and global Harness components require a separate decision or candidate review.
+A verified project convention may be created or updated automatically in the same authorized implementation run only when `.maestro/project.json` enables `verified-project-conventions`. The change must be reusable, supported by code, test, or command evidence, and limited to one convention per run. Prefer updating an existing topic. Security policy, external contracts, data policy, irreversible decisions, and global Harness components require a separate decision or candidate review.
 
-One topic has one authority. If Notion or another external source is authoritative for an explicit topic, repository Markdown is a read-only snapshot with revision and digest metadata, not a second editable master.
+One topic has one authority. Markdown is the built-in provider. A project may instead name a repository-local custom Adapter instruction file; Maestro validates the pointer but does not execute arbitrary Adapter commands or implement every external system. If Notion or another external source is authoritative for an explicit topic, repository Markdown is a read-only snapshot with revision and digest metadata, not a second editable master.
 
 Archive is excluded from normal selection. Superseded documents name their replacement. Deletion requires an owner decision, reference scan, support window, and rollback path.
 """
@@ -314,15 +391,56 @@ def inspect_adapter(repo_path: str | Path) -> dict[str, Any]:
     }
 
 
+def _first_existing_regular(repo: Path, candidates: tuple[str, ...]) -> str | None:
+    for relative_path in candidates:
+        if _safe_regular_file(repo, relative_path):
+            return relative_path
+    return None
+
+
+def _core_documents(repo: Path) -> dict[str, str]:
+    return {
+        "project": _first_existing_regular(
+            repo,
+            (
+                "docs/project.md",
+                "PROJECT.md",
+                "docs/product.md",
+            ),
+        )
+        or "docs/project.md",
+        "architecture": _first_existing_regular(
+            repo,
+            (
+                "docs/architecture.md",
+                "ARCHITECTURE.md",
+                "docs/architecture/overview.md",
+                "docs/architecture/maestro-v0.md",
+            ),
+        )
+        or "docs/architecture.md",
+    }
+
+
+def _default_documentation(repo: Path) -> dict[str, Any]:
+    return {
+        "provider": "markdown",
+        "entrypoint": "docs/README.md",
+        "core_documents": _core_documents(repo),
+        "external_topics": {},
+    }
+
+
 def _project_state(repo: Path, inspection: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": "maestro_project_v1",
         "kind": "project",
         "project_id": slugify(repo.name),
         "state_root": ".maestro/state",
-        "documentation": {
-            "default_authority": "markdown",
-            "external_topics": {},
+        "documentation": _default_documentation(repo),
+        "self_improvement": {
+            "mode": "verified-project-conventions",
+            "max_updates_per_run": 1,
         },
         "adapters": ["generic-repo"],
         "profiles": inspection["profiles_detected"],
@@ -368,6 +486,7 @@ def _desired_seed_files(
         safe_target(repo, relative_path)
     inspection = inspection or inspect_adapter(repo)
     desired: dict[str, str] = {}
+    core_documents = _core_documents(repo)
 
     agents_path = repo / "AGENTS.md"
     agents_text = _bounded_text(agents_path, default="# AGENTS.md\n")
@@ -404,14 +523,40 @@ def _desired_seed_files(
             dict.fromkeys([*existing_approval_gates, *CORE_APPROVAL_GATES])
         )
         documentation = updated_project.get("documentation")
-        if isinstance(documentation, dict):
+        if not isinstance(documentation, dict):
+            documentation = _default_documentation(repo)
+        else:
             documentation = dict(documentation)
-            documentation["default_authority"] = "markdown"
-            updated_project["documentation"] = documentation
+            legacy_authority = documentation.pop("default_authority", None)
+            documentation.setdefault(
+                "provider",
+                "markdown" if legacy_authority in {None, "markdown"} else "custom",
+            )
+            documentation.setdefault("entrypoint", "docs/README.md")
+            documentation.setdefault("core_documents", core_documents)
+            documentation.setdefault("external_topics", {})
+        updated_project["documentation"] = documentation
+        updated_project.setdefault(
+            "self_improvement",
+            {
+                "mode": "verified-project-conventions",
+                "max_updates_per_run": 1,
+            },
+        )
         if updated_project != existing_project:
             desired[".maestro/project.json"] = pretty_json(updated_project)
     if not (repo / "docs/README.md").exists():
-        desired["docs/README.md"] = DOCS_INDEX
+        desired["docs/README.md"] = _docs_index(core_documents)
+    if (
+        core_documents["project"] == "docs/project.md"
+        and not (repo / "docs/project.md").exists()
+    ):
+        desired["docs/project.md"] = PROJECT_DOC
+    if (
+        core_documents["architecture"] == "docs/architecture.md"
+        and not (repo / "docs/architecture.md").exists()
+    ):
+        desired["docs/architecture.md"] = ARCHITECTURE_DOC
     if not (repo / "docs/governance/document-lifecycle.md").exists():
         desired["docs/governance/document-lifecycle.md"] = DOCUMENT_POLICY
 
@@ -459,9 +604,11 @@ def _desired_seed_files(
         indexed_paths = {str(entry["path"]) for entry in entries}
         for path in (
             "docs/README.md",
+            "docs/project.md",
+            "docs/architecture.md",
             "docs/governance/document-lifecycle.md",
         ):
-            if path in indexed_paths:
+            if path in indexed_paths or not (repo / path).is_file():
                 continue
             target = safe_target(repo, path)
             entries.append(
@@ -504,6 +651,8 @@ def _desired_seed_files(
             "AGENTS.md",
             ".gitignore",
             "docs/README.md",
+            "docs/project.md",
+            "docs/architecture.md",
             "docs/governance/document-lifecycle.md",
         }
         seen_paths: set[str] = set()
@@ -528,6 +677,8 @@ def _desired_seed_files(
             }
         for path in (
             "docs/README.md",
+            "docs/project.md",
+            "docs/architecture.md",
             "docs/governance/document-lifecycle.md",
         ):
             if path in desired:
@@ -540,10 +691,7 @@ def _desired_seed_files(
             elif path not in entries_by_path:
                 target = safe_target(repo, path)
                 if not target.is_file():
-                    raise MaestroError(
-                        "STATE_INCOMPLETE",
-                        f"Required documentation path is missing: {path}",
-                    )
+                    continue
                 entries_by_path[path] = {
                     "path": path,
                     "ownership": "user_owned",
@@ -680,12 +828,36 @@ def build_init_plan(repo_path: str | Path) -> dict[str, Any]:
     return base
 
 
-def apply_plan(plan_path: str | Path, repo_override: str | Path | None = None) -> dict[str, Any]:
+def build_upgrade_plan(repo_path: str | Path) -> dict[str, Any]:
+    plan = build_init_plan(repo_path)
+    plan["command"] = "upgrade"
+    unsigned = {
+        key: value
+        for key, value in plan.items()
+        if key not in {"plan_id", "plan_digest"}
+    }
+    digest = sha256_text(canonical_json(unsigned))
+    plan["plan_id"] = digest[:20]
+    plan["plan_digest"] = digest
+    return plan
+
+
+def apply_plan(
+    plan_path: str | Path,
+    repo_override: str | Path | None = None,
+    *,
+    expected_command: str = "init",
+) -> dict[str, Any]:
     plan = read_json(Path(plan_path))
     if plan.get("schema_version") != "maestro_operation_plan_v1":
         raise MaestroError("PLAN_INVALID", "Unsupported plan schema")
-    if plan.get("command") != "init":
-        raise MaestroError("PLAN_INVALID", "Only init plans can be applied by maestro init")
+    if expected_command not in {"init", "upgrade"}:
+        raise MaestroError("PLAN_INVALID", "Unsupported plan application command")
+    if plan.get("command") != expected_command:
+        raise MaestroError(
+            "PLAN_INVALID",
+            f"Plan belongs to maestro {plan.get('command')}, not maestro {expected_command}",
+        )
     expected = dict(plan)
     supplied_digest = expected.pop("plan_digest", None)
     expected.pop("plan_id", None)
@@ -739,7 +911,11 @@ def apply_plan(plan_path: str | Path, repo_override: str | Path | None = None) -
             raise MaestroError("PLAN_TAMPERED", f"Content hash mismatch: {relative_path}", exit_code=3)
         originals[target] = target.read_bytes() if target.exists() else None
 
-    fresh_plan = build_init_plan(repo)
+    fresh_plan = (
+        build_upgrade_plan(repo)
+        if expected_command == "upgrade"
+        else build_init_plan(repo)
+    )
     if plan != fresh_plan:
         raise MaestroError(
             "PLAN_STALE",
@@ -787,7 +963,7 @@ def apply_plan(plan_path: str | Path, repo_override: str | Path | None = None) -
 
     return {
         "schema_version": "maestro_command_result_v1",
-        "command": "init",
+        "command": expected_command,
         "status": "applied",
         "repo_root": str(repo),
         "plan_id": plan.get("plan_id"),

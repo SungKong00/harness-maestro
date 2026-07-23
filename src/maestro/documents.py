@@ -8,7 +8,7 @@ from typing import Any
 
 from .errors import MaestroError
 from .registry import route_goal
-from .util import ensure_repo
+from .util import ensure_repo, read_json, safe_target
 
 TOKEN_PATTERN = re.compile(r"[\w가-힣-]+", re.UNICODE)
 MAX_SELECTED_DOCUMENTS = 8
@@ -341,8 +341,81 @@ def _contains(search_text: str, token: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", search_text) is not None
 
 
+def _custom_adapter_handoff(
+    repo: Path,
+    task: str,
+    lenses: list[str],
+) -> dict[str, Any] | None:
+    project_path = safe_target(repo, ".maestro/project.json")
+    if not project_path.is_file():
+        return None
+    project = read_json(project_path)
+    documentation = project.get("documentation")
+    if not isinstance(documentation, dict) or documentation.get("provider") != "custom":
+        return None
+    adapter = documentation.get("custom_adapter")
+    if not isinstance(adapter, dict):
+        raise MaestroError(
+            "CUSTOM_ADAPTER_INVALID",
+            "Custom documentation provider requires custom_adapter metadata.",
+        )
+    adapter_id = adapter.get("id")
+    instructions_path = adapter.get("instructions_path")
+    if (
+        set(adapter) != {"id", "instructions_path"}
+        or not isinstance(adapter_id, str)
+        or not adapter_id.strip()
+        or not isinstance(instructions_path, str)
+        or not instructions_path.strip()
+    ):
+        raise MaestroError(
+            "CUSTOM_ADAPTER_INVALID",
+            "Custom Adapter id and instructions_path must be non-empty.",
+        )
+    target = safe_target(repo, instructions_path)
+    if target.is_symlink() or not target.is_file():
+        raise MaestroError(
+            "CUSTOM_ADAPTER_MISSING",
+            f"Custom Adapter instructions are missing or unsafe: {instructions_path}",
+        )
+    return {
+        "schema_version": "maestro_docs_selection_v1",
+        "repo_root": str(repo),
+        "task": task,
+        "requested_lenses": lenses,
+        "inferred_lenses": [],
+        "documents": [],
+        "selected_conventions": [],
+        "convention_status": "adapter_required",
+        "archive_included": False,
+        "excluded_summary": {
+            "archive_documents": 0,
+            "archive_count_complete": False,
+            "inactive_documents_not_loaded": True,
+        },
+        "evidence_status": "custom_adapter_required",
+        "custom_adapter": {
+            "id": adapter_id,
+            "instructions_path": instructions_path,
+            "output_contract": "maestro_docs_selection_v1",
+        },
+        "selection_trace": {
+            "provider": "custom",
+            "core_execution": "not_performed",
+            "full_document_bodies_returned": 0,
+        },
+        "missing_evidence": [
+            "Follow the repository-local Adapter instructions and return the standard document selection contract."
+        ],
+        "writes_performed": False,
+    }
+
+
 def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
+    custom_handoff = _custom_adapter_handoff(repo, task, lenses)
+    if custom_handoff is not None:
+        return custom_handoff
     task_tokens = {
         token.casefold()
         for token in TOKEN_PATTERN.findall(task)
@@ -465,6 +538,7 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
             "per_file_byte_limit": scan_trace["per_file_byte_limit"],
         },
         "missing_evidence": missing_evidence,
+        "writes_performed": False,
     }
 
 

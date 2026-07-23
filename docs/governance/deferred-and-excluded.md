@@ -27,7 +27,7 @@ sensitivity: internal
 | 다수결·합의율 완료 판정 | excluded | 같은 모델·같은 정보의 상관 오류를 여러 표로 셈 | 외부 oracle을 우선하는 명시적 평가 계약 |
 | Lens마다 agent 한 명 자동 생성 | excluded | Lens는 검토 기준이지 실행 주체가 아니며 Standard 작업 비용이 불필요하게 증가 | 고유 corpus/context 격리가 품질을 바꾼다는 Pilot |
 | 동적 “부서”와 빈 specialist 자리 | excluded | 사용 근거 없이 조직과 prompt 표면만 늘어남 | 반복 task와 독립 rubric이 있는 실제 pack |
-| 실행 중 Skill·Agent·Convention 자동 수정·삭제 | excluded | 현재 작업의 bias가 곧 정책이 되고 rollback·감사가 불가능 | 격리 candidate, frozen eval, 사람 승인, version rollback |
+| 실행 중 전역 Skill·Agent·Lens·Executor·Adapter 자동 수정·삭제 | excluded | 현재 작업의 bias가 곧 여러 프로젝트 정책이 되고 rollback·감사가 불가능 | 격리 candidate, frozen eval, 사람 승인, version rollback |
 | 기록 개수만으로 자동 승격 | excluded | 반복된 동일 오류나 오염 로그도 횟수는 많을 수 있음 | project/checkout/version namespace와 품질·비용 비교 |
 | 실행마다 Markdown 보고서와 대화 전문 저장 | excluded | 검색 잡음, 중복, 민감 정보와 재로딩 token을 늘림 | 법적·감사상 필요한 최소 artifact의 별도 보존 정책 |
 | logging·Swagger 상주 writer agent | excluded | 대부분 schema/linter/conformance test로 더 싸고 재현 가능 | specialist 고유 finding이 반복되는 bounded Pilot |
@@ -63,6 +63,7 @@ sensitivity: internal
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
 | research wave 자동 운영 | deferred | 출처 lane 분해와 artifact schema가 아직 runtime에 없음 | 최대 3 lane, stop rule, claim provenance, 합성 forward test |
 | Packet 의미·참조 validator와 전체 계약 catalog | deferred | v0의 Finding·Review·Research schema는 구조 중심이고, 일부 Executor 입출력 이름은 아직 비강제 계약임 | Lens/Executor ID 참조, source ref, tier 채택 규칙과 모든 packet conformance test |
+| Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
 
 ## 의도적으로 유지한 제한
 

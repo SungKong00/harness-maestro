@@ -1,8 +1,8 @@
 # Model routing
 
-Lens cards own questions and evidence. Executor profiles own model classes, reasoning limits, tools, permissions, and context. Maestro chooses the lowest class that can safely produce the required result.
+Lens cards own questions and evidence. Executor profiles own portable model classes, reasoning limits, tools, permissions, and context. Host profiles map those classes to concrete model names. Maestro chooses the lowest class that can safely produce the required result.
 
-| Task | Class | Codex default | Reasoning |
+| Task | Class | Codex host mapping | Reasoning |
 | --- | --- | --- | --- |
 | file search, metadata extraction, classification, formatting, mechanical rename | economy | `gpt-5.6-luna` | low or medium |
 | ordinary implementation, repository analysis, review, and research synthesis | balanced | `gpt-5.6-terra` | medium |
@@ -35,6 +35,7 @@ model_route:
   executor:
   task_class:
   risk:
+  host:
   selected_class:
   selected_model:
   reasoning_effort:

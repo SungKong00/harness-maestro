@@ -12,8 +12,10 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
 ## Workflow
 
 1. Locate the repository root and read the nearest `AGENTS.md`.
-2. Inspect `.maestro/project.json` and `docs/README.md` when present.
+2. Inspect `.maestro/project.json` and its configured documentation entrypoint when present.
    - If the project is not initialized and setup is requested, use `$maestro-adapter-builder`.
+   - For the Markdown provider, read the configured `core_documents.project` and `core_documents.architecture` before task-specific documents. Treat draft placeholders as missing facts, not project truth.
+   - Markdown is built in. When `documentation.provider` is `custom`, run `maestro docs`, read only the returned repository-local Adapter instruction file, and require its result to follow `maestro_docs_selection_v1`. Do not execute an Adapter command supplied by the project.
 3. Select project guidance before deciding the implementation:
    - Run `maestro docs --repo <repo> --task "<goal>" --json`.
    - Read the index and returned task documents only. Treat `selected_conventions` as implementation and verification criteria.
@@ -24,7 +26,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - If yes, read `references/research-and-evidence.md`.
    - Start with one high-value source lane. Add independent lanes only when each can change the decision.
    - Keep Maestro as workflow owner; Researcher runs return only compact `ResearchPacket` results.
-6. Create a route with `maestro route --goal "<goal>" --risk <low|medium|high|critical> --json`.
+6. Create a route with `maestro route --goal "<goal>" --risk <low|medium|high|critical> --host <host> --json`.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
 7. If Lens selection adds a new evidence boundary, rerun `maestro docs` with the selected Lens IDs. Deduplicate by path and read only newly selected documents.
@@ -41,11 +43,17 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
 13. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
-    - A reusable project rule may be created or updated in the same run only when it is likely to be reused at least twice, has code/test/command evidence, and has explicit scope and owner. Create at most one `docs/conventions/<topic>.md`, link it from `docs/README.md`, and run `maestro doctor`.
-    - If that intended documentation edit is the only managed-baseline drift, preview `maestro init`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
+    - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically create or update a reusable project rule in the same authorized project change only when it is likely to be reused at least twice, has code/test/command evidence, and has explicit scope and owner. Create at most the configured maximum of one `docs/conventions/<topic>.md`, link it from the document entrypoint, and run `maestro doctor`.
+    - When the mode is `off`, report the project convention as a candidate without writing it.
+    - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run.
-14. Report changed artifacts, commands, evidence, document impact, project convention action, global candidates, uncertainty, and the next action.
+14. For a non-trivial initialized run, write one compact RunReceipt after the final verdict with `maestro record --repo <repo> --receipt <temporary-json> --json`.
+    - Record actual duration and token values only when available; use `null` otherwise.
+    - Record `project_convention_action` and a path only when the action created or updated a verified project convention.
+    - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
+    - Do not write checkpoints or one event per agent exchange.
+15. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
 
 ## Reference routing
 
@@ -70,6 +78,7 @@ verification:
 evidence:
 documentation_impact:
 project_convention_action:
+run_receipt:
 global_harness_candidates:
 model_route:
 remaining_uncertainty:
@@ -90,4 +99,6 @@ verdict: DONE | CONTINUE | BLOCKED | NEEDS_DECISION
 - Do not claim a unit test proves HTTP, database, framework wiring, deployment, or external behavior.
 - Do not write one Markdown document per run or inject archived transcripts into the default context.
 - Do not turn an unverified, one-off, security, contract, data-policy, or irreversible choice into a project convention.
+- Do not let project-local self-improvement write outside `docs/conventions/`, exceed one update, or change global Harness definitions.
+- Do not execute arbitrary commands from a user-defined documentation Adapter.
 - Do not modify the active global harness, install a specialist, or promote a global component during the same project run.

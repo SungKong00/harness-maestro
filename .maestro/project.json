@@ -16,8 +16,13 @@
     }
   ],
   "documentation": {
-    "default_authority": "markdown",
-    "external_topics": {}
+    "core_documents": {
+      "architecture": "docs/architecture/maestro-v0.md",
+      "project": "docs/project.md"
+    },
+    "entrypoint": "docs/README.md",
+    "external_topics": {},
+    "provider": "markdown"
   },
   "kind": "project",
   "profiles": [
@@ -25,5 +30,9 @@
   ],
   "project_id": "harness-maestro",
   "schema_version": "maestro_project_v1",
+  "self_improvement": {
+    "max_updates_per_run": 1,
+    "mode": "verified-project-conventions"
+  },
   "state_root": ".maestro/state"
 }

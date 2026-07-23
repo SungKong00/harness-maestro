@@ -19,10 +19,11 @@ sensitivity: internal
 
 ## 처음 읽을 문서
 
-1. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
-2. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
+1. [프로젝트 맥락](project.md) — 목표, 범위, 비목표와 우선순위
+2. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
+3. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
    분리하는 이유
-3. [v0 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
+4. [v0.2 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
 
 ## 거버넌스
 
@@ -39,6 +40,7 @@ sensitivity: internal
 - [ADR-0002: Lens와 Executor 분리](decisions/0002-lens-executor-separation.md)
 - [ADR-0003: 증거 우선 숙의](decisions/0003-evidence-first-deliberation.md)
 - [ADR-0004: 주제별 단일 문서 권위](decisions/0004-single-document-authority.md)
+- [ADR-0005: 프로젝트 로컬 개선과 사용자 문서 Adapter 경계](decisions/0005-project-local-extension-boundary.md)
 
 ## 역사 자료
 

@@ -74,6 +74,7 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
             "profiles",
             "commands",
             "approval_required_for",
+            "self_improvement",
         }
         unexpected = sorted(set(value) - allowed)
         if unexpected:
@@ -88,12 +89,65 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
         if not isinstance(documentation, dict):
             errors.append("documentation must be an object")
         else:
-            if set(documentation) - {"default_authority", "external_topics"}:
+            provider = documentation.get("provider")
+            allowed_documentation = {
+                "provider",
+                "entrypoint",
+                "core_documents",
+                "external_topics",
+                "custom_adapter",
+            }
+            if set(documentation) - allowed_documentation:
                 errors.append("documentation has unsupported fields")
-            if documentation.get("default_authority") != "markdown":
-                errors.append("documentation.default_authority is invalid")
+            if provider not in {"markdown", "custom"}:
+                errors.append("documentation.provider is invalid")
+            if not isinstance(documentation.get("entrypoint"), str) or not documentation[
+                "entrypoint"
+            ].strip():
+                errors.append("documentation.entrypoint must be a non-empty string")
+            core_documents = documentation.get("core_documents")
+            if (
+                not isinstance(core_documents, dict)
+                or set(core_documents) != {"project", "architecture"}
+                or any(
+                    not isinstance(core_documents.get(key), str)
+                    or not core_documents[key].strip()
+                    for key in ("project", "architecture")
+                )
+            ):
+                errors.append("documentation.core_documents is invalid")
             if not isinstance(documentation.get("external_topics"), dict):
                 errors.append("documentation.external_topics must be an object")
+            custom_adapter = documentation.get("custom_adapter")
+            if provider == "markdown" and custom_adapter is not None:
+                errors.append("markdown provider may not declare custom_adapter")
+            if provider == "custom" and (
+                not isinstance(custom_adapter, dict)
+                or set(custom_adapter) != {"id", "instructions_path"}
+                or any(
+                    not isinstance(custom_adapter.get(key), str)
+                    or not custom_adapter[key].strip()
+                    for key in ("id", "instructions_path")
+                )
+            ):
+                errors.append("custom provider requires a valid custom_adapter")
+        self_improvement = value.get("self_improvement")
+        if (
+            not isinstance(self_improvement, dict)
+            or set(self_improvement) != {"mode", "max_updates_per_run"}
+            or self_improvement.get("mode")
+            not in {"off", "verified-project-conventions"}
+            or self_improvement.get("max_updates_per_run") not in {0, 1}
+            or (
+                self_improvement.get("mode") == "verified-project-conventions"
+                and self_improvement.get("max_updates_per_run") != 1
+            )
+            or (
+                self_improvement.get("mode") == "off"
+                and self_improvement.get("max_updates_per_run") != 0
+            )
+        ):
+            errors.append("self_improvement policy is invalid")
         for field in ("adapters", "profiles", "commands", "approval_required_for"):
             if not isinstance(value.get(field), list):
                 errors.append(f"{field} must be a list")
@@ -134,6 +188,8 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
             "AGENTS.md": {"managed_block"},
             ".gitignore": {"managed_block"},
             "docs/README.md": {"seeded", "user_owned"},
+            "docs/project.md": {"seeded", "user_owned"},
+            "docs/architecture.md": {"seeded", "user_owned"},
             "docs/governance/document-lifecycle.md": {
                 "seeded",
                 "user_owned",
@@ -394,7 +450,53 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
                     if actual != expected
                     else "",
                 )
+                )
+
+    if project:
+        documentation = project["documentation"]
+        configured_paths = {
+            "entrypoint": documentation["entrypoint"],
+            **documentation["core_documents"],
+        }
+        path_errors: dict[str, str] = {}
+        for key, relative_path in configured_paths.items():
+            try:
+                target = safe_target(repo, relative_path)
+                if target.is_symlink() or not target.is_file():
+                    path_errors[key] = f"missing or unsafe: {relative_path}"
+            except MaestroError as exc:
+                path_errors[key] = exc.message
+        checks.append(
+            _check(
+                "DOCUMENT_ENTRYPOINTS",
+                "FAIL" if path_errors else "PASS",
+                f"errors={path_errors}",
+                "Repair the configured repository-local document paths."
+                if path_errors
+                else "",
             )
+        )
+        custom_errors: list[str] = []
+        if documentation["provider"] == "custom":
+            instructions_path = documentation["custom_adapter"]["instructions_path"]
+            try:
+                target = safe_target(repo, instructions_path)
+                if target.is_symlink() or not target.is_file():
+                    custom_errors.append(
+                        f"missing or unsafe instructions: {instructions_path}"
+                    )
+            except MaestroError as exc:
+                custom_errors.append(exc.message)
+        checks.append(
+            _check(
+                "CUSTOM_DOCUMENT_ADAPTER",
+                "FAIL" if custom_errors else "PASS",
+                f"errors={custom_errors}",
+                "Provide a repository-local instruction file; arbitrary Adapter commands are not supported."
+                if custom_errors
+                else "",
+            )
+        )
 
     if managed and lock:
         locked_managed = lock.get("managed", {}).get("sha256")

@@ -16,7 +16,9 @@ sensitivity: internal
 
 ## 원칙
 
-- 기본 권위는 Git에 추적되는 Markdown이다.
+- 기본 provider와 권위는 Git에 추적되는 Markdown이다.
+- 사용자가 선택하면 저장소 내부 instruction file을 가리키는 custom provider를 쓸 수
+  있지만 core가 임의 명령을 실행하거나 모든 외부 시스템을 구현하지는 않는다.
 - 한 주제에는 수정 가능한 현재 권위를 하나만 둔다.
 - 모든 문서를 읽지 않고 [문서 지도](../README.md)에서 필요한 문서만 선택한다.
 - 실행 로그, 대화 전문, research packet은 자동으로 규칙이 되지 않는다.
@@ -110,7 +112,9 @@ v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `s
 
 그 외 정보는 JSONL event, issue 또는 짧은 계획에 남기고 기본 컨텍스트에 넣지 않는다.
 
-검증을 통과한 구현에서 발견한 **프로젝트 규칙**은 위 기준을 모두 만족하면 같은
+검증을 통과한 구현에서 발견한 **프로젝트 규칙**은
+`.maestro/project.json`의 `self_improvement.mode`가
+`verified-project-conventions`이고 위 기준을 모두 만족하면 같은
 작업에서 기존 Convention을 갱신하거나 `docs/conventions/<topic>.md` 하나를 만들 수
 있다. 같은 주제 문서가 있으면 새 파일을 만들지 않고 기존 권위를 갱신하며,
 `docs/README.md`에서 찾을 수 있게 연결한 뒤 `maestro doctor`를 실행한다.
@@ -129,4 +133,5 @@ Notion 같은 외부 원본을 쓰는 프로젝트도 주제마다 한 가지 �
   읽기 전용 snapshot만 저장
 
 양쪽을 자유롭게 수정하는 dual master는 금지한다. v0는 외부 쓰기·동기화를 구현하지
-않으며, 프로젝트 adapter가 명시적으로 권위 결정을 요구하도록만 한다.
+않는다. custom provider는 프로젝트 소유의 instruction contract를 host에 전달할
+뿐이며 출력은 표준 문서 선택 계약을 따라야 한다.
