@@ -22,6 +22,27 @@
     "command_artifact_ref"
   ],
   "properties": {
+    "kind": {
+      "enum": [
+        "review_finding",
+        "verification_failure",
+        "correction",
+        "run_summary"
+      ],
+      "default": "run_summary"
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "finding_severity": {
+      "enum": [
+        "medium",
+        "high",
+        "critical",
+        null
+      ]
+    },
     "run_id": {
       "type": "string",
       "minLength": 1
@@ -153,6 +174,15 @@
         "needs_decision"
       ]
     },
+    "project_convention_basis": {
+      "enum": [
+        "none",
+        "same_run_candidate",
+        "owner_decision",
+        "held_out_evaluation"
+      ],
+      "default": "none"
+    },
     "project_convention_path": {
       "type": [
         "string",
@@ -160,5 +190,124 @@
       ],
       "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "project_convention_action": {
+            "enum": [
+              "created",
+              "updated"
+            ]
+          }
+        },
+        "required": [
+          "project_convention_action"
+        ]
+      },
+      "then": {
+        "required": [
+          "project_convention_basis",
+          "project_convention_path"
+        ],
+        "properties": {
+          "project_convention_basis": {
+            "enum": [
+              "owner_decision",
+              "held_out_evaluation"
+            ]
+          },
+          "verifier_result": {
+            "const": "passed"
+          },
+          "command_artifact_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "project_convention_action": {
+            "enum": [
+              "candidate",
+              "needs_decision"
+            ]
+          }
+        },
+        "required": [
+          "project_convention_action"
+        ]
+      },
+      "then": {
+        "required": [
+          "project_convention_basis"
+        ],
+        "properties": {
+          "project_convention_basis": {
+            "const": "same_run_candidate"
+          },
+          "project_convention_path": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "review_finding",
+              "verification_failure",
+              "correction"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "fingerprint",
+          "finding_severity"
+        ],
+        "properties": {
+          "finding_severity": {
+            "enum": [
+              "medium",
+              "high",
+              "critical"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "const": "run_summary"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "finding_severity": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
 }

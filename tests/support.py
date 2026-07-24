@@ -134,4 +134,7 @@ def event(
             if command_artifact_ref is not None
             else f"artifact:command:{run_id}"
         ),
+        "project_convention_action": "none",
+        "project_convention_basis": "none",
+        "project_convention_path": None,
     }

@@ -17,8 +17,8 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - For the Markdown provider, read the configured `core_documents.project` and `core_documents.architecture` before task-specific documents. Treat draft placeholders as missing facts, not project truth.
    - Markdown is built in. When `documentation.provider` is `custom`, run `maestro docs`, read only the returned repository-local Adapter instruction file, and require its result to follow `maestro_docs_selection_v1`. Do not execute an Adapter command supplied by the project.
 3. Select project guidance before deciding the implementation:
-   - Run `maestro docs --repo <repo> --task "<goal>" --json`.
-   - Read the index and returned task documents only. Treat `selected_conventions` as implementation and verification criteria.
+   - Run `maestro docs --repo <repo> --task "<goal>" --path <planned-or-changed-path> --json`. Repeat `--path` when paths are known; omit it during the first pass when they are not.
+   - Read the index and returned task documents only. Deduplicate paths already read as an entrypoint or core document. Treat `selected_conventions` as implementation and verification criteria.
    - If `convention_status` is `none`, continue from current code patterns and reproducible project evidence; absence of a convention is not a blocker.
 4. Define the outcome, verification, boundaries, risk, and stop condition before non-trivial work.
    - If the user explicitly names another installed Skill, such as `$reference-research-team`, `$orchestrated-work-session`, or a frontend Skill, use it at the relevant step while Maestro remains workflow owner. Do not search every installed Skill, create a resolver, or copy external Skill content into this repository.
@@ -43,14 +43,18 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
 13. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
-    - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically create or update a reusable project rule in the same authorized project change only when it is likely to be reused at least twice, has code/test/command evidence, and has explicit scope and owner. Create at most the configured maximum of one `docs/conventions/<topic>.md`, link it from the document entrypoint, and run `maestro doctor`.
-    - When the mode is `off`, report the project convention as a candidate without writing it.
+    - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
+    - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically report a reusable behavioral or architecture rule as a `candidate` with a stable fingerprint and bounded evidence. Do not create or update an active Convention from same-run implementation success.
+    - Create or update at most one `docs/conventions/<topic>.md` only when the user explicitly decided the rule (`owner_decision`) or a previously frozen, held-out comparison was accepted (`held_out_evaluation`). Link it from the document entrypoint and run `maestro doctor`.
+    - When the mode is `off`, mention the possible rule in the final report without writing a Convention or governance candidate.
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run.
 14. For a non-trivial initialized run, write one compact RunReceipt after the final verdict with `maestro record --repo <repo> --receipt <temporary-json> --json`.
     - Record actual duration and token values only when available; use `null` otherwise.
-    - Record `project_convention_action` and a path only when the action created or updated a verified project convention.
+    - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
+    - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
+    - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.
     - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
     - Do not write checkpoints or one event per agent exchange.
 15. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
@@ -99,6 +103,6 @@ verdict: DONE | CONTINUE | BLOCKED | NEEDS_DECISION
 - Do not claim a unit test proves HTTP, database, framework wiring, deployment, or external behavior.
 - Do not write one Markdown document per run or inject archived transcripts into the default context.
 - Do not turn an unverified, one-off, security, contract, data-policy, or irreversible choice into a project convention.
-- Do not let project-local self-improvement write outside `docs/conventions/`, exceed one update, or change global Harness definitions.
+- Do not let same-run evidence activate a Convention. Approved project-local Convention writes stay inside `docs/conventions/`, never exceed one update, and never change global Harness definitions.
 - Do not execute arbitrary commands from a user-defined documentation Adapter.
 - Do not modify the active global harness, install a specialist, or promote a global component during the same project run.

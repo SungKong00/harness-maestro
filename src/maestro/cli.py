@@ -60,6 +60,12 @@ def parser() -> argparse.ArgumentParser:
     docs.add_argument("--repo", default=".")
     docs.add_argument("--task", default="")
     docs.add_argument("--lens", action="append", default=[])
+    docs.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="Repository-relative planned or changed path; repeat as needed",
+    )
     docs.add_argument("--json", action="store_true")
 
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
@@ -132,7 +138,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
             return 0
         if args.command == "docs":
-            result = select_documents(args.repo, args.task, args.lens)
+            result = select_documents(
+                args.repo,
+                args.task,
+                args.lens,
+                args.path,
+            )
             _emit(result, args.json)
             return 0
         if args.command == "route":

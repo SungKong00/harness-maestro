@@ -110,6 +110,177 @@ class DocumentSelectionTests(unittest.TestCase):
             self.assertEqual([], result["selected_conventions"])
             self.assertEqual("none", result["convention_status"])
 
+    def test_login_does_not_select_logging_documents_by_substring(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            logging = repo / "docs/conventions/logging.md"
+            logging.parent.mkdir(parents=True)
+            logging.write_text(
+                canonical_document(
+                    "logging-convention",
+                    summary="로그 보존 및 운영 규칙.",
+                    body="# 로그\n\n로그는 민감정보를 제외하고 보존한다.\n",
+                ),
+                encoding="utf-8",
+            )
+
+            result = select_documents(repo, "로그인 실패 메시지 문구 수정", [])
+
+            self.assertNotIn(
+                "docs/conventions/logging.md",
+                [item["path"] for item in result["documents"]],
+            )
+            self.assertNotIn(
+                "rollback-observability",
+                result["inferred_lenses"],
+            )
+            self.assertEqual(
+                ["docs/README.md"],
+                [item["path"] for item in result["documents"]],
+            )
+            self.assertGreater(
+                result["selection_trace"]["selected_document_bytes"],
+                0,
+            )
+
+    def test_korean_case_markers_select_the_relevant_document(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/authentication.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                canonical_document(
+                    "authentication",
+                    summary="인증 규칙.",
+                    body="# 인증\n\n인증 경계를 검증한다.\n",
+                ),
+                encoding="utf-8",
+            )
+
+            result = select_documents(repo, "인증을 수정해줘", [])
+
+            self.assertIn(
+                "docs/conventions/authentication.md",
+                result["selected_conventions"],
+            )
+
+    def test_convention_path_scope_filters_unrelated_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            conventions = repo / "docs/conventions"
+            conventions.mkdir(parents=True)
+            template = canonical_document(
+                "api-auth",
+                summary="Authentication rules.",
+                body="# Authentication\n\nValidate authentication.\n",
+            ).replace(
+                "summary: Authentication rules.",
+                "summary: Authentication rules.\nscope: [path:src/api/**]",
+            )
+            (conventions / "api-auth.md").write_text(
+                template,
+                encoding="utf-8",
+            )
+
+            selected = select_documents(
+                repo,
+                "authentication change",
+                [],
+                ["src/api/login.py"],
+            )
+            excluded = select_documents(
+                repo,
+                "authentication change",
+                [],
+                ["src/ui/login.tsx"],
+            )
+
+            self.assertIn(
+                "docs/conventions/api-auth.md",
+                selected["selected_conventions"],
+            )
+            self.assertNotIn(
+                "docs/conventions/api-auth.md",
+                excluded["selected_conventions"],
+            )
+            self.assertIn(
+                "path scope: src/api/**",
+                next(
+                    item["reason"]
+                    for item in selected["documents"]
+                    if item["path"] == "docs/conventions/api-auth.md"
+                ),
+            )
+
+    def test_selected_documents_respect_the_context_byte_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            conventions = repo / "docs/conventions"
+            conventions.mkdir(parents=True)
+            for index in range(3):
+                (conventions / f"budget-{index}.md").write_text(
+                    canonical_document(
+                        f"budget-{index}",
+                        summary="Budget token guidance.",
+                        body="# Budget\n\n" + ("budget token " * 30),
+                    ),
+                    encoding="utf-8",
+                )
+
+            index_bytes = (repo / "docs/README.md").stat().st_size
+            with patch(
+                "maestro.documents.MAX_SELECTED_DOCUMENT_BYTES",
+                index_bytes + 500,
+            ):
+                result = select_documents(repo, "budget token", [])
+
+            trace = result["selection_trace"]
+            self.assertLessEqual(
+                trace["selected_document_bytes"],
+                trace["selection_byte_budget"],
+            )
+            self.assertTrue(trace["selection_budget_truncated"])
+            self.assertTrue(trace["budget_skipped_documents"])
+
+    def test_target_paths_must_be_repository_relative(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            with self.assertRaises(MaestroError) as raised:
+                select_documents(repo, "change API", [], ["../outside.py"])
+
+            self.assertEqual("TARGET_PATH_INVALID", raised.exception.code)
+
+    def test_deterministic_verification_reads_only_the_document_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            result = select_documents(
+                repo,
+                "Run the unit tests and lint command",
+                [],
+            )
+
+            self.assertTrue(
+                result["selection_trace"]["deterministic_verification"],
+            )
+            self.assertEqual(
+                ["docs/README.md"],
+                [item["path"] for item in result["documents"]],
+            )
+
     def test_only_task_relevant_conventions_are_selected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

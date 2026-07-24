@@ -203,7 +203,7 @@ tags: [documentation, governance, lifecycle]
 
 Keep operational events in JSONL under the configured state root. Promote content to Markdown only when it is reusable, evidence-backed, owned, and not already represented by an active document.
 
-A verified project convention may be created or updated automatically in the same authorized implementation run only when `.maestro/project.json` enables `verified-project-conventions`. The change must be reusable, supported by code, test, or command evidence, and limited to one convention per run. Prefer updating an existing topic. Security policy, external contracts, data policy, irreversible decisions, and global Harness components require a separate decision or candidate review.
+When `.maestro/project.json` enables `verified-project-conventions`, a reusable project rule may be recorded automatically as a candidate. Same-run implementation success does not activate it. Create or update at most one active Convention only after an explicit owner decision or an accepted held-out evaluation. Security policy, external contracts, data policy, irreversible decisions, and global Harness components require a separate decision or candidate review.
 
 One topic has one authority. Markdown is the built-in provider. A project may instead name a repository-local custom Adapter instruction file; Maestro validates the pointer but does not execute arbitrary Adapter commands or implement every external system. If Notion or another external source is authoritative for an explicit topic, repository Markdown is a read-only snapshot with revision and digest metadata, not a second editable master.
 

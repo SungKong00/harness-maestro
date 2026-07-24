@@ -232,6 +232,80 @@ class RoutingContractTests(unittest.TestCase):
                 route = route_goal(goal, "medium")
                 self.assertNotIn(forbidden_lens, route["selected_lenses"])
 
+    def test_korean_triggers_do_not_match_longer_unrelated_words(self) -> None:
+        login = route_goal("로그인 실패 메시지 문구 수정", "medium")
+        logging = route_goal("로그 보존 정책 수정", "medium")
+        privacy = route_goal("개인정보 보존 정책 변경", "critical")
+
+        self.assertNotIn(
+            "rollback-observability",
+            login["selected_lenses"],
+        )
+        self.assertIn(
+            "rollback-observability",
+            logging["selected_lenses"],
+        )
+        self.assertIn("data-integrity", privacy["selected_lenses"])
+
+    def test_korean_case_markers_preserve_lens_recall(self) -> None:
+        cases = (
+            ("로그를 개선해줘", "rollback-observability"),
+            ("인증을 검토해줘", "auth-boundary"),
+            ("권한을 변경해줘", "auth-boundary"),
+            ("데이터를 마이그레이션해줘", "data-integrity"),
+            ("테스트를 추가해줘", "test-proof"),
+        )
+
+        for goal, expected_lens in cases:
+            with self.subTest(goal=goal):
+                self.assertIn(
+                    expected_lens,
+                    route_goal(goal, "medium")["selected_lenses"],
+                )
+
+    def test_review_route_declares_compact_writer_handoff(self) -> None:
+        route = route_goal(
+            "Review authorization behavior",
+            "medium",
+            ["auth-boundary"],
+        )
+
+        self.assertEqual(
+            {
+                "from_executor": "lens-reviewer",
+                "to_executor": "implementation-engineer",
+                "packet": "FindingPacket",
+                "required_runtime_inputs": [
+                    "objective",
+                    "completion_contract",
+                    "authorized_paths_or_interfaces",
+                    "selected_convention_digests",
+                    "stop_condition",
+                ],
+                "include": [
+                    "findings",
+                    "evidence_refs",
+                    "recommended_action",
+                    "open_questions",
+                ],
+                "exclude": [
+                    "messages",
+                    "hidden_reasoning",
+                    "full_transcript",
+                    "file_bodies",
+                ],
+                "fresh_artifact_read_required": True,
+            },
+            route["handoff_contract"],
+        )
+        implementation = next(
+            item
+            for item in load_registry()["executors"]
+            if item["executor_id"] == "implementation-engineer"
+        )
+        self.assertIn("FindingPacket", implementation["accepts"])
+        self.assertNotIn("DesignEnvelope", implementation["accepts"])
+
     def test_full_idempotency_and_deployment_variants_still_route(self) -> None:
         idempotency = route_goal(
             "Implement idempotency for payment retries",
@@ -360,13 +434,17 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("frontier", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
 
-    def test_critical_risk_uses_frontier_without_a_matching_lens(self) -> None:
+    def test_critical_risk_uses_one_reversibility_fallback_lens(self) -> None:
         route = route_goal(
             "Delete the production search index after approval",
             "critical",
         )
 
-        self.assertEqual([], route["selected_lenses"])
+        self.assertEqual(["delivery-feasibility"], route["selected_lenses"])
+        self.assertEqual(
+            ["critical-risk-fallback"],
+            route["selection_reasons"]["delivery-feasibility"],
+        )
         self.assertEqual("frontier", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
 
@@ -509,9 +587,10 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("selected_conventions", text)
         self.assertIn("convention_status", text)
         self.assertIn("self_improvement", text)
-        self.assertIn("maximum of one `docs/conventions/<topic>.md`", text)
-        self.assertIn("automatically create or update", text)
-        self.assertIn("Do not let project-local self-improvement write outside", text)
+        self.assertIn("at most one `docs/conventions/<topic>.md`", text)
+        self.assertIn("automatically report", text)
+        self.assertIn("Do not create or update an active Convention", text)
+        self.assertIn("Do not let same-run evidence activate a Convention", text)
         self.assertIn("global_harness_candidates", text)
         self.assertIn("maestro record", text)
         self.assertIn("`NEEDS_DECISION` instead of convention-writing", text)

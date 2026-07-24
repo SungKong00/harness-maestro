@@ -6,6 +6,7 @@ from importlib import resources
 from typing import Any, Iterable
 
 from .errors import MaestroError
+from .matching import searchable_terms, term_matches
 from .util import canonical_json, sha256_text
 
 LENS_FORBIDDEN = {"model", "models", "tools", "permissions", "capabilities", "context_policy"}
@@ -667,22 +668,16 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
     return errors
 
 
-def _trigger_matches(trigger: str, folded_goal: str) -> bool:
-    folded_trigger = trigger.casefold()
-    if any(ord(character) > 127 for character in folded_trigger):
-        return folded_trigger in folded_goal
-    return (
-        re.search(
-            rf"(?<![a-z0-9]){re.escape(folded_trigger)}(?![a-z0-9])",
-            folded_goal,
-        )
-        is not None
-    )
+def _trigger_matches(
+    trigger: str,
+    goal_terms: frozenset[str] | set[str],
+) -> bool:
+    return term_matches(goal_terms, trigger)
 
 
 def _goal_has(goal: str, terms: Iterable[str]) -> bool:
-    folded = goal.casefold()
-    return any(_trigger_matches(term, folded) for term in terms)
+    goal_terms = searchable_terms(goal)
+    return any(_trigger_matches(term, goal_terms) for term in terms)
 
 
 def _classify_model_task(
@@ -974,6 +969,7 @@ def route_goal(
         for lens_id in department["candidate_lenses"]
     }
     preliminary_task_class = _classify_model_task(goal, risk, [])[0]
+    fallback_lens_ids: set[str] = set()
     if explicit_lenses:
         unknown = sorted(set(explicit_lenses) - set(all_lenses))
         if unknown:
@@ -988,14 +984,23 @@ def route_goal(
     elif preliminary_task_class == "deterministic-verification":
         selected = []
     else:
-        folded = goal.casefold()
+        goal_terms = searchable_terms(goal)
         ranked: list[tuple[int, int, str, dict[str, Any]]] = []
         for lens in lenses.values():
-            score = sum(1 for trigger in lens["triggers"] if _trigger_matches(trigger, folded))
+            score = sum(
+                1
+                for trigger in lens["triggers"]
+                if _trigger_matches(trigger, goal_terms)
+            )
             if score:
                 ranked.append((score, int(lens.get("priority", 0)), lens["lens_id"], lens))
         ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
         selected = [item[3] for item in ranked]
+        if not selected and risk == "critical":
+            fallback_lens_id = "delivery-feasibility"
+            if fallback_lens_id in lenses:
+                selected = [lenses[fallback_lens_id]]
+                fallback_lens_ids.add(fallback_lens_id)
 
     routing = department["routing"]
     if risk == "low":
@@ -1050,6 +1055,35 @@ def route_goal(
         executors[binding["executor"]],
         host_id,
     )
+    handoff_contract = (
+        {
+            "from_executor": "lens-reviewer",
+            "to_executor": "implementation-engineer",
+            "packet": "FindingPacket",
+            "required_runtime_inputs": [
+                "objective",
+                "completion_contract",
+                "authorized_paths_or_interfaces",
+                "selected_convention_digests",
+                "stop_condition",
+            ],
+            "include": [
+                "findings",
+                "evidence_refs",
+                "recommended_action",
+                "open_questions",
+            ],
+            "exclude": [
+                "messages",
+                "hidden_reasoning",
+                "full_transcript",
+                "file_bodies",
+            ],
+            "fresh_artifact_read_required": True,
+        }
+        if binding["executor"] == "lens-reviewer"
+        else None
+    )
 
     return {
         "schema_version": "maestro_route_v1",
@@ -1064,10 +1098,12 @@ def route_goal(
             item["lens_id"]: (
                 ["explicit"]
                 if explicit_lenses
+                else ["critical-risk-fallback"]
+                if item["lens_id"] in fallback_lens_ids
                 else [
                     trigger
                     for trigger in item["triggers"]
-                    if _trigger_matches(trigger, goal.casefold())
+                    if _trigger_matches(trigger, searchable_terms(goal))
                 ]
             )
             for item in selected
@@ -1080,6 +1116,7 @@ def route_goal(
             "load_all": False,
         },
         "binding": binding,
+        "handoff_contract": handoff_contract,
         "model_route": model_route,
         "deliberation": {
             "mode": deliberation,

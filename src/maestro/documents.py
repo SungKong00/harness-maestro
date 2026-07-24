@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from fnmatch import fnmatchcase
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from .errors import MaestroError
+from .matching import searchable_terms, term_matches
 from .registry import route_goal
 from .util import ensure_repo, read_json, safe_target
 
-TOKEN_PATTERN = re.compile(r"[\w가-힣-]+", re.UNICODE)
 MAX_SELECTED_DOCUMENTS = 8
+MAX_SELECTED_DOCUMENT_BYTES = 48 * 1024
 MAX_DOCUMENT_ENTRIES = 5_000
 MAX_DOCUMENT_FILE_BYTES = 1_000_000
 MAX_DOCUMENT_TOTAL_BYTES = 16_000_000
@@ -312,14 +315,17 @@ def active_documents(
             {
                 "path": relative,
                 "sha256": digest,
+                "bytes": document_bytes,
                 "metadata": metadata,
-                "path_text": relative.casefold(),
-                "metadata_text": " ".join(
-                    metadata[field]
-                    for field in SEARCHABLE_METADATA_FIELDS
-                    if field in metadata
-                ).casefold(),
-                "body_text": content[:12_000].casefold(),
+                "path_terms": searchable_terms(relative),
+                "metadata_terms": searchable_terms(
+                    " ".join(
+                        metadata[field]
+                        for field in SEARCHABLE_METADATA_FIELDS
+                        if field in metadata
+                    )
+                ),
+                "body_terms": searchable_terms(content[:12_000]),
             }
         )
     scan_trace["bytes_read"] = bytes_read
@@ -335,16 +341,65 @@ def active_documents(
     return documents
 
 
-def _contains(search_text: str, token: str) -> bool:
-    if any(ord(character) > 127 for character in token):
-        return token in search_text
-    return re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", search_text) is not None
+def _frontmatter_list(value: str | None) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        stripped = stripped[1:-1]
+    return [
+        item.strip().strip("\"'")
+        for item in stripped.split(",")
+        if item.strip().strip("\"'")
+    ]
+
+
+def _path_scopes(metadata: dict[str, str]) -> list[str]:
+    scopes: list[str] = []
+    for item in _frontmatter_list(metadata.get("scope")):
+        if item.startswith("path:"):
+            pattern = item.removeprefix("path:").strip()
+        elif any(marker in item for marker in ("/", "*", "?")):
+            pattern = item
+        else:
+            continue
+        if pattern:
+            scopes.append(pattern)
+    return scopes
+
+
+def _normalize_target_paths(target_paths: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw_path in target_paths:
+        candidate = raw_path.strip().replace("\\", "/")
+        parsed = PurePosixPath(candidate)
+        if (
+            not candidate
+            or parsed.is_absolute()
+            or ".." in parsed.parts
+            or candidate.startswith("./")
+        ):
+            raise MaestroError(
+                "TARGET_PATH_INVALID",
+                f"Target paths must be normalized repository-relative paths: {raw_path!r}",
+            )
+        normalized.append(parsed.as_posix())
+    return list(dict.fromkeys(normalized))
+
+
+def _scope_matches(target_path: str, scope: str) -> bool:
+    normalized_scope = scope.removeprefix("./")
+    if normalized_scope.endswith("/**"):
+        prefix = normalized_scope[:-3].rstrip("/")
+        return target_path == prefix or target_path.startswith(f"{prefix}/")
+    return fnmatchcase(target_path, normalized_scope)
 
 
 def _custom_adapter_handoff(
     repo: Path,
     task: str,
     lenses: list[str],
+    target_paths: list[str],
 ) -> dict[str, Any] | None:
     project_path = safe_target(repo, ".maestro/project.json")
     if not project_path.is_file():
@@ -382,6 +437,7 @@ def _custom_adapter_handoff(
         "schema_version": "maestro_docs_selection_v1",
         "repo_root": str(repo),
         "task": task,
+        "target_paths": target_paths,
         "requested_lenses": lenses,
         "inferred_lenses": [],
         "documents": [],
@@ -411,23 +467,44 @@ def _custom_adapter_handoff(
     }
 
 
-def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dict[str, Any]:
+def select_documents(
+    repo_path: str | Path,
+    task: str,
+    lenses: list[str],
+    target_paths: list[str] | None = None,
+) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
-    custom_handoff = _custom_adapter_handoff(repo, task, lenses)
+    normalized_target_paths = _normalize_target_paths(target_paths or [])
+    custom_handoff = _custom_adapter_handoff(
+        repo,
+        task,
+        lenses,
+        normalized_target_paths,
+    )
     if custom_handoff is not None:
         return custom_handoff
-    task_tokens = {
-        token.casefold()
-        for token in TOKEN_PATTERN.findall(task)
-        if len(token) > 1 and token.casefold() not in STOPWORDS
-    }
+    inferred_route = (
+        route_goal(task, "medium")
+        if not lenses and task.strip()
+        else None
+    )
+    deterministic_verification = (
+        inferred_route is not None
+        and inferred_route["model_route"]["task_class"]
+        == "deterministic-verification"
+    )
+    task_tokens = (
+        searchable_terms(task, STOPWORDS)
+        if not deterministic_verification
+        else frozenset()
+    )
     inferred_lenses = (
-        []
-        if lenses or not task.strip()
-        else route_goal(task, "medium")["selected_lenses"]
+        inferred_route["selected_lenses"]
+        if inferred_route is not None
+        else []
     )
     effective_lenses = list(dict.fromkeys([*lenses, *inferred_lenses]))
-    lens_tokens = {item.casefold() for item in effective_lenses}
+    lens_tokens = set(effective_lenses)
     selected_index: dict[str, Any] | None = None
     ranked: list[tuple[int, str, dict[str, Any]]] = []
     scan_trace: dict[str, Any] = {}
@@ -439,29 +516,61 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
                 "sha256": document["sha256"],
                 "reason": "project documentation index",
                 "score": 0,
+                "bytes": document["bytes"],
             }
             continue
 
         metadata_matches = sorted(
             token
             for token in task_tokens
-            if _contains(document["path_text"], token)
-            or _contains(document["metadata_text"], token)
+            if term_matches(document["path_terms"], token)
+            or term_matches(document["metadata_terms"], token)
         )
         body_matches = sorted(
             token
             for token in task_tokens - set(metadata_matches)
-            if _contains(document["body_text"], token)
+            if term_matches(document["body_terms"], token)
         )
         lens_matches = sorted(
             token
             for token in lens_tokens
-            if _contains(document["path_text"], token)
-            or _contains(document["metadata_text"], token)
-            or _contains(document["body_text"], token)
+            if term_matches(document["path_terms"], token)
+            or term_matches(document["metadata_terms"], token)
+            or term_matches(document["body_terms"], token)
         )
-        score = len(metadata_matches) * 4 + len(body_matches) + len(lens_matches) * 6
-        if not metadata_matches and len(body_matches) < 2 and not lens_matches:
+        path_scopes = _path_scopes(document["metadata"])
+        scope_matches = sorted(
+            {
+                scope
+                for scope in path_scopes
+                if any(
+                    _scope_matches(target_path, scope)
+                    for target_path in normalized_target_paths
+                )
+            }
+        )
+        if (
+            document["metadata"]["type"] == "convention"
+            and normalized_target_paths
+            and path_scopes
+            and not scope_matches
+        ):
+            continue
+        score = (
+            len(metadata_matches) * 4
+            + len(body_matches)
+            + len(lens_matches) * 6
+            + len(scope_matches) * 8
+        )
+        body_match_minimum = (
+            2 if document["metadata"]["type"] == "convention" else 3
+        )
+        if (
+            not metadata_matches
+            and len(body_matches) < body_match_minimum
+            and not lens_matches
+            and not scope_matches
+        ):
             continue
         reasons = []
         if metadata_matches:
@@ -470,6 +579,8 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
             reasons.append(f"body: {', '.join(body_matches[:5])}")
         if lens_matches:
             reasons.append(f"lens: {', '.join(lens_matches[:3])}")
+        if scope_matches:
+            reasons.append(f"path scope: {', '.join(scope_matches[:3])}")
         ranked.append(
             (
                 score,
@@ -479,6 +590,7 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
                     "sha256": document["sha256"],
                     "reason": "; ".join(reasons),
                     "score": score,
+                    "bytes": document["bytes"],
                     "document_type": document["metadata"]["type"],
                 },
             )
@@ -488,10 +600,29 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
         *[item for item in ranked if item[2]["document_type"] == "convention"],
         *[item for item in ranked if item[2]["document_type"] != "convention"],
     ]
-    selected = ([selected_index] if selected_index else []) + [
-        item[2] for item in ranked[: MAX_SELECTED_DOCUMENTS - (1 if selected_index else 0)]
+    candidates = ([selected_index] if selected_index else []) + [
+        item[2] for item in ranked
     ]
-    matched_documents = len(selected) - (1 if selected_index else 0)
+    selected: list[dict[str, Any]] = []
+    budget_skipped_documents: list[str] = []
+    limit_skipped_documents: list[str] = []
+    selected_bytes = 0
+    for index, candidate in enumerate(candidates):
+        if len(selected) >= MAX_SELECTED_DOCUMENTS:
+            limit_skipped_documents.extend(
+                item["path"] for item in candidates[index:]
+            )
+            break
+        if selected_bytes + candidate["bytes"] > MAX_SELECTED_DOCUMENT_BYTES:
+            budget_skipped_documents.append(candidate["path"])
+            continue
+        selected.append(candidate)
+        selected_bytes += candidate["bytes"]
+    index_selected = any(
+        item["path"] == "docs/README.md"
+        for item in selected
+    )
+    matched_documents = len(selected) - (1 if index_selected else 0)
     archive_count = scan_trace["archive_documents_seen"]
     missing_evidence: list[str] = []
     if scan_trace["truncated"]:
@@ -509,6 +640,7 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
         "schema_version": "maestro_docs_selection_v1",
         "repo_root": str(repo),
         "task": task,
+        "target_paths": normalized_target_paths,
         "requested_lenses": lenses,
         "inferred_lenses": inferred_lenses,
         "documents": selected,
@@ -524,9 +656,17 @@ def select_documents(repo_path: str | Path, task: str, lenses: list[str]) -> dic
         "selection_trace": {
             "active_documents_considered": len(active),
             "matched_documents": matched_documents,
+            "selected_document_count": len(selected),
+            "selected_document_bytes": selected_bytes,
+            "selection_byte_budget": MAX_SELECTED_DOCUMENT_BYTES,
+            "selection_budget_truncated": bool(budget_skipped_documents),
+            "budget_skipped_documents": budget_skipped_documents,
             "selection_limit": MAX_SELECTED_DOCUMENTS,
+            "selection_limit_truncated": bool(limit_skipped_documents),
+            "limit_skipped_documents": limit_skipped_documents,
             "full_document_bodies_returned": 0,
             "evidence_status": evidence_status,
+            "deterministic_verification": deterministic_verification,
             "scan_truncated": scan_trace["truncated"],
             "scan_truncation_reasons": scan_trace["truncation_reasons"],
             "skipped_documents": scan_trace["skipped_documents"],

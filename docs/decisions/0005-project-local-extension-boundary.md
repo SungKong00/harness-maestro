@@ -16,9 +16,11 @@ sensitivity: internal
 
 ## 결정
 
-검증된 반복 규칙은 project manifest가 허용한 경우 현재 프로젝트의
-`docs/conventions/` 한 건까지만 같은 작업에서 자동 갱신할 수 있다. 전역 Skill,
-Agent, Lens, Executor, Department와 Adapter definition은 candidate로만 보고한다.
+반복 규칙은 project manifest가 허용한 경우 현재 프로젝트의 candidate로 자동
+기록할 수 있다. 같은 작업의 구현 성공만으로 active Convention을 갱신하지 않는다.
+사용자의 명시적 결정 또는 분리된 held-out 평가가 승인된 경우에만
+`docs/conventions/` 한 건까지 승격한다. 전역 Skill, Agent, Lens, Executor,
+Department와 Adapter definition은 candidate로만 보고한다.
 
 문서 provider의 기본값은 Markdown이다. 사용자는 저장소 내부의 instruction file을
 가리키는 custom provider를 정의할 수 있다. Core는 경로와 계약을 검증하고 host에
@@ -26,15 +28,17 @@ handoff하지만 임의 명령을 실행하거나 provider별 구현 catalog를 
 
 ## 이유
 
-프로젝트 Convention은 코드·테스트·Git diff와 함께 검토하고 되돌릴 수 있다. 반면
-전역 구성요소의 같은-run 수정은 한 작업의 편향을 다른 프로젝트에 전파한다. Custom
+프로젝트 Convention도 다음 작업의 행동을 바꾸므로 같은-run 성공만으로는 일반화가
+입증되지 않는다. 후보와 승격을 분리하면 코드·테스트·Git diff와 함께 검토하고
+되돌릴 수 있다. 전역 구성요소의 같은-run 수정은 한 작업의 편향을 다른 프로젝트에
+전파한다. Custom
 Adapter도 최소 seam만 두면 사용자 시스템을 수용하면서 core 규모와 권한 표면을
 늘리지 않는다.
 
 ## 결과
 
-- 자동 개선은 현재 project diff와 Doctor 검증 안에 남는다.
-- 최대 한 건, 재사용성, owner, scope와 실행 증거가 필요하다.
+- 자동 개선 관찰은 현재 project의 compact candidate로 남는다.
+- active 승격은 최대 한 건이며 owner 결정 또는 held-out 평가가 필요하다.
 - 보안 정책, 외부 계약, 데이터 정책과 비가역 결정은 사용자 판단으로 보낸다.
 - 조직도, 추가 Department와 provider catalog는 실제 실패 사례가 생길 때까지
   보류한다.

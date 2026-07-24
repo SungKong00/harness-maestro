@@ -33,7 +33,10 @@
     "finding_severity",
     "decision_changed",
     "verifier_result",
-    "command_artifact_ref"
+    "command_artifact_ref",
+    "project_convention_action",
+    "project_convention_basis",
+    "project_convention_path"
   ],
   "properties": {
     "schema_version": {
@@ -293,6 +296,14 @@
         "updated",
         "candidate",
         "needs_decision"
+      ]
+    },
+    "project_convention_basis": {
+      "enum": [
+        "none",
+        "same_run_candidate",
+        "owner_decision",
+        "held_out_evaluation"
       ]
     },
     "project_convention_path": {

@@ -30,7 +30,7 @@
   },
   "accepts": [
     "TaskPacket",
-    "DesignEnvelope"
+    "FindingPacket"
   ],
   "returns": [
     "ChangeReceipt"

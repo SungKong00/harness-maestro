@@ -15,7 +15,8 @@ request
   -> one implementation owner writes
   -> isolated reviewers are used only for high-risk conflicts
   -> deterministic verification produces the completion verdict
-  -> when enabled, verified reusable project rules update at most one project convention
+  -> reusable same-run rules become review candidates
+  -> only an owner decision or accepted held-out evaluation activates a convention
   -> global harness improvements remain candidates
   -> compact JSONL observations may later inform a read-only govern report
 ```
@@ -77,7 +78,7 @@ maestro doctor --repo /path/to/project --json
 rm -- "$maestro_plan"
 ```
 
-`init` and `upgrade` preview by default. Only `--apply-plan` writes. `status`, `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only. `record` appends exactly one validated project-scoped JSONL receipt.
+`init` and `upgrade` preview by default. Only `--apply-plan` writes. `status`, `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only. `record` appends exactly one validated project-scoped JSONL receipt. Identical retries are no-ops; the same `run_id` with different content is rejected.
 For diagnosis or review, print the preview to stdout and do not create a plan artifact.
 
 Initialization adds or updates only:
@@ -89,7 +90,7 @@ Initialization adds or updates only:
 
 Content outside the managed blocks is preserved. Commands found in manifests are recorded as candidates and are not executed or approved automatically.
 
-The initialized project enables `verified-project-conventions`: after verification, `$maestro` may update or create at most one reusable rule under `docs/conventions/` in the same authorized project change. It never auto-edits global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions. Set the mode to `off` to make project conventions candidate-only.
+The initialized project enables `verified-project-conventions`: after verification, `$maestro` may automatically record a reusable rule as a candidate. Same-run success cannot activate it. An explicit owner decision or accepted held-out evaluation may update or create at most one rule under `docs/conventions/`. It never auto-edits global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions. Set the mode to `off` to disable automatic Convention candidates.
 
 ## Invoke it
 
@@ -116,7 +117,7 @@ The two administrative skills do not run implicitly. Governance reports cannot p
 ## CLI reference
 
 ```bash
-maestro docs --repo /path/to/project --task "인증 API 수정" --json
+maestro docs --repo /path/to/project --task "인증 API 수정" --path src/api/login.py --json
 maestro route --goal "인증 정책 변경" --risk high --host codex --json
 maestro status --repo /path/to/project --json
 maestro upgrade --repo /path/to/project --json

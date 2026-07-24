@@ -23,8 +23,8 @@ specialist 사용 규칙에 적용한다. 실행 중인 하네스를 스스로 �
 여기서 Convention은 전역 Harness 규칙과 여러 프로젝트에 배포되는 규칙을 뜻한다.
 현재 프로젝트 안에서만 소유하고 반복 사용할 Convention은 project manifest가
 `verified-project-conventions`를 켠 경우
-[문서 생명주기](document-lifecycle.md)의 프로젝트 규칙 기준을 따르며, 검증된
-구현과 같은 작업에서 갱신할 수 있다.
+[문서 생명주기](document-lifecycle.md)의 프로젝트 규칙 기준을 따른다. 같은 작업의
+성공은 candidate 근거일 뿐이며 active 승격 근거가 아니다.
 
 ## 상태
 
@@ -62,6 +62,11 @@ observed → candidate → pilot → active → deprecated → retired
 `maestro record`는 작업 종료 시 RunReceipt 한 건을 현재 project와 checkout에
 기록한다. `maestro govern report`는 그 범위에 속한 최근 JSONL만 읽고 반복
 fingerprint를 보여 준다. 보고서는 다음 행동을 자동 수행하지 않는다.
+
+일반 완료는 `run_summary`로 기록한다. 반복 개선 근거로 사용할
+`review_finding`, `verification_failure`, `correction`은 안정적인 fingerprint,
+severity, evidence, command artifact를 함께 기록해야 한다. 동일 `run_id`와 동일
+내용의 재시도만 no-op이며 내용이 다르면 `RUN_ID_CONFLICT`로 중단한다.
 
 - Skill·Lens·Executor 생성 또는 수정
 - active 구성요소 삭제

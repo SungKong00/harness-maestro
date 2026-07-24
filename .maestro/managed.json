@@ -22,13 +22,13 @@
       "ownership": "user_owned",
       "path": "docs/governance/document-lifecycle.md",
       "preserve_on_drift": true,
-      "sha256": "e06ff11aaafc8dcd3f5227dd93df4be1cdd8290dffabc0213a60b4fa9dea9b96"
+      "sha256": "619def564bc30809a9b24d27a4b293ebeef0d2d360139d15ae24d3392a082afe"
     },
     {
-      "ownership": "seeded",
+      "ownership": "user_owned",
       "path": "docs/project.md",
       "preserve_on_drift": true,
-      "sha256": "4c91b575d38c2beb9efd0b84694ee8048b4109c54711a2ec339c2a3198c075a7"
+      "sha256": "6ede99ca226b6827a47432edeab7c5c26b3ef6bfda1ce1c21b540977e415b19f"
     }
   ],
   "kind": "managed",

@@ -28,10 +28,16 @@ sensitivity: internal
 | ResearchLaneCard | 어떤 출처 묶음을 조사하는가? | corpus 경계, 출처 tier, stop rule | 장기 persona |
 | Assignment | 이번 실행에서 무엇을 결합하는가? | goal, 선택 Lens, Executor, 권한, budget, 입력 digest | 재사용 Registry 정의의 수정 |
 
-v0의 Finding·Review·Research Packet JSON Schema는 구조 계약이다. Registry ID 참조,
-Research source 참조, tier별 채택 가능성 같은 의미 검사는 아직 runtime에서 강제하지
-않는다. schema가 없는 나머지 Executor 입출력 이름도 scheduler 도입 전까지는 비강제
-계약 이름이며, 구현된 validator보다 강한 보장을 주장하지 않는다.
+v0의 Finding·Review·Research Packet JSON Schema는 구조 계약이다. Lens Reviewer가
+선택된 route는 `FindingPacket`을 Implementation Engineer에 전달하는
+`handoff_contract`를 명시한다. Host는 objective, completion contract, 허용된
+path/interface, 선택 Convention digest와 stop condition을 함께 공급한다. handoff에는
+finding, evidence reference, 추천 행동과 미해결 질문만 넣고 대화, 숨은 추론, 전문과
+파일 본문은 넣지 않는다. Writer는 파일을 packet에서 복사하지 않고 현재 artifact를
+다시 읽는다. Registry ID 참조, Research
+source 참조, tier별 채택 가능성 같은 의미 검사는 아직 runtime에서 강제하지 않는다.
+schema가 없는 나머지 Executor 입출력 이름도 scheduler 도입 전까지는 비강제 계약
+이름이며, 구현된 validator보다 강한 보장을 주장하지 않는다.
 
 ## v0 Registry
 

@@ -114,10 +114,15 @@ v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `s
 
 검증을 통과한 구현에서 발견한 **프로젝트 규칙**은
 `.maestro/project.json`의 `self_improvement.mode`가
-`verified-project-conventions`이고 위 기준을 모두 만족하면 같은
-작업에서 기존 Convention을 갱신하거나 `docs/conventions/<topic>.md` 하나를 만들 수
-있다. 같은 주제 문서가 있으면 새 파일을 만들지 않고 기존 권위를 갱신하며,
-`docs/README.md`에서 찾을 수 있게 연결한 뒤 `maestro doctor`를 실행한다.
+`verified-project-conventions`이고 위 기준을 모두 만족하면 자동으로
+`candidate`가 될 수 있다. 같은 작업의 구현 성공만으로 active Convention을 만들거나
+갱신하지 않는다. `owner_decision` 또는 제안 사례와 분리된 고정
+positive·negative-scope·regression 사례의 `held_out_evaluation`이 승인된 뒤에만 기존
+권위를 갱신하거나 `docs/conventions/<topic>.md` 하나를 만든다.
+
+정적 detector가 재현 가능하게 찾은 기술 profile, 고정 상태 필드, manifest command
+후보는 `init`·`upgrade` 계획으로 동기화할 수 있다. 이 경로에는 LLM이 작성한 규칙,
+문서 권위, command 승인, 보안·데이터 정책을 넣지 않는다.
 
 보안 정책, 외부 계약, 데이터 정책과 비가역 결정은 자동으로 Convention화하지 않고
 `NEEDS_DECISION`으로 전달한다. 전역 Skill, Agent, Lens, Executor, Adapter와 Harness

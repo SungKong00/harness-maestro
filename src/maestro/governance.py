@@ -33,6 +33,9 @@ MAX_EVENT_RECORDS = 200_000
 MAX_EVENT_LINE_BYTES = 1_000_000
 RUN_RECEIPT_ALLOWED_FIELDS = {
     "run_id",
+    "kind",
+    "fingerprint",
+    "finding_severity",
     "risk",
     "route_depth",
     "selected_lenses",
@@ -53,6 +56,7 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "verifier_result",
     "command_artifact_ref",
     "project_convention_action",
+    "project_convention_basis",
     "project_convention_path",
 }
 
@@ -75,7 +79,7 @@ def _existing_run_receipt(
     project_id: str,
     checkout: str,
     run_id: str,
-) -> tuple[str, str] | None:
+) -> tuple[dict[str, Any], str] | None:
     if not events_directory.exists():
         return None
     paths, overflow, directory_truncated = _event_paths(events_directory)
@@ -126,17 +130,28 @@ def _existing_run_receipt(
                     continue
                 if (
                     isinstance(event, dict)
-                    and event.get("kind") == "run_summary"
                     and event.get("project_id") == project_id
                     and event.get("checkout_id") == checkout
                     and event.get("run_id") == run_id
                     and isinstance(event.get("event_id"), str)
                 ):
                     return (
-                        event["event_id"],
+                        event,
                         path.relative_to(repo).as_posix(),
                     )
     return None
+
+
+def _idempotency_digest(event: dict[str, Any]) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                key: value
+                for key, value in event.items()
+                if key != "timestamp"
+            }
+        )
+    )
 
 
 def record_run(
@@ -208,8 +223,34 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             f"Unknown lenses={unknown_lenses} executors={unknown_executors}",
         )
+    event_kind = receipt.get("kind", "run_summary")
+    finding_severity = receipt.get("finding_severity")
+    explicit_fingerprint = receipt.get("fingerprint")
+    if event_kind == "run_summary" and finding_severity is not None:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "run_summary must not declare finding_severity.",
+        )
+    if event_kind != "run_summary" and (
+        not isinstance(explicit_fingerprint, str)
+        or not explicit_fingerprint.strip()
+        or finding_severity not in {"medium", "high", "critical"}
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Finding, failure, and correction receipts require a stable fingerprint and finding_severity.",
+        )
     convention_action = receipt.get("project_convention_action", "none")
+    convention_basis = receipt.get("project_convention_basis", "none")
     convention_path = receipt.get("project_convention_path")
+    if convention_action in {"created", "updated"} and convention_basis not in {
+        "owner_decision",
+        "held_out_evaluation",
+    }:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "An active Convention change requires owner_decision or held_out_evaluation evidence.",
+        )
     if convention_action in {"created", "updated"} and isinstance(
         convention_path,
         str,
@@ -221,22 +262,26 @@ def record_run(
                 f"Recorded project convention is missing or unsafe: {convention_path}",
             )
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    fingerprint = sha256_text(
-        canonical_json(
-            {
-                "outcome": receipt.get("outcome"),
-                "verifier_result": receipt.get("verifier_result"),
-                "selected_lenses": selected_lenses,
-            }
-        )
-    )[:24]
+    fingerprint = (
+        explicit_fingerprint.strip()
+        if isinstance(explicit_fingerprint, str) and explicit_fingerprint.strip()
+        else sha256_text(
+            canonical_json(
+                {
+                    "outcome": receipt.get("outcome"),
+                    "verifier_result": receipt.get("verifier_result"),
+                    "selected_lenses": selected_lenses,
+                }
+            )
+        )[:24]
+    )
     current_checkout_id = checkout_id(repo)
     event_id = sha256_text(
         canonical_json(
             {
                 "checkout_id": current_checkout_id,
                 "run_id": receipt.get("run_id"),
-                "kind": "run_summary",
+                "kind": event_kind,
             }
         )
     )[:32]
@@ -263,7 +308,7 @@ def record_run(
         "executor_runs": receipt.get("executor_runs"),
         "primary_executor_id": receipt.get("primary_executor_id"),
         "executor_ids": executor_ids,
-        "kind": "run_summary",
+        "kind": event_kind,
         "outcome": receipt.get("outcome"),
         "fingerprint": fingerprint,
         "evidence_refs": receipt.get("evidence_refs"),
@@ -273,7 +318,7 @@ def record_run(
         "correction_summary": receipt.get("correction_summary", []),
         "agent_calls": receipt.get("agent_calls"),
         "human_fix_required": receipt.get("human_fix_required"),
-        "finding_severity": None,
+        "finding_severity": finding_severity,
         "decision_changed": receipt.get("decision_changed", False),
         "verifier_result": receipt.get("verifier_result"),
         "command_artifact_ref": receipt.get("command_artifact_ref"),
@@ -281,6 +326,7 @@ def record_run(
             "project_convention_action",
             "none",
         ),
+        "project_convention_basis": convention_basis,
         "project_convention_path": receipt.get("project_convention_path"),
     }
     if receipt.get("experiment_id") is not None:
@@ -308,14 +354,19 @@ def record_run(
         run_id=event["run_id"],
     )
     if existing is not None:
-        existing_event_id, existing_path = existing
+        existing_event, existing_path = existing
+        if _idempotency_digest(existing_event) != _idempotency_digest(event):
+            raise MaestroError(
+                "RUN_ID_CONFLICT",
+                f"Run ID {event['run_id']} is already recorded with different content.",
+            )
         return {
             "schema_version": "maestro_command_result_v1",
             "command": "record",
             "status": "already_recorded",
             "repo_root": str(repo),
             "run_id": event["run_id"],
-            "event_id": existing_event_id,
+            "event_id": existing_event["event_id"],
             "event_path": existing_path,
             "writes_performed": False,
         }
@@ -391,6 +442,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "verifier_result",
         "command_artifact_ref",
         "project_convention_action",
+        "project_convention_basis",
         "project_convention_path",
     }
     if set(event) - allowed_fields:
@@ -593,6 +645,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "needs_decision",
     }:
         return False
+    convention_basis = event.get("project_convention_basis", "none")
+    if convention_basis not in {
+        "none",
+        "same_run_candidate",
+        "owner_decision",
+        "held_out_evaluation",
+    }:
+        return False
     project_convention_path = event.get("project_convention_path")
     if project_convention_path is not None and (
         not isinstance(project_convention_path, str)
@@ -607,12 +667,32 @@ def _valid_event(event: dict[str, Any]) -> bool:
     ):
         return False
     if (
+        convention_action in {"created", "updated"}
+        and (
+            convention_basis not in {
+                "owner_decision",
+                "held_out_evaluation",
+            }
+            or event["verifier_result"] != "passed"
+            or not event["evidence_refs"]
+            or not isinstance(command_artifact_ref, str)
+        )
+    ):
+        return False
+    if (
         convention_action in {
             "none",
             "candidate",
             "needs_decision",
         }
         and project_convention_path is not None
+    ):
+        return False
+    if convention_action == "none" and convention_basis != "none":
+        return False
+    if (
+        convention_action in {"candidate", "needs_decision"}
+        and convention_basis != "same_run_candidate"
     ):
         return False
     if event["kind"] not in {
