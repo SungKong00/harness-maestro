@@ -189,6 +189,74 @@
         "null"
       ],
       "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+    },
+    "project_convention_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "convention_sha256",
+        "kind",
+        "artifact"
+      ],
+      "properties": {
+        "convention_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "owner_decision",
+            "held_out_evaluation"
+          ]
+        },
+        "decision_summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "owner_decision"
+            }
+          },
+          "required": [
+            "decision_summary"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "held_out_evaluation"
+            }
+          },
+          "not": {
+            "required": [
+              "decision_summary"
+            ]
+          }
+        }
+      ]
     }
   },
   "allOf": [
@@ -209,7 +277,8 @@
       "then": {
         "required": [
           "project_convention_basis",
-          "project_convention_path"
+          "project_convention_path",
+          "project_convention_evidence"
         ],
         "properties": {
           "project_convention_basis": {
@@ -254,6 +323,9 @@
             "const": "same_run_candidate"
           },
           "project_convention_path": {
+            "type": "null"
+          },
+          "project_convention_evidence": {
             "type": "null"
           }
         }

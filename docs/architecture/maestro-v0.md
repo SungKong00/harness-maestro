@@ -53,7 +53,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro status --repo <path> --json` | 초기화·Doctor·upgrade 필요 상태를 요약 | 없음 |
 | `maestro doctor --repo <path> --json` | 상태, managed hash, registry, 문서 링크 검사 | 없음 |
 | `maestro docs --repo <path> --task "<goal>" --json` | 관련 활성 문서의 경로와 digest 선택 | 없음 |
-| `maestro route --goal "<goal>" --risk <level> --json` | 위험도에 맞는 Lens·Executor 실행 계획 생성 | 없음 |
+| `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro record --repo <path> --receipt <file> --json` | 작업 종료 시 compact RunReceipt 한 건 기록 | `.maestro/state/events/`에 append |
 | `maestro govern report --repo <path> --json` | 반복된 finding을 후보 신호로 집계 | 없음 |
 

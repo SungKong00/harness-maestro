@@ -41,14 +41,23 @@ Keeping the framework separate provides reviewable upgrades and rollback without
 
 ## Install once, use in many projects
 
-Clone this repository in one stable location and install the CLI in an isolated
-tool environment:
+For framework development, clone this repository in one stable location and use
+an editable isolated tool installation:
 
 ```bash
 uv tool install --editable /path/to/harness-maestro
 ```
 
-The editable installation follows that checkout, so do not move or delete it.
+For project use, check out a reviewed release tag and install it non-editably:
+
+```bash
+git clone https://github.com/SungKong00/harness-maestro.git /path/to/harness-maestro
+git -C /path/to/harness-maestro checkout --detach v0.2.2
+uv tool install /path/to/harness-maestro
+```
+
+Do not treat the tag as available until CI has passed and the maintainer has
+created it. The CLI and Skill links below must use the same pinned checkout.
 Avoid forcing an install into an externally managed system Python.
 
 Register these skill directories once with the agent client:
@@ -94,6 +103,11 @@ rm -- "$maestro_plan"
 `init` and `upgrade` preview by default. Only `--apply-plan` writes. `status`, `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only. `record` appends exactly one validated project-scoped JSONL receipt. Identical retries are no-ops; the same `run_id` with different content is rejected.
 For diagnosis or review, print the preview to stdout and do not create a plan artifact.
 
+`route --intent` is optional. In `auto` mode, unmatched implementation, review,
+and research requests bind to their corresponding Executor without loading the
+Lens catalog. Obvious low-risk/scope conflicts are returned as warnings; Maestro
+does not silently rewrite the operator's risk choice.
+
 Initialization adds or updates only:
 
 - a delimited Maestro block in `AGENTS.md` and `.gitignore`;
@@ -104,6 +118,10 @@ Initialization adds or updates only:
 Content outside the managed blocks is preserved. Commands found in manifests are recorded as candidates and are not executed or approved automatically.
 
 The initialized project enables `verified-project-conventions`: after verification, `$maestro` may automatically record a reusable rule as a candidate. Same-run success cannot activate it. An explicit owner decision or accepted held-out evaluation may update or create at most one rule under `docs/conventions/`. It never auto-edits global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions. Set the mode to `off` to disable automatic Convention candidates.
+
+An active Convention receipt must content-address the Convention and a durable
+repository-local verification artifact. Ordinary completions and same-run
+candidates keep the smaller receipt contract.
 
 ## Invoke it
 
@@ -131,7 +149,7 @@ The two administrative skills do not run implicitly. Governance reports cannot p
 
 ```bash
 maestro docs --repo /path/to/project --task "인증 API 수정" --path src/api/login.py --json
-maestro route --goal "인증 정책 변경" --risk high --host codex --json
+maestro route --goal "인증 정책 변경" --risk high --intent implementation --host codex --json
 maestro status --repo /path/to/project --json
 maestro upgrade --repo /path/to/project --json
 maestro record --repo /path/to/project --receipt /tmp/run-receipt.json --json
@@ -154,6 +172,8 @@ python3 scripts/verify_wheel.py dist/harness_maestro-*.whl
 The release gate also installs that wheel into an empty virtual environment and
 requires CLI help, fresh-repository init, strict doctor, and a zero-operation
 second preview to pass. Source-only tests are not treated as wheel evidence.
+The [Codex host conformance runbook](docs/runbooks/codex-host-conformance.md)
+separately checks behavior that unit tests cannot prove.
 
 ## Repository map
 

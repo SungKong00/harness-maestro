@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from tests.support import ROOT
 
+from maestro.cli import parser
 from maestro.errors import MaestroError
 from maestro.registry import (
     load_domain_index_document,
@@ -213,6 +214,8 @@ class RoutingContractTests(unittest.TestCase):
     def test_unmatched_goal_does_not_load_the_catalog(self) -> None:
         route = route_goal("Rename an internal local variable", "medium")
 
+        self.assertEqual("implementation", route["intent"])
+        self.assertEqual("inferred", route["intent_source"])
         self.assertEqual([], route["selected_lenses"])
         self.assertEqual(0, route["selection_trace"]["returned_lens_bodies"])
         self.assertEqual(
@@ -220,6 +223,69 @@ class RoutingContractTests(unittest.TestCase):
             route["binding"]["executor"],
         )
         self.assertEqual("none", route["deliberation"]["mode"])
+
+    def test_unmatched_read_only_intents_use_read_only_executors(self) -> None:
+        review = route_goal("Review the code organization", "low")
+        research = route_goal("Research recent storage alternatives", "low")
+
+        self.assertEqual("review", review["intent"])
+        self.assertEqual("lens-reviewer", review["binding"]["executor"])
+        self.assertIsNone(review["handoff_contract"])
+        self.assertEqual("research", research["intent"])
+        self.assertEqual("researcher", research["binding"]["executor"])
+        self.assertIsNone(research["handoff_contract"])
+
+    def test_explicit_intent_overrides_ambiguous_wording(self) -> None:
+        route = route_goal(
+            "Research alternatives before the requested change",
+            "medium",
+            intent="implementation",
+        )
+
+        self.assertEqual("implementation", route["intent"])
+        self.assertEqual("explicit", route["intent_source"])
+        self.assertEqual("implementation-engineer", route["binding"]["executor"])
+        with self.assertRaises(MaestroError) as raised:
+            route_goal("Review this", "low", intent="unsupported")
+        self.assertEqual("INTENT_INVALID", raised.exception.code)
+
+        arguments = parser().parse_args(
+            [
+                "route",
+                "--goal",
+                "Review this",
+                "--intent",
+                "review",
+            ]
+        )
+        self.assertEqual("review", arguments.intent)
+
+    def test_repository_word_does_not_imply_data_integrity(self) -> None:
+        generic = route_goal("Review repository health", "medium")
+        persistence = route_goal(
+            "Migrate the persistence repository schema",
+            "high",
+        )
+
+        self.assertNotIn("data-integrity", generic["selected_lenses"])
+        self.assertIn("data-integrity", persistence["selected_lenses"])
+
+    def test_low_risk_broad_scope_warns_without_changing_the_route(self) -> None:
+        broad = route_goal("Implement a 500-file monolith rewrite", "low")
+        small = route_goal("Rename 5 files", "low")
+        medium = route_goal("Implement a 500-file monolith rewrite", "medium")
+
+        self.assertEqual("low", broad["risk"])
+        self.assertEqual("fast", broad["depth"])
+        self.assertEqual([], broad["selected_lenses"])
+        self.assertTrue(
+            any(
+                warning["code"] == "RISK_SCOPE_MISMATCH"
+                for warning in broad["warnings"]
+            )
+        )
+        self.assertEqual([], small["warnings"])
+        self.assertEqual([], medium["warnings"])
 
     def test_ascii_triggers_do_not_match_arbitrary_word_prefixes(self) -> None:
         cases = (
@@ -265,7 +331,7 @@ class RoutingContractTests(unittest.TestCase):
 
     def test_review_route_declares_compact_writer_handoff(self) -> None:
         route = route_goal(
-            "Review authorization behavior",
+            "Change authorization behavior",
             "medium",
             ["auth-boundary"],
         )

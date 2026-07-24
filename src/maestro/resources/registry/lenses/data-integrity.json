@@ -10,7 +10,7 @@
     "migration",
     "schema",
     "entity",
-    "repository",
+    "persistence repository",
     "data",
     "db",
     "데이터",

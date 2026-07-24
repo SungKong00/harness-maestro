@@ -680,6 +680,147 @@ def _goal_has(goal: str, terms: Iterable[str]) -> bool:
     return any(_trigger_matches(term, goal_terms) for term in terms)
 
 
+def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
+    if intent not in {"auto", "implementation", "review", "research"}:
+        raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
+    if intent != "auto":
+        return intent, "explicit"
+
+    mutation_intent = _goal_has(
+        goal,
+        (
+            "add",
+            "change",
+            "delete",
+            "fix",
+            "implement",
+            "migrate",
+            "modify",
+            "remove",
+            "update",
+            "추가",
+            "변경",
+            "삭제",
+            "수정",
+            "구현",
+            "마이그레이션",
+        ),
+    )
+    if mutation_intent:
+        return "implementation", "inferred"
+    if _goal_has(
+        goal,
+        (
+            "research",
+            "survey",
+            "look up",
+            "sources",
+            "리서치",
+            "조사",
+            "자료 조사",
+            "찾아봐",
+        ),
+    ):
+        return "research", "inferred"
+    if _goal_has(
+        goal,
+        (
+            "review",
+            "analyze",
+            "audit",
+            "assess",
+            "compare",
+            "architecture",
+            "plan",
+            "검토",
+            "분석",
+            "감사",
+            "평가",
+            "비교",
+            "아키텍처",
+            "계획",
+        ),
+    ):
+        return "review", "inferred"
+    return "implementation", "inferred"
+
+
+def _risk_warnings(
+    goal: str,
+    risk: str,
+    lens_ids: list[str],
+) -> list[dict[str, str]]:
+    if risk != "low":
+        return []
+
+    warnings: list[dict[str, str]] = []
+    if _goal_has(
+        goal,
+        (
+            "auth",
+            "authentication",
+            "authorization",
+            "permission",
+            "security",
+            "migration",
+            "transaction",
+            "data loss",
+            "irreversible",
+            "인증",
+            "인가",
+            "권한",
+            "보안",
+            "마이그레이션",
+            "트랜잭션",
+            "데이터 손실",
+            "비가역",
+        ),
+    ) or {"auth-boundary", "data-integrity", "transaction-concurrency"}.intersection(
+        lens_ids
+    ):
+        warnings.append(
+            {
+                "code": "RISK_SCOPE_MISMATCH",
+                "message": (
+                    "Low risk conflicts with a security, data, transaction, "
+                    "migration, or irreversible boundary; confirm the risk before execution."
+                ),
+                "suggested_risk": "high",
+            }
+        )
+
+    folded = goal.casefold()
+    broad_scope = (
+        re.search(r"\b(?:[5-9]\d|[1-9]\d{2,})\s+(?:files?|modules?|services?)\b", folded)
+        is not None
+        or _goal_has(
+            goal,
+            (
+                "monolith rewrite",
+                "entire repository",
+                "whole repository",
+                "all modules",
+                "모놀리식 재작성",
+                "전체 저장소",
+                "전면 재작성",
+                "모든 모듈",
+            ),
+        )
+    )
+    if broad_scope:
+        warnings.append(
+            {
+                "code": "RISK_SCOPE_MISMATCH",
+                "message": (
+                    "Low risk conflicts with an explicitly broad change scope; "
+                    "confirm the risk before execution."
+                ),
+                "suggested_risk": "medium",
+            }
+        )
+    return warnings
+
+
 def _classify_model_task(
     goal: str,
     risk: str,
@@ -919,6 +1060,7 @@ def route_goal(
     department_id: str = "software-development",
     conflict_evidence: str | None = None,
     host_id: str = "codex",
+    intent: str = "auto",
 ) -> dict[str, Any]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -932,6 +1074,7 @@ def route_goal(
     if department_id not in departments:
         raise MaestroError("DEPARTMENT_UNKNOWN", f"Unknown department: {department_id}")
     department = departments[department_id]
+    resolved_intent, intent_source = _resolve_intent(goal, intent)
     material_conflict = _goal_has(
         goal,
         (
@@ -1021,8 +1164,13 @@ def route_goal(
     selected = selected[:maximum]
     lens_ids = [item["lens_id"] for item in selected]
     if not lens_ids:
+        executor_id = {
+            "implementation": "implementation-engineer",
+            "review": "lens-reviewer",
+            "research": "researcher",
+        }[resolved_intent]
         binding = {
-            "executor": "implementation-engineer",
+            "executor": executor_id,
             "runs": 1,
             "fresh_context_per_lens": False,
         }
@@ -1081,15 +1229,21 @@ def route_goal(
             ],
             "fresh_artifact_read_required": True,
         }
-        if binding["executor"] == "lens-reviewer"
+        if (
+            binding["executor"] == "lens-reviewer"
+            and resolved_intent == "implementation"
+        )
         else None
     )
 
     return {
         "schema_version": "maestro_route_v1",
         "goal": goal,
+        "intent": resolved_intent,
+        "intent_source": intent_source,
         "department": department_id,
         "risk": risk,
+        "warnings": _risk_warnings(goal, risk, lens_ids),
         "depth": depth,
         "selected_lenses": lens_ids,
         "selected_domains": list(dict.fromkeys(item["domain"] for item in selected)),

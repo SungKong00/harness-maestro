@@ -55,6 +55,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
     - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.
+    - For `created` or `updated`, include `project_convention_evidence`: the active Convention SHA-256, a basis-matching kind, and one repository-local verification artifact path and SHA-256. `owner_decision` also needs a bounded summary of the explicit user decision. The `command_artifact_ref` must name that artifact.
     - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
     - Do not write checkpoints or one event per agent exchange.
 15. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.

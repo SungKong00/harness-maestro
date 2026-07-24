@@ -71,6 +71,11 @@ def parser() -> argparse.ArgumentParser:
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
     route.add_argument("--goal", required=True)
     route.add_argument("--risk", choices=["low", "medium", "high", "critical"], default="medium")
+    route.add_argument(
+        "--intent",
+        choices=["auto", "implementation", "review", "research"],
+        default="auto",
+    )
     route.add_argument("--department", default="software-development")
     route.add_argument("--host", default="codex")
     route.add_argument("--lens", action="append", default=[])
@@ -154,6 +159,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.department,
                 args.conflict_evidence,
                 args.host,
+                args.intent,
             )
             _emit(result, args.json)
             return 0

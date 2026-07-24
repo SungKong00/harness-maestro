@@ -11,6 +11,7 @@ from maestro.errors import MaestroError
 from maestro.project import apply_plan, build_init_plan, build_upgrade_plan
 from maestro.registry import load_host_profile, route_goal
 from maestro.status import status_report
+from maestro.util import file_sha256
 from tests.support import apply_fresh_init, canonical_document, write_json
 
 
@@ -176,6 +177,9 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            artifact = repo / "docs/decisions/run-receipts-verification.txt"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text("python3 -m unittest: PASS\n", encoding="utf-8")
             receipt_path = Path(temporary) / "receipt.json"
             write_json(
                 receipt_path,
@@ -194,10 +198,25 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                     "correction_count": 0,
                     "agent_calls": 2,
                     "verifier_result": "passed",
-                    "command_artifact_ref": "tests.log",
+                    "command_artifact_ref": (
+                        "docs/decisions/run-receipts-verification.txt"
+                    ),
                     "project_convention_action": "created",
                     "project_convention_basis": "owner_decision",
                     "project_convention_path": "docs/conventions/run-receipts.md",
+                    "project_convention_evidence": {
+                        "kind": "owner_decision",
+                        "decision_summary": (
+                            "The project owner approved one final run receipt."
+                        ),
+                        "convention_sha256": file_sha256(convention),
+                        "artifact": {
+                            "path": (
+                                "docs/decisions/run-receipts-verification.txt"
+                            ),
+                            "sha256": file_sha256(artifact),
+                        },
+                    },
                 },
             )
 
@@ -215,7 +234,74 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             self.assertEqual("run-1", event["run_id"])
             self.assertEqual("created", event["project_convention_action"])
             self.assertEqual("owner_decision", event["project_convention_basis"])
+            self.assertEqual(
+                file_sha256(convention),
+                event["project_convention_evidence"]["convention_sha256"],
+            )
             self.assertNotIn("messages", event)
+
+    def test_active_convention_requires_content_addressed_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/provenance.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                canonical_document("provenance"),
+                encoding="utf-8",
+            )
+            artifact = repo / "docs/decisions/provenance-verification.txt"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text("verification: PASS\n", encoding="utf-8")
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {
+                "run_id": "run-active-provenance",
+                "risk": "medium",
+                "route_depth": "standard",
+                "selected_lenses": [],
+                "executor_runs": 2,
+                "primary_executor_id": "implementation-engineer",
+                "executor_ids": ["implementation-engineer", "verifier"],
+                "outcome": "completed",
+                "evidence_refs": ["tests:provenance"],
+                "duration_ms": 10,
+                "tokens": None,
+                "correction_count": 0,
+                "agent_calls": 2,
+                "verifier_result": "passed",
+                "command_artifact_ref": (
+                    "docs/decisions/provenance-verification.txt"
+                ),
+                "project_convention_action": "created",
+                "project_convention_basis": "held_out_evaluation",
+                "project_convention_path": "docs/conventions/provenance.md",
+            }
+
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as missing:
+                record_run(repo, receipt_path)
+            self.assertEqual("RUN_RECEIPT_INVALID", missing.exception.code)
+
+            receipt["project_convention_evidence"] = {
+                "kind": "held_out_evaluation",
+                "convention_sha256": file_sha256(convention),
+                "artifact": {
+                    "path": "docs/decisions/provenance-verification.txt",
+                    "sha256": "0" * 64,
+                },
+            }
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as mismatch:
+                record_run(repo, receipt_path)
+            self.assertEqual("RUN_RECEIPT_INVALID", mismatch.exception.code)
+
+            receipt["project_convention_evidence"]["artifact"]["sha256"] = (
+                file_sha256(artifact)
+            )
+            write_json(receipt_path, receipt)
+            result = record_run(repo, receipt_path)
+            self.assertEqual("recorded", result["status"])
 
     def test_same_run_evidence_cannot_activate_a_convention(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

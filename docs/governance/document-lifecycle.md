@@ -125,6 +125,9 @@ v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `s
 갱신하지 않는다. `owner_decision` 또는 제안 사례와 분리된 고정
 positive·negative-scope·regression 사례의 `held_out_evaluation`이 승인된 뒤에만 기존
 권위를 갱신하거나 `docs/conventions/<topic>.md` 하나를 만든다.
+활성 Convention을 기록하는 RunReceipt는 Convention 파일과 repository-local 검증
+산출물의 SHA-256을 함께 저장한다. `owner_decision`은 사용자가 명시한 결정을 짧게
+요약하고, `held_out_evaluation`은 제안 사례와 분리된 평가 산출물을 가리킨다.
 
 정적 detector가 재현 가능하게 찾은 기술 profile, 고정 상태 필드, manifest command
 후보는 `init`·`upgrade` 계획으로 동기화할 수 있다. 이 경로에는 LLM이 작성한 규칙,

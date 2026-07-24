@@ -34,6 +34,11 @@ sensitivity: internal
 - [제외·보류 목록](governance/deferred-and-excluded.md) — 의도적으로 넣지 않은
   기능과 재검토 조건
 
+## 릴리스 검사
+
+- [Codex host conformance](runbooks/codex-host-conformance.md) — Fast·Standard·Deep
+  실제 세션에서 CLI 밖의 읽기 전용·격리·한 명 writer 계약을 확인하는 최소 수동 검사
+
 ## 채택된 결정
 
 - [ADR-0001: 작은 커널](decisions/0001-small-kernel.md)

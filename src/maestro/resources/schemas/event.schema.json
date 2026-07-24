@@ -312,6 +312,50 @@
         "null"
       ],
       "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+    },
+    "project_convention_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "convention_sha256",
+        "kind",
+        "artifact"
+      ],
+      "properties": {
+        "convention_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "owner_decision",
+            "held_out_evaluation"
+          ]
+        },
+        "decision_summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [

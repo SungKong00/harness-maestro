@@ -6,6 +6,7 @@ import tomllib
 import unittest
 from importlib import resources
 
+from maestro import __version__
 from maestro.project import AGENTS_BODY
 from tests.support import ROOT
 
@@ -65,16 +66,39 @@ class PackageContractTests(unittest.TestCase):
         self.assertNotIn("같은 작업에서 갱신한다", architecture)
         self.assertIn("같은 실행에서는 candidate로만", architecture)
 
-    def test_installation_uses_an_isolated_tool_environment(self) -> None:
+    def test_installation_documents_development_and_pinned_modes(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("uv tool install --editable", readme)
+        self.assertIn("checkout --detach v0.2.2", readme)
+        self.assertIn("uv tool install /path/to/harness-maestro", readme)
         self.assertIn("command -v maestro", readme)
         self.assertIn("restart the agent client", readme)
         self.assertNotIn(
             "python3 -m pip install -e /path/to/harness-maestro",
             readme,
         )
+
+    def test_version_surfaces_and_ci_are_synchronized(self) -> None:
+        pyproject = tomllib.loads(
+            (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+        package = next(
+            item
+            for item in lock["package"]
+            if item["name"] == "harness-maestro"
+        )
+
+        self.assertEqual("0.2.2", pyproject["project"]["version"])
+        self.assertEqual(pyproject["project"]["version"], __version__)
+        self.assertEqual(__version__, package["version"])
+        workflow = ROOT / ".github/workflows/ci.yml"
+        self.assertTrue(workflow.is_file())
+        workflow_text = workflow.read_text(encoding="utf-8")
+        self.assertIn("python -m unittest discover -s tests -v", workflow_text)
+        self.assertIn("scripts/verify_wheel.py", workflow_text)
+        self.assertIn("doctor --repo", workflow_text)
 
 
 if __name__ == "__main__":

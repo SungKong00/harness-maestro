@@ -35,6 +35,8 @@ When `self_improvement.mode` is `verified-project-conventions`, an implementatio
 
 Same-run success does not activate the candidate. Update an existing topic document rather than creating a duplicate, or create at most one `docs/conventions/<topic>.md`, only after an explicit `owner_decision` or an accepted `held_out_evaluation`. The evaluation keeps proposal cases separate from frozen positive, negative-scope, and regression cases, compares equal model/tool/budget conditions, and blocks critical regressions.
 
+An active Convention RunReceipt content-addresses both the Convention and one durable repository-local verification artifact. The evidence kind must match `project_convention_basis`; `owner_decision` also records a short summary of the explicit user decision, while `held_out_evaluation` points to the separated evaluation artifact. Opaque references remain valid for ordinary runs and candidates, but they cannot activate a Convention.
+
 After an intended documentation edit, run Doctor. If the edit is the only managed-baseline drift, preview Upgrade, confirm that it advances only the manifest and lock baseline for the reviewed files, apply that plan, and rerun strict Doctor. Do not accept unrelated drift.
 
 ```yaml

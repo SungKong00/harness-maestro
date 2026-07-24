@@ -4,6 +4,7 @@ import heapq
 import json
 import math
 import os
+import re
 import sqlite3
 import tempfile
 from collections import Counter
@@ -18,6 +19,7 @@ from .registry import definition_digest_maps, registry_digest
 from .util import (
     canonical_json,
     ensure_repo,
+    file_sha256,
     read_json,
     safe_target,
     sha256_text,
@@ -58,6 +60,7 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "project_convention_action",
     "project_convention_basis",
     "project_convention_path",
+    "project_convention_evidence",
 }
 
 
@@ -70,6 +73,15 @@ def _parse_timestamp(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def _active_convention_evidence_required(framework_version: Any) -> bool:
+    if not isinstance(framework_version, str):
+        return False
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", framework_version)
+    if match is None:
+        return False
+    return tuple(int(part) for part in match.groups()) >= (0, 2, 2)
 
 
 def _existing_run_receipt(
@@ -243,6 +255,7 @@ def record_run(
     convention_action = receipt.get("project_convention_action", "none")
     convention_basis = receipt.get("project_convention_basis", "none")
     convention_path = receipt.get("project_convention_path")
+    convention_evidence = receipt.get("project_convention_evidence")
     if convention_action in {"created", "updated"} and convention_basis not in {
         "owner_decision",
         "held_out_evaluation",
@@ -251,16 +264,102 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "An active Convention change requires owner_decision or held_out_evaluation evidence.",
         )
-    if convention_action in {"created", "updated"} and isinstance(
-        convention_path,
-        str,
-    ):
+    if convention_action in {"created", "updated"}:
+        if not isinstance(convention_path, str):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "An active Convention change requires a Convention path.",
+            )
         convention_target = safe_target(repo, convention_path)
         if convention_target.is_symlink() or not convention_target.is_file():
             raise MaestroError(
                 "RUN_RECEIPT_INVALID",
                 f"Recorded project convention is missing or unsafe: {convention_path}",
             )
+        if not isinstance(convention_evidence, dict):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "An active Convention change requires structured project_convention_evidence.",
+            )
+        expected_keys = {
+            "convention_sha256",
+            "kind",
+            "artifact",
+        }
+        if convention_basis == "owner_decision":
+            expected_keys.add("decision_summary")
+        if set(convention_evidence) != expected_keys:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence fields do not match the declared basis.",
+            )
+        if convention_evidence.get("kind") != convention_basis:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence kind must match project_convention_basis.",
+            )
+        convention_sha256 = convention_evidence.get("convention_sha256")
+        if (
+            not isinstance(convention_sha256, str)
+            or file_sha256(convention_target) != convention_sha256
+        ):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence digest does not match the active Convention file.",
+            )
+        if convention_basis == "owner_decision":
+            decision_summary = convention_evidence.get("decision_summary")
+            if (
+                not isinstance(decision_summary, str)
+                or not decision_summary.strip()
+                or len(decision_summary) > 500
+            ):
+                raise MaestroError(
+                    "RUN_RECEIPT_INVALID",
+                    "owner_decision requires a non-empty decision_summary of at most 500 characters.",
+                )
+        artifact = convention_evidence.get("artifact")
+        if not isinstance(artifact, dict) or set(artifact) != {"path", "sha256"}:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence requires one content-addressed artifact.",
+            )
+        artifact_path = artifact.get("path")
+        artifact_sha256 = artifact.get("sha256")
+        if (
+            not isinstance(artifact_path, str)
+            or not artifact_path.strip()
+            or Path(artifact_path).is_absolute()
+            or ".." in Path(artifact_path).parts
+            or artifact_path == convention_path
+            or artifact_path.startswith(".git/")
+            or artifact_path.startswith(".maestro/state/")
+            or not isinstance(artifact_sha256, str)
+        ):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence artifact must be a durable repository-local file.",
+            )
+        artifact_target = safe_target(repo, artifact_path)
+        if (
+            artifact_target.is_symlink()
+            or not artifact_target.is_file()
+            or file_sha256(artifact_target) != artifact_sha256
+        ):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence artifact is missing, unsafe, or has a digest mismatch.",
+            )
+        if receipt.get("command_artifact_ref") != artifact_path:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "command_artifact_ref must name the content-addressed Convention evidence artifact.",
+            )
+    elif convention_evidence is not None:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "project_convention_evidence is allowed only for an active Convention change.",
+        )
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     fingerprint = (
         explicit_fingerprint.strip()
@@ -329,6 +428,8 @@ def record_run(
         "project_convention_basis": convention_basis,
         "project_convention_path": receipt.get("project_convention_path"),
     }
+    if convention_evidence is not None:
+        event["project_convention_evidence"] = convention_evidence
     if receipt.get("experiment_id") is not None:
         event["experiment_id"] = receipt["experiment_id"]
     if receipt.get("experiment_arm") is not None:
@@ -444,6 +545,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "project_convention_action",
         "project_convention_basis",
         "project_convention_path",
+        "project_convention_evidence",
     }
     if set(event) - allowed_fields:
         return False
@@ -654,6 +756,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
     }:
         return False
     project_convention_path = event.get("project_convention_path")
+    project_convention_evidence = event.get("project_convention_evidence")
     if project_convention_path is not None and (
         not isinstance(project_convention_path, str)
         or not project_convention_path.startswith("docs/conventions/")
@@ -685,7 +788,59 @@ def _valid_event(event: dict[str, Any]) -> bool:
             "candidate",
             "needs_decision",
         }
-        and project_convention_path is not None
+        and (
+            project_convention_path is not None
+            or project_convention_evidence is not None
+        )
+    ):
+        return False
+    if project_convention_evidence is not None:
+        if not isinstance(project_convention_evidence, dict):
+            return False
+        expected_keys = {"convention_sha256", "kind", "artifact"}
+        if convention_basis == "owner_decision":
+            expected_keys.add("decision_summary")
+        if (
+            set(project_convention_evidence) != expected_keys
+            or project_convention_evidence.get("kind") != convention_basis
+        ):
+            return False
+        digest = project_convention_evidence.get("convention_sha256")
+        artifact = project_convention_evidence.get("artifact")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or not isinstance(artifact, dict)
+            or set(artifact) != {"path", "sha256"}
+            or not isinstance(artifact.get("path"), str)
+            or not artifact["path"].strip()
+            or Path(artifact["path"]).is_absolute()
+            or ".." in Path(artifact["path"]).parts
+            or artifact["path"].startswith(".git/")
+            or artifact["path"].startswith(".maestro/state/")
+            or not isinstance(artifact.get("sha256"), str)
+            or len(artifact["sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in artifact["sha256"]
+            )
+        ):
+            return False
+        if convention_basis == "owner_decision":
+            summary = project_convention_evidence.get("decision_summary")
+            if (
+                not isinstance(summary, str)
+                or not summary.strip()
+                or len(summary) > 500
+            ):
+                return False
+        if command_artifact_ref != artifact["path"]:
+            return False
+    if (
+        convention_action in {"created", "updated"}
+        and project_convention_evidence is None
+        and _active_convention_evidence_required(event.get("framework_version"))
     ):
         return False
     if convention_action == "none" and convention_basis != "none":
