@@ -5,6 +5,7 @@ from typing import Any
 
 from . import __version__
 from .documents import (
+    REQUIRED_DOCUMENT_FIELDS,
     active_documents,
     broken_links,
     frontmatter_fields,
@@ -550,17 +551,16 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
                 ),
             )
         )
-    required_metadata = {"id", "type", "status", "authority", "owner", "summary"}
     metadata_failures = {
         path: sorted(
             field
-            for field in required_metadata
+            for field in REQUIRED_DOCUMENT_FIELDS
             if field not in metadata or not metadata[field].strip()
         )
         for path, metadata in indexed_metadata
         if any(
             field not in metadata or not metadata[field].strip()
-            for field in required_metadata
+            for field in REQUIRED_DOCUMENT_FIELDS
         )
     }
     checks.append(
@@ -568,7 +568,11 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
             "DOC_FRONTMATTER",
             "FAIL" if metadata_failures else "PASS",
             f"missing_fields={metadata_failures}",
-            "Add typed frontmatter to every active Markdown document."
+            (
+                "Add typed frontmatter to every active Markdown document. "
+                "See the Frontmatter contract in "
+                "docs/governance/document-lifecycle.md."
+            )
             if metadata_failures
             else "",
         )

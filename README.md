@@ -1,187 +1,171 @@
 # Harness Maestro
 
-Harness Maestro is a small, project-agnostic control layer for installing repository guidance, selecting only relevant documentation and review lenses, diagnosing drift, recording compact run evidence, and improving verified conventions inside the current project without mutating the global harness.
+> AI가 저장소의 모든 문서와 에이전트를 한꺼번에 쓰지 않고, 현재 작업에 필요한
+> 근거와 검토 관점만 골라 가장 작은 안전한 흐름으로 구현·검증하도록 돕는 범용
+> 프로젝트 하네스입니다.
 
-The current `v0` intentionally stops before autonomous multi-agent execution, external synchronization, or self-promotion. It produces validated configuration and execution plans that a Codex workflow can follow.
+Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝트 지식, 라우팅,
+검증, 개선 기록을 관리하는 작은 제어 계층**입니다. 결정론적 CLI가 계획과 계약을
+만들고, `$maestro` Skill이 Codex 같은 에이전트 호스트에서 그 계약을 실행합니다.
 
-## How it works
+[빠른 시작](#빠른-시작) · [어떻게 동작하나요?](#어떻게-동작하나요) ·
+[문서 지도](docs/README.md) ·
+[설계 근거와 참고 자료](docs/research/design-foundations.md)
 
-```text
-request
-  -> Maestro reads the project index and task-relevant conventions
-  -> Executor routing selects the lowest sufficient model class
-  -> optional bounded research returns source-ranked claims
-  -> risk routing selects 0–3 Lens cards
-  -> one implementation owner writes
-  -> isolated reviewers are used only for high-risk conflicts
-  -> deterministic verification produces the completion verdict
-  -> reusable same-run rules become review candidates
-  -> only an owner decision or accepted held-out evaluation activates a convention
-  -> global harness improvements remain candidates
-  -> compact JSONL observations may later inform a read-only govern report
-```
+## 빠른 시작
 
-The CLI does not launch agents. It safely initializes a project, selects documents, returns a deterministic route, and records one compact completion receipt. The `$maestro` skill applies that route using the agent host that invoked it.
+요구 사항은 Python 3.11 이상과 [`uv`](https://docs.astral.sh/uv/)입니다.
 
-## Core model
+### 1. 설치
 
-- **Lens** — what to inspect and which evidence can reject a decision.
-- **Executor** — which model, tools, permissions, and context policy perform work.
-- **Department** — rules for selecting Lens cards; not a permanent agent organization.
-- **Adapter** — project-specific facts, commands, and authority choices. The built-in document provider is Markdown; a project may instead point to its own local Adapter instructions.
-- **Maestro** — routes the smallest safe workflow and preserves evidence.
-
-Fast work uses zero or one Lens in the main context. Standard work binds one or two Lenses to one read-only reviewer pass. Deep work may run up to three selected Lenses in fresh, isolated reviewer contexts. Rebuttal is limited to one material conflict round and never uses majority vote as correctness.
-
-## Why this is a separate repository
-
-This repository is the versioned distribution source for the framework: CLI code, schemas, Lens and Executor registry, skills, decisions, and regression tests live here once. A target project receives only its small project manifest, lock, managed-block record, and documentation policy.
-
-Keeping the framework separate provides reviewable upgrades and rollback without copying a changing set of skills into every project. It is not a repository for one Markdown log per task; operational records stay as compact project-scoped JSONL and archive material is excluded from normal retrieval.
-
-## Install once, use in many projects
-
-For framework development, clone this repository in one stable location and use
-an editable isolated tool installation:
-
-```bash
-uv tool install --editable /path/to/harness-maestro
-```
-
-For project use, check out a reviewed release tag and install it non-editably:
+현재 checkout을 바로 사용하거나 프레임워크를 개발할 때:
 
 ```bash
 git clone https://github.com/SungKong00/harness-maestro.git /path/to/harness-maestro
+uv tool install --editable /path/to/harness-maestro
+command -v maestro
+```
+
+검토된 tag가 발행된 뒤 재현 가능한 버전을 고정할 때:
+
+```bash
 git -C /path/to/harness-maestro checkout --detach v0.2.2
 uv tool install /path/to/harness-maestro
 ```
 
-Do not treat the tag as available until CI has passed and the maintainer has
-created it. The CLI and Skill links below must use the same pinned checkout.
-Avoid forcing an install into an externally managed system Python.
+`v0.2.2`는 저장소에 실제 tag가 발행된 경우에만 두 번째 예시에 사용하세요.
 
-Register these skill directories once with the agent client:
-
-- `skills/maestro` — normal project work; may be invoked implicitly
-- `skills/maestro-adapter-builder` — explicit setup and adapter inspection
-- `skills/maestro-govern` — explicit read-only improvement review
-
-For Codex installations that discover `~/.agents/skills`, safe source-checkout
-registration can be done with non-overwriting symlinks:
+### 2. `$maestro` Skill 연결
 
 ```bash
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
 ln -s "$maestro_source/skills/maestro" ~/.agents/skills/maestro
-ln -s "$maestro_source/skills/maestro-adapter-builder" ~/.agents/skills/maestro-adapter-builder
-ln -s "$maestro_source/skills/maestro-govern" ~/.agents/skills/maestro-govern
 ```
 
-If a destination already exists, `ln` stops instead of replacing it; review the
-existing installation before changing it. Other clients should register the same
-three source directories through their skill settings. Verify the executable and
-links, then restart the agent client so it rebuilds Skill discovery:
+기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
+**restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
 
-```bash
-command -v maestro
-maestro --help
-readlink ~/.agents/skills/maestro
-readlink ~/.agents/skills/maestro-adapter-builder
-readlink ~/.agents/skills/maestro-govern
-```
+### 3. 프로젝트 초기화
 
-Then initialize each target repository with a reviewed two-step plan:
+`init`은 바로 쓰지 않고 변경 plan을 먼저 보여줍니다. 검토한 같은 plan만 적용할 수
+있습니다.
 
 ```bash
 maestro_plan="$(mktemp -t maestro-init.XXXXXX.json)"
 maestro init --repo /path/to/project --json > "$maestro_plan"
 maestro init --repo /path/to/project --apply-plan "$maestro_plan" --json
-maestro doctor --repo /path/to/project --json
+maestro doctor --repo /path/to/project --strict --json
 rm -- "$maestro_plan"
 ```
 
-`init` and `upgrade` preview by default. Only `--apply-plan` writes. `status`, `doctor`, `docs`, `adapt`, `route`, and `govern report` are read-only. `record` appends exactly one validated project-scoped JSONL receipt. Identical retries are no-ops; the same `run_id` with different content is rejected.
-For diagnosis or review, print the preview to stdout and do not create a plan artifact.
+생성된 `docs/project.md`와 `docs/architecture.md`의 초안을 실제 프로젝트 내용으로
+채우면 준비가 끝납니다.
 
-`route --intent` is optional. In `auto` mode, unmatched implementation, review,
-and research requests bind to their corresponding Executor without loading the
-Lens catalog. Obvious low-risk/scope conflicts are returned as warnings; Maestro
-does not silently rewrite the operator's risk choice.
-
-Initialization adds or updates only:
-
-- a delimited Maestro block in `AGENTS.md` and `.gitignore`;
-- `.maestro/project.json`, `.maestro/managed.json`, and `.maestro/lock.json`;
-- `docs/README.md` and `docs/governance/document-lifecycle.md` when absent;
-- draft `docs/project.md` and `docs/architecture.md` when an equivalent document is not already mapped.
-
-Content outside the managed blocks is preserved. Commands found in manifests are recorded as candidates and are not executed or approved automatically.
-
-The initialized project enables `verified-project-conventions`: after verification, `$maestro` may automatically record a reusable rule as a candidate. Same-run success cannot activate it. An explicit owner decision or accepted held-out evaluation may update or create at most one rule under `docs/conventions/`. It never auto-edits global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions. Set the mode to `off` to disable automatic Convention candidates.
-
-An active Convention receipt must content-address the Convention and a durable
-repository-local verification artifact. Ordinary completions and same-run
-candidates keep the smaller receipt contract.
-
-## Invoke it
-
-For normal work, ask the agent directly:
+### 4. 개발 요청
 
 ```text
-$maestro 이 저장소에서 인증 API 변경을 구현하고 근거까지 검증해줘.
+$maestro 인증 API를 변경해줘. 현재 Convention을 확인하고 구현한 뒤 계약과 회귀 테스트로 검증해줘.
 ```
 
-For first-time setup or a static adapter check:
+설정 과정, custom 문서 Adapter, CLI별 사용법은
+[시작 및 운용 가이드](docs/runbooks/getting-started.md)에 있습니다.
+
+## 무엇을 해결하나요?
+
+- **방향 고착 방지** — 서로의 결론을 보지 않은 Lens가 먼저 판단하고, 중요한
+  충돌만 한 번 반박합니다.
+- **컨텍스트 절약** — `project`, `architecture`, 관련 ADR·Convention만 제한된
+  예산 안에서 선택합니다.
+- **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
+  Standard·Deep 검토를 추가합니다.
+- **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
+  artifact로 검증합니다.
+- **안전한 프로젝트 로컬 개선** — 한 번의 성공은 candidate일 뿐입니다. 사용자
+  결정이나 분리된 평가를 거쳐야 Convention이 됩니다.
+- **Markdown 우선, custom 가능** — 기본 문서 체계를 제공하되 프로젝트가 원하면
+  저장소 안의 사용자 정의 Adapter 계약으로 문서 권위를 바꿀 수 있습니다.
+
+## 어떻게 동작하나요?
 
 ```text
-$maestro-adapter-builder 이 프로젝트를 진단하고 init 미리보기부터 진행해줘.
+사용자 요청
+  → 관련 문서만 선택
+  → 의도·위험으로 Fast / Standard / Deep 결정
+  → 필요한 Lens의 독립 검토
+  → 중요한 충돌만 근거 교환
+  → 한 명의 writer가 구현
+  → 실제 명령과 artifact로 검증
+  → 재사용할 신호만 프로젝트 candidate로 기록
 ```
 
-For accumulated evidence and improvement candidates:
+| 강도 | 사용할 때 | 기본 검토 |
+|---|---|---|
+| **Fast** | 작고 되돌릴 수 있는 기존 패턴 변경 | main context, Lens 0~1개 |
+| **Standard** | 여러 파일 또는 하나의 의미 있는 경계 변경 | Lens 1~2개 |
+| **Deep** | 보안·데이터·호환성·비가역 선택, 큰 불확실성 | fresh context의 독립 Lens 최대 3개 |
+
+Lens는 “무엇을 어떤 기준으로 검토할지”, Executor는 “어떤 모델·도구·권한으로
+실행할지”를 정합니다. Lens 수가 곧 에이전트 수는 아니며, CLI 자체도 에이전트를
+생성하는 scheduler가 아닙니다.
+
+## 프로젝트에 무엇이 생기나요?
 
 ```text
-$maestro-govern 최근 기록에서 반복되는 낭비와 개선 후보만 보고해줘.
+project/
+├── AGENTS.md               # 짧은 진입 규칙과 문서 포인터
+├── .maestro/
+│   ├── project.json        # 기계가 읽는 프로젝트 설정
+│   ├── managed.json        # Maestro 관리 경계
+│   ├── lock.json           # framework·registry 기준선
+│   └── state/              # Git에서 제외되는 compact 실행 기록
+└── docs/
+    ├── README.md           # 활성 문서 지도
+    ├── project.md          # 목표·사용자·범위·비목표·우선순위
+    ├── architecture.md     # 현재 구조·경계·제약·품질 목표
+    ├── decisions/          # 중요한 선택과 이유
+    ├── conventions/        # 반복 적용할 검증된 개발 규칙
+    └── plans/              # 실제 계획이 있을 때만 생성
 ```
 
-The two administrative skills do not run implicitly. Governance reports cannot promote, delete, archive, or edit the live harness.
+문서는 쌓이는 대로 전부 읽지 않습니다. 한 주제의 활성 권위는 하나만 유지하고,
+실행 기록은 compact JSONL로 보관하며, 반복해서 재사용할 지식만 Markdown으로
+승격합니다. 기존 Markdown 본문과 `AGENTS.md`는 Maestro 관리 블록 밖에서
+보존됩니다.
 
-## CLI reference
+## 문서 안내
 
-```bash
-maestro docs --repo /path/to/project --task "인증 API 수정" --path src/api/login.py --json
-maestro route --goal "인증 정책 변경" --risk high --intent implementation --host codex --json
-maestro status --repo /path/to/project --json
-maestro upgrade --repo /path/to/project --json
-maestro record --repo /path/to/project --receipt /tmp/run-receipt.json --json
-maestro adapt --repo /path/to/project --json
-maestro govern report --repo /path/to/project --window 20 --json
-```
+| 원하는 것 | 읽을 문서 |
+|---|---|
+| 설치, 초기화, 일반 운용 | [시작 및 운용 가이드](docs/runbooks/getting-started.md) |
+| 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
+| Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
+| 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
+| 개선 후보가 Convention이 되는 조건 | [구성요소 생명주기](docs/governance/component-lifecycle.md) |
+| 논문·공식 저장소와 설계의 연결 | [설계 근거와 참고 자료](docs/research/design-foundations.md) |
+| 현재 범위와 보류 기능 | [제외·보류 목록](docs/governance/deferred-and-excluded.md) |
+| 모든 활성 문서 | [문서 지도](docs/README.md) |
 
-For a user-defined document system, place an instruction contract inside the repository and set `documentation.provider` to `custom` with its `custom_adapter.instructions_path`. Core validates and returns that handoff; it does not execute arbitrary Adapter commands or attempt to implement every external provider.
+## 현재 경계
 
-To try the checkout without installation, prefix commands with `PYTHONPATH=src python3 -m maestro`.
+현재 v0는 다음을 의도적으로 하지 않습니다.
 
-Before distributing a release, build the wheel and compare the artifact with the
-source resource inventory:
+- CLI가 agent를 직접 생성하거나 자유 토론을 자동 실행
+- 모든 Lens마다 별도 agent를 자동 배정
+- 다수결이나 자기평가만으로 완료 판정
+- Notion 같은 외부 문서 시스템의 양방향 동기화
+- 한 작업의 성공만으로 전역 Skill·Agent·Lens·Executor 자동 수정
+- 매 실행마다 대화 전문이나 장문 Markdown 보고서 축적
 
-```bash
-uv build --wheel
-python3 scripts/verify_wheel.py dist/harness_maestro-*.whl
-```
+이 경계는 권한과 관리 비용을 제한하기 위한 것입니다. host에서 실제 read-only
+격리가 강제되는지는 [Codex host conformance
+runbook](docs/runbooks/codex-host-conformance.md)으로 별도 확인합니다.
 
-The release gate also installs that wheel into an empty virtual environment and
-requires CLI help, fresh-repository init, strict doctor, and a zero-operation
-second preview to pass. Source-only tests are not treated as wheel evidence.
-The [Codex host conformance runbook](docs/runbooks/codex-host-conformance.md)
-separately checks behavior that unit tests cannot prove.
+## 기여와 라이선스
 
-## Repository map
+개발 환경, 전체 검증과 문서 변경 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를
+확인하세요. 버그와 제안은
+[GitHub Issues](https://github.com/SungKong00/harness-maestro/issues), 변경안은
+[Pull Requests](https://github.com/SungKong00/harness-maestro/pulls)로 받습니다.
 
-- `src/maestro/` — deterministic CLI and validation logic.
-- `src/maestro/resources/` — installable schemas and active registry.
-- `skills/` — Codex workflow surfaces.
-- `docs/` — canonical architecture, decisions, governance, and archived research.
-- `scripts/verify_wheel.py` — built-artifact resource and privacy check.
-- `tests/` — standard-library regression and pressure tests.
-
-See `docs/README.md` for the authoritative document map.
+Harness Maestro는 [MIT License](LICENSE)로 배포됩니다.

@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .documents import (
+    REQUIRED_DOCUMENT_FIELDS,
+    SCAN_LIMIT_PREFIX,
+    frontmatter_fields,
+    scan_document_paths,
+)
 from .errors import MaestroError
 from .registry import (
     REGISTRY_FORMAT_VERSION,
@@ -807,6 +813,50 @@ def build_init_plan(repo_path: str | Path) -> dict[str, Any]:
             f"Static adapter discovery stopped after {inspection['scan_limit_entries']} entries."
         )
     warnings.extend(sorted(inspection["scan_warnings"]))
+    document_paths, document_scan_notices = scan_document_paths(repo)
+    if any(
+        notice.startswith(SCAN_LIMIT_PREFIX)
+        for notice in document_scan_notices
+    ):
+        warnings.append(
+            "Documentation metadata migration scanning was truncated by "
+            "resource limits; Maestro Doctor can report only the same bounded "
+            "file-to-field evidence."
+        )
+    metadata_migrations: list[str] = []
+    docs_root = repo / "docs"
+    for path in document_paths:
+        if "archive" in path.relative_to(docs_root).parts:
+            continue
+        metadata = frontmatter_fields(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        missing = sorted(
+            field
+            for field in REQUIRED_DOCUMENT_FIELDS
+            if field not in metadata or not metadata[field].strip()
+        )
+        if missing:
+            metadata_migrations.append(
+                f"{path.relative_to(repo).as_posix()} "
+                f"(missing: {', '.join(missing)})"
+            )
+    for item in metadata_migrations[:8]:
+        warnings.append(
+            "Existing Markdown document was preserved and needs typed "
+            f"frontmatter: {item}."
+        )
+    if len(metadata_migrations) > 8:
+        warnings.append(
+            f"{len(metadata_migrations) - 8} additional existing Markdown "
+            "documents need typed frontmatter; run Maestro Doctor for its "
+            "bounded file-to-field map."
+        )
+    if metadata_migrations:
+        warnings.append(
+            "After adding frontmatter manually, preview Maestro upgrade and "
+            "accept only the reviewed user-owned document baseline changes."
+        )
     base = {
         "schema_version": "maestro_operation_plan_v1",
         "command": "init",

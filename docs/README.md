@@ -19,11 +19,13 @@ sensitivity: internal
 
 ## 처음 읽을 문서
 
-1. [프로젝트 맥락](project.md) — 목표, 범위, 비목표와 우선순위
-2. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
-3. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
+1. 처음 사용하는 경우 [시작 및 운용 가이드](runbooks/getting-started.md) — 설치,
+   초기화, 일반 요청과 선택적 관리 흐름
+2. [프로젝트 맥락](project.md) — 목표, 범위, 비목표와 우선순위
+3. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
+4. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
    분리하는 이유
-4. [v0.2 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
+5. [v0.2 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
 
 ## 거버넌스
 
@@ -34,8 +36,16 @@ sensitivity: internal
 - [제외·보류 목록](governance/deferred-and-excluded.md) — 의도적으로 넣지 않은
   기능과 재검토 조건
 
+## 설계 근거
+
+- [설계 근거와 참고 자료](research/design-foundations.md) — 멀티에이전트 숙의,
+  컨텍스트 절약, orchestration, 자가개선과 문서 구조에 참고한 원 논문·공식 저장소·
+  공학 자료, 실제 채택 범위와 아직 검증하지 않은 주장
+
 ## 릴리스 검사
 
+- [시작 및 운용 가이드](runbooks/getting-started.md) — 설치, Skill 연결, init,
+  일반 CLI와 선택적 Adapter·govern 절차
 - [Codex host conformance](runbooks/codex-host-conformance.md) — Fast·Standard·Deep
   실제 세션에서 CLI 밖의 읽기 전용·격리·한 명 writer 계약을 확인하는 최소 수동 검사
 

@@ -20,6 +20,9 @@ MAX_DOCUMENT_FILE_BYTES = 1_000_000
 MAX_DOCUMENT_TOTAL_BYTES = 16_000_000
 DOCUMENT_READ_CHUNK_BYTES = 64 * 1024
 SCAN_LIMIT_PREFIX = "<scan-limit>:"
+REQUIRED_DOCUMENT_FIELDS = frozenset(
+    {"id", "type", "status", "authority", "owner", "summary"}
+)
 STOPWORDS = {
     "a",
     "add",
@@ -114,6 +117,15 @@ def frontmatter_fields(text: str) -> dict[str, str]:
         key, value = line.split(":", 1)
         result[key.strip()] = value.strip().strip("\"'")
     return result
+
+
+def _without_frontmatter(text: str) -> str:
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---", 4)
+    if end < 0:
+        return text
+    return text[end + 4 :].lstrip("\r\n")
 
 
 def scan_document_paths(
@@ -298,9 +310,8 @@ def active_documents(
         content, digest, document_bytes = read_result
         bytes_read += document_bytes
         metadata = frontmatter_fields(content)
-        required = {"id", "type", "status", "authority", "owner", "summary"}
-        if not required.issubset(metadata) or any(
-            not metadata[field].strip() for field in required
+        if not REQUIRED_DOCUMENT_FIELDS.issubset(metadata) or any(
+            not metadata[field].strip() for field in REQUIRED_DOCUMENT_FIELDS
         ):
             continue
         if metadata.get("status") != "active":
@@ -325,7 +336,9 @@ def active_documents(
                         if field in metadata
                     )
                 ),
-                "body_terms": searchable_terms(content[:12_000]),
+                "body_terms": searchable_terms(
+                    _without_frontmatter(content)[:12_000]
+                ),
             }
         )
     scan_trace["bytes_read"] = bytes_read
@@ -444,6 +457,7 @@ def _custom_adapter_handoff(
         "requested_lenses": lenses,
         "inferred_lenses": [],
         "documents": [],
+        "core_document_status": [],
         "selected_conventions": [],
         "convention_status": "adapter_required",
         "archive_included": False,
@@ -468,6 +482,107 @@ def _custom_adapter_handoff(
         ],
         "writes_performed": False,
     }
+
+
+def _core_document_status(repo: Path) -> list[dict[str, str]]:
+    project_path = safe_target(repo, ".maestro/project.json")
+    if not project_path.is_file() or project_path.is_symlink():
+        return []
+    project = read_json(project_path)
+    documentation = project.get("documentation")
+    if (
+        not isinstance(documentation, dict)
+        or documentation.get("provider") != "markdown"
+    ):
+        return []
+    configured = documentation.get("core_documents")
+    if not isinstance(configured, dict):
+        return []
+
+    result: list[dict[str, str]] = []
+    for role in ("project", "architecture"):
+        relative_path = configured.get(role)
+        if not isinstance(relative_path, str) or not relative_path.strip():
+            result.append(
+                {
+                    "role": role,
+                    "path": "",
+                    "status": "missing",
+                }
+            )
+            continue
+        try:
+            target = safe_target(repo, relative_path)
+        except MaestroError:
+            result.append(
+                {
+                    "role": role,
+                    "path": relative_path,
+                    "status": "missing",
+                }
+            )
+            continue
+        if target.is_symlink() or not target.is_file():
+            status = "missing"
+        else:
+            read_result = _read_document_bounded(
+                target,
+                MAX_DOCUMENT_FILE_BYTES,
+            )
+            if read_result is None or not read_result[0].strip():
+                status = "missing"
+            else:
+                metadata = frontmatter_fields(read_result[0])
+                if not REQUIRED_DOCUMENT_FIELDS.issubset(metadata) or any(
+                    not metadata[field].strip()
+                    for field in REQUIRED_DOCUMENT_FIELDS
+                ):
+                    status = "untyped"
+                elif metadata["status"] == "active":
+                    status = (
+                        "active"
+                        if metadata["authority"]
+                        in {"repository", "external-snapshot", "generated"}
+                        else "invalid"
+                    )
+                elif metadata["status"] == "draft":
+                    status = "draft"
+                else:
+                    status = "inactive"
+        result.append(
+            {
+                "role": role,
+                "path": relative_path,
+                "status": status,
+            }
+        )
+    return result
+
+
+def _core_document_gaps(
+    statuses: list[dict[str, str]],
+) -> list[str]:
+    messages: list[str] = []
+    for item in statuses:
+        status = item["status"]
+        if status == "active":
+            continue
+        role = item["role"]
+        path = item["path"] or "<not configured>"
+        if status == "draft":
+            action = "replace the draft placeholder with verified project facts"
+        elif status == "untyped":
+            action = "add typed frontmatter before treating it as active evidence"
+        elif status == "inactive":
+            action = "configure an active core document"
+        elif status == "invalid":
+            action = "repair unsupported core document metadata"
+        else:
+            action = "create or configure the missing core document"
+        messages.append(
+            f"Core document {role} is {status}: {path}; {action}."
+        )
+    return messages
 
 
 def select_documents(
@@ -627,10 +742,24 @@ def select_documents(
     )
     matched_documents = len(selected) - (1 if index_selected else 0)
     archive_count = scan_trace["archive_documents_seen"]
+    core_document_status = _core_document_status(repo)
     missing_evidence: list[str] = []
     if scan_trace["truncated"]:
         missing_evidence.append(
             "Documentation scan was truncated by resource limits; selection evidence is incomplete."
+        )
+    missing_evidence.extend(
+        _core_document_gaps(core_document_status)
+    )
+    if budget_skipped_documents:
+        missing_evidence.append(
+            "Matched documents were omitted by the selection byte budget; "
+            "narrow the task or target paths before treating the evidence as complete."
+        )
+    if limit_skipped_documents:
+        missing_evidence.append(
+            "Matched documents were omitted by the document-count limit; "
+            "narrow the task or target paths before treating the evidence as complete."
         )
     evidence_status = "insufficient" if missing_evidence else "sufficient"
     selected_conventions = [
@@ -647,6 +776,7 @@ def select_documents(
         "requested_lenses": lenses,
         "inferred_lenses": inferred_lenses,
         "documents": selected,
+        "core_document_status": core_document_status,
         "selected_conventions": selected_conventions,
         "convention_status": "found" if selected_conventions else "none",
         "archive_included": False,

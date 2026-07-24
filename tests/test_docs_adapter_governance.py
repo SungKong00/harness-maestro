@@ -140,6 +140,15 @@ class DocumentSelectionTests(unittest.TestCase):
                 ["docs/README.md"],
                 [item["path"] for item in result["documents"]],
             )
+            frontmatter_keys = select_documents(
+                repo,
+                "Audit status type maestro_doc",
+                [],
+            )
+            self.assertEqual(
+                ["docs/README.md"],
+                [item["path"] for item in frontmatter_keys["documents"]],
+            )
             self.assertGreater(
                 result["selection_trace"]["selected_document_bytes"],
                 0,
@@ -339,6 +348,13 @@ class DocumentSelectionTests(unittest.TestCase):
             )
             self.assertTrue(trace["selection_budget_truncated"])
             self.assertTrue(trace["budget_skipped_documents"])
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertTrue(
+                any(
+                    "selection byte budget" in item
+                    for item in result["missing_evidence"]
+                )
+            )
 
     def test_target_paths_must_be_repository_relative(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -369,6 +385,14 @@ class DocumentSelectionTests(unittest.TestCase):
             self.assertEqual(
                 ["docs/README.md"],
                 [item["path"] for item in result["documents"]],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertEqual(
+                ["draft", "draft"],
+                [
+                    item["status"]
+                    for item in result["core_document_status"]
+                ],
             )
 
     def test_only_task_relevant_conventions_are_selected(self) -> None:
@@ -484,12 +508,31 @@ class DocumentSelectionTests(unittest.TestCase):
                 "docs/conventions/handles.md",
                 result["selected_conventions"],
             )
+            self.assertTrue(
+                result["selection_trace"]["selection_limit_truncated"],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertTrue(
+                any(
+                    "document-count limit" in item
+                    for item in result["missing_evidence"]
+                )
+            )
 
     def test_no_matching_convention_is_explicit_and_not_a_scan_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
             repo.mkdir()
             apply_fresh_init(repo)
+            for relative_path in ("docs/project.md", "docs/architecture.md"):
+                path = repo / relative_path
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
 
             result = select_documents(repo, "Rename the local banner variable", [])
 
@@ -498,6 +541,104 @@ class DocumentSelectionTests(unittest.TestCase):
             self.assertFalse(result["archive_included"])
             self.assertEqual("sufficient", result["evidence_status"])
             self.assertEqual([], result["missing_evidence"])
+            self.assertEqual(
+                ["active", "active"],
+                [
+                    item["status"]
+                    for item in result["core_document_status"]
+                ],
+            )
+
+    def test_draft_core_documents_are_reported_as_missing_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            result = select_documents(repo, "Implement the local banner", [])
+
+            self.assertEqual(
+                [
+                    {
+                        "role": "project",
+                        "path": "docs/project.md",
+                        "status": "draft",
+                    },
+                    {
+                        "role": "architecture",
+                        "path": "docs/architecture.md",
+                        "status": "draft",
+                    },
+                ],
+                result["core_document_status"],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertEqual(2, len(result["missing_evidence"]))
+            self.assertTrue(
+                all(
+                    "Core document" in item
+                    for item in result["missing_evidence"]
+                )
+            )
+
+    def test_missing_and_untyped_core_documents_are_not_sufficient(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            (repo / "docs/project.md").unlink()
+            (repo / "docs/architecture.md").write_text(
+                "# Existing architecture without metadata\n",
+                encoding="utf-8",
+            )
+
+            result = select_documents(repo, "Implement the local banner", [])
+
+            self.assertEqual(
+                ["missing", "untyped"],
+                [
+                    item["status"]
+                    for item in result["core_document_status"]
+                ],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertTrue(
+                any("is missing" in item for item in result["missing_evidence"])
+            )
+            self.assertTrue(
+                any("is untyped" in item for item in result["missing_evidence"])
+            )
+
+    def test_invalid_core_document_authority_is_not_active_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            for relative_path in ("docs/project.md", "docs/architecture.md"):
+                path = repo / relative_path
+                path.write_text(
+                    path.read_text(encoding="utf-8")
+                    .replace("status: draft", "status: active")
+                    .replace("authority: repository", "authority: historical"),
+                    encoding="utf-8",
+                )
+
+            result = select_documents(repo, "Implement the local banner", [])
+
+            self.assertEqual(
+                ["invalid", "invalid"],
+                [
+                    item["status"]
+                    for item in result["core_document_status"]
+                ],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertTrue(
+                all(
+                    "unsupported core document metadata" in item
+                    for item in result["missing_evidence"]
+                )
+            )
 
     def test_universal_frontmatter_values_do_not_select_unrelated_rules(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

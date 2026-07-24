@@ -91,6 +91,14 @@ v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `s
 계약이며, 완전한 schema 검증은 후속 후보이다. 구현된 검사보다 강한 보장을 주장하지
 않는다.
 
+`init`은 기존 Markdown에 이 계약이 없더라도 본문을 자동 변경하지 않고 누락 필드를
+경고한다. `maestro docs`는 configured project·architecture 문서가 draft, missing,
+untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 문서가
+선택 개수나 byte 예산 때문에 빠진 경우에도 `sufficient`라고 표시하지 않는다. Convention이
+선택되지 않은 `none` 상태 자체는 근거 공백이 아니다. 사용자가 frontmatter를 수동
+추가한 뒤에는 `maestro upgrade` 미리보기에서 검토한 user-owned 문서 기준선만
+변경되는지 확인해 적용하고 strict Doctor를 다시 실행한다.
+
 ## 생성부터 아카이브까지
 
 1. **Draft** — 기존 권위와 중복되는지, owner와 scope가 있는지 확인한다.

@@ -1176,8 +1176,13 @@ def route_goal(
         }
         deliberation = "none"
     elif depth == "fast":
+        executor_id = (
+            "implementation-engineer"
+            if resolved_intent == "implementation"
+            else "lens-reviewer"
+        )
         binding = {
-            "executor": "implementation-engineer",
+            "executor": executor_id,
             "runs": 1,
             "fresh_context_per_lens": False,
         }
@@ -1196,11 +1201,26 @@ def route_goal(
         item["executor_id"]: item
         for item in registry["executors"]
     }
+    bound_executor = executors[binding["executor"]]
+    mutating_capabilities = sorted(
+        capability
+        for capability in bound_executor["capabilities"]
+        if capability.startswith("mutate.")
+    )
+    if resolved_intent in {"review", "research"} and mutating_capabilities:
+        raise MaestroError(
+            "READ_ONLY_INTENT_CAPABILITY_CONFLICT",
+            (
+                f"Intent {resolved_intent} requires a read-only Executor, but "
+                f"{bound_executor['executor_id']} allows: "
+                f"{', '.join(mutating_capabilities)}"
+            ),
+        )
     model_route = _model_route(
         goal,
         risk,
         lens_ids,
-        executors[binding["executor"]],
+        bound_executor,
         host_id,
     )
     handoff_contract = (

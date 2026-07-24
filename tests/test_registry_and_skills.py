@@ -141,8 +141,13 @@ class RegistryContractTests(unittest.TestCase):
 
 
 class RoutingContractTests(unittest.TestCase):
-    def test_low_risk_is_capped_at_one_lens(self) -> None:
-        route = route_goal("Review the API response", "low", ["contract"])
+    def test_low_risk_implementation_is_capped_at_one_lens(self) -> None:
+        route = route_goal(
+            "Implement the API response",
+            "low",
+            ["contract"],
+            intent="implementation",
+        )
 
         self.assertEqual("fast", route["depth"])
         self.assertEqual(["contract"], route["selected_lenses"])
@@ -155,9 +160,10 @@ class RoutingContractTests(unittest.TestCase):
 
         with self.assertRaises(MaestroError) as raised:
             route_goal(
-                "Review the API and tests",
+                "Implement the API and tests",
                 "low",
                 ["contract", "test-proof"],
+                intent="implementation",
             )
         self.assertEqual("LENS_LIMIT_EXCEEDED", raised.exception.code)
 
@@ -234,6 +240,63 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("research", research["intent"])
         self.assertEqual("researcher", research["binding"]["executor"])
         self.assertIsNone(research["handoff_contract"])
+
+    def test_selected_lenses_preserve_read_only_intent_executors(self) -> None:
+        registry = load_registry()
+        executors = {
+            item["executor_id"]: item
+            for item in registry["executors"]
+        }
+        cases = (
+            ("review", "low", ["contract"]),
+            ("review", "medium", ["contract"]),
+            ("review", "high", ["contract"]),
+            ("research", "low", ["auth-boundary"]),
+            ("research", "medium", ["auth-boundary"]),
+            ("research", "high", ["auth-boundary"]),
+        )
+
+        for intent, risk, lenses in cases:
+            with self.subTest(intent=intent, risk=risk):
+                route = route_goal(
+                    f"{intent} authentication behavior",
+                    risk,
+                    lenses,
+                    intent=intent,
+                )
+                executor = executors[route["binding"]["executor"]]
+                self.assertEqual("lens-reviewer", executor["executor_id"])
+                self.assertFalse(
+                    any(
+                        capability.startswith("mutate.")
+                        for capability in executor["capabilities"]
+                    )
+                )
+                self.assertIsNone(route["handoff_contract"])
+
+    def test_read_only_intent_rejects_mutation_capability(self) -> None:
+        registry = copy.deepcopy(load_registry())
+        reviewer = next(
+            item
+            for item in registry["executors"]
+            if item["executor_id"] == "lens-reviewer"
+        )
+        reviewer["capabilities"].append("mutate.fs")
+        reviewer["forbidden_capabilities"].remove("mutate.fs")
+
+        with patch("maestro.registry.load_registry", return_value=registry):
+            with self.assertRaises(MaestroError) as raised:
+                route_goal(
+                    "Review the API response",
+                    "low",
+                    ["contract"],
+                    intent="review",
+                )
+
+        self.assertEqual(
+            "READ_ONLY_INTENT_CAPABILITY_CONFLICT",
+            raised.exception.code,
+        )
 
     def test_explicit_intent_overrides_ambiguous_wording(self) -> None:
         route = route_goal(

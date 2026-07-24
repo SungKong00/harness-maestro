@@ -16,13 +16,13 @@
       "ownership": "user_owned",
       "path": "docs/README.md",
       "preserve_on_drift": true,
-      "sha256": "8bf89c25617f7ddc5699c95a07f4436edd7bc1e25708926df5d1aff4149e8e8f"
+      "sha256": "8358afd8cd9714bf6a68931c7ac4b793125adaf6361072bfe9565897dc5692b0"
     },
     {
       "ownership": "user_owned",
       "path": "docs/governance/document-lifecycle.md",
       "preserve_on_drift": true,
-      "sha256": "b22defd587df2f9d69c424fae1895ca7ce5ca3b53e601f948cbe8f5a4ca02844"
+      "sha256": "d30f742349158063e36c9e079fc39b4196a768bfa966a151b5d990f1f1982904"
     },
     {
       "ownership": "user_owned",

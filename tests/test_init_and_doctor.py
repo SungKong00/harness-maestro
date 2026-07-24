@@ -75,6 +75,68 @@ class InitSafetyTests(unittest.TestCase):
             self.assertFalse(result["writes_performed"])
             self.assertEqual([], result["changed_paths"])
 
+    def test_init_preserves_untyped_docs_and_reports_manual_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            docs = repo / "docs"
+            docs.mkdir(parents=True)
+            existing = "# Existing documentation\n\nKeep this exact body.\n"
+            index = docs / "README.md"
+            index.write_text(existing, encoding="utf-8")
+
+            plan = build_init_plan(repo)
+
+            self.assertEqual(existing, index.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "docs/README.md",
+                [operation["path"] for operation in plan["operations"]],
+            )
+            warning = next(
+                item
+                for item in plan["warnings"]
+                if "docs/README.md" in item
+            )
+            self.assertIn("preserved", warning)
+            self.assertIn("authority", warning)
+            self.assertIn("summary", warning)
+
+            plan_path = Path(temporary) / "plan.json"
+            write_json(plan_path, plan)
+            apply_plan(plan_path, repo)
+            second_plan = build_init_plan(repo)
+            self.assertEqual([], second_plan["operations"])
+            self.assertTrue(
+                any(
+                    "docs/README.md" in item
+                    for item in second_plan["warnings"]
+                )
+            )
+            self.assertEqual(existing, index.read_text(encoding="utf-8"))
+
+    def test_init_reports_truncated_document_metadata_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            docs = repo / "docs"
+            docs.mkdir(parents=True)
+            for index in range(3):
+                (docs / f"existing-{index}.md").write_text(
+                    f"# Existing {index}\n",
+                    encoding="utf-8",
+                )
+
+            with mock.patch(
+                "maestro.documents.MAX_DOCUMENT_ENTRIES",
+                1,
+            ):
+                plan = build_init_plan(repo)
+
+            self.assertTrue(
+                any(
+                    "metadata migration scanning was truncated" in item
+                    for item in plan["warnings"]
+                )
+            )
+
     def test_apply_rejects_stale_plan_without_partial_writes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
@@ -551,6 +613,10 @@ class DoctorTests(unittest.TestCase):
             check = check_by_id(report, "DOC_FRONTMATTER")
             self.assertEqual("FAIL", check["status"])
             self.assertIn("docs/conventions/incomplete.md", check["evidence"])
+            self.assertIn(
+                "docs/governance/document-lifecycle.md",
+                check["remediation"],
+            )
 
     def test_empty_required_frontmatter_value_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
