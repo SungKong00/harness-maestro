@@ -22,6 +22,6 @@ This repository is the versioned source for the Harness Maestro framework.
 - Keep initial lens conclusions isolated; discuss only material conflicts once.
 - Never treat majority vote as correctness. Preserve evidence-backed minority risks.
 - Record operational telemetry under the configured state root, not as one Markdown file per run.
-- When project-local self-improvement is enabled, update at most one verified project convention per run.
+- When project-local self-improvement is enabled, keep same-run reusable rules as candidates; create or update at most one active project Convention only from an explicit `owner_decision` or accepted `held_out_evaluation`.
 - Never auto-edit global Skills, Agents, Lenses, Executors, Departments, or Adapter definitions.
 <!-- MAESTRO:END -->

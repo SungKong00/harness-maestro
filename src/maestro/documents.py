@@ -392,6 +392,9 @@ def _scope_matches(target_path: str, scope: str) -> bool:
     if normalized_scope.endswith("/**"):
         prefix = normalized_scope[:-3].rstrip("/")
         return target_path == prefix or target_path.startswith(f"{prefix}/")
+    if not any(marker in normalized_scope for marker in ("*", "?", "[")):
+        prefix = normalized_scope.rstrip("/")
+        return target_path == prefix or target_path.startswith(f"{prefix}/")
     return fnmatchcase(target_path, normalized_scope)
 
 

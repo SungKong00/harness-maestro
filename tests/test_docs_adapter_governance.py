@@ -218,6 +218,96 @@ class DocumentSelectionTests(unittest.TestCase):
                 ),
             )
 
+    def test_literal_directory_scope_matches_only_its_path_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/server-api.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                canonical_document(
+                    "server-api",
+                    summary="Server API rules.",
+                    body="# Server API\n\nValidate API input.\n",
+                ).replace(
+                    "summary: Server API rules.",
+                    "summary: Server API rules.\nscope: [server/api]",
+                ),
+                encoding="utf-8",
+            )
+
+            selected = select_documents(
+                repo,
+                "change API validation",
+                [],
+                ["server/api/login.py"],
+            )
+            prefix_lookalike = select_documents(
+                repo,
+                "change API validation",
+                [],
+                ["server/apis/login.py"],
+            )
+            unrelated = select_documents(
+                repo,
+                "change API validation",
+                [],
+                ["client/api/login.ts"],
+            )
+
+            self.assertEqual(
+                ["docs/conventions/server-api.md"],
+                selected["selected_conventions"],
+            )
+            self.assertEqual([], prefix_lookalike["selected_conventions"])
+            self.assertEqual([], unrelated["selected_conventions"])
+
+    def test_literal_file_scope_keeps_exact_file_and_rejects_siblings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/login-api.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                canonical_document(
+                    "login-api",
+                    summary="Login endpoint rules.",
+                    body="# Login API\n\nValidate login input.\n",
+                ).replace(
+                    "summary: Login endpoint rules.",
+                    "summary: Login endpoint rules.\nscope: [server/api/login.py]",
+                ),
+                encoding="utf-8",
+            )
+
+            selected = select_documents(
+                repo,
+                "change login validation",
+                [],
+                ["server/api/login.py"],
+            )
+            sibling = select_documents(
+                repo,
+                "change login validation",
+                [],
+                ["server/api/logout.py"],
+            )
+            lookalike = select_documents(
+                repo,
+                "change login validation",
+                [],
+                ["server/api/login.py.bak"],
+            )
+
+            self.assertEqual(
+                ["docs/conventions/login-api.md"],
+                selected["selected_conventions"],
+            )
+            self.assertEqual([], sibling["selected_conventions"])
+            self.assertEqual([], lookalike["selected_conventions"])
+
     def test_selected_documents_respect_the_context_byte_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

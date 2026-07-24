@@ -43,6 +43,13 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 },
                 project["documentation"]["core_documents"],
             )
+            guidance = (repo / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn(
+                "keep same-run reusable rules as candidates",
+                guidance,
+            )
+            self.assertIn("`owner_decision`", guidance)
+            self.assertIn("`held_out_evaluation`", guidance)
 
     def test_init_maps_existing_core_doc_equivalents_without_copying_them(
         self,

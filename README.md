@@ -41,11 +41,15 @@ Keeping the framework separate provides reviewable upgrades and rollback without
 
 ## Install once, use in many projects
 
-Clone this repository in one stable location and install the CLI:
+Clone this repository in one stable location and install the CLI in an isolated
+tool environment:
 
 ```bash
-python3 -m pip install -e /path/to/harness-maestro
+uv tool install --editable /path/to/harness-maestro
 ```
+
+The editable installation follows that checkout, so do not move or delete it.
+Avoid forcing an install into an externally managed system Python.
 
 Register these skill directories once with the agent client:
 
@@ -66,7 +70,16 @@ ln -s "$maestro_source/skills/maestro-govern" ~/.agents/skills/maestro-govern
 
 If a destination already exists, `ln` stops instead of replacing it; review the
 existing installation before changing it. Other clients should register the same
-three source directories through their skill settings.
+three source directories through their skill settings. Verify the executable and
+links, then restart the agent client so it rebuilds Skill discovery:
+
+```bash
+command -v maestro
+maestro --help
+readlink ~/.agents/skills/maestro
+readlink ~/.agents/skills/maestro-adapter-builder
+readlink ~/.agents/skills/maestro-govern
+```
 
 Then initialize each target repository with a reviewed two-step plan:
 

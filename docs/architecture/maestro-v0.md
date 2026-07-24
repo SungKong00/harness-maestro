@@ -84,8 +84,9 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 4. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
    증거를 반환한다.
 5. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
-6. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 `docs/conventions/` 한 건까지만
-   같은 작업에서 갱신한다.
+6. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
+   기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
+   `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
 7. 실행 비용과 finding은 작업 종료 RunReceipt 한 건으로 runtime JSONL에 남기되
    checkpoint와 장문 대화를 복제하지 않는다.
 

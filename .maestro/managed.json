@@ -10,7 +10,7 @@
       "ownership": "managed_block",
       "path": "AGENTS.md",
       "preserve_on_drift": true,
-      "sha256": "f8a64f7f21b2d6253cfac4eeb2ae0473e2192f6c837fda651470bb8f6421b869"
+      "sha256": "873b772b6be7cb5a6b431135a28f857b89d73bedf0ca0f9545e9bcf2e22174fc"
     },
     {
       "ownership": "user_owned",
@@ -22,7 +22,7 @@
       "ownership": "user_owned",
       "path": "docs/governance/document-lifecycle.md",
       "preserve_on_drift": true,
-      "sha256": "619def564bc30809a9b24d27a4b293ebeef0d2d360139d15ae24d3392a082afe"
+      "sha256": "2cca94e2bd3a9c7f4759ab82b8c616683432b95c8b844de325b2bcf5cc11a00e"
     },
     {
       "ownership": "user_owned",

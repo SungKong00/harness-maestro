@@ -73,6 +73,12 @@ sensitivity: internal
   `runbook`, `analysis`, `evidence`, `external-snapshot` 중 하나
 - `status`: `draft`, `active`, `superseded`, `deprecated`, `archived` 중 하나
 - `authority`: `repository`, `external-snapshot`, `generated`, `historical` 중 하나
+
+`scope`의 `/`가 포함된 wildcard 없는 literal 경로는 해당 경로와 모든 하위 경로에
+적용된다. 예를 들어 `scope: [server/api]`는 `server/api/login.py`에 적용되지만
+`server/apis/login.py`에는 적용되지 않는다. 정확한 glob이 필요하면
+`scope: [path:server/api/**]`처럼 쓰며, `*`, `?`, `[]` pattern은 glob 의미를 유지한다.
+`/`가 없는 값은 topic scope로 취급한다.
 - `owner`: 검토·교체 책임
 - `summary`: 문서를 열지 않고도 선택할 수 있는 한 문장
 - `scope`: 적용 경로 또는 주제
