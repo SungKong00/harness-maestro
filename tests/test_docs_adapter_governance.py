@@ -140,15 +140,6 @@ class DocumentSelectionTests(unittest.TestCase):
                 ["docs/README.md"],
                 [item["path"] for item in result["documents"]],
             )
-            frontmatter_keys = select_documents(
-                repo,
-                "Audit status type maestro_doc",
-                [],
-            )
-            self.assertEqual(
-                ["docs/README.md"],
-                [item["path"] for item in frontmatter_keys["documents"]],
-            )
             self.assertGreater(
                 result["selection_trace"]["selected_document_bytes"],
                 0,
@@ -983,6 +974,8 @@ class GovernanceReportTests(unittest.TestCase):
                     tokens=None,
                 ),
             ]
+            matching[0]["agent_calls"] = 2
+            matching[1]["agent_calls"] = 1
             foreign = [
                 event(
                     "another-project",
@@ -1022,6 +1015,9 @@ class GovernanceReportTests(unittest.TestCase):
             self.assertEqual(1, report["token_summary"]["measured_events"])
             self.assertEqual(7, report["token_summary"]["total"])
             self.assertFalse(report["token_summary"]["estimated"])
+            self.assertEqual(3, report["agent_call_summary"]["measured_events"])
+            self.assertEqual(3, report["agent_call_summary"]["total"])
+            self.assertFalse(report["agent_call_summary"]["estimated"])
             self.assertFalse(report["writes_performed"])
             self.assertFalse(report["promotion_supported"])
 

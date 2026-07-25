@@ -11,6 +11,7 @@
     "lock",
     "race",
     "retry",
+    "retries",
     "idempot",
     "idempotent",
     "idempotency",

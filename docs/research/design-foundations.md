@@ -270,6 +270,59 @@ architecture, decision, convention 권위 모델로 축소했다.
 없는 `CITATION.cff`, 전체 문서 복사본인 `llms-full` 파일은 채택하지 않는다. 이런
 파일은 성숙함의 표시가 아니라 실제 독자·소유권·배포 요구가 생겼을 때만 추가한다.
 
+## 7. 그래프 엔지니어링에서 가져온 검증 경계
+
+### 확인한 구현
+
+- [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)는
+  노드·엣지를 선언한 뒤 compile 단계에서 구조를 검증하고, checkpoint는 필요한
+  실행에 선택적으로 붙인다.
+- [Microsoft Agent Framework Workflows](https://learn.microsoft.com/en-us/agent-framework/workflows/workflows)는
+  workflow builder가 실행 전에 시작점, 연결과 도달 가능성을 검사하고 구체적인
+  validation 오류를 반환한다.
+- [Pydantic Graph](https://pydantic.dev/docs/ai/graph/graph/)는 노드의 반환 타입에서 가능한
+  경로를 만들고 실행 전에 graph를 구성한다. 실행 중 사용자 결정은
+  [deferred tools](https://ai.pydantic.dev/deferred-tools/)처럼 명시적인 승인 경계로
+  분리한다.
+- [PocketFlow](https://github.com/The-Pocket/PocketFlow)는 작은 Node·Flow 추상화만
+  제공한다. 모든 작업을 복잡한 그래프로 만들지 않아도 되며, 실제 전이가 필요한
+  곳만 명시하는 최소 구현의 반례로 참고했다.
+
+### Maestro에 채택한 범위
+
+Maestro는 이 저장소들처럼 실행 경계에서 오류를 일찍 발견하되 자체 그래프 런타임은
+만들지 않는다. 구체적으로 다음만 채택했다.
+
+- route v1의 선택 의미를 유지하면서 최대 5개 Assignment의 v2 계획으로
+  정규화한다. 별도 범용 Node·Edge hierarchy 대신 `depends_on`으로 필요한 DAG만
+  표현한다.
+- Assignment의 Executor·Lens·Packet·model route와 한 명 writer를 실행 전에
+  검사하며, machine-readable diagnostic code를 외부 framework 문구와 분리한다.
+- `status`는 저장된 `ready` 플래그 대신 핵심 문서 상태와 검증 명령 승인 여부에서
+  현재 준비도를 계산한다.
+- 감지한 검증 명령 후보와 사용자가 승인한 `verification_commands`를 분리한다.
+  후보는 자동 실행 권한이 아니다.
+- RunReceipt 기록 전에 risk-depth, executor, verifier와 검증 artifact의 관계를
+  검사하고 고칠 수 있는 오류를 반환한다.
+- 판단이 필요한 high-risk 요청인데 Lens가 하나도 선택되지 않은 경우에만 경고한다.
+  단순하거나 결정론적인 high-risk 작업까지 강제로 다중 Lens로 보내지는 않는다.
+- host conformance 결과는 작은 JSON artifact로 남길 수 있지만 scheduler,
+  checkpoint DB, 분산 worker와 전체 실행 transcript는 현재 범위에 넣지 않는다.
+
+2026-07-26 재검토에서 LangGraph는 public 문서상 compile의 기본 구조 검사만
+보장하고, Microsoft Agent Framework는 type compatibility·connectivity·Executor
+binding·edge validation을 구체적으로 명시했으며, Pydantic GraphBuilder는 build와
+실행을 분리하지만 내부 validator 전체를 public compatibility 계약으로 보장하지
+않는다는 차이를 확인했다. 따라서 공통되는 구조·참조·계약 검사만 채택하고, 외부
+exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않았다.
+
+이 경계는 그래프 제품의 기능을 복제하기 위한 것이 아니라 Maestro의 실패 비용이 큰
+전이만 검증하기 위한 것이다. 장기 재개, 병렬 fan-out 복구와 분산 실행이 실제 요구가
+될 때에만 persistence나 전용 runtime을 다시 평가한다.
+
+구현 범위와 HTML Inspector의 도입 게이트는
+[v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)에 고정한다.
+
 ## 세부 동작과 근거 연결표
 
 | 실제 동작 | 주 근거 | 저장소 권위 |
@@ -282,6 +335,8 @@ architecture, decision, convention 권위 모델로 축소했다.
 | RunReceipt → candidate → Pilot → active | Reflexion, Hermes Skills, harness feedback loop | [구성요소 생명주기](../governance/component-lifecycle.md) |
 | Markdown 기본 권위와 주제별 단일 원본 | ADR, repository system of record, Diátaxis의 목적 분리 | [ADR-0004](../decisions/0004-single-document-authority.md) |
 | custom Adapter는 handoff만 하고 임의 명령은 실행하지 않음 | 최소 커널과 프로젝트 권한 경계 | [ADR-0005](../decisions/0005-project-local-extension-boundary.md) |
+| 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
+| v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md) |
 
 ## 아직 검증하지 않았거나 주장하지 않는 것
 

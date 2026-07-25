@@ -392,6 +392,12 @@ class InitSafetyTests(unittest.TestCase):
             project_path = repo / ".maestro/project.json"
             project = json.loads(project_path.read_text(encoding="utf-8"))
             project["approval_required_for"].append("production_deploy")
+            project["verification_commands"] = [
+                {
+                    "name": "owner-test",
+                    "command": "python3 -m unittest",
+                }
+            ]
             write_json(project_path, project)
             (repo / "package.json").write_text(
                 json.dumps({"scripts": {"test": "node --test"}}),
@@ -414,6 +420,15 @@ class InitSafetyTests(unittest.TestCase):
             updated = json.loads(project_path.read_text(encoding="utf-8"))
             self.assertEqual(["node"], updated["profiles"])
             self.assertIn("production_deploy", updated["approval_required_for"])
+            self.assertEqual(
+                [
+                    {
+                        "name": "owner-test",
+                        "command": "python3 -m unittest",
+                    }
+                ],
+                updated["verification_commands"],
+            )
             self.assertEqual([], build_init_plan(repo)["operations"])
 
 

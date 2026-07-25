@@ -350,6 +350,27 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual([], small["warnings"])
         self.assertEqual([], medium["warnings"])
 
+    def test_high_risk_judgment_without_a_lens_is_explicitly_diagnosed(self) -> None:
+        judgment = route_goal(
+            "Compare competing approaches for an internal coordinator",
+            "high",
+            intent="implementation",
+        )
+        ordinary = route_goal(
+            "Implement a bounded internal helper",
+            "high",
+            intent="implementation",
+        )
+
+        self.assertEqual([], judgment["selected_lenses"])
+        self.assertTrue(
+            any(
+                warning["code"] == "HIGH_RISK_LENS_GAP"
+                for warning in judgment["warnings"]
+            )
+        )
+        self.assertEqual([], ordinary["warnings"])
+
     def test_ascii_triggers_do_not_match_arbitrary_word_prefixes(self) -> None:
         cases = (
             ("Rename the city variable", "test-proof"),
@@ -452,6 +473,15 @@ class RoutingContractTests(unittest.TestCase):
         self.assertIn(
             "rollback-observability",
             deployment["selected_lenses"],
+        )
+        retries = route_goal(
+            "Implement payment webhook retries",
+            "medium",
+            intent="implementation",
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            retries["selected_lenses"],
         )
 
     def test_every_route_binding_names_a_registered_executor(self) -> None:

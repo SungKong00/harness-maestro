@@ -62,7 +62,7 @@ sensitivity: internal
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
 | research wave 자동 운영 | deferred | 출처 lane 분해와 artifact schema가 아직 runtime에 없음 | 최대 3 lane, stop rule, claim provenance, 합성 forward test |
-| Packet 의미·참조 validator와 전체 계약 catalog | deferred | v0의 Finding·Review·Research schema는 구조 중심이고, 일부 Executor 입출력 이름은 아직 비강제 계약임 | Lens/Executor ID 참조, source ref, tier 채택 규칙과 모든 packet conformance test |
+| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | route v2는 Assignment의 명시적 Packet ID와 Executor accepts·returns만 검사하며, Finding·Review·Research 내부 의미와 source ref·tier 규칙 전체는 아직 비강제 계약임 | source ref, tier 채택 규칙과 모든 Packet conformance test |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
 
 ## 의도적으로 유지한 제한

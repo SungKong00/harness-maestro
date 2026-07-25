@@ -40,3 +40,29 @@ route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판�
 
 하나라도 관찰할 수 없거나 위반되면 릴리스 판정은 `CONTINUE`다. 실제 host가 강제하지
 못하는 권한·격리 속성을 CLI 통과만으로 `DONE`이라고 주장하지 않는다.
+
+## 보존할 결과
+
+전체 대화나 node별 상태는 남기지 않는다. 릴리스 후보마다
+`release-evidence/host-conformance/<version>-<host>.json` 한 건에 다음 값만
+보존한다.
+
+```json
+{
+  "schema_version": "maestro_host_conformance_v1",
+  "framework_version": "0.2.2",
+  "host": "codex",
+  "checked_at": "2026-07-26",
+  "scenarios": {
+    "fast": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"},
+    "standard": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"},
+    "deep": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"}
+  },
+  "overall": "PASS"
+}
+```
+
+각 `artifact`는 저장소 안의 route JSON, 최종 diff 요약, 검증 command 결과 또는
+RunReceipt를 식별하는 짧은 참조다. 실제 검사를 실행하지 않은 상태에서 예시 파일을
+PASS 결과처럼 복사하지 않는다. CI는 구조 검사를 할 수 있지만 read-only 권한과
+fresh-context 격리의 실제 판정은 릴리스 검토자가 한다.

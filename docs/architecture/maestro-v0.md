@@ -34,7 +34,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 |---|---|---|
 | CLI | 초기화·업그레이드 계획, 상태, 문서 선택, 라우팅, RunReceipt, 읽기 전용 보고 | 결정론적이며 외부 서비스에 쓰지 않음 |
 | Registry | Lens, Executor, Department, Adapter 계약 | package 안에서 버전 관리하고 검증 |
-| Project state | 프로젝트 ID, 문서 권위, 후보 명령 | 저장소의 `.maestro/`에 추적 |
+| Project state | 프로젝트 ID, 문서 권위, 탐지된 후보 명령과 사용자 승인 검증 명령 | 저장소의 `.maestro/`에 추적 |
 | Runtime state | 실행 이벤트, 실제 token·시간·finding | `.maestro/state/`에 두고 Git에서 제외 |
 | Skills | 사용자 요청을 CLI 계약에 연결 | `$maestro`만 일반 작업에 암시적 사용 |
 | Docs | 구조·결정·Convention의 사람용 권위 | 활성 문서만 기본 선택 |
@@ -54,6 +54,8 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro doctor --repo <path> --json` | 상태, managed hash, registry, 문서 링크 검사 | 없음 |
 | `maestro docs --repo <path> --task "<goal>" --json` | 관련 활성 문서의 경로와 digest 선택 | 없음 |
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
+| `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 실행 전 검증 | 없음 |
+| `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
 | `maestro record --repo <path> --receipt <file> --json` | 작업 종료 시 compact RunReceipt 한 건 기록 | `.maestro/state/events/`에 append |
 | `maestro govern report --repo <path> --json` | 반복된 finding을 후보 신호로 집계 | 없음 |
 
@@ -70,25 +72,34 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 3. 동일 plan을 `--apply-plan`으로 적용한다.
 4. `doctor`를 실행한다.
 5. 생성 또는 매핑된 `docs/project.md`, `docs/architecture.md`, `docs/README.md`와
-   `.maestro/project.json`을 검토하고 후보 명령을 실제로
-   확인한 뒤 권위로 채택한다.
+   `.maestro/project.json`을 검토한다. core 문서를 `active`로 만든 뒤
+   `status → upgrade preview/apply → strict Doctor` 순서로 기준선을 승인하고,
+   후보 명령을 실제로 확인한 뒤 `verification_commands` 권위로 채택한다.
 
 정적 탐지는 명령이 존재할 가능성만 말한다. package script나 wrapper를 자동 실행하지
-않고, 후보 명령을 검증된 사실로 승격하지도 않는다.
+않고, 후보 명령을 검증된 사실로 승격하지도 않는다. 사용자가 승인한
+`verification_commands`는 정적 탐지 목록과 분리하며 이후 upgrade에서 보존한다.
 
 ### 일상 작업
 
 1. 목표와 되돌리기 어려움으로 위험도를 정한다.
 2. `docs`로 관련 문서를 좁힌다.
 3. `route`가 Fast, Standard, Deep 중 가장 작은 충분한 경로를 만든다.
-4. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
+4. Host 통합이나 계획 검토가 필요하면 route v2로 정규화해 Assignment 의존 관계와
+   Packet·권한 계약을 실행 전에 검사한다.
+5. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
    증거를 반환한다.
-5. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
-6. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
+6. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
+7. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
    기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
    `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
-7. 실행 비용과 finding은 작업 종료 RunReceipt 한 건으로 runtime JSONL에 남기되
+8. 실행 비용과 finding은 작업 종료 RunReceipt 한 건으로 runtime JSONL에 남기되
    checkpoint와 장문 대화를 복제하지 않는다.
+
+Route v2는 scheduler가 아니라 실행 전 계약이다. 실제 Assignment 시작·종료, model
+call, token과 duration은 Host가 측정 출처와 함께 반환하기 전까지 `actual` evidence로
+간주하지 않는다. 상세 범위와 후속 HTML 조회 계획은
+[v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)을 따른다.
 
 ## 작업 강도
 

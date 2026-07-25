@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .documents import core_document_status
 from .doctor import doctor_report
 from .errors import MaestroError
 from .project import build_upgrade_plan
@@ -33,13 +34,58 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
     except MaestroError as exc:
         plan_error = {"code": exc.code, "message": exc.message}
 
-    next_actions: list[dict[str, str]] = []
+    core_status = core_document_status(repo) if initialized else []
+    core_gaps = [item for item in core_status if item["status"] != "active"]
+    if not initialized:
+        readiness_state = "blocked"
+        readiness_reasons = ["project_not_initialized"]
+    elif any(item["status"] != "draft" for item in core_gaps):
+        readiness_state = "blocked"
+        readiness_reasons = [
+            f"core_document_{item['status']}:{item['role']}"
+            for item in core_gaps
+        ]
+    elif core_gaps:
+        readiness_state = "draft"
+        readiness_reasons = [
+            f"core_document_draft:{item['role']}"
+            for item in core_gaps
+        ]
+    else:
+        readiness_state = "ready"
+        readiness_reasons = []
+
+    commands = project.get("commands") if project else None
+    verification_commands = (
+        project.get("verification_commands")
+        if project
+        else None
+    )
+    candidate_command_count = len(commands) if isinstance(commands, list) else 0
+    approved_command_count = (
+        len(verification_commands)
+        if isinstance(verification_commands, list)
+        else 0
+    )
+
+    next_actions: list[dict[str, Any]] = []
     if not initialized:
         next_actions.append(
             {
                 "id": "run_init",
                 "command": f"maestro init --repo {repo} --json",
                 "reason": "The project has not completed reviewed initialization.",
+            }
+        )
+    elif core_gaps:
+        next_actions.append(
+            {
+                "id": "complete_core_documents",
+                "paths": [item["path"] for item in core_gaps if item["path"]],
+                "reason": (
+                    "Project initialization is installed, but core project facts "
+                    "are not active evidence yet."
+                ),
             }
         )
     elif pending_operations:
@@ -56,6 +102,17 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
                 "id": "repair_doctor_findings",
                 "command": f"maestro doctor --repo {repo} --json",
                 "reason": "Doctor reports drift or invalid project state.",
+            }
+        )
+    elif candidate_command_count and not approved_command_count:
+        next_actions.append(
+            {
+                "id": "review_verification_commands",
+                "path": ".maestro/project.json",
+                "reason": (
+                    "Detected commands are candidates only; copy verified commands "
+                    "into verification_commands to make them project authority."
+                ),
             }
         )
 
@@ -79,6 +136,15 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
             "summary": doctor["summary"],
         },
         "documentation": documentation,
+        "readiness": {
+            "state": readiness_state,
+            "reason_codes": readiness_reasons,
+            "core_documents": core_status,
+            "verification_commands": {
+                "candidate_count": candidate_command_count,
+                "approved_count": approved_command_count,
+            },
+        },
         "self_improvement": self_improvement,
         "pending_managed_operations": [
             {

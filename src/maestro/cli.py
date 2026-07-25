@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any, Sequence
 
 from .doctor import doctor_report
@@ -15,8 +16,10 @@ from .project import (
     build_upgrade_plan,
     inspect_adapter,
 )
+from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
+from .util import read_json
 
 
 def _emit(value: dict[str, Any], as_json: bool) -> None:
@@ -83,7 +86,20 @@ def parser() -> argparse.ArgumentParser:
         "--conflict-evidence",
         help="New bounded evidence required for a material-conflict reroute; never emitted",
     )
+    route.add_argument(
+        "--route-version",
+        choices=["v1", "v2"],
+        default="v1",
+        help="Keep v1 compatibility by default; v2 emits a validated Assignment DAG",
+    )
     route.add_argument("--json", action="store_true")
+
+    validate_plan = commands.add_parser(
+        "validate-plan",
+        help="Validate a route v2 Assignment DAG before host execution",
+    )
+    validate_plan.add_argument("--plan", required=True)
+    validate_plan.add_argument("--json", action="store_true")
 
     adapt = commands.add_parser("adapt", help="Inspect project adapter candidates without writing")
     adapt.add_argument("--repo", default=".")
@@ -152,7 +168,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "route":
-            result = route_goal(
+            route_builder = (
+                route_goal_v2
+                if args.route_version == "v2"
+                else route_goal
+            )
+            result = route_builder(
                 args.goal,
                 args.risk,
                 args.lens or None,
@@ -163,6 +184,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "validate-plan":
+            result = validate_route_v2(
+                read_json(Path(args.plan).expanduser().resolve())
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "adapt":
             result = inspect_adapter(args.repo)
             _emit(result, args.json)

@@ -34,5 +34,6 @@
     "max_updates_per_run": 1,
     "mode": "verified-project-conventions"
   },
-  "state_root": ".maestro/state"
+  "state_root": ".maestro/state",
+  "verification_commands": []
 }

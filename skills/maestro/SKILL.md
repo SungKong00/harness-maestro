@@ -26,14 +26,20 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - If yes, read `references/research-and-evidence.md`.
    - Start with one high-value source lane. Add independent lanes only when each can change the decision.
    - Keep Maestro as workflow owner; Researcher runs return only compact `ResearchPacket` results.
-6. Create a route with `maestro route --goal "<goal>" --risk <low|medium|high|critical> --host <host> --json`.
+6. Create a validated Assignment plan with `maestro route --goal "<goal>" --risk <low|medium|high|critical> --host <host> --route-version v2 --json`.
+   - The CLI keeps v1 as its compatibility default. This managed Skill intentionally opts into v2 so the Host receives explicit dependency, read-only, and one-writer boundaries.
+   - The result preserves the v1 selection while adding at most five typed Assignments, their dependencies, Packet contracts, side-effect owner, per-Assignment model routes, terminal condition, and plan digest.
+   - Route v2 is a host-executed plan, not an execution trace or scheduler. Never describe planned values as actual calls, tokens, duration, or outcomes.
+   - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --plan <path> --json` before execution.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
 7. If Lens selection adds a new evidence boundary, rerun `maestro docs` with the selected Lens IDs. Deduplicate by path and read only newly selected documents.
-8. Apply the route:
+8. Apply the Assignment plan in dependency order:
    - `fast`: Main applies zero or one Lens; do not spawn.
    - `standard`: one read-only Lens Reviewer pass may apply one or two selected Lenses.
    - `deep`: up to three selected Lenses may use fresh, isolated reviewer contexts.
+   - Only the Assignment named by `mutation_owner_assignment_id` may write. Research, review, and verification Assignments stay read-only.
+   - Stop when a required gate fails, a user decision is required, or the bounded budget is exhausted. The CLI does not schedule, retry, checkpoint, or resume Assignments.
 9. Before launching reviewers, record the exact expected Lens IDs. Keep initial conclusions hidden from other reviewers and return compact evidence packets, not transcripts.
 10. Bound coordination:
    - Use a bounded host wait. After one no-progress wake, request compact completion once; after the next no-progress wake, cancel that lane and mark its evidence unavailable.

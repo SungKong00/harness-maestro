@@ -25,7 +25,9 @@ sensitivity: internal
 3. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
 4. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
    분리하는 이유
-5. [v0.2 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
+5. [v0.2 활성 계획](plans/active/v0.md) — 현재 기준선의 릴리스 범위와 완료 조건
+6. [v0.3 Typed Plan 계획](plans/active/v0.3-typed-plan.md) — route v1 호환
+   Assignment DAG, 실행 전 검증과 HTML·resume의 단계적 도입 조건
 
 ## 거버넌스
 

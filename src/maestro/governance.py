@@ -166,6 +166,86 @@ def _idempotency_digest(event: dict[str, Any]) -> str:
     )
 
 
+def _run_semantic_error(value: dict[str, Any]) -> str | None:
+    risk = value.get("risk")
+    route_depth = value.get("route_depth")
+    expected_depth = {
+        "low": "fast",
+        "medium": "standard",
+        "high": "deep",
+        "critical": "deep",
+    }.get(risk)
+    if expected_depth is not None and route_depth != expected_depth:
+        return (
+            f"risk={risk!r} requires route_depth={expected_depth!r}; "
+            f"received {route_depth!r}."
+        )
+
+    selected_lenses = value.get("selected_lenses")
+    maximum_lenses = {
+        "fast": 1,
+        "standard": 2,
+        "deep": 3,
+    }.get(route_depth)
+    if (
+        isinstance(selected_lenses, list)
+        and maximum_lenses is not None
+        and len(selected_lenses) > maximum_lenses
+    ):
+        return (
+            f"route_depth={route_depth!r} permits at most "
+            f"{maximum_lenses} selected_lenses."
+        )
+
+    executor_ids = value.get("executor_ids")
+    executor_runs = value.get("executor_runs")
+    primary_executor_id = value.get("primary_executor_id")
+    if (
+        not isinstance(executor_runs, int)
+        or isinstance(executor_runs, bool)
+        or executor_runs < 1
+    ):
+        return "executor_runs must be an integer of at least 1."
+    if isinstance(executor_ids, list):
+        if primary_executor_id not in executor_ids:
+            return "primary_executor_id must be present in executor_ids."
+        if executor_runs < len(executor_ids):
+            return "executor_runs cannot be smaller than the number of executor_ids."
+
+    verifier_result = value.get("verifier_result")
+    if (
+        verifier_result in {"passed", "failed"}
+        and isinstance(executor_ids, list)
+        and "verifier" not in executor_ids
+    ):
+        return (
+            f"verifier_result={verifier_result!r} requires 'verifier' "
+            "in executor_ids."
+        )
+
+    high_risk_implementation_completion = (
+        risk in {"high", "critical"}
+        and primary_executor_id == "implementation-engineer"
+        and value.get("outcome") in {"completed", "corrected"}
+    )
+    if high_risk_implementation_completion:
+        if verifier_result != "passed":
+            return (
+                "High/critical implementation completion requires "
+                "verifier_result='passed'."
+            )
+        command_artifact_ref = value.get("command_artifact_ref")
+        if (
+            not isinstance(command_artifact_ref, str)
+            or not command_artifact_ref.strip()
+        ):
+            return (
+                "High/critical implementation completion requires a non-empty "
+                "command_artifact_ref."
+            )
+    return None
+
+
 def record_run(
     repo_path: str | Path,
     receipt_path: str | Path,
@@ -227,6 +307,12 @@ def record_run(
         raise MaestroError(
             "RUN_RECEIPT_INVALID",
             "selected_lenses and executor_ids must be lists.",
+        )
+    semantic_error = _run_semantic_error(receipt)
+    if semantic_error is not None:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"RunReceipt semantic contract failed: {semantic_error}",
         )
     unknown_lenses = sorted(set(selected_lenses) - set(definitions["lenses"]))
     unknown_executors = sorted(set(executor_ids) - set(definitions["executors"]))
@@ -652,6 +738,8 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or event["primary_executor_id"] not in executor_ids
         or executor_runs < len(executor_ids)
     ):
+        return False
+    if _run_semantic_error(event) is not None:
         return False
     evidence_refs = event.get("evidence_refs")
     if not isinstance(evidence_refs, list) or not all(
@@ -1337,6 +1425,12 @@ def govern_report(
         if isinstance(event.get("duration_ms"), (int, float))
         and not isinstance(event.get("duration_ms"), bool)
     ]
+    measured_agent_calls = [
+        event["agent_calls"]
+        for event in unique_runs
+        if isinstance(event.get("agent_calls"), int)
+        and not isinstance(event.get("agent_calls"), bool)
+    ]
     experiment_arms = Counter(
         event["experiment_arm"]
         for event in unique_runs
@@ -1389,6 +1483,11 @@ def govern_report(
         "duration_summary": {
             "measured_events": len(measured_durations),
             "total_ms": sum(measured_durations) if measured_durations else None,
+            "estimated": False,
+        },
+        "agent_call_summary": {
+            "measured_events": len(measured_agent_calls),
+            "total": sum(measured_agent_calls) if measured_agent_calls else None,
             "estimated": False,
         },
         "correction_summary": {

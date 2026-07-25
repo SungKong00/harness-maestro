@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m compileall -q src tests scripts
           python -m unittest discover -s tests -v
+          python scripts/validate_skills.py
       - name: Build and inspect wheel
         run: |
           python -m pip install --disable-pip-version-check build
@@ -35,11 +36,17 @@ jobs:
           smoke_repo="$(mktemp -d)"
           smoke_plan="$(mktemp)"
           smoke_preview="$(mktemp)"
+          smoke_route="$(mktemp)"
           python -m venv "$smoke_root/venv"
           "$smoke_root/venv/bin/python" -m pip install --disable-pip-version-check dist/harness_maestro-*.whl
           "$smoke_root/venv/bin/maestro" --help >/dev/null
           "$smoke_root/venv/bin/maestro" init --repo "$smoke_repo" --json >"$smoke_plan"
           "$smoke_root/venv/bin/maestro" init --repo "$smoke_repo" --apply-plan "$smoke_plan" --json >/dev/null
           "$smoke_root/venv/bin/maestro" doctor --repo "$smoke_repo" --strict --json >/dev/null
+          (
+            cd "$smoke_repo"
+            "$smoke_root/venv/bin/maestro" route --goal "Verify installed route v2" --route-version v2 --json >"$smoke_route"
+          )
+          "$smoke_root/venv/bin/maestro" validate-plan --plan "$smoke_route" --json >/dev/null
           "$smoke_root/venv/bin/maestro" init --repo "$smoke_repo" --json >"$smoke_preview"
           "$smoke_root/venv/bin/python" -c 'import json,sys; assert json.load(open(sys.argv[1]))["operations"] == []' "$smoke_preview"

@@ -97,6 +97,7 @@ class PackageContractTests(unittest.TestCase):
         self.assertTrue(workflow.is_file())
         workflow_text = workflow.read_text(encoding="utf-8")
         self.assertIn("python -m unittest discover -s tests -v", workflow_text)
+        self.assertIn("python scripts/validate_skills.py", workflow_text)
         self.assertIn("scripts/verify_wheel.py", workflow_text)
         self.assertIn("doctor --repo", workflow_text)
 

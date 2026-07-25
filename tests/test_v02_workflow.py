@@ -37,6 +37,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 project["self_improvement"],
             )
             self.assertEqual("markdown", project["documentation"]["provider"])
+            self.assertEqual([], project["verification_commands"])
             self.assertEqual(
                 {
                     "project": "docs/project.md",
@@ -51,6 +52,12 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             )
             self.assertIn("`owner_decision`", guidance)
             self.assertIn("`held_out_evaluation`", guidance)
+            generated_policy = (
+                repo / "docs/governance/document-lifecycle.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Required fields are `id`, `type`, `status`", generated_policy)
+            self.assertIn("maestro upgrade", generated_policy)
+            self.assertIn("maestro doctor --strict", generated_policy)
 
     def test_init_maps_existing_core_doc_equivalents_without_copying_them(
         self,
@@ -136,6 +143,63 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             self.assertFalse(report["initialized"])
             self.assertEqual("run_init", report["next_actions"][0]["id"])
             self.assertFalse(report["writes_performed"])
+
+    def test_status_separates_installed_state_from_project_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            report = status_report(repo)
+
+            self.assertTrue(report["initialized"])
+            self.assertEqual("draft", report["readiness"]["state"])
+            self.assertEqual(
+                "complete_core_documents",
+                report["next_actions"][0]["id"],
+            )
+            self.assertEqual(
+                ["docs/project.md", "docs/architecture.md"],
+                report["next_actions"][0]["paths"],
+            )
+            self.assertEqual("PASS", report["doctor"]["status"])
+
+    def test_verified_commands_are_separate_from_detected_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"test": "node --test"}}),
+                encoding="utf-8",
+            )
+            apply_fresh_init(repo)
+            for path in (repo / "docs/project.md", repo / "docs/architecture.md"):
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
+            plan = build_upgrade_plan(repo)
+            plan_path = Path(temporary) / "docs-upgrade.json"
+            write_json(plan_path, plan)
+            apply_plan(plan_path, repo, expected_command="upgrade")
+
+            report = status_report(repo)
+
+            self.assertEqual("ready", report["readiness"]["state"])
+            self.assertEqual(
+                {
+                    "candidate_count": 1,
+                    "approved_count": 0,
+                },
+                report["readiness"]["verification_commands"],
+            )
+            self.assertEqual(
+                "review_verification_commands",
+                report["next_actions"][0]["id"],
+            )
 
     def test_upgrade_reuses_the_reviewed_init_plan_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -239,6 +303,54 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 event["project_convention_evidence"]["convention_sha256"],
             )
             self.assertNotIn("messages", event)
+
+    def test_receipt_semantics_reject_route_and_verifier_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {
+                "run_id": "run-semantic-check",
+                "risk": "high",
+                "route_depth": "standard",
+                "selected_lenses": [],
+                "executor_runs": 1,
+                "primary_executor_id": "implementation-engineer",
+                "executor_ids": ["implementation-engineer"],
+                "outcome": "completed",
+                "evidence_refs": ["tests:semantic"],
+                "duration_ms": 10,
+                "tokens": None,
+                "correction_count": 0,
+                "agent_calls": 1,
+                "verifier_result": "not_run",
+                "command_artifact_ref": None,
+            }
+            write_json(receipt_path, receipt)
+
+            with self.assertRaises(MaestroError) as route_error:
+                record_run(repo, receipt_path)
+            self.assertIn(
+                "risk='high' requires route_depth='deep'",
+                route_error.exception.message,
+            )
+
+            receipt["route_depth"] = "deep"
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as verifier_error:
+                record_run(repo, receipt_path)
+            self.assertIn(
+                "requires verifier_result='passed'",
+                verifier_error.exception.message,
+            )
+
+            receipt["executor_runs"] = 2
+            receipt["executor_ids"].append("verifier")
+            receipt["verifier_result"] = "passed"
+            receipt["command_artifact_ref"] = "tests:semantic"
+            write_json(receipt_path, receipt)
+            self.assertEqual("recorded", record_run(repo, receipt_path)["status"])
 
     def test_active_convention_requires_content_addressed_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

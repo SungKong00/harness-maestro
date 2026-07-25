@@ -484,7 +484,7 @@ def _custom_adapter_handoff(
     }
 
 
-def _core_document_status(repo: Path) -> list[dict[str, str]]:
+def core_document_status(repo: Path) -> list[dict[str, str]]:
     project_path = safe_target(repo, ".maestro/project.json")
     if not project_path.is_file() or project_path.is_symlink():
         return []
@@ -742,14 +742,14 @@ def select_documents(
     )
     matched_documents = len(selected) - (1 if index_selected else 0)
     archive_count = scan_trace["archive_documents_seen"]
-    core_document_status = _core_document_status(repo)
+    core_status = core_document_status(repo)
     missing_evidence: list[str] = []
     if scan_trace["truncated"]:
         missing_evidence.append(
             "Documentation scan was truncated by resource limits; selection evidence is incomplete."
         )
     missing_evidence.extend(
-        _core_document_gaps(core_document_status)
+        _core_document_gaps(core_status)
     )
     if budget_skipped_documents:
         missing_evidence.append(
@@ -776,7 +776,7 @@ def select_documents(
         "requested_lenses": lenses,
         "inferred_lenses": inferred_lenses,
         "documents": selected,
-        "core_document_status": core_document_status,
+        "core_document_status": core_status,
         "selected_conventions": selected_conventions,
         "convention_status": "found" if selected_conventions else "none",
         "archive_included": False,

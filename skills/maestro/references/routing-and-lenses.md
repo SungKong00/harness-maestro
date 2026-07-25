@@ -31,7 +31,26 @@ Add a Lens or research lane only when:
 
 Do not add a Lens to make the process look rigorous.
 
+## Route v2 Assignment plan
+
+The Skill requests `--route-version v2` after v1 selection. V2 is an additive,
+pre-execution contract: it keeps the selected Lens cards, binding, deliberation,
+handoff, and top-level model route, then adds a bounded Assignment DAG.
+
+- `depends_on` expresses the only managed edges; core does not expose a general
+  graph language.
+- Standard may combine two Lens cards in one review Assignment. Deep may use one
+  read-only Assignment per Lens when the v1 binding requires fresh contexts.
+- Implementation plans have at most one mutation owner and finish through a
+  read-only verification Assignment.
+- Research plans bind the `researcher` Executor even when Lens cards are selected.
+  Lens cards remain evaluation criteria; they are not agents or Executor identities.
+- Each Assignment declares Registry-backed input and output Packet IDs and its
+  own model route.
+- Managed plan generation has no semantic-validation bypass.
+- A plan is not an actual trace. Only Host-provided results may describe calls,
+  tokens, duration, retries, or outcomes.
+
 ## Specialist admission
 
 Keep a concern as a Lens unless repeated evaluation proves a need for a distinct tool, permission, model, sandbox, durable state, ownership handoff, or approval boundary. A Specialist is a candidate until an old/new evaluation and owner approval succeed.
-

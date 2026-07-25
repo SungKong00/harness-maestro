@@ -750,10 +750,43 @@ def _risk_warnings(
     risk: str,
     lens_ids: list[str],
 ) -> list[dict[str, str]]:
-    if risk != "low":
-        return []
-
     warnings: list[dict[str, str]] = []
+    if (
+        risk == "high"
+        and not lens_ids
+        and _goal_has(
+            goal,
+            (
+                "architecture",
+                "security",
+                "research",
+                "trade-off",
+                "tradeoff",
+                "compare",
+                "evaluation",
+                "아키텍처",
+                "보안",
+                "리서치",
+                "연구",
+                "비교",
+                "평가",
+                "트레이드오프",
+            ),
+        )
+    ):
+        warnings.append(
+            {
+                "code": "HIGH_RISK_LENS_GAP",
+                "message": (
+                    "This high-risk judgment route selected no evidence Lens; "
+                    "select an explicit Lens or record why direct execution is sufficient."
+                ),
+                "suggested_action": "review_lens_selection",
+            }
+        )
+    if risk != "low":
+        return warnings
+
     if _goal_has(
         goal,
         (

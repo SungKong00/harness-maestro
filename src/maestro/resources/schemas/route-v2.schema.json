@@ -1,0 +1,409 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/route-v2.schema.json",
+  "title": "Harness Maestro Route v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "source_route_version",
+    "source_route_digest",
+    "registry_digest",
+    "goal",
+    "intent",
+    "intent_source",
+    "department",
+    "risk",
+    "warnings",
+    "depth",
+    "selected_lenses",
+    "selected_domains",
+    "lens_cards",
+    "selection_reasons",
+    "selection_trace",
+    "binding",
+    "handoff_contract",
+    "model_route",
+    "deliberation",
+    "task_contract",
+    "assignments",
+    "entry_assignments",
+    "terminal_assignments",
+    "mutation_owner_assignment_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_route_v2"
+    },
+    "plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_route_version": {
+      "const": "maestro_route_v1"
+    },
+    "source_route_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "registry_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "enum": [
+        "implementation",
+        "review",
+        "research"
+      ]
+    },
+    "intent_source": {
+      "enum": [
+        "explicit",
+        "inferred"
+      ]
+    },
+    "department": {
+      "$ref": "#/$defs/id"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "depth": {
+      "enum": [
+        "fast",
+        "standard",
+        "deep"
+      ]
+    },
+    "selected_lenses": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "selected_domains": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "lens_cards": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object"
+      }
+    },
+    "selection_reasons": {
+      "type": "object"
+    },
+    "selection_trace": {
+      "type": "object"
+    },
+    "binding": {
+      "type": "object"
+    },
+    "handoff_contract": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "model_route": {
+      "$ref": "#/$defs/modelRoute"
+    },
+    "deliberation": {
+      "type": "object"
+    },
+    "task_contract": {
+      "$ref": "#/$defs/taskContract"
+    },
+    "assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/assignment"
+      }
+    },
+    "entry_assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "terminal_assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "mutation_owner_assignment_id": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "modelRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executor",
+        "task_class",
+        "risk",
+        "host",
+        "selected_class",
+        "selected_model",
+        "reasoning_effort",
+        "selection_reason",
+        "escalation_allowed",
+        "fallback"
+      ],
+      "properties": {
+        "executor": {
+          "$ref": "#/$defs/id"
+        },
+        "task_class": {
+          "$ref": "#/$defs/id"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "host": {
+          "$ref": "#/$defs/id"
+        },
+        "selected_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selected_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "escalation_allowed": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "taskContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objective",
+        "allowed_side_effects",
+        "terminal_condition",
+        "stop_conditions",
+        "limits"
+      ],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_side_effects": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "repository_write"
+          }
+        },
+        "terminal_condition": {
+          "const": "all_terminal_assignments_complete"
+        },
+        "stop_conditions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "required_gate_failed",
+              "user_decision_required",
+              "budget_exhausted"
+            ]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_assignments",
+            "max_lenses",
+            "max_rebuttal_rounds",
+            "max_model_escalations_per_assignment"
+          ],
+          "properties": {
+            "max_assignments": {
+              "const": 5
+            },
+            "max_lenses": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "max_rebuttal_rounds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_model_escalations_per_assignment": {
+              "const": 1
+            }
+          }
+        }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_id",
+        "kind",
+        "executor_id",
+        "lens_ids",
+        "depends_on",
+        "input_packets",
+        "output_packet",
+        "read_only",
+        "mutation_owner",
+        "allowed_side_effects",
+        "model_route",
+        "may_spawn",
+        "max_children",
+        "max_rounds"
+      ],
+      "properties": {
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "implementation",
+            "research",
+            "review",
+            "verification"
+          ]
+        },
+        "executor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "lens_ids": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "input_packets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "output_packet": {
+          "type": "string",
+          "minLength": 1
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "mutation_owner": {
+          "type": "boolean"
+        },
+        "allowed_side_effects": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "repository_write"
+          }
+        },
+        "model_route": {
+          "$ref": "#/$defs/modelRoute"
+        },
+        "may_spawn": {
+          "const": false
+        },
+        "max_children": {
+          "const": 0
+        },
+        "max_rounds": {
+          "const": 1
+        }
+      }
+    }
+  }
+}

@@ -74,6 +74,7 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
             "adapters",
             "profiles",
             "commands",
+            "verification_commands",
             "approval_required_for",
             "self_improvement",
         }
@@ -152,6 +153,8 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
         for field in ("adapters", "profiles", "commands", "approval_required_for"):
             if not isinstance(value.get(field), list):
                 errors.append(f"{field} must be a list")
+        if not isinstance(value.get("verification_commands", []), list):
+            errors.append("verification_commands must be a list")
         for field in ("adapters", "profiles", "approval_required_for"):
             items = value.get(field)
             if isinstance(items, list) and not all(
@@ -184,6 +187,25 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
                     or command.get("status") != "candidate"
                 ):
                     errors.append(f"commands[{index}] is invalid")
+        verification_commands = value.get("verification_commands", [])
+        if isinstance(verification_commands, list):
+            seen_verification_names: set[str] = set()
+            for index, command in enumerate(verification_commands):
+                if (
+                    not isinstance(command, dict)
+                    or set(command) != {"name", "command"}
+                    or not isinstance(command.get("name"), str)
+                    or not command["name"].strip()
+                    or not isinstance(command.get("command"), str)
+                    or not command["command"].strip()
+                ):
+                    errors.append(f"verification_commands[{index}] is invalid")
+                    continue
+                if command["name"] in seen_verification_names:
+                    errors.append(
+                        f"verification_commands[{index}].name must be unique"
+                    )
+                seen_verification_names.add(command["name"])
     elif expected_kind == "managed":
         allowed_ownership = {
             "AGENTS.md": {"managed_block"},
