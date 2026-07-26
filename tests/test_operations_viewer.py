@@ -147,6 +147,24 @@ class OperationsViewerTests(unittest.TestCase):
                 "assignment_observation",
                 snapshot["runs"][0]["flow_evidence"],
             )
+            self.assertEqual(
+                "not_selected",
+                snapshot["runs"][0]["expertise"]["evidence"]["selection"],
+            )
+            self.assertEqual(
+                "unavailable",
+                snapshot["runs"][0]["expertise"]["evidence"][
+                    "assignment_attachment"
+                ],
+            )
+            self.assertEqual(
+                "unavailable",
+                snapshot["runs"][0]["expertise"]["evidence"]["host_load"],
+            )
+            self.assertEqual(
+                "unavailable",
+                snapshot["runs"][0]["expertise"]["evidence"]["application"],
+            )
             self.assertEqual(100, snapshot["runs"][0]["tokens"]["total"])
             self.assertEqual([], snapshot["runs"][0]["models"]["applied"])
             self.assertTrue(
@@ -796,12 +814,31 @@ class OperationsViewerTests(unittest.TestCase):
 
             self.assertEqual("review_due", guide["utility_verdict"])
             self.assertEqual(5, guide["usage_count"])
+            self.assertEqual(5, guide["selection_count"])
             self.assertEqual(
                 "host_attestation_unavailable",
                 guide["load_evidence"],
             )
             self.assertFalse(report["automatic_mutation_allowed"])
             self.assertIn("not causal proof", report["interpretation"])
+
+    def test_viewer_separates_expertise_lifecycle_freshness_and_evidence(
+        self,
+    ) -> None:
+        viewer_root = ROOT / "src/maestro/resources/viewer"
+        viewer_source = (viewer_root / "app.js").read_text(encoding="utf-8")
+        viewer_markup = (viewer_root / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('data-view-target="overview"', viewer_markup)
+        self.assertIn('data-view-target="work"', viewer_markup)
+        self.assertIn('data-view-target="expertise"', viewer_markup)
+        self.assertIn('data-view-target="management"', viewer_markup)
+        self.assertIn("배포 단계·지식 최신성·프로젝트 선택 기록", viewer_markup)
+        self.assertIn('evidence_gathering: "로컬 선택 관찰 중"', viewer_source)
+        self.assertIn('stable: "저변동 지식"', viewer_source)
+        self.assertIn('"3 · Host 로드"', viewer_source)
+        self.assertIn('"4 · 산출물 적용"', viewer_source)
+        self.assertNotIn("최근 사용 ${usage}", viewer_source)
 
     def test_dashboard_is_local_read_only_and_token_gated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

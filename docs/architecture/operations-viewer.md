@@ -49,9 +49,15 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 - bundled·project Expertise Pack, Guide, source manifest와 project 후보
 - compact receipt에서 확인된 Guide별 선택 횟수, 마지막 선택 시각, 최근 Run ID와
   검증 실패·수정이 같은 Run에 함께 나타난 횟수
-- Pack·Guide별 사용 전, 근거 수집 중, 정기 검토, 문제 검토 상태와 Host load
-  증명 유무
+- Pack의 제공 위치와 배포 단계, Guide의 지식 최신성, 프로젝트 로컬 선택 관찰
+  상태와 Host load 증명 유무를 서로 다른 축으로 표시
 - 반복된 governance finding과 reusable Expertise gap
+
+화면은 `개요 → 작업 → 전문 지식 → 관리` 네 뷰로 나눈다. 개요는 readiness,
+관측 범위, 사용자 action queue와 진행 중인 관측만 보여준다. 작업은 검색·결과
+필터와 inline Run 상세, 완료 묶음을 함께 둔다. 전문 지식은 Pack 목록과 선택한
+Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승인과 자가개선
+신호는 관리 뷰에 둔다. 모든 카탈로그 내용을 한 긴 페이지에 동시에 펼치지 않는다.
 
 `메인 요청 모델`, `실제 적용 모델`, `Route 권고 모델`은 서로 다른 필드다. Route가
 선택한 Terra 같은 값은 실행 사실이 아니라 권고이므로 실제 적용 모델의 fallback으로
@@ -92,13 +98,20 @@ Maestro의 `observe import-codex`는 Host가 소유한 완전한 JSON-RPC JSONL�
 thread·turn으로 검증해 observation을 단조롭게 보강한다. 완료 이벤트가 없거나
 여러 turn이 모호하면 기록하지 않는다. Route 권고값은 이 경로의 입력이 아니다.
 
-Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
+Guide 선택값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
 수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
 로드됐다고 추정하지 않는다. 이 값만으로 Pack·Guide를 자동 승격·수정·삭제하지 않는다.
-사용 이력이 없으면 `awaiting_usage`, 선택 이력은 있지만 아직 검토 주기에 이르지
-않으면 `evidence_gathering`으로 표시한다. 실제 Skill body가 실행 컨텍스트에
+선택 이력이 없으면 `awaiting_usage`, 선택 이력은 있지만 아직 검토 주기에 이르지
+않으면 `evidence_gathering`으로 기록하되 UI에서는 각각 “이 프로젝트 선택 기록
+없음”, “로컬 선택 관찰 중”으로 표시한다. 이는 출처 수집이나 Pack 품질 검증 상태가
+아니다. 실제 Skill body가 실행 컨텍스트에
 로드됐다는 Host 증명이 없을 때는 `host_attestation_unavailable`로 표시한다.
 서로 다른 원인을 하나의 모호한 `not_observed` 상태로 합치지 않는다.
+
+Pack의 `candidate/pilot/stable`은 배포 lifecycle이고, Guide의
+`stable/versioned/volatile`은 지식이 변하는 속도다. 따라서 원격에서 받은 Stable
+Pack은 이 프로젝트의 선택 기록이 0회여도 Stable로 표시한다. `freshness=stable`은
+“저변동 지식”으로 표시하며 품질 승격으로 해석하지 않는다.
 
 작업의 Host 관측 상태는 세 단계로 표시한다.
 
@@ -106,6 +119,12 @@ Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run
 - `host_request_observed`: 요청 모델 또는 요청 추론 강도만 연결됨
 - `host_event_stream_complete`: 완료까지의 model event stream이 연결되어 적용
   모델을 확정할 수 있음
+
+`maestro host codex`로 Maestro가 직접 시작한 새 turn은 마지막 상태까지 자동으로
+올라갈 수 있다. 이 명령은 기존 Desktop 대화를 긁지 않고 별도 ephemeral App Server
+turn을 소유한다. 완전한 stream에서도 token notification이 오지 않으면 적용 모델과
+완료는 확정하되 token만 미측정으로 남긴다. final agent message와 prompt는 viewer
+snapshot의 입력이 아니며 Observation에도 저장되지 않는다.
 
 화면의 `risk low/medium/high`, Route의 `fast/standard/deep`, 모델의
 `reasoning effort low/medium/high/xhigh`는 서로 다른 축이다. 위험도는 검토 필요성,
@@ -118,6 +137,12 @@ Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강
 `aria-labelledby`를 연결하므로 마우스로 행을 선택하는 동작과 키보드
 Enter·Space 동작이 같은 상태 전이를 사용한다.
 
+Run 상세의 Expertise는 `선택 → Assignment 연결 → Host 로드 → 산출물 적용` 네
+증거 단계를 보여준다. 현재 receipt가 증명하는 것은 앞의 두 단계까지다. Host load
+또는 산출물 적용 필드가 없으면 “확인 안 됨”으로 표시하며 선택된 Pack을 “사용됨”으로
+바꾸어 쓰지 않는다. snapshot의 `expertise.evidence`는 이 네 상태와 연결된
+Assignment ID만 담고 Guide 본문·prompt·hidden reasoning을 담지 않는다.
+
 행의 체크박스는 상세 열기와 별도다. 선택한 최대 50개 event를 새 이름 또는 기존
 묶음에 추가하기 전에 정확한 개수와 “raw receipt를 삭제하지 않음”을 다시 보여준다.
 apply는 event digest가 preview 뒤 바뀌지 않았는지 확인한 다음
@@ -127,7 +152,7 @@ apply는 event digest가 preview 뒤 바뀌지 않았는지 확인한 다음
 
 ## Expertise 관리
 
-카탈로그의 운영 상태는 최근 receipt에서 Pack·Guide 선택 횟수와 같은 Run에서
+카탈로그의 로컬 관찰 상태는 최근 receipt에서 Pack·Guide 선택 횟수와 같은 Run에서
 관찰된 검증 실패·수정·명시적 Expertise observation을 집계한다. 다섯 번 선택할
 때마다 정기 검토를 권하고, 같은 부정 신호가 세 번 이상 또는 critical observation
 한 번이면 문제 검토를 권한다. 이는 상관관계 기반의 저비용 신호이며 Guide가

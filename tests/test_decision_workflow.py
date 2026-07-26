@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.support import ROOT, write_json
 
@@ -237,10 +238,114 @@ class DecisionPlanTests(unittest.TestCase):
                 for item in plan["assignments"]
             )
         )
+        visual = next(
+            item
+            for item in plan["specialist_contracts"]
+            if item["specialist_id"] == "visual-design"
+        )
+        self.assertEqual(
+            "advisory-only",
+            visual["expertise_load"]["application_mode"],
+        )
+        self.assertEqual(
+            "unavailable",
+            visual["expertise_load"]["host_attestation"]["status"],
+        )
+        self.assertTrue(visual["expertise_load"]["packs"])
+        loaded_guides = {
+            guide["guide_id"]
+            for pack in visual["expertise_load"]["packs"]
+            for guide in pack["guides"]
+        }
+        self.assertEqual(
+            set(visual["decision_guide_ids"]),
+            loaded_guides,
+        )
         self.assertEqual(
             "after_decision",
             plan["request_contract"]["side_effect_policy"],
         )
+
+    def test_unknown_pack_uses_generic_guide_bounded_specialist(self) -> None:
+        digest = "a" * 64
+        expertise = {
+            "schema_version": "maestro_expertise_selection_v1",
+            "selected_pack_ids": ["api-resilience"],
+            "selected_guide_ids": ["retry-budget", "failure-recovery"],
+            "pack_definition_digests": {"api-resilience": digest},
+            "pack_cards": [
+                {
+                    "expertise_pack_id": "api-resilience",
+                    "summary": "API resilience decision criteria.",
+                    "status": "pilot",
+                    "portability": "project",
+                    "version": 1,
+                    "skill_id": "api-resilience",
+                    "origin": "project",
+                    "pack_path": ".agents/skills/api-resilience/maestro-pack.json",
+                    "skill_path": ".agents/skills/api-resilience/SKILL.md",
+                    "definition_digest": digest,
+                    "skill_definition_digest": digest,
+                    "extends": None,
+                    "guides": [
+                        {
+                            "guide_id": guide_id,
+                            "summary": f"{guide_id} criteria.",
+                            "freshness": "stable",
+                            "origin": "project",
+                            "skill_id": "api-resilience",
+                            "resource_path": f"references/{guide_id}.md",
+                            "skill_definition_digest": digest,
+                        }
+                        for guide_id in (
+                            "retry-budget",
+                            "failure-recovery",
+                        )
+                    ],
+                    "source_manifest": "evidence/sources.json",
+                    "evaluation_suite": "evals/cases.json",
+                }
+            ],
+            "research_requirement": {
+                "mode": "reuse",
+                "gate": "not-required",
+                "reasons": [],
+                "evidence_digest": None,
+            },
+            "warnings": [],
+            "selection_trace": {},
+        }
+        with patch(
+            "maestro.decisions.select_expertise",
+            return_value=(expertise, []),
+        ):
+            plan = build_decision_plan(
+                ROOT,
+                "Choose the API resilience direction before implementation",
+                "medium",
+            )
+
+        generic = next(
+            item
+            for item in plan["specialist_contracts"]
+            if item["specialist_id"] == "expertise-domain-review"
+        )
+        self.assertEqual(
+            ["retry-budget", "failure-recovery"],
+            generic["decision_guide_ids"],
+        )
+        self.assertEqual(
+            {
+                "references/retry-budget.md",
+                "references/failure-recovery.md",
+            },
+            {
+                guide["resource_path"]
+                for pack_load in generic["expertise_load"]["packs"]
+                for guide in pack_load["guides"]
+            },
+        )
+        self.assertEqual("PASS", validate_decision_plan(plan)["status"])
 
     def test_marketing_and_qa_use_bounded_domain_specialists(self) -> None:
         cases = (
@@ -333,6 +438,31 @@ class DecisionPlanTests(unittest.TestCase):
 
         self.assertIn(
             "DECISION_WRITE_FORBIDDEN",
+            {item["code"] for item in result["issues"]},
+        )
+
+    def test_tampered_specialist_guide_load_is_rejected(self) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        visual = next(
+            item
+            for item in plan["specialist_contracts"]
+            if item["specialist_id"] == "visual-design"
+        )
+        visual["expertise_load"]["packs"][0]["guides"][0][
+            "resource_path"
+        ] = "../hidden.md"
+        payload = copy.deepcopy(plan)
+        payload.pop("plan_id")
+        plan["plan_id"] = sha256_text(canonical_json(payload))
+
+        result = validate_decision_plan(plan)
+
+        self.assertIn(
+            "SPECIALIST_EXPERTISE_GUIDE_INVALID",
             {item["code"] for item in result["issues"]},
         )
 

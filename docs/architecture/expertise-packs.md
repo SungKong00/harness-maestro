@@ -156,7 +156,9 @@ candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
 ├── draft/agents/openai.yaml
 ├── evidence/sources.json
 ├── evals/cases.json
-└── evals/results.json
+├── evals/results.json
+├── evals/quality.json
+└── evals/artifacts/<case-id>.json
 ```
 
 이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 승격이 아니다.
@@ -175,6 +177,8 @@ candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
 ├── evidence/sources.json
 ├── evals/cases.json
 ├── evals/results.json
+├── evals/quality.json
+├── evals/artifacts/
 └── activation.json
 ```
 
@@ -184,6 +188,14 @@ bundled Pack 하나를 ID·version·digest로 고정하는 단일 `extends`이�
 분야에만 standalone Pack을 쓴다. 동일 ID shadowing, inherited guide 재정의,
 local-to-local·재귀 상속은 실패한다. project Pack은 implicit invocation을 끄고,
 Maestro route가 선택한 Skill과 guide만 연다.
+
+`results.json`은 Pack·Guide·research-mode의 결정론적 replay를 기록한다.
+`quality.json`은 별도 fresh-context 또는 human evaluator가 모든 frozen case의
+observable criterion과 forbidden behavior를 판정한 receipt다. 각 case는
+`evals/artifacts/`의 compact 결과 근거를 digest로 결합하며 prompt, 대화,
+transcript와 hidden reasoning은 저장하지 않는다. Validator는 독립 run reference,
+case coverage, 정확한 criterion disposition과 artifact digest를 검사하지만 출처의
+진실성이나 evaluator의 domain 판단 자체를 자동 보증하지 않는다.
 
 ```bash
 maestro expertise list --repo /path/to/project --json
@@ -263,10 +275,12 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 
 각 팩은 `maestro_expertise_eval_v2`의 normal·edge·non-trigger·overlap case,
 관찰 가능한 판정 기준과 금지 행동을 갖는다. `evals/results.json`은 모든 case의
-관찰 결과와 verdict를 보존하고 `cases.json`이 그 digest를 고정한다. Candidate
-validator는 이 구조와 교차 참조를 검사하지만, 모델 출력의 실제 전문성이나 출처의
-진실성을 자동 판정한다고 주장하지 않는다. 실제 route test와 domain artifact
-검토가 별도로 필요하다. 특히 landing page의
+route 관찰 결과와 verdict를 보존하고 `cases.json`이 그 digest를 고정한다. 새
+project candidate는 여기에 더해 `maestro_expertise_quality_eval_v1` receipt와
+case별 compact artifact를 통과해야 한다. Candidate validator는 구조, 독립 run
+reference, exact criterion coverage와 digest를 검사하지만 모델 출력의 실제
+전문성이나 출처의 진실성을 자동 판정한다고 주장하지 않는다. bundled 세 팩은
+여전히 pilot이며 실제 domain artifact 평가가 active 승격 전에 필요하다. 특히 landing page의
 시각 위계는 product-design, positioning과 copy는 marketing이 우선되어야 하며,
 단순 unit test 실행은 software-qa 팩을 불필요하게 열지 않아야 한다. 실제 품질
 A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로 사용한다.
@@ -296,7 +310,7 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | 단계 | 상태 | 조건 |
 |---|---|---|
 | Registry pack, route gate, validator | 현재 구현 | 전체 unit·wheel·strict Doctor |
-| product-design·marketing·software-qa 파일럿 | 현재 구현 | frozen route cases + 실제 artifact evaluation |
+| product-design·marketing·software-qa 파일럿 | 현재 구현 | frozen route cases; active 전 실제 artifact evaluation |
 | 내부 ResearchPacket·ResearchBundle validator | 현재 구현 | source-tier·reference·follow-up·artifact binding tests |
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
 | 후보 활성화 CLI | 현재 구현 | owner/held-out 근거 + reviewed preview/apply + strict Doctor |

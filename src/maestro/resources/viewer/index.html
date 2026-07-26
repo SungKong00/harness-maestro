@@ -9,142 +9,260 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">HARNESS MAESTRO</p>
-        <h1>프로젝트 운영 뷰어</h1>
-        <p id="repo-path" class="muted">프로젝트 정보를 불러오는 중입니다.</p>
+      <div class="topbar-main">
+        <div>
+          <p class="eyebrow">HARNESS MAESTRO</p>
+          <span class="sr-only">프로젝트 운영 뷰어</span>
+          <h1>프로젝트 운영 센터</h1>
+          <p id="repo-path" class="muted">프로젝트 정보를 불러오는 중입니다.</p>
+        </div>
+        <div class="header-actions">
+          <span id="connection-state" class="pill neutral">연결 중</span>
+          <span id="updated-at" class="muted">—</span>
+          <button id="refresh" type="button">새로고침</button>
+        </div>
       </div>
-      <div class="header-actions">
-        <span id="updated-at" class="muted">—</span>
-        <button id="refresh" type="button">새로고침</button>
-      </div>
+      <nav class="view-tabs" aria-label="운영 화면">
+        <button class="view-tab" type="button" data-view-target="overview" aria-selected="true">
+          개요
+          <span id="overview-tab-count" class="tab-count" hidden></span>
+        </button>
+        <button class="view-tab" type="button" data-view-target="work" aria-selected="false">
+          작업
+          <span id="work-tab-count" class="tab-count" hidden></span>
+        </button>
+        <button class="view-tab" type="button" data-view-target="expertise" aria-selected="false">
+          전문 지식
+          <span id="expertise-tab-count" class="tab-count" hidden></span>
+        </button>
+        <button class="view-tab" type="button" data-view-target="management" aria-selected="false">
+          관리
+          <span id="management-tab-count" class="tab-count" hidden></span>
+        </button>
+      </nav>
     </header>
 
     <main>
-      <section aria-labelledby="overview-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">운영 요약</p>
-            <h2 id="overview-title">지금 상태</h2>
+      <div id="view-overview" class="view-panel" data-view="overview">
+        <section aria-labelledby="overview-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">AT A GLANCE</p>
+              <h2 id="overview-title">지금 먼저 볼 것</h2>
+            </div>
+            <span id="doctor-state" class="pill neutral">Doctor 확인 중</span>
           </div>
-          <span id="connection-state" class="pill neutral">연결 중</span>
-        </div>
-        <div id="metrics" class="metric-grid"></div>
-        <div id="coverage" class="coverage"></div>
-        <aside class="meaning-guide" aria-label="표시 기준 설명">
-          <strong>표시 기준</strong>
-          <span><b>계획</b> Maestro가 실행 전에 정한 경로입니다.</span>
-          <span><b>실측</b> Host가 완료 이벤트와 함께 보낸 사실입니다.</span>
-          <span><b>Host 상태</b> 정보 없음 → 요청 정보 연결 → 실행 관측 완료를 구분합니다.</span>
-          <span><b>low · medium · high</b> 위험도, Route 깊이, 모델 추론 강도는 서로 다른 기준입니다.</span>
-        </aside>
-      </section>
+          <div id="metrics" class="metric-grid"></div>
+          <div class="overview-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">OBSERVABILITY</p>
+                  <h3>관측 데이터 범위</h3>
+                </div>
+                <span class="muted">최근 작업 기준</span>
+              </div>
+              <div id="coverage" class="coverage-list"></div>
+              <p class="panel-note">
+                측정되지 않은 값은 추정하지 않습니다. 요청값·실제 실행값·Route 권고값을 분리합니다.
+              </p>
+            </article>
+            <details class="meaning-guide">
+              <summary>이 화면의 상태가 뜻하는 것</summary>
+              <div class="meaning-grid">
+                <span><b>계획</b> Maestro가 실행 전에 정한 경로</span>
+                <span><b>실측</b> Host 완료 이벤트로 확인한 사실</span>
+                <span><b>선택</b> Pack·Guide가 Assignment 후보에 연결됨</span>
+                <span><b>적용</b> Host load와 산출물 근거가 있어야 확인 가능</span>
+                <span><b>배포 단계</b> Candidate · Pilot · Stable</span>
+                <span><b>지식 최신성</b> 저변동 · 버전 확인 · 최신 조사 필요</span>
+              </div>
+            </details>
+          </div>
+        </section>
 
-      <section aria-labelledby="attention-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">검토 대기열</p>
-            <h2 id="attention-title">확인이 필요한 항목</h2>
+        <section aria-labelledby="attention-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">ACTION QUEUE</p>
+              <h2 id="attention-title">확인이 필요한 항목</h2>
+            </div>
+            <p class="muted">문제가 아니라 사용자 판단이나 승인이 필요한 순서입니다.</p>
           </div>
-        </div>
-        <div id="attention" class="stack"></div>
-      </section>
+          <div id="attention" class="stack"></div>
+        </section>
 
-      <section aria-labelledby="verification-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">검증 권위</p>
-            <h2 id="verification-title">검증 명령</h2>
+        <section aria-labelledby="inflight-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">IN FLIGHT</p>
+              <h2 id="inflight-title">진행 중인 관측</h2>
+            </div>
+            <p class="muted">완료 기록과 아직 닫히지 않은 Host 관측을 구분합니다.</p>
           </div>
-          <p class="muted">탐지된 명령을 확인한 뒤 프로젝트 권위로 승인합니다. 여기서 명령은 실행되지 않습니다.</p>
-        </div>
-        <div id="verification" class="stack"></div>
-        <div id="verification-preview" class="detail-panel empty">
-          후보를 선택하면 실제 변경 내용을 먼저 보여줍니다.
-        </div>
-      </section>
+          <div id="inflight" class="stack compact"></div>
+        </section>
+      </div>
 
-      <section aria-labelledby="history-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">완료 기록</p>
-            <h2 id="history-title">작업 묶음</h2>
+      <div id="view-work" class="view-panel" data-view="work" hidden>
+        <section aria-labelledby="runs-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">WORK TRACE</p>
+              <h2 id="runs-title">작업과 실행 흐름</h2>
+            </div>
+            <p class="muted">제목을 누르면 계획·관측 단계를 보고, 전문 지식 증거도 같은 위치에서 확인합니다.</p>
           </div>
-          <p class="muted">아래 최근 작업에서 체크한 항목을 이름 있는 묶음으로 옮깁니다. 원본 기록은 삭제하지 않습니다.</p>
-        </div>
-        <div id="history-bundles" class="stack"></div>
-      </section>
+          <div class="run-toolbar">
+            <label class="search-field">
+              <span class="sr-only">작업 검색</span>
+              <input id="run-search" type="search" placeholder="작업명 또는 Run ID 검색">
+            </label>
+            <label>
+              <span class="sr-only">결과 필터</span>
+              <select id="run-outcome-filter">
+                <option value="">모든 결과</option>
+                <option value="completed">완료</option>
+                <option value="corrected">수정 후 완료</option>
+                <option value="failed">실패</option>
+                <option value="blocked">중단</option>
+                <option value="no_change">변경 없음</option>
+              </select>
+            </label>
+            <label class="filter-check">
+              <input id="run-expertise-filter" type="checkbox">
+              전문 지식이 선택된 작업만
+            </label>
+            <span id="run-filter-count" class="muted"></span>
+            <button id="show-more-runs" class="secondary-button compact-button" type="button" hidden>
+              더 보기
+            </button>
+          </div>
+          <div id="bundle-controls" class="bundle-controls" hidden>
+            <strong id="selected-count">0개 선택</strong>
+            <label>
+              <span>새 묶음 이름</span>
+              <input id="new-bundle-label" type="text" maxlength="100" placeholder="예: 결제 안정화 1차">
+            </label>
+            <button id="create-bundle" type="button">새 묶음 만들기</button>
+            <span class="bundle-or">또는</span>
+            <label>
+              <span>기존 묶음</span>
+              <select id="existing-bundle"></select>
+            </label>
+            <button id="add-to-bundle" type="button">기존 묶음에 추가</button>
+          </div>
+          <div id="bundle-preview" class="detail-panel empty" hidden></div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th class="check-column"><span class="sr-only">선택</span></th>
+                  <th>작업</th>
+                  <th>결과</th>
+                  <th>경과 시간</th>
+                  <th>실행 관측</th>
+                  <th>전문 지식</th>
+                </tr>
+              </thead>
+              <tbody id="run-table"></tbody>
+            </table>
+          </div>
+        </section>
 
-      <section aria-labelledby="runs-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">최근 실행</p>
-            <h2 id="runs-title">최근 작업과 실행 흐름</h2>
+        <section aria-labelledby="history-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">COMPLETED HISTORY</p>
+              <h2 id="history-title">작업 묶음</h2>
+            </div>
+            <p class="muted">완료한 목표 단위로 최근 목록을 접습니다. 원본 RunReceipt는 보존합니다.</p>
           </div>
-          <p class="muted">제목을 누르면 계획·관측 단계를 보고, 체크하면 완료 기록으로 묶을 수 있습니다.</p>
-        </div>
-        <div id="inflight" class="stack compact"></div>
-        <div id="bundle-controls" class="bundle-controls" hidden>
-          <strong id="selected-count">0개 선택</strong>
-          <label>
-            <span>새 묶음 이름</span>
-            <input id="new-bundle-label" type="text" maxlength="100" placeholder="예: 결제 안정화 1차">
-          </label>
-          <button id="create-bundle" type="button">새 묶음 만들기</button>
-          <span class="bundle-or">또는</span>
-          <label>
-            <span>기존 묶음</span>
-            <select id="existing-bundle"></select>
-          </label>
-          <button id="add-to-bundle" type="button">기존 묶음에 추가</button>
-        </div>
-        <div id="bundle-preview" class="detail-panel empty" hidden></div>
-        <div class="table-shell">
-          <table>
-            <thead>
-              <tr>
-                <th class="check-column"><span class="sr-only">선택</span></th>
-                <th>작업</th>
-                <th>결과</th>
-                <th>시간</th>
-                <th>토큰</th>
-                <th>모델 · 추론 강도: 요청 / 적용 / 권고</th>
-                <th>사용한 전문 지식</th>
-              </tr>
-            </thead>
-            <tbody id="run-table"></tbody>
-          </table>
-        </div>
-      </section>
+          <div id="history-bundles" class="stack"></div>
+        </section>
+      </div>
 
-      <section aria-labelledby="expertise-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">전문 지식</p>
-            <h2 id="expertise-title">전문 지식 카탈로그</h2>
+      <div id="view-expertise" class="view-panel" data-view="expertise" hidden>
+        <section aria-labelledby="expertise-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">EXPERTISE INVENTORY</p>
+              <h2 id="expertise-title">전문 지식 카탈로그</h2>
+            </div>
+            <p class="muted">배포 단계·지식 최신성·프로젝트 선택 기록·실제 적용 증거를 따로 봅니다.</p>
           </div>
-          <p class="muted">Pack과 Guide별 사용·수정·검증·출처를 보고, 변경은 미리보기 후 적용합니다.</p>
-        </div>
-        <div id="expertise" class="card-grid"></div>
-        <div id="expertise-preview" class="detail-panel empty">
-          작업을 선택하면 변경 경로와 안전 경계를 먼저 보여줍니다.
-        </div>
-      </section>
+          <aside class="semantics-strip" aria-label="전문 지식 표시 기준">
+            <span><b>기본 포함 / 프로젝트 로컬</b> 어디에서 제공되는가</span>
+            <span><b>Pilot / Stable</b> Pack의 배포 단계</span>
+            <span><b>저변동 / 버전 확인 / 최신 조사</b> Guide 내용의 최신성</span>
+            <span><b>선택 / 로드 / 적용</b> 실제 작업에서 확인된 증거 단계</span>
+          </aside>
+          <div class="expertise-layout">
+            <div>
+              <div class="panel-heading compact-heading">
+                <h3>Pack</h3>
+                <span id="expertise-pack-count" class="muted"></span>
+              </div>
+              <label class="search-field pack-search">
+                <span class="sr-only">Pack과 Guide 검색</span>
+                <input id="expertise-search" type="search" placeholder="Pack 또는 Guide 검색">
+              </label>
+              <div id="expertise" class="pack-list" role="list"></div>
+            </div>
+            <div id="expertise-detail" class="expertise-detail panel">
+              <div class="empty-state">Pack을 선택하면 Guide와 근거를 보여줍니다.</div>
+            </div>
+          </div>
+          <div id="expertise-preview" class="detail-panel empty">
+            관리 작업을 선택하면 변경 경로와 안전 경계를 먼저 보여줍니다.
+          </div>
+        </section>
 
-      <section aria-labelledby="governance-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">자가개선 관리</p>
-            <h2 id="governance-title">자가개선 신호</h2>
+        <section aria-labelledby="expertise-candidate-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">ISOLATED CANDIDATES</p>
+              <h2 id="expertise-candidate-title">프로젝트 후보</h2>
+            </div>
+            <p class="muted">후보는 격리되어 있으며 검증과 사용자 확인 전에는 Pack에 반영되지 않습니다.</p>
           </div>
-          <span class="pill neutral">자동 변경 없음</span>
-        </div>
-        <div id="governance" class="governance-grid"></div>
-      </section>
+          <div id="expertise-candidates" class="stack"></div>
+        </section>
+      </div>
+
+      <div id="view-management" class="view-panel" data-view="management" hidden>
+        <section aria-labelledby="verification-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">VERIFICATION AUTHORITY</p>
+              <h2 id="verification-title">검증 명령 승인</h2>
+            </div>
+            <p class="muted">탐지된 명령을 프로젝트 권위로 등록합니다. 이 화면에서는 명령을 실행하지 않습니다.</p>
+          </div>
+          <div id="verification" class="stack"></div>
+          <div id="verification-preview" class="detail-panel empty">
+            후보를 선택하면 실제 변경 내용을 먼저 보여줍니다.
+          </div>
+        </section>
+
+        <section aria-labelledby="governance-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">GOVERNANCE</p>
+              <h2 id="governance-title">자가개선 검토 신호</h2>
+            </div>
+            <span class="pill neutral">자동 변경 없음</span>
+          </div>
+          <p class="section-intro">
+            반복 신호를 검토 후보로만 올립니다. Convention·Skill·Pack을 자동 승격하거나 삭제하지 않습니다.
+          </p>
+          <div id="governance" class="governance-grid"></div>
+        </section>
+      </div>
     </main>
 
     <footer>
-      이 페이지는 로컬 메타데이터를 읽습니다. 사용자가 확인한 검증 명령 승인,
+      이 페이지는 프로젝트 로컬 메타데이터를 읽습니다. 사용자가 확인한 검증 명령,
       작업 묶음, 표시 이름과 검토된 프로젝트 Expertise 계획만 반영합니다.
       명령 실행, 자동 커밋·푸시, 프롬프트 본문과 원문 대화 저장은 하지 않습니다.
     </footer>

@@ -47,6 +47,23 @@ SHA-256 from `evals/cases.json`; never rewrite the results after preview without
 creating a new candidate. The receipt proves which evaluated result was
 reviewed, not that the model or source was inherently correct.
 
+Record the independent judgment separately in `evals/quality.json`. Use a
+fresh-context evaluator or a human, and give the authoring and evaluation runs
+distinct bounded references. For every frozen case:
+
+- write one compact `evals/artifacts/<case-id>.json` containing the observable
+  baseline/candidate outcome evidence using
+  `maestro_expertise_case_artifact_v1`;
+- bind the artifact by SHA-256;
+- return one verdict for every exact `observable_criteria` entry;
+- report whether every exact `forbidden_behaviors` entry was observed;
+- fail the case when a required criterion fails, a forbidden behavior is
+  observed, or the evidence artifact is missing.
+
+Do not store prompts, messages, copied pages, transcripts, or hidden reasoning
+in evaluation artifacts. Structural validation proves coverage and integrity,
+not that an evaluator's domain judgment is infallible.
+
 ## In-use review
 
 After activation, keep the evidence cheap:

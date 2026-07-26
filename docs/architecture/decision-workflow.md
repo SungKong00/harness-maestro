@@ -67,9 +67,18 @@ staged 요청을 일반 route로 보내면 `DECISION_WORKFLOW_REQUIRED`를 반�
 
 Specialist는 `owns`, `out_of_scope`, 허용 input·claim, 선택 guide, 빈
 `allowed_side_effects`, `fresh_context=true`, `may_spawn=false`를 가진다.
+각 계약의 `expertise_load`는 선택된 Guide의 Skill ID, project Skill 경로,
+resource 경로와 digest를 직접 결합한다. 선택 기록은 실제 로드 증명이 아니므로
+Host가 증명하지 못하면 attestation은 `unavailable`이다.
 `SpecialistFindingPacket`은 소유 concern, claim 종류, 짧은 statement, evidence
 reference와 confidence만 허용한다. 다른 역할의 문제는
 `target_specialism + question + evidence_refs` escalation으로 보낸다.
+
+product-design·marketing·software-qa는 검증된 전용 Specialist 분할을 사용한다.
+그 밖의 새 Pack은 선택된 Guide만 소유하는 read-only
+`expertise-domain-review` 한 명과 technical-feasibility를 사용한다. 새 Pack이
+전용 영구 역할을 갖지 않아도 decision-first에서 Guide를 잃지 않게 하는 fallback이며,
+반복 평가가 별도 역할 경계를 입증할 때만 전용 Specialist 분할을 추가한다.
 
 ### DecisionBundle
 
@@ -97,8 +106,9 @@ allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는
 - Assignment 최대 5개, Specialist 최대 3개, 반박 최대 1회다.
 - 영구 designer·UX·technical agent를 새로 만들지 않고 동일 read-only reviewer
   Executor를 fresh role context로 사용한다.
-- 제품 디자인 외 작업은 선택 Lens 최대 두 개와 technical-feasibility로 역할을
-  구성한다.
+- 선택된 Pack에 전용 분할이 없으면 Guide-bounded 전문 검토자 한 명과
+  technical-feasibility를 사용한다. Pack이 없을 때만 선택 Lens 최대 두 개로
+  역할을 구성한다.
 - 새 database, scheduler, checkpoint, graph framework dependency가 없다.
 - 전체 대화나 guide 본문을 DecisionBundle에 복사하지 않는다.
 - semantic LLM judge는 기본 validation에 추가하지 않는다. frozen high-risk
@@ -113,6 +123,8 @@ allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는
 - staged 요청이 direct route를 열지 못함
 - visual이 기술 타당성을, UX가 코드 지시를, technical이 typography를 소유하지 못함
 - decision reviewer가 write capability를 요청하지 못함
+- 새 Pack의 Guide 경로·digest가 범용 Specialist 계약에 결합됨
+- 변조된 Guide 경로나 누락된 Guide load가 plan validation에서 거부됨
 - research open, blocker, feasibility fail, stale checkout, packet digest mismatch가
   enactment를 막음
 - 유효한 bundle만 기존 한 명 writer route로 연결됨

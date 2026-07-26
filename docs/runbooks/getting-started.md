@@ -237,7 +237,38 @@ thread·turn ID를 제공하면 Maestro가 요청 정보만 자동 연결한다.
 공개 API/event 구간까지 제공하면 reroute, 실제 적용 모델과 token도 출처·quality·
 correlation ID와 함께 연결한다. Route 권고 모델은 실측값을 대신하지 않는다.
 비공개 Codex session 파일은 읽지 않고, 지원되는 값이 없으면 `null`을 유지한다.
-다른 Host나 자동화가 같은 계약을 구현할 때만 다음 저수준 명령을 호출한다.
+
+새 Codex 실행을 Maestro가 직접 시작할 수 있으면 `host codex`가 권장 경로다.
+현재 열려 있는 Desktop 대화를 뒤늦게 읽는 기능이 아니라, 새 App Server turn을
+Maestro가 소유해 공식 이벤트를 처음부터 끝까지 받는 방식이다. 사용자가 명령을
+입력하는 흐름은 아니며 `$maestro` Host가 내부에서 호출한다.
+
+```bash
+maestro host codex --repo /path/to/project \
+  --run-id run-20260727-implementation \
+  --task-label "결제 webhook 재시도 구현" \
+  --prompt-file /tmp/implementation-assignment.txt \
+  --plan "$maestro_route" --assignment implementation --json
+```
+
+`--assignment`를 주면 plan의 읽기 전용·유일 writer 권한, 선택 모델과 추론 강도를
+그대로 사용하고 충돌하는 override를 거부한다. plan 없이 단독 실행할 때는
+`--sandbox read-only` 또는 `--sandbox workspace-write`를 반드시 명시한다.
+`workspace-write`도 현재 저장소 루트만 writable이고 network는 꺼져 있다.
+승인 정책은 `never`이므로 실행 중 승인·사용자 입력을 요구하면 묻지 않고 typed
+failure로 중단한다.
+
+Host는 `thread/start`, `turn/start`, `model/rerouted`,
+`thread/tokenUsage/updated`, terminal `turn/completed`를 같은 thread·turn으로
+상관시킨다. 요청/설정 모델과 추론 강도, 적용 모델, reroute, token, duration만
+Observation에 남긴다. prompt, JSON-RPC trace와 최종 답변은 저장하지 않으며 최종
+답변은 그 명령 결과로만 반환한다. completed는 exit 0, terminal failed/interrupted는
+exit 4, 계약·프로토콜·timeout 실패는 exit 2다. token event가 없는 완전한 turn은
+실행 자체를 거짓으로 실패 처리하지 않고 `token_measurement=unavailable`로
+정직하게 표시한다.
+
+다른 Host나 기존 자동화가 같은 계약을 구현할 때만 다음 수동 저수준 명령을
+호출한다.
 
 ```bash
 maestro observe start --repo /path/to/project \
@@ -255,8 +286,8 @@ maestro observe host --repo /path/to/project \
   --model-event-evidence complete \
   --total-tokens <actual-total> --json
 
-# Codex App Server를 소유한 Host는 위 필드를 손으로 옮기지 않고 완전한
-# JSON-RPC event stream을 같은 observation에 가져온다.
+# 이미 별도로 App Server stream을 소유한 Host는 위 필드를 손으로 옮기지 않고
+# 완전한 JSON-RPC event stream을 같은 observation에 가져온다.
 maestro observe import-codex --repo /path/to/project \
   --observation <observation-id> --run-id run-20260726-01 \
   --trace <complete-app-server-jsonl> --json

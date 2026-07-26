@@ -84,7 +84,9 @@ def _guide_runtime(
     )
     return {
         "usage_count": use_count,
+        "selection_count": use_count,
         "last_used_timestamp": latest_timestamp,
+        "last_selected_timestamp": latest_timestamp,
         "failed_verification_run_count": failed_count,
         "corrected_run_count": corrected_count,
         "observation_counts": dict(sorted(observation_counts.items())),
@@ -172,6 +174,7 @@ def expertise_component_health(
                 "version": pack.get("version"),
                 "definition_digest": pack.get("definition_digest"),
                 "usage_count": pack_usage,
+                "selection_count": pack_usage,
                 "trigger_count": len(pack.get("triggers", [])),
                 "source_status": pack.get(
                     "source_manifest",
@@ -188,8 +191,11 @@ def expertise_component_health(
         "packs": packs,
         "review_items": review_items,
         "interpretation": (
-            "Usage, correction, and verifier co-occurrence are review signals, "
-            "not causal proof that a Guide improved or harmed the result."
+            "Selection, correction, and verifier co-occurrence are local "
+            "review signals, not causal proof that a Guide was loaded, "
+            "applied, improved, or harmed the result. Pack lifecycle and "
+            "Guide freshness remain independent from this project-local "
+            "observation."
         ),
         "automatic_mutation_allowed": False,
     }

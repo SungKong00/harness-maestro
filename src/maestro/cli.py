@@ -12,6 +12,10 @@ from .assignment_contracts import (
     validate_assignment_packet,
 )
 from .component_candidates import validate_component_candidate
+from .codex_host import (
+    DEFAULT_TIMEOUT_SECONDS,
+    run_codex_host,
+)
 from .decisions import (
     build_decision_plan,
     build_execution_plan,
@@ -643,6 +647,70 @@ def parser() -> argparse.ArgumentParser:
     )
     observe_import_codex.add_argument("--json", action="store_true")
 
+    host = commands.add_parser(
+        "host",
+        help="Run a bounded task through a Host adapter with verified telemetry",
+    )
+    host_commands = host.add_subparsers(
+        dest="host_command",
+        required=True,
+    )
+    host_codex = host_commands.add_parser(
+        "codex",
+        help=(
+            "Run one Maestro-owned Codex App Server turn and record its "
+            "model, reroute, token, effort, and completion events"
+        ),
+    )
+    host_codex.add_argument("--repo", default=".")
+    host_codex.add_argument("--run-id", required=True)
+    host_codex.add_argument("--task-label", required=True)
+    host_codex.add_argument(
+        "--prompt-file",
+        required=True,
+        help=(
+            "Regular UTF-8 request file; content is sent to Codex but is not "
+            "persisted in Maestro observations"
+        ),
+    )
+    host_codex.add_argument(
+        "--plan",
+        help="Optional validated route v2 plan recorded in the observation",
+    )
+    host_codex.add_argument(
+        "--assignment",
+        help=(
+            "Assignment in --plan; derives sandbox, model, and reasoning "
+            "effort and rejects conflicting overrides"
+        ),
+    )
+    host_codex.add_argument(
+        "--sandbox",
+        choices=["read-only", "workspace-write"],
+        help=(
+            "Required without --assignment; workspace-write is restricted "
+            "to the repository and network remains disabled"
+        ),
+    )
+    host_codex.add_argument("--model")
+    host_codex.add_argument(
+        "--reasoning-effort",
+        help=(
+            "Requested/configured effort such as low, medium, high, or xhigh; "
+            "actual reasoning token use is measured separately"
+        ),
+    )
+    host_codex.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=(
+            "Whole-turn timeout in seconds; default "
+            f"{DEFAULT_TIMEOUT_SECONDS:g}"
+        ),
+    )
+    host_codex.add_argument("--json", action="store_true")
+
     record = commands.add_parser(
         "record",
         help="Append one validated compact RunReceipt at task completion",
@@ -1125,6 +1193,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "host" and args.host_command == "codex":
+            result = run_codex_host(
+                args.repo,
+                run_id=args.run_id,
+                task_label=args.task_label,
+                prompt_file=args.prompt_file,
+                plan_path=args.plan,
+                assignment_id=args.assignment,
+                sandbox=args.sandbox,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                timeout_seconds=args.timeout,
+            )
+            _emit(result, args.json)
+            if not args.json and result.get("final_message"):
+                print(result["final_message"])
+            return 0 if result["status"] == "completed" else 4
         if args.command == "record":
             result = record_run(
                 args.repo,

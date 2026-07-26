@@ -100,8 +100,35 @@ PROPOSED_GUIDE_FIELDS = {
 EVALUATION_FIELDS = {
     "baseline",
     "cases_path",
+    "quality_path",
     "pass_criteria",
     "regression_criteria",
+}
+QUALITY_EVALUATION_FIELDS = {
+    "schema_version",
+    "expertise_pack_id",
+    "evaluated_on",
+    "evaluator",
+    "cases",
+}
+QUALITY_EVALUATOR_FIELDS = {
+    "kind",
+    "authoring_run_ref",
+    "evaluation_run_ref",
+}
+QUALITY_CASE_FIELDS = {
+    "case_id",
+    "artifact",
+    "criterion_results",
+    "forbidden_behavior_results",
+    "verdict",
+}
+QUALITY_ARTIFACT_FIELDS = {
+    "schema_version",
+    "case_id",
+    "baseline_observation",
+    "candidate_observation",
+    "evidence_refs",
 }
 PUBLICATION_PLAN_FIELDS = {
     "schema_version",
@@ -221,6 +248,7 @@ def _candidate_contract_valid(
         and evaluation.get("baseline")
         in {"no-pack", "persona-only", "existing-pack"}
         and evaluation.get("cases_path") == "evals/cases.json"
+        and evaluation.get("quality_path") == "evals/quality.json"
         and _nonempty_unique_strings(evaluation.get("pass_criteria"))
         and _nonempty_unique_strings(evaluation.get("regression_criteria"))
     )
@@ -317,6 +345,218 @@ def _safe_candidate_reference(root: Path, value: Any) -> Path | None:
         return safe_target(root, value)
     except MaestroError:
         return None
+
+
+def _quality_artifact_valid(value: Any, case_id: str) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == QUALITY_ARTIFACT_FIELDS
+        and value.get("schema_version")
+        == "maestro_expertise_case_artifact_v1"
+        and value.get("case_id") == case_id
+        and isinstance(value.get("baseline_observation"), str)
+        and bool(value["baseline_observation"].strip())
+        and isinstance(value.get("candidate_observation"), str)
+        and bool(value["candidate_observation"].strip())
+        and _nonempty_unique_strings(
+            value.get("evidence_refs"),
+            maximum=8,
+        )
+    )
+
+
+def _validate_quality_evaluation(
+    root: Path,
+    candidate: dict[str, Any],
+    expected_by_case: dict[str, dict[str, Any]],
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    quality_path = candidate["evaluation"]["quality_path"]
+    try:
+        quality = read_json(safe_target(root, quality_path))
+        evaluator = quality.get("evaluator")
+        cases = quality.get("cases")
+        if (
+            set(quality) != QUALITY_EVALUATION_FIELDS
+            or quality.get("schema_version")
+            != "maestro_expertise_quality_eval_v1"
+            or quality.get("expertise_pack_id")
+            != candidate["expertise_pack_id"]
+            or not isinstance(evaluator, dict)
+            or set(evaluator) != QUALITY_EVALUATOR_FIELDS
+            or evaluator.get("kind") not in {"fresh-context", "human"}
+            or not isinstance(evaluator.get("authoring_run_ref"), str)
+            or not evaluator["authoring_run_ref"].strip()
+            or not isinstance(evaluator.get("evaluation_run_ref"), str)
+            or not evaluator["evaluation_run_ref"].strip()
+            or evaluator["authoring_run_ref"]
+            == evaluator["evaluation_run_ref"]
+            or not isinstance(cases, list)
+            or not 3 <= len(cases) <= 12
+        ):
+            raise MaestroError(
+                "EXPERTISE_QUALITY_EVALUATION_INVALID",
+                "quality.json does not satisfy maestro_expertise_quality_eval_v1.",
+            )
+        date.fromisoformat(quality["evaluated_on"])
+    except (MaestroError, TypeError, ValueError) as exc:
+        message = exc.message if isinstance(exc, MaestroError) else str(exc)
+        return [
+            _candidate_issue(
+                "EXPERTISE_QUALITY_EVALUATION_INVALID",
+                quality_path,
+                message,
+            )
+        ]
+
+    case_ids: set[str] = set()
+    for index, result in enumerate(cases):
+        path = f"{quality_path}.cases[{index}]"
+        case_id = result.get("case_id") if isinstance(result, dict) else None
+        expected = (
+            expected_by_case.get(case_id)
+            if isinstance(case_id, str)
+            else None
+        )
+        if (
+            not isinstance(result, dict)
+            or set(result) != QUALITY_CASE_FIELDS
+            or not isinstance(case_id, str)
+            or case_id in case_ids
+            or expected is None
+            or result.get("verdict") != "pass"
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_CASE_INVALID",
+                    path,
+                    "Quality result must uniquely bind one frozen case and pass.",
+                )
+            )
+            continue
+        case_ids.add(case_id)
+
+        artifact = result.get("artifact")
+        artifact_path_value = (
+            artifact.get("path") if isinstance(artifact, dict) else None
+        )
+        artifact_path = _safe_candidate_reference(
+            root,
+            artifact_path_value,
+        )
+        if (
+            not isinstance(artifact, dict)
+            or set(artifact) != {"path", "sha256"}
+            or not isinstance(artifact_path_value, str)
+            or ID_PATTERN.fullmatch(
+                Path(artifact_path_value).stem
+            ) is None
+            or Path(artifact_path_value).suffix != ".json"
+            or Path(artifact_path_value).parent.as_posix()
+            != "evals/artifacts"
+            or artifact_path is None
+            or artifact_path.is_symlink()
+            or not artifact_path.is_file()
+            or file_sha256(artifact_path) != artifact.get("sha256")
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_ARTIFACT_INVALID",
+                    f"{path}.artifact",
+                    "Quality artifact is missing, unsafe, or has a different digest.",
+                )
+            )
+            continue
+        try:
+            artifact_value = json.loads(
+                _read_text_file(root, artifact_path_value)
+            )
+        except (MaestroError, json.JSONDecodeError):
+            artifact_value = None
+        if not _quality_artifact_valid(artifact_value, case_id):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_ARTIFACT_CONTENT_INVALID",
+                    f"{path}.artifact",
+                    "Quality artifact must be a compact case-bound observation record.",
+                )
+            )
+
+        criterion_results = result.get("criterion_results")
+        criterion_by_name: dict[str, dict[str, Any]] = {}
+        if isinstance(criterion_results, list):
+            for item in criterion_results:
+                if (
+                    isinstance(item, dict)
+                    and set(item) == {
+                        "criterion",
+                        "verdict",
+                        "evidence_ref",
+                    }
+                    and isinstance(item.get("criterion"), str)
+                    and item["criterion"].strip()
+                    and item.get("verdict") == "pass"
+                    and item.get("evidence_ref") == artifact_path_value
+                    and item["criterion"] not in criterion_by_name
+                ):
+                    criterion_by_name[item["criterion"]] = item
+        if (
+            not isinstance(criterion_results, list)
+            or len(criterion_results)
+            != len(expected["observable_criteria"])
+            or set(criterion_by_name)
+            != set(expected["observable_criteria"])
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_CRITERIA_INCOMPLETE",
+                    f"{path}.criterion_results",
+                    "Quality result must pass every exact observable criterion.",
+                )
+            )
+
+        forbidden_results = result.get("forbidden_behavior_results")
+        forbidden_by_name: dict[str, dict[str, Any]] = {}
+        if isinstance(forbidden_results, list):
+            for item in forbidden_results:
+                if (
+                    isinstance(item, dict)
+                    and set(item) == {
+                        "behavior",
+                        "observed",
+                        "evidence_ref",
+                    }
+                    and isinstance(item.get("behavior"), str)
+                    and item["behavior"].strip()
+                    and item.get("observed") is False
+                    and item.get("evidence_ref") == artifact_path_value
+                    and item["behavior"] not in forbidden_by_name
+                ):
+                    forbidden_by_name[item["behavior"]] = item
+        if (
+            not isinstance(forbidden_results, list)
+            or len(forbidden_results)
+            != len(expected["forbidden_behaviors"])
+            or set(forbidden_by_name)
+            != set(expected["forbidden_behaviors"])
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_FORBIDDEN_INCOMPLETE",
+                    f"{path}.forbidden_behavior_results",
+                    "Quality result must check every exact forbidden behavior and observe none.",
+                )
+            )
+
+    if case_ids != set(expected_by_case):
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_QUALITY_CASE_COVERAGE_MISSING",
+                quality_path,
+                "Quality evaluation must cover every frozen evaluation case.",
+            )
+        )
+    return issues
 
 
 def validate_expertise_candidate(
@@ -522,6 +762,7 @@ def validate_expertise_candidate(
         )
 
     cases_path = "evals/cases.json"
+    expected_by_case: dict[str, dict[str, Any]] = {}
     try:
         suite = read_json(safe_target(root, cases_path))
         cases = suite.get("cases")
@@ -550,7 +791,6 @@ def validate_expertise_candidate(
         date.fromisoformat(suite["evaluated_on"])
         case_ids: set[str] = set()
         strata: set[str] = set()
-        expected_by_case: dict[str, dict[str, Any]] = {}
         for index, case in enumerate(cases):
             case_path = f"{cases_path}.cases[{index}]"
             if (
@@ -677,6 +917,15 @@ def validate_expertise_candidate(
                 "EXPERTISE_EVALUATION_INVALID",
                 cases_path,
                 message,
+            )
+        )
+
+    if expected_by_case:
+        issues.extend(
+            _validate_quality_evaluation(
+                root,
+                candidate,
+                expected_by_case,
             )
         )
 
@@ -848,6 +1097,18 @@ def _candidate_publication_contents(
         source_to_destination[evaluation_artifact] = (
             f"{destination_root}/{evaluation_artifact}"
         )
+    candidate = read_json(safe_target(candidate_root, "candidate.json"))
+    quality_path = candidate["evaluation"]["quality_path"]
+    source_to_destination[quality_path] = (
+        f"{destination_root}/{quality_path}"
+    )
+    quality = read_json(safe_target(candidate_root, quality_path))
+    for result in quality.get("cases", []):
+        artifact_path = result.get("artifact", {}).get("path")
+        if isinstance(artifact_path, str):
+            source_to_destination[artifact_path] = (
+                f"{destination_root}/{artifact_path}"
+            )
     for guide in pack["guides"]:
         guide_id = guide["guide_id"]
         source_to_destination[
@@ -879,6 +1140,14 @@ def _candidate_contribution_files(
     evaluation_artifact = suite.get("evaluation_artifact", {}).get("path")
     if isinstance(evaluation_artifact, str):
         relative_paths.add(evaluation_artifact)
+    candidate = read_json(safe_target(candidate_root, "candidate.json"))
+    quality_path = candidate["evaluation"]["quality_path"]
+    relative_paths.add(quality_path)
+    quality = read_json(safe_target(candidate_root, quality_path))
+    for result in quality.get("cases", []):
+        artifact_path = result.get("artifact", {}).get("path")
+        if isinstance(artifact_path, str):
+            relative_paths.add(artifact_path)
     for guide in pack["guides"]:
         relative_paths.add(
             f"draft/references/{guide['guide_id']}.md"
@@ -895,6 +1164,176 @@ def _candidate_contribution_files(
             }
         )
     return files
+
+
+def _validate_contribution_quality(
+    candidate: dict[str, Any],
+    file_contents: dict[str, str],
+    file_digests: dict[str, str],
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    evaluation = candidate.get("evaluation")
+    quality_path = (
+        evaluation.get("quality_path")
+        if isinstance(evaluation, dict)
+        else None
+    )
+    try:
+        suite = json.loads(file_contents["evals/cases.json"])
+        quality = json.loads(file_contents[quality_path])
+        expected_by_case = {
+            case["case_id"]: case
+            for case in suite["cases"]
+            if isinstance(case, dict)
+            and isinstance(case.get("case_id"), str)
+        }
+        evaluator = quality["evaluator"]
+        quality_cases = quality["cases"]
+        if (
+            quality_path != "evals/quality.json"
+            or quality.get("schema_version")
+            != "maestro_expertise_quality_eval_v1"
+            or quality.get("expertise_pack_id")
+            != candidate.get("expertise_pack_id")
+            or not isinstance(evaluator, dict)
+            or set(evaluator) != QUALITY_EVALUATOR_FIELDS
+            or evaluator.get("kind") not in {"fresh-context", "human"}
+            or not isinstance(evaluator.get("authoring_run_ref"), str)
+            or not evaluator["authoring_run_ref"].strip()
+            or not isinstance(evaluator.get("evaluation_run_ref"), str)
+            or not evaluator["evaluation_run_ref"].strip()
+            or evaluator["authoring_run_ref"]
+            == evaluator["evaluation_run_ref"]
+            or not isinstance(quality_cases, list)
+            or not 3 <= len(quality_cases) <= 12
+            or len(expected_by_case) != len(suite["cases"])
+        ):
+            raise ValueError("quality evaluation identity is invalid")
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        return [
+            {
+                "code": "EXPERTISE_CONTRIBUTION_QUALITY_INVALID",
+                "message": (
+                    "Embedded quality evaluation is invalid: "
+                    f"{exc}"
+                ),
+            }
+        ]
+
+    observed_cases: set[str] = set()
+    for result in quality_cases:
+        case_id = result.get("case_id") if isinstance(result, dict) else None
+        expected = (
+            expected_by_case.get(case_id)
+            if isinstance(case_id, str)
+            else None
+        )
+        artifact = result.get("artifact") if isinstance(result, dict) else None
+        artifact_path = (
+            artifact.get("path") if isinstance(artifact, dict) else None
+        )
+        criterion_results = (
+            result.get("criterion_results")
+            if isinstance(result, dict)
+            else None
+        )
+        forbidden_results = (
+            result.get("forbidden_behavior_results")
+            if isinstance(result, dict)
+            else None
+        )
+        expected_criteria = (
+            expected.get("observable_criteria")
+            if isinstance(expected, dict)
+            else None
+        )
+        expected_forbidden = (
+            expected.get("forbidden_behaviors")
+            if isinstance(expected, dict)
+            else None
+        )
+        try:
+            artifact_value = json.loads(file_contents[artifact_path])
+        except (KeyError, TypeError, json.JSONDecodeError):
+            artifact_value = None
+        valid_criteria = {
+            item["criterion"]
+            for item in criterion_results
+            if isinstance(item, dict)
+            and set(item) == {
+                "criterion",
+                "verdict",
+                "evidence_ref",
+            }
+            and item.get("verdict") == "pass"
+            and item.get("evidence_ref") == artifact_path
+            and isinstance(item.get("criterion"), str)
+        } if isinstance(criterion_results, list) else set()
+        valid_forbidden = {
+            item["behavior"]
+            for item in forbidden_results
+            if isinstance(item, dict)
+            and set(item) == {
+                "behavior",
+                "observed",
+                "evidence_ref",
+            }
+            and item.get("observed") is False
+            and item.get("evidence_ref") == artifact_path
+            and isinstance(item.get("behavior"), str)
+        } if isinstance(forbidden_results, list) else set()
+        if (
+            not isinstance(result, dict)
+            or set(result) != QUALITY_CASE_FIELDS
+            or not isinstance(case_id, str)
+            or case_id in observed_cases
+            or expected is None
+            or result.get("verdict") != "pass"
+            or not isinstance(artifact, dict)
+            or set(artifact) != {"path", "sha256"}
+            or not isinstance(artifact_path, str)
+            or artifact_path not in file_contents
+            or file_digests.get(artifact_path)
+            != artifact.get("sha256")
+            or not _quality_artifact_valid(artifact_value, case_id)
+            or not _nonempty_unique_strings(expected_criteria)
+            or not _nonempty_unique_strings(expected_forbidden)
+            or not isinstance(criterion_results, list)
+            or len(criterion_results) != len(expected_criteria)
+            or not isinstance(forbidden_results, list)
+            or len(forbidden_results) != len(expected_forbidden)
+            or valid_criteria
+            != set(expected_criteria)
+            or valid_forbidden
+            != set(expected_forbidden)
+        ):
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_QUALITY_CASE_INVALID",
+                    "message": (
+                        "Embedded quality result does not exactly bind "
+                        f"the frozen case and artifact: {case_id!r}."
+                    ),
+                }
+            )
+            continue
+        observed_cases.add(case_id)
+    if observed_cases != set(expected_by_case):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_QUALITY_COVERAGE_MISSING",
+                "message": (
+                    "Embedded quality evaluation does not cover every "
+                    "frozen case."
+                ),
+            }
+        )
+    return issues
 
 
 def _publication_record(
@@ -1146,6 +1585,7 @@ def validate_expertise_contribution(
         "evidence/sources.json",
         "evals/cases.json",
         "evals/results.json",
+        "evals/quality.json",
     }
     if file_contents and not required_paths.issubset(file_contents):
         issues.append(
@@ -1217,6 +1657,13 @@ def validate_expertise_contribution(
                     "message": "Contribution is missing a Guide referenced by its Pack.",
                 }
             )
+        issues.extend(
+            _validate_contribution_quality(
+                candidate,
+                file_contents,
+                file_digests,
+            )
+        )
     promotion = contribution.get("promotion")
     if (
         not isinstance(promotion, dict)
@@ -1679,6 +2126,27 @@ def build_expertise_update_plan(
     }
     for obsolete_path in sorted(
         current_guide_paths - desired_guide_paths
+    ):
+        operations.append(_delete_operation(repo, obsolete_path))
+    desired_artifact_paths = {
+        path
+        for path in contents
+        if path.startswith(f"{destination_root}/evals/artifacts/")
+    }
+    artifact_root = safe_target(
+        repo,
+        f"{destination_root}/evals/artifacts",
+    )
+    current_artifact_paths = {
+        path.relative_to(repo).as_posix()
+        for path in artifact_root.iterdir()
+        if artifact_root.is_dir()
+        and path.is_file()
+        and not path.is_symlink()
+        and path.suffix == ".json"
+    } if artifact_root.is_dir() else set()
+    for obsolete_path in sorted(
+        current_artifact_paths - desired_artifact_paths
     ):
         operations.append(_delete_operation(repo, obsolete_path))
     operations.sort(key=lambda item: item["path"])

@@ -29,6 +29,9 @@ EXECUTION_PLAN_VERSION = "maestro_execution_plan_v1"
 MAX_DECISION_ASSIGNMENTS = 5
 DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SKILL_PATH_PATTERN = re.compile(
+    r"^(?:skills|\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\.md$"
+)
 IMPLEMENTATION_COMMAND_PATTERNS = (
     r"^\s*(?:implement|edit|change|modify|add|remove|write|create)\b",
     r"^\s*(?:구현|수정|변경|추가|삭제|작성)(?:해|하|해야|하십시오|하세요)",
@@ -182,6 +185,15 @@ def _specialist(
         "allowed_claim_kinds": allowed_claim_kinds,
         "allowed_side_effects": [],
         "decision_guide_ids": guide_ids or [],
+        "expertise_load": {
+            "application_mode": "not-applicable",
+            "packs": [],
+            "host_attestation": {
+                "status": "unavailable",
+                "loaded_skill_digests": [],
+                "loaded_guide_refs": [],
+            },
+        },
         "fresh_context": True,
         "may_spawn": False,
     }
@@ -501,6 +513,95 @@ def _software_qa_specialists(
     ]
 
 
+def _generic_expertise_specialists(
+    pack_cards: list[dict[str, Any]],
+    selected_guides: list[str],
+) -> list[dict[str, Any]]:
+    pack = pack_cards[0]
+    return [
+        _specialist(
+            "expertise-domain-review",
+            summary=(
+                f"Judge only the selected {pack['expertise_pack_id']} "
+                "Decision Guides without implementing or widening the domain."
+            ),
+            owns=[
+                f"guide:{guide_id}" for guide_id in selected_guides
+            ],
+            out_of_scope=[
+                "implementation-command",
+                "technical-feasibility",
+                "unselected-guide",
+            ],
+            allowed_inputs=[
+                "GoalDigest",
+                "ProjectContext",
+                "SelectedDecisionGuides",
+                "RepositoryEvidence",
+                "ResearchArtifact",
+            ],
+            allowed_claim_kinds=[
+                "constraint",
+                "finding",
+                "risk",
+                "question",
+            ],
+            guide_ids=selected_guides,
+        ),
+        _technical_specialist(),
+    ]
+
+
+def _bind_specialist_expertise(
+    specialists: list[dict[str, Any]],
+    pack_cards: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    bound: list[dict[str, Any]] = []
+    for specialist in specialists:
+        item = copy.deepcopy(specialist)
+        selected = set(item["decision_guide_ids"])
+        packs: list[dict[str, Any]] = []
+        for pack in pack_cards:
+            guides = [
+                {
+                    "guide_id": guide["guide_id"],
+                    "skill_id": guide["skill_id"],
+                    "resource_path": guide["resource_path"],
+                    "skill_definition_digest": guide[
+                        "skill_definition_digest"
+                    ],
+                }
+                for guide in pack.get("guides", [])
+                if guide.get("guide_id") in selected
+            ]
+            if guides:
+                packs.append(
+                    {
+                        "expertise_pack_id": pack["expertise_pack_id"],
+                        "skill_id": pack["skill_id"],
+                        "skill_path": pack["skill_path"],
+                        "definition_digest": pack["definition_digest"],
+                        "skill_definition_digest": pack[
+                            "skill_definition_digest"
+                        ],
+                        "guides": guides,
+                    }
+                )
+        item["expertise_load"] = {
+            "application_mode": (
+                "advisory-only" if packs else "not-applicable"
+            ),
+            "packs": packs,
+            "host_attestation": {
+                "status": "unavailable",
+                "loaded_skill_digests": [],
+                "loaded_guide_refs": [],
+            },
+        }
+        bound.append(item)
+    return bound
+
+
 def _lens_specialists(
     lens_cards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -749,11 +850,20 @@ def build_decision_plan(
         specialists = _software_qa_specialists(
             expertise["selected_guide_ids"]
         )
+    elif expertise["pack_cards"]:
+        specialists = _generic_expertise_specialists(
+            expertise["pack_cards"],
+            expertise["selected_guide_ids"],
+        )
     else:
         specialists = [
             *_lens_specialists(review_route["lens_cards"]),
             _technical_specialist(),
         ]
+    specialists = _bind_specialist_expertise(
+        specialists,
+        expertise["pack_cards"],
+    )
     assignments = _decision_assignments(
         specialists,
         product_design=product_design,
@@ -845,6 +955,143 @@ def _valid_string_list(value: Any, *, nonempty: bool = False) -> bool:
         and all(isinstance(item, str) and item.strip() for item in value)
         and len(value) == len(set(value))
     )
+
+
+def _validate_specialist_expertise_load(
+    value: Any,
+    expected_guide_ids: list[str],
+    path: str,
+    issues: list[dict[str, str]],
+) -> None:
+    expected_mode = "advisory-only" if expected_guide_ids else "not-applicable"
+    if not isinstance(value, dict) or set(value) != {
+        "application_mode",
+        "packs",
+        "host_attestation",
+    }:
+        issues.append(
+            _error(
+                "SPECIALIST_EXPERTISE_LOAD_INVALID",
+                path,
+                "Expertise load must contain application mode, packs, and Host attestation.",
+            )
+        )
+        return
+    packs = value.get("packs")
+    host = value.get("host_attestation")
+    if (
+        value.get("application_mode") != expected_mode
+        or not isinstance(packs, list)
+        or len(packs) > 1
+        or not isinstance(host, dict)
+        or host
+        != {
+            "status": "unavailable",
+            "loaded_skill_digests": [],
+            "loaded_guide_refs": [],
+        }
+    ):
+        issues.append(
+            _error(
+                "SPECIALIST_EXPERTISE_LOAD_INVALID",
+                path,
+                "Decision specialists must have a bounded advisory-only load and no fabricated Host attestation.",
+            )
+        )
+        return
+
+    loaded_guide_ids: list[str] = []
+    for pack_index, pack in enumerate(packs):
+        pack_path = f"{path}.packs[{pack_index}]"
+        required = {
+            "expertise_pack_id",
+            "skill_id",
+            "skill_path",
+            "definition_digest",
+            "skill_definition_digest",
+            "guides",
+        }
+        skill_path = pack.get("skill_path") if isinstance(pack, dict) else None
+        if (
+            not isinstance(pack, dict)
+            or set(pack) != required
+            or not isinstance(pack.get("expertise_pack_id"), str)
+            or ID_PATTERN.fullmatch(pack["expertise_pack_id"]) is None
+            or not isinstance(pack.get("skill_id"), str)
+            or ID_PATTERN.fullmatch(pack["skill_id"]) is None
+            or (
+                skill_path is not None
+                and (
+                    not isinstance(skill_path, str)
+                    or SKILL_PATH_PATTERN.fullmatch(skill_path) is None
+                )
+            )
+            or not isinstance(pack.get("definition_digest"), str)
+            or DIGEST_PATTERN.fullmatch(pack["definition_digest"]) is None
+            or not isinstance(pack.get("skill_definition_digest"), str)
+            or DIGEST_PATTERN.fullmatch(
+                pack["skill_definition_digest"]
+            ) is None
+            or not isinstance(pack.get("guides"), list)
+            or not pack["guides"]
+        ):
+            issues.append(
+                _error(
+                    "SPECIALIST_EXPERTISE_PACK_INVALID",
+                    pack_path,
+                    "Specialist Expertise Pack identity, path, digest, or Guides are invalid.",
+                )
+            )
+            continue
+        for guide_index, guide in enumerate(pack["guides"]):
+            guide_path = f"{pack_path}.guides[{guide_index}]"
+            resource_path = (
+                guide.get("resource_path")
+                if isinstance(guide, dict)
+                else None
+            )
+            if (
+                not isinstance(guide, dict)
+                or set(guide) != {
+                    "guide_id",
+                    "skill_id",
+                    "resource_path",
+                    "skill_definition_digest",
+                }
+                or not isinstance(guide.get("guide_id"), str)
+                or ID_PATTERN.fullmatch(guide["guide_id"]) is None
+                or guide["guide_id"] in loaded_guide_ids
+                or not isinstance(guide.get("skill_id"), str)
+                or ID_PATTERN.fullmatch(guide["skill_id"]) is None
+                or not isinstance(resource_path, str)
+                or not resource_path.startswith("references/")
+                or ".." in Path(resource_path).parts
+                or not isinstance(
+                    guide.get("skill_definition_digest"),
+                    str,
+                )
+                or DIGEST_PATTERN.fullmatch(
+                    guide["skill_definition_digest"]
+                ) is None
+            ):
+                issues.append(
+                    _error(
+                        "SPECIALIST_EXPERTISE_GUIDE_INVALID",
+                        guide_path,
+                        "Specialist Guide identity, resource path, or digest is invalid.",
+                    )
+                )
+                continue
+            loaded_guide_ids.append(guide["guide_id"])
+
+    if set(loaded_guide_ids) != set(expected_guide_ids):
+        issues.append(
+            _error(
+                "SPECIALIST_EXPERTISE_GUIDE_MISMATCH",
+                path,
+                "Specialist Expertise load must resolve every and only its selected Decision Guides.",
+            )
+        )
 
 
 def _validate_revision(
@@ -1039,6 +1286,7 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                 "allowed_claim_kinds",
                 "allowed_side_effects",
                 "decision_guide_ids",
+                "expertise_load",
                 "fresh_context",
                 "may_spawn",
             }
@@ -1102,6 +1350,12 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                         "Specialists must be fresh, non-spawning, and read-only.",
                     )
                 )
+            _validate_specialist_expertise_load(
+                specialist.get("expertise_load"),
+                specialist.get("decision_guide_ids", []),
+                f"{path}.expertise_load",
+                issues,
+            )
 
         assignments = plan.get("assignments")
         if (

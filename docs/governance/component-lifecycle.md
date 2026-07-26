@@ -122,8 +122,10 @@ frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외
 기각·제거하기 전까지 평가 입력으로 사용하지 않는다.
 publication 검토 전 `maestro expertise validate-candidate`가 공통 권한 블록,
 필수 Guide 절, source-to-Guide 연결, normal·edge·non-trigger case와 digest-bound
-평가 결과를 통과해야 한다. 이는 구조와 provenance를 검사하는 gate이며 출처의
-진실성이나 domain 산출물 품질을 자동 승인하지 않는다.
+route 결과뿐 아니라 독립 authoring/evaluation run reference, 모든 observable
+criterion·forbidden behavior disposition과 compact artifact digest를 통과해야 한다.
+이는 구조, 분리와 provenance를 검사하는 gate이며 출처의 진실성이나 evaluator의
+domain 판단을 자동 승인하지 않는다.
 
 Pack 하위 요소도 별도 live 디렉터리를 직접 수정하지 않는다. Guide 추가·수정·폐기,
 trigger 조정, source refresh와 evaluation 확장은 `component_change`로 의도를

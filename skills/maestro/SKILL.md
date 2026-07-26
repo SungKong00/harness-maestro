@@ -1,6 +1,6 @@
 ---
 name: maestro
-description: Use when routing and verifying repository implementation, review, architecture, research-backed decisions, convention-sensitive changes, or explicit init, doctor, docs, and route requests with the smallest safe workflow, selected evidence lenses, bounded delegation, conflict-only rebuttal, and a concrete completion verdict.
+description: Use when routing and verifying repository implementation, review, architecture, research-backed decisions, convention-sensitive changes, explicit Expertise Pack or Decision Guide authoring, or init, doctor, docs, and route requests with the smallest safe workflow, selected evidence lenses, bounded delegation, conflict-only rebuttal, and a concrete completion verdict.
 ---
 
 # Maestro
@@ -34,6 +34,16 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      relevant step while Maestro remains workflow owner. Built-in Expertise
      research uses `$maestro-reference-research`; it must not depend on a
      user's unrelated global Skill installation.
+   - Treat an explicit request to create, add, revise, refresh, deprecate, or
+     otherwise improve an Expertise Pack or Decision Guide as
+     complete Expertise authoring intent. The user does not need to restate the
+     lifecycle. Inspect `maestro expertise list`, compile a closed surface
+     signal for `maestro govern classify`, open research only when the evidence
+     contract requires it, invoke `$maestro-expertise-builder`, run its frozen
+     evaluation and `validate-candidate`, and report the isolated candidate.
+     Attempt at most two bounded repairs for validator failures. Unless the
+     user separately requests activation or update, stop at the candidate and
+     never modify active Expertise.
 5. Do not preemptively research every task. Let the route first select reusable
    expertise and classify any research need. Only explicit current-fact or
    external-evidence requests may start research before routing.
@@ -45,8 +55,12 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      trade-offs, or any request that explicitly asks to decide before building.
      Run `maestro decide --repo <repo> --goal "<goal>" --risk <risk> --intent implementation --host <host> --json`.
      This plan is entirely read-only. Initial Specialist assignments receive
-     only their own `SpecialistContract` and selected Decision Guides. Validate
-     every returned packet with
+     only their own `SpecialistContract` and selected Decision Guides. Resolve
+     those Guides only from `SpecialistContract.expertise_load`; an unfamiliar
+     Pack uses the bounded `expertise-domain-review` fallback instead of losing
+     its Guides or inventing a permanent role. Guide selection is not Host load
+     proof, so keep attestation unavailable unless the Host exposes it.
+     Validate every returned packet with
      `maestro validate-decision --plan <plan> --packet <packet> --json`.
      Synthesize common facts and conflicts, run technical feasibility after the
      first synthesis, and produce a content-addressed `DecisionBundle`.
@@ -83,12 +97,17 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
    - For an authorized non-trivial implementation in an initialized project,
-     save the validated route v2 JSON in a temporary file and start one bounded
-     observation with `maestro observe start --repo <repo> --run-id <id>
-     --task-label "<short task>" --plan <route-v2.json> --json`. Keep the
-     returned observation ID for the final receipt. This stores no prompt,
-     message, guide body, or file content. Do not start it for a read-only
-     request merely to obtain telemetry.
+     save the validated route v2 JSON in a temporary file. When an Assignment
+     will run through the repository's Codex App Server Host adapter, use
+     `maestro host codex` for that Assignment instead of pre-starting an
+     observation: the Host command derives read-only versus the one bounded
+     writer, model, and reasoning effort from the plan and starts its own
+     observation. Do not reuse that run ID or attach the parent Desktop request
+     metadata to it. If the current Host executes the work itself and cannot
+     delegate the turn through the adapter, use `maestro observe start` as the
+     honest request-only fallback. Neither path stores a prompt, message, guide
+     body, or file content in Maestro state. Do not start an observation for a
+     read-only request merely to obtain telemetry.
    - Write `task-label` as a concise human title in the user's current
      language. For a Korean request, prefer a Korean label even when code
      identifiers are English. Do not reuse the raw prompt or an internal
@@ -239,6 +258,16 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       public stream the applied model and tokens remain unmeasured. With no
       supported metadata, keep `host_not_connected`; never scrape private
       session files or infer values.
+    - Prefer `maestro host codex` when Maestro is starting a new Codex
+      Assignment and complete telemetry is required. Give it a temporary
+      prompt file, the validated plan and Assignment ID. It enforces
+      `approvalPolicy=never`, explicit no-network sandboxing, read-only for
+      reviewers/verifiers, and repository-root-only workspace write for the
+      plan's mutation owner. It returns the final agent message to the caller
+      but persists only bounded Host telemetry and duration. A terminal
+      `failed` or `interrupted` result exits 4; a protocol, timeout, sandbox, or
+      contract failure exits 2 and must never be converted into an applied
+      model claim. Do not ask the user to invoke this command.
     - A request to approve a detected verification command uses
       `maestro verification approve` or the dashboard's exact candidate
       `preview → apply` flow. Treat approval as a project-authority change:

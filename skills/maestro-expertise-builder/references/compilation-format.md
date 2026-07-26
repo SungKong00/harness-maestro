@@ -100,3 +100,23 @@ non-trigger and, where adjacent Packs exist, overlap strata; every case needs
 observable criteria and forbidden behavior. Store the evaluated outcomes in
 `evals/results.json`, bind its SHA-256 from `cases.json`, and keep unknown
 measurements unknown.
+
+`candidate.json.evaluation.quality_path` is always `evals/quality.json`.
+That file follows `maestro_expertise_quality_eval_v1`, names distinct authoring
+and evaluation run references, and covers every frozen case. Each case binds
+one compact file under `evals/artifacts/` and returns exact criterion and
+forbidden-behavior dispositions. Each artifact follows
+`maestro_expertise_case_artifact_v1`:
+
+```json
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-transaction-boundary",
+  "baseline_observation": "The baseline omitted retry ownership.",
+  "candidate_observation": "The candidate named the owner and stop condition.",
+  "evidence_refs": ["evaluation:normal-transaction-boundary"]
+}
+```
+
+Keep observations factual and bounded. These files are evaluation receipts,
+not archived conversations.

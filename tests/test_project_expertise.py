@@ -33,7 +33,7 @@ from maestro.expertise_lifecycle import (
 from maestro.governance import govern_report, record_run
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry
-from maestro.util import file_sha256
+from maestro.util import canonical_json, file_sha256, sha256_text
 
 
 def _candidate(
@@ -94,6 +94,7 @@ def _candidate(
         "evaluation": {
             "baseline": "existing-pack",
             "cases_path": "evals/cases.json",
+            "quality_path": "evals/quality.json",
             "pass_criteria": ["Catches the project font mismatch"],
             "regression_criteria": ["Does not trigger on backend work"],
         },
@@ -249,6 +250,61 @@ def _candidate(
             "cases": evaluation_cases,
         },
     )
+    quality_cases = []
+    for case in evaluation_cases:
+        artifact_path = f"evals/artifacts/{case['case_id']}.json"
+        write_json(
+            root / artifact_path,
+            {
+                "schema_version": "maestro_expertise_case_artifact_v1",
+                "case_id": case["case_id"],
+                "baseline_observation": "The current surface misses or lacks the declared project criterion.",
+                "candidate_observation": "The candidate route and Guide satisfy the frozen expectation.",
+                "evidence_refs": ["test:deterministic-route-replay"],
+            },
+        )
+        artifact_digest = file_sha256(root / artifact_path)
+        assert artifact_digest is not None
+        quality_cases.append(
+            {
+                "case_id": case["case_id"],
+                "artifact": {
+                    "path": artifact_path,
+                    "sha256": artifact_digest,
+                },
+                "criterion_results": [
+                    {
+                        "criterion": criterion,
+                        "verdict": "pass",
+                        "evidence_ref": artifact_path,
+                    }
+                    for criterion in case["observable_criteria"]
+                ],
+                "forbidden_behavior_results": [
+                    {
+                        "behavior": behavior,
+                        "observed": False,
+                        "evidence_ref": artifact_path,
+                    }
+                    for behavior in case["forbidden_behaviors"]
+                ],
+                "verdict": "pass",
+            }
+        )
+    write_json(
+        root / "evals/quality.json",
+        {
+            "schema_version": "maestro_expertise_quality_eval_v1",
+            "expertise_pack_id": pack_id,
+            "evaluated_on": "2026-07-27",
+            "evaluator": {
+                "kind": "fresh-context",
+                "authoring_run_ref": f"authoring:{candidate_id}",
+                "evaluation_run_ref": f"evaluation:{candidate_id}",
+            },
+            "cases": quality_cases,
+        },
+    )
 
 
 class ProjectExpertiseLifecycleTests(unittest.TestCase):
@@ -296,6 +352,14 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 validation["component_change"]["kind"],
             )
             value = json.loads(bundle.read_text(encoding="utf-8"))
+            exported_paths = {
+                item["path"] for item in value["files"]
+            }
+            self.assertIn("evals/quality.json", exported_paths)
+            self.assertIn(
+                "evals/artifacts/normal-project-type.json",
+                exported_paths,
+            )
             value["promotion"]["automatic_install_allowed"] = True
             write_json(bundle, value)
             invalid = validate_expertise_contribution(bundle)
@@ -303,6 +367,60 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             self.assertIn(
                 "EXPERTISE_CONTRIBUTION_PROMOTION_INVALID",
                 {issue["code"] for issue in invalid["issues"]},
+            )
+
+    def test_contribution_rejects_rehashed_invalid_quality_artifact(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            preview = build_expertise_export_plan(
+                repo,
+                candidate_id="project-design",
+            )
+            result = apply_expertise_export_plan(preview, repo)
+            bundle = repo / result["output_path"]
+            value = json.loads(bundle.read_text(encoding="utf-8"))
+            artifact = next(
+                item
+                for item in value["files"]
+                if item["path"].startswith("evals/artifacts/")
+            )
+            artifact_value = json.loads(artifact["content"])
+            artifact_value["case_id"] = "different-case"
+            artifact["content"] = json.dumps(
+                artifact_value,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ) + "\n"
+            artifact["sha256"] = sha256_text(artifact["content"])
+            file_digests = {
+                item["path"]: item["sha256"]
+                for item in value["files"]
+            }
+            value["candidate_digest"] = sha256_text(
+                canonical_json(file_digests)
+            )
+            unsigned = {
+                key: item
+                for key, item in value.items()
+                if key != "bundle_digest"
+            }
+            value["bundle_digest"] = sha256_text(
+                canonical_json(unsigned)
+            )
+            write_json(bundle, value)
+
+            validation = validate_expertise_contribution(bundle)
+
+            self.assertEqual("FAIL", validation["status"])
+            self.assertIn(
+                "EXPERTISE_CONTRIBUTION_QUALITY_CASE_INVALID",
+                {issue["code"] for issue in validation["issues"]},
             )
 
     def test_component_change_must_match_the_candidate_guide_set(
@@ -436,6 +554,83 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             self.assertEqual("FAIL", report["status"])
             self.assertIn(
                 "EXPERTISE_EVALUATION_ARTIFACT_INVALID",
+                {item["code"] for item in report["issues"]},
+            )
+
+    def test_quality_evaluation_requires_independent_exact_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            quality_path = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+                / "evals/quality.json"
+            )
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            quality["evaluator"]["evaluation_run_ref"] = quality[
+                "evaluator"
+            ]["authoring_run_ref"]
+            write_json(quality_path, quality)
+
+            report = validate_expertise_candidate(repo, "project-design")
+
+            self.assertEqual("FAIL", report["status"])
+            self.assertIn(
+                "EXPERTISE_QUALITY_EVALUATION_INVALID",
+                {item["code"] for item in report["issues"]},
+            )
+
+    def test_quality_evaluation_rejects_missing_criterion_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            quality_path = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+                / "evals/quality.json"
+            )
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            quality["cases"][0]["criterion_results"] = []
+            write_json(quality_path, quality)
+
+            report = validate_expertise_candidate(repo, "project-design")
+
+            self.assertEqual("FAIL", report["status"])
+            self.assertIn(
+                "EXPERTISE_QUALITY_CRITERIA_INCOMPLETE",
+                {item["code"] for item in report["issues"]},
+            )
+
+    def test_quality_evaluation_reports_malformed_case_without_crashing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            quality_path = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+                / "evals/quality.json"
+            )
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            quality["cases"][0]["case_id"] = ["not", "an", "id"]
+            write_json(quality_path, quality)
+
+            report = validate_expertise_candidate(repo, "project-design")
+
+            self.assertEqual("FAIL", report["status"])
+            self.assertIn(
+                "EXPERTISE_QUALITY_CASE_INVALID",
                 {item["code"] for item in report["issues"]},
             )
 
@@ -751,6 +946,21 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             activation_path = Path(temporary) / "activation.json"
             write_json(activation_path, activation)
             apply_expertise_activation_plan(activation_path, repo)
+            obsolete_artifact = (
+                repo
+                / ".agents/skills/project-design/evals/artifacts/"
+                "obsolete-case.json"
+            )
+            write_json(
+                obsolete_artifact,
+                {
+                    "schema_version": "maestro_expertise_case_artifact_v1",
+                    "case_id": "obsolete-case",
+                    "baseline_observation": "Old observation.",
+                    "candidate_observation": "Old observation.",
+                    "evidence_refs": ["test:obsolete"],
+                },
+            )
             old_route = route_goal_v2(
                 "Review project typography",
                 "medium",
@@ -800,6 +1010,7 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                     "project-layout-rules.md"
                 ).is_file()
             )
+            self.assertFalse(obsolete_artifact.exists())
             snapshot = json.loads(
                 (
                     repo

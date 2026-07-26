@@ -1,6 +1,6 @@
 ---
 name: maestro-expertise-builder
-description: Use when repeated project evidence or a completed reference research packet suggests a reusable expert workflow that is not covered by an active Expertise Pack, and a project-local candidate with compact Decision Guides and frozen evaluations should be drafted without changing the live Harness Registry or globally installing an agent.
+description: Use when the user explicitly asks to create, add, revise, refresh, deprecate, or improve reusable expertise, or when repeated project evidence or a completed reference research packet reveals an uncovered expert workflow, and a project-local candidate with compact Decision Guides and frozen evaluations should be drafted without changing active Expertise, the live Harness Registry, or a global agent installation.
 ---
 
 # Maestro Expertise Builder
@@ -11,6 +11,25 @@ installation directly; publication stays behind Maestro's reviewed CLI plan.
 
 Maestro remains the workflow owner. This Skill designs one reusable specialist
 surface; it does not create a second orchestrator.
+
+## Entry contract
+
+An explicit short request such as “transaction expertise 만들어줘”, “add a
+Decision Guide”, or “refresh this Pack” is enough to enter the full authoring
+workflow. Do not ask the user to repeat the steps below and do not start by
+writing a new Pack.
+
+1. Inspect the current Expertise inventory and source candidate evidence.
+2. Obtain the closed `$maestro-govern` surface classification.
+3. Reuse or revise the smallest existing surface that owns the decision family.
+4. Open `$maestro-reference-research` only when current, external, broad, or
+   disputed evidence can change the candidate.
+5. Compile the isolated candidate, freeze and execute its evaluation, then run
+   `validate-candidate`.
+6. Repair validator failures at most twice. If blockers remain, keep the
+   incomplete candidate isolated and report them.
+7. Stop before activation or update unless the user separately requested that
+   reviewed lifecycle action.
 
 ## Admission gate
 
@@ -65,7 +84,9 @@ Read `references/compilation-format.md`, then create only:
 ├── draft/agents/openai.yaml
 ├── evidence/sources.json
 ├── evals/cases.json
-└── evals/results.json
+├── evals/results.json
+├── evals/quality.json
+└── evals/artifacts/<case-id>.json
 ```
 
 `candidate.json` must follow
@@ -115,12 +136,36 @@ response preference, or “looks expert” as the pass condition.
 Test trigger precision and coexistence with nearby Skills. A candidate that
 improves its target task but hijacks adjacent work fails.
 
+Use `evals/results.json` for deterministic Pack, Guide, and research-mode
+replay. Use `evals/quality.json` for the independent result judgment. It must
+bind every frozen case to one compact artifact under `evals/artifacts/`, cover
+every observable criterion and forbidden behavior, and name distinct authoring
+and evaluation run references. The artifact stores bounded outcome evidence,
+not prompts, messages, transcripts, or hidden reasoning.
+
 Before requesting publication, run
 `maestro expertise validate-candidate --repo . --candidate <id> --json`.
 Treat any failure as a publication blocker. This command validates the bounded
 bundle, cross-file references, authority block, source-to-Guide coverage, and
-evaluation artifact digest; it does not claim that a source is true or that a
-domain artifact is good.
+both routing and quality evaluation artifact digests. It verifies that a fresh
+or human evaluation covered the declared criteria; it does not claim that a
+source is true or replace human judgment of a domain artifact.
+
+## Definition of done
+
+Return `ready_for_review` only when:
+
+- inventory and overlap were inspected;
+- the surface classification is `decision-guide` or `expertise-pack`;
+- evidence is sufficient or the required ResearchBundle validates;
+- the complete candidate is isolated under the canonical state path;
+- frozen routing and quality cases pass, including non-trigger and overlap
+  coverage when an adjacent Pack exists;
+- `maestro expertise validate-candidate` returns `PASS`;
+- no publication blocker remains.
+
+Otherwise return `candidate_incomplete` or `not_admitted`. Candidate creation
+never implies activation.
 
 After a project pilot is selected in real work, let the ordinary RunReceipt
 record only Pack and Guide IDs plus bounded observations. The Viewer reports a

@@ -176,6 +176,16 @@ def _run_card(
             *[stage.get("applied_model") for stage in flow],
         ]
     )
+    selected_packs = list(event.get("selected_expertise_packs", []))
+    selected_guides = list(event.get("selected_decision_guides", []))
+    expertise_assignment_ids = _unique_strings(
+        [
+            stage.get("assignment_id")
+            for stage in flow
+            if stage.get("expertise_pack_ids")
+            or stage.get("decision_guide_ids")
+        ]
+    )
     return {
         "event_id": event_id,
         "run_id": event["run_id"],
@@ -227,14 +237,33 @@ def _run_card(
         "flow": flow,
         "lenses": list(event.get("selected_lenses", [])),
         "expertise": {
-            "packs": list(event.get("selected_expertise_packs", [])),
-            "guides": list(event.get("selected_decision_guides", [])),
+            "packs": selected_packs,
+            "guides": selected_guides,
             "research_mode": event.get("expertise_research_mode", "reuse"),
             "research_gate": event.get(
                 "expertise_research_gate",
                 "not-required",
             ),
             "observations": list(event.get("expertise_observations", [])),
+            "evidence": {
+                "selection": (
+                    "run_receipt"
+                    if selected_packs or selected_guides
+                    else "not_selected"
+                ),
+                "assignment_attachment": (
+                    "plan_projection"
+                    if expertise_assignment_ids
+                    else "unavailable"
+                ),
+                "assignment_ids": expertise_assignment_ids,
+                "host_load": "unavailable",
+                "application": "unavailable",
+                "interpretation": (
+                    "Selection and Assignment projection do not prove that "
+                    "the Host loaded or applied the Guide body."
+                ),
+            },
         },
         "conventions": event.get("convention_usage"),
         "evidence_refs": list(event.get("evidence_refs", []))[:8],
@@ -424,6 +453,8 @@ def snapshot_report(
             "fingerprint": item["fingerprint"],
             "severity": item["severity"],
             "occurrences": item["occurrences"],
+            "kind": item["kind"],
+            "domain": item["domain"],
             "reason": (
                 f"{item['kind']} repeated in domain {item['domain']}; "
                 "review whether a local candidate should be created or updated."

@@ -68,11 +68,45 @@ class ExpertiseRegistryTests(unittest.TestCase):
             "maestro_expertise_candidate_v1",
             schema["properties"]["schema_version"]["const"],
         )
+        quality_schema = json.loads(
+            (
+                ROOT
+                / "src/maestro/resources/schemas/"
+                "expertise-quality-evaluation.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        artifact_schema = json.loads(
+            (
+                ROOT
+                / "src/maestro/resources/schemas/"
+                "expertise-case-artifact.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            "maestro_expertise_quality_eval_v1",
+            quality_schema["properties"]["schema_version"]["const"],
+        )
+        self.assertEqual(
+            "maestro_expertise_case_artifact_v1",
+            artifact_schema["properties"]["schema_version"]["const"],
+        )
         builder = ROOT / "skills/maestro-expertise-builder/SKILL.md"
         self.assertTrue(builder.is_file())
         text = builder.read_text(encoding="utf-8")
         self.assertIn(".maestro/state/candidates/expertise/", text)
         self.assertIn("Candidate creation is not promotion", text)
+        self.assertIn("## Entry contract", text)
+        self.assertIn("## Definition of done", text)
+        self.assertIn("evals/quality.json", text)
+        self.assertIn("Repair validator failures at most twice", text)
+        maestro = (
+            ROOT / "skills/maestro/SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Expertise authoring intent", maestro)
+        self.assertIn(
+            "user does not need to restate the\n     lifecycle",
+            maestro,
+        )
 
 
 class ExpertiseRoutingTests(unittest.TestCase):

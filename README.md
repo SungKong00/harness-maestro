@@ -383,6 +383,15 @@ Route 권고는 실측값으로 대체 표시하지 않습니다. 요청·적용
 연결합니다. `dashboard`는 보고 싶을 때만 여는 on-demand 운영 도구이며 영구
 daemon을 설치하지 않습니다.
 
+새 Codex 작업을 Maestro가 직접 시작하는 경우에는 내장 `host codex` 경로가
+ephemeral App Server turn을 소유합니다. 검증된 Assignment에서 읽기 전용 또는
+저장소 루트 한정 writer 권한, 선택 모델과 추론 강도를 파생하고, 완료까지의
+reroute·token 이벤트를 자동 연결합니다. 현재 열려 있는 Desktop 대화를 사후
+스크래핑하는 기능은 아니므로 이미 시작된 작업은 공개 요청 메타데이터 범위까지만
+표시됩니다. 상세 저수준 계약은
+[시작 및 운용 가이드](docs/runbooks/getting-started.md)와
+[Codex Host conformance](docs/runbooks/codex-host-conformance.md)에 있습니다.
+
 ## 문서 안내
 
 | 원하는 것 | 읽을 문서 |

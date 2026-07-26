@@ -53,6 +53,14 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
   repository-local 검증 artifact digest를 모두 가진다.
 - 중요한 충돌이 없거나 새 근거가 없으면 토론을 시작하거나 계속하지 않는다.
 - 실행 종료 시 compact RunReceipt를 정확히 하나만 남긴다.
+- `maestro host codex`로 시작한 Assignment는 plan의 side-effect 계약에서 sandbox를
+  파생한다. reviewer·verifier는 `readOnly`, mutation owner만 저장소 루트 하나를
+  writable root로 가진 `workspaceWrite`이고 두 경우 모두 network는 꺼져 있어야 한다.
+- App Server가 approval·사용자 입력 같은 server request를 보내면 Host가 임의
+  승인하지 않고 typed failure로 중단하는지 확인한다.
+- terminal completion 뒤 늦게 도착한 token update까지 bounded drain 안에서
+  수집하되, prompt·전체 JSON-RPC trace·최종 agent message는 observation이나
+  RunReceipt에 저장하지 않는지 확인한다.
 
 하나라도 관찰할 수 없거나 위반되면 릴리스 판정은 `CONTINUE`다. 실제 host가 강제하지
 못하는 권한·격리 속성을 CLI 통과만으로 `DONE`이라고 주장하지 않는다.
@@ -72,6 +80,13 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
 reroute와 token은 완전한 App Server 이벤트 구간이 있을 때만 Host 실측으로
 판정한다. reasoning effort는 설정 강도이며 실제 reasoning token 소비량의
 대체 지표가 아니다.
+
+새 실행은 `maestro host codex`가 같은 공개 프로토콜을 직접 소유할 수 있다.
+초기화 뒤 ephemeral thread 하나와 turn 하나만 만들고 terminal completion까지
+읽는다. Assignment가 있으면 권한·모델·추론 강도는 검증된 plan에서 파생하며,
+최종 agent message는 stdout 결과에만 존재한다. 구현 근거는
+[Codex App Server 공식 문서](https://developers.openai.com/codex/app-server/)의
+초기화, thread/turn 시작, `model/rerouted`, token usage, turn completion 계약이다.
 
 ## 보존할 결과
 

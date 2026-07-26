@@ -130,6 +130,7 @@
       "required": [
         "baseline",
         "cases_path",
+        "quality_path",
         "pass_criteria",
         "regression_criteria"
       ],
@@ -143,6 +144,9 @@
         },
         "cases_path": {
           "$ref": "#/$defs/safeRelativePath"
+        },
+        "quality_path": {
+          "const": "evals/quality.json"
         },
         "pass_criteria": {
           "type": "array",

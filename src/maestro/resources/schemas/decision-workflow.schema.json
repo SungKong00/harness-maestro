@@ -184,6 +184,120 @@
         }
       }
     },
+    "expertiseGuideLoad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guide_id",
+        "skill_id",
+        "resource_path",
+        "skill_definition_digest"
+      ],
+      "properties": {
+        "guide_id": {
+          "$ref": "#/$defs/id"
+        },
+        "skill_id": {
+          "$ref": "#/$defs/id"
+        },
+        "resource_path": {
+          "type": "string",
+          "pattern": "^references/[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"
+        },
+        "skill_definition_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "expertisePackLoad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expertise_pack_id",
+        "skill_id",
+        "skill_path",
+        "definition_digest",
+        "skill_definition_digest",
+        "guides"
+      ],
+      "properties": {
+        "expertise_pack_id": {
+          "$ref": "#/$defs/id"
+        },
+        "skill_id": {
+          "$ref": "#/$defs/id"
+        },
+        "skill_path": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:skills|\\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\\.md$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definition_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "skill_definition_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "guides": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/expertiseGuideLoad"
+          }
+        }
+      }
+    },
+    "expertiseLoad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application_mode",
+        "packs",
+        "host_attestation"
+      ],
+      "properties": {
+        "application_mode": {
+          "enum": [
+            "not-applicable",
+            "advisory-only"
+          ]
+        },
+        "packs": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/expertisePackLoad"
+          }
+        },
+        "host_attestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "loaded_skill_digests",
+            "loaded_guide_refs"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "loaded_skill_digests": {
+              "const": []
+            },
+            "loaded_guide_refs": {
+              "const": []
+            }
+          }
+        }
+      }
+    },
     "specialistContract": {
       "type": "object",
       "additionalProperties": false,
@@ -196,6 +310,7 @@
         "allowed_claim_kinds",
         "allowed_side_effects",
         "decision_guide_ids",
+        "expertise_load",
         "fresh_context",
         "may_spawn"
       ],
@@ -224,6 +339,9 @@
         },
         "decision_guide_ids": {
           "$ref": "#/$defs/stringList"
+        },
+        "expertise_load": {
+          "$ref": "#/$defs/expertiseLoad"
         },
         "fresh_context": {
           "const": true
