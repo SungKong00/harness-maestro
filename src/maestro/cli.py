@@ -27,10 +27,53 @@ from .project import (
     build_upgrade_plan,
     inspect_adapter,
 )
+from .research import BUNDLE_VERSION, validate_research_artifact
 from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
 from .util import read_json
+
+
+def _research_evidence_digest(
+    artifact_path: str | None,
+    expected_digest: str | None,
+) -> str | None:
+    if artifact_path is None:
+        if expected_digest is not None:
+            raise MaestroError(
+                "RESEARCH_EVIDENCE_ARTIFACT_REQUIRED",
+                "--research-evidence-digest must be paired with a validated "
+                "--research-evidence ResearchBundle file.",
+            )
+        return None
+
+    path = Path(artifact_path).expanduser().resolve()
+    if not path.is_file():
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_NOT_FOUND",
+            f"Research evidence is not a readable file: {path}",
+        )
+    artifact = read_json(path)
+    if (
+        not isinstance(artifact, dict)
+        or artifact.get("schema_version") != BUNDLE_VERSION
+    ):
+        raise MaestroError(
+            "RESEARCH_BUNDLE_REQUIRED",
+            "A research gate requires a synthesized Maestro ResearchBundle, "
+            "not an individual lane packet.",
+        )
+    validation = validate_research_artifact(artifact)
+    if validation["status"] != "PASS":
+        first = validation["issues"][0]
+        raise MaestroError(first["code"], first["message"])
+    digest = validation["artifact_digest"]
+    if expected_digest is not None and expected_digest != digest:
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_DIGEST_MISMATCH",
+            "The supplied digest does not match the validated ResearchBundle.",
+        )
+    return digest
 
 
 def _emit(value: dict[str, Any], as_json: bool) -> None:
@@ -146,10 +189,17 @@ def parser() -> argparse.ArgumentParser:
         help="Keep v1 compatibility by default; v2 emits a validated Assignment DAG",
     )
     route.add_argument(
+        "--research-evidence",
+        help=(
+            "Path to a validated synthesized ResearchBundle used to satisfy "
+            "an open route v2 expertise gate"
+        ),
+    )
+    route.add_argument(
         "--research-evidence-digest",
         help=(
-            "SHA-256 digest of a bounded research artifact that satisfies an "
-            "open route v2 expertise gate"
+            "Optional expected SHA-256 digest; valid only together with "
+            "--research-evidence"
         ),
     )
     route.add_argument("--json", action="store_true")
@@ -160,6 +210,13 @@ def parser() -> argparse.ArgumentParser:
     )
     validate_plan.add_argument("--plan", required=True)
     validate_plan.add_argument("--json", action="store_true")
+
+    validate_research = commands.add_parser(
+        "validate-research",
+        help="Validate one bounded ResearchPacket or synthesized ResearchBundle",
+    )
+    validate_research.add_argument("--artifact", required=True)
+    validate_research.add_argument("--json", action="store_true")
 
     decide = commands.add_parser(
         "decide",
@@ -179,8 +236,18 @@ def parser() -> argparse.ArgumentParser:
     )
     decide.add_argument("--host", default="codex")
     decide.add_argument(
+        "--research-evidence",
+        help=(
+            "Path to a validated synthesized ResearchBundle satisfying a "
+            "selected decision research gate"
+        ),
+    )
+    decide.add_argument(
         "--research-evidence-digest",
-        help="SHA-256 digest satisfying a selected decision research gate",
+        help=(
+            "Optional expected SHA-256 digest; valid only together with "
+            "--research-evidence"
+        ),
     )
     decide.add_argument("--json", action="store_true")
 
@@ -301,6 +368,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "route":
+            research_evidence_digest = _research_evidence_digest(
+                args.research_evidence,
+                args.research_evidence_digest,
+            )
             if args.route_version == "v2":
                 result = route_goal_v2(
                     args.goal,
@@ -310,13 +381,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.conflict_evidence,
                     args.host,
                     args.intent,
-                    args.research_evidence_digest,
+                    research_evidence_digest,
                 )
             else:
-                if args.research_evidence_digest is not None:
+                if research_evidence_digest is not None:
                     raise MaestroError(
                         "ROUTE_VERSION_REQUIRED",
-                        "--research-evidence-digest is supported only by route v2.",
+                        "--research-evidence is supported only by route v2.",
                     )
                 result = route_goal(
                     args.goal,
@@ -337,14 +408,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             if result["status"] != "PASS":
                 return 2
             return 4 if result["execution_status"] == "RESEARCH_REQUIRED" else 0
+        if args.command == "validate-research":
+            result = validate_research_artifact(
+                read_json(Path(args.artifact).expanduser().resolve())
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "decide":
+            research_evidence_digest = _research_evidence_digest(
+                args.research_evidence,
+                args.research_evidence_digest,
+            )
             result = build_decision_plan(
                 args.repo,
                 args.goal,
                 args.risk,
                 host_id=args.host,
                 intent=args.intent,
-                research_evidence_digest=args.research_evidence_digest,
+                research_evidence_digest=research_evidence_digest,
             )
             _emit(result, args.json)
             gate = result["expertise"]["research_requirement"]["gate"]

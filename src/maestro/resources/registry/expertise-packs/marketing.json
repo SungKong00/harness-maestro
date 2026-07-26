@@ -1,0 +1,194 @@
+{
+  "schema_version": "maestro_expertise_pack_v1",
+  "kind": "expertise-pack",
+  "expertise_pack_id": "marketing",
+  "summary": "Evidence-backed marketing criteria for audience and offer framing, positioning, message hierarchy, claim substantiation, current customer and competitor evidence, channel constraints, and measurement.",
+  "status": "pilot",
+  "portability": "global",
+  "version": 1,
+  "triggers": [
+    "marketing",
+    "marketing strategy",
+    "campaign",
+    "positioning",
+    "messaging",
+    "copywriting",
+    "customer research",
+    "market research",
+    "competitor messaging",
+    "go to market",
+    "conversion copy",
+    "마케팅",
+    "마케팅 전략",
+    "캠페인",
+    "포지셔닝",
+    "메시지",
+    "카피라이팅",
+    "고객 조사",
+    "시장 조사",
+    "경쟁사 메시지",
+    "출시 전략",
+    "전환 카피"
+  ],
+  "skill_id": "maestro-marketing",
+  "default_guides": [
+    "marketing-brief",
+    "positioning-message",
+    "claim-substantiation"
+  ],
+  "guides": [
+    {
+      "guide_id": "marketing-brief",
+      "summary": "Frame the audience, behavior, problem, offer, proof, conversion action, constraints, and explicit non-goals before channel work.",
+      "triggers": [
+        "marketing brief",
+        "campaign brief",
+        "audience",
+        "offer",
+        "conversion",
+        "마케팅 브리프",
+        "캠페인 브리프",
+        "타겟 고객",
+        "오퍼",
+        "전환"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "positioning-message",
+      "summary": "Choose a defensible reference frame, differentiated value, proof, message hierarchy, objection response, and action.",
+      "triggers": [
+        "positioning",
+        "messaging",
+        "copywriting",
+        "value proposition",
+        "headline",
+        "포지셔닝",
+        "메시지",
+        "카피라이팅",
+        "가치 제안",
+        "헤드라인"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "claim-substantiation",
+      "summary": "Audit objective and implied marketing claims against prior substantiation, net impression, qualifications, testimonials, comparisons, and review boundaries.",
+      "triggers": [
+        "claim",
+        "substantiation",
+        "comparison",
+        "testimonial",
+        "endorsement",
+        "guarantee",
+        "광고 주장",
+        "근거 입증",
+        "비교 광고",
+        "후기",
+        "보증"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "customer-market-evidence",
+      "summary": "Gather current customer, behavior, language, and market evidence while separating observed behavior, reported belief, and causal inference.",
+      "triggers": [
+        "customer research",
+        "market research",
+        "customer language",
+        "current audience",
+        "voice of customer",
+        "고객 조사",
+        "시장 조사",
+        "고객 언어",
+        "현재 고객",
+        "고객의 소리"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "guide_id": "competitor-reference-analysis",
+      "summary": "Compare current category frames, promises, proof, offers, objections, and actions without inferring performance or copying surface expression.",
+      "triggers": [
+        "competitor",
+        "competitive analysis",
+        "competitor messaging",
+        "marketing reference",
+        "benchmark campaign",
+        "경쟁사",
+        "경쟁 분석",
+        "경쟁사 메시지",
+        "마케팅 레퍼런스",
+        "캠페인 벤치마크"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "guide_id": "channel-platform-rules",
+      "summary": "Adapt a validated message to current platform rules, lifecycle stage, format, identity, consent, accessibility, and fallback constraints.",
+      "triggers": [
+        "channel",
+        "platform policy",
+        "email campaign",
+        "search campaign",
+        "social campaign",
+        "채널",
+        "플랫폼 정책",
+        "이메일 캠페인",
+        "검색 캠페인",
+        "소셜 캠페인"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "guide_id": "measurement-experiment",
+      "summary": "Define a falsifiable marketing hypothesis, outcome, population, attribution, guardrails, instrumentation, experiment, and action thresholds.",
+      "triggers": [
+        "marketing experiment",
+        "campaign measurement",
+        "attribution",
+        "conversion metric",
+        "ab test",
+        "마케팅 실험",
+        "캠페인 측정",
+        "기여도",
+        "전환 지표",
+        "에이비 테스트"
+      ],
+      "freshness": "versioned"
+    }
+  ],
+  "research_policy": {
+    "default_mode": "reuse",
+    "contextualize_triggers": [
+      "customer research",
+      "market research",
+      "current audience",
+      "competitor",
+      "competitive analysis",
+      "platform policy",
+      "current channel rules",
+      "regulated claim",
+      "latest marketing examples",
+      "고객 조사",
+      "시장 조사",
+      "현재 고객",
+      "경쟁사",
+      "경쟁 분석",
+      "플랫폼 정책",
+      "최신 채널 규칙",
+      "규제 대상 주장",
+      "최신 마케팅 사례"
+    ],
+    "refresh_triggers": [
+      "refresh marketing expertise",
+      "update marketing sources",
+      "refresh marketing pack",
+      "마케팅 전문성 갱신",
+      "마케팅 출처 갱신",
+      "마케팅 팩 업데이트"
+    ]
+  },
+  "source_manifest": "evidence/sources.json",
+  "evaluation_suite": "evals/cases.json"
+}

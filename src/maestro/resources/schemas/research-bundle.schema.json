@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/research-bundle.schema.json",
+  "title": "Harness Maestro Synthesized Research Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow_owner",
+    "question",
+    "depth",
+    "packets",
+    "synthesis",
+    "follow_up_waves",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_research_bundle_v1"
+    },
+    "workflow_owner": {
+      "const": "maestro"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "depth": {
+      "enum": [
+        "quick",
+        "normal",
+        "deep"
+      ]
+    },
+    "packets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "$ref": "research-packet.schema.json"
+      }
+    },
+    "synthesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adopted_claim_ids",
+        "conflicts",
+        "open_questions",
+        "limitations"
+      ],
+      "properties": {
+        "adopted_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "claim_ids",
+              "material",
+              "resolution",
+              "evidence_refs"
+            ],
+            "properties": {
+              "claim_ids": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "material": {
+                "type": "boolean"
+              },
+              "resolution": {
+                "enum": [
+                  "upheld",
+                  "qualified",
+                  "unresolved",
+                  "rejected"
+                ]
+              },
+              "evidence_refs": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "open_questions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "follow_up_waves": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "insufficient"
+      ]
+    }
+  }
+}

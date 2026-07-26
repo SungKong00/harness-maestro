@@ -66,6 +66,7 @@ sensitivity: internal
 - [ADR-0006: 증거를 선택형 전문성 팩으로 컴파일](decisions/0006-evidence-compiled-expertise.md)
 - [ADR-0007: 판단과 실행 승인을 분리](decisions/0007-separate-decision-and-execution.md)
 - [ADR-0008: CLI·Registry·Skill의 콘텐츠 기반 릴리스 결합](decisions/0008-content-addressed-release.md)
+- [ADR-0009: 내부 리서치와 평가된 전문성 경계](decisions/0009-internal-research-and-expertise-boundary.md)
 
 ## 역사 자료
 

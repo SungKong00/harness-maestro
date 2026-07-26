@@ -5,8 +5,11 @@ description: Use when repeated project evidence or a completed reference researc
 
 # Maestro Expertise Builder
 
-Compile research into a project-local candidate. Do not mutate an active
-Expertise Pack, Registry item, global Skill, or agent installation.
+Compile validated evidence into a project-local candidate. Do not mutate an
+active Expertise Pack, Registry item, global Skill, or agent installation.
+
+Maestro remains the workflow owner. This Skill designs one reusable specialist
+surface; it does not create a second orchestrator.
 
 ## Admission gate
 
@@ -22,7 +25,27 @@ knowledge:
 
 Otherwise return `not admitted` and the smaller existing surface to use.
 
-## Build
+## Choose the surface
+
+Read `references/surface-and-agent-boundary.md`. Prefer, in order:
+
+1. deterministic checker or schema;
+2. project Convention;
+3. one guide in an existing Expertise Pack;
+4. a new Expertise Pack;
+5. a custom Agent proposal only for a distinct execution boundary.
+
+Persona wording and domain knowledge alone do not justify an Agent.
+
+## Establish evidence
+
+Use existing Tier 0 project evidence when it is sufficient. When the candidate
+depends on current external facts, broad best practices, or disputed transfer
+from other systems, call `$maestro-reference-research` with an exact bounded
+question. Admit only a validated ResearchBundle; do not accept a citation list
+or digest alone.
+
+## Build candidate
 
 Read `references/compilation-format.md`, then create only:
 
@@ -43,7 +66,9 @@ candidate must be revalidated, rejected, or removed instead of silently reused.
 
 ## Evaluation
 
-Freeze task cases before judging the candidate. Compare, when practical:
+Read `references/evaluation-and-forward-testing.md`. Record a RED baseline
+before writing the candidate, then freeze task cases before judging it. Compare,
+when practical:
 
 1. no pack;
 2. a persona-only prompt;
@@ -53,6 +78,9 @@ Freeze task cases before judging the candidate. Compare, when practical:
 Measure task-specific criteria, escaped defects, correction count, actual token
 and time measurements when available, and regressions. Do not use eloquence,
 response preference, or “looks expert” as the pass condition.
+
+Test trigger precision and coexistence with nearby Skills. A candidate that
+improves its target task but hijacks adjacent work fails.
 
 ## Output
 

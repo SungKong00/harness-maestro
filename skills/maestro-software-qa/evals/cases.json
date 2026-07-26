@@ -1,0 +1,55 @@
+{
+  "schema_version": "maestro_expertise_eval_v1",
+  "expertise_pack_id": "software-qa",
+  "cases": [
+    {
+      "case_id": "routine-feature-qa",
+      "goal": "Create a risk-based QA and regression plan for this feature change",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "qa-risk-traceability",
+        "qa-test-design",
+        "qa-regression-release"
+      ]
+    },
+    {
+      "case_id": "transaction-state",
+      "goal": "Design QA scenarios for transaction isolation, retries, concurrency, and rollback",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "qa-scenario-state-exploration",
+        "qa-test-design"
+      ]
+    },
+    {
+      "case_id": "release-evidence",
+      "goal": "Review regression coverage and required release evidence",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "qa-regression-release"
+      ]
+    },
+    {
+      "case_id": "defect-report",
+      "goal": "Turn this intermittent failure into reproducible defect evidence",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "qa-defect-evidence"
+      ]
+    },
+    {
+      "case_id": "current-browser-matrix",
+      "goal": "Research current browser and device compatibility before finalizing the QA matrix",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "qa-risk-traceability"
+      ]
+    },
+    {
+      "case_id": "simple-code-nontrigger",
+      "goal": "Implement this pure formatting helper and run its existing unit test",
+      "expected_mode": "reuse",
+      "expected_guides": []
+    }
+  ]
+}

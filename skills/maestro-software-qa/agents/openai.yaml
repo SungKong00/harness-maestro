@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Software QA"
+  short_description: "Apply risk-based software QA criteria"
+  default_prompt: "Use $maestro-software-qa with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false

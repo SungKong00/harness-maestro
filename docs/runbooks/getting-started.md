@@ -62,7 +62,8 @@ maestro --help
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
 for skill in maestro maestro-adapter-builder maestro-govern \
-  maestro-product-design maestro-expertise-builder
+  maestro-product-design maestro-expertise-builder \
+  maestro-reference-research maestro-marketing maestro-software-qa
 do
   ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
 done
@@ -70,16 +71,18 @@ readlink ~/.agents/skills/maestro
 maestro doctor --repo /path/to/harness-maestro --host codex --json
 ```
 
-`maestro-product-design`은 첫 파일럿 Expertise Pack이고 평소 직접 호출할 필요가
-없다. route가 선택한 경우에만 해당 Skill과 필요한 guide를 연다.
+`maestro-product-design`, `maestro-marketing`, `maestro-software-qa`는 파일럿
+Expertise Pack이며 평소 직접 호출할 필요가 없다. route가 선택한 경우에만 해당
+Skill과 필요한 guide를 연다.
 `maestro-expertise-builder`도 반복된 공백의 project-local candidate를 만들 때만
-명시적으로 사용한다.
+명시적으로 사용한다. `maestro-reference-research`는 discover,
+contextualize, refresh gate가 열릴 때만 Maestro가 호출한다.
 
 기존 경로가 있으면 먼저 실제 target을 확인한다. `ln`은 기존 경로를 덮어쓰지
 않는다. 연결 뒤에는 agent client를 재시작해 Skill 목록을 다시 읽게 한다.
 `--host codex`는 전역 파일을 수정하지 않고 CLI 발견 경로, 설치 metadata 버전,
 runtime·Registry digest, 각 Skill의 실제 symlink target과 digest, 동일 이름의
-중복 설치를 검사한다. 다섯 Skill은 서로 다른 경로에 있어도 동일한 content-addressed
+중복 설치를 검사한다. 여덟 Skill은 서로 다른 경로에 있어도 동일한 content-addressed
 `release_id`여야 하며, 하나라도 릴리스 이후 수정됐다면 strict Doctor는 실패한다.
 Codex가 이미 catalog를 다시 읽었는지는 CLI가 증명할 수 없으므로 연결 변경 뒤
 재시작은 여전히 필요하다.
@@ -177,16 +180,19 @@ rm -- "$maestro_route"
 
 validation의 `execution_status`가 `RESEARCH_REQUIRED`이면 exit code 4를 반환하며
 Assignment를 실행하지 않는다. route의 `expertise.research_requirement`에 따라
-bounded reference research를 수행하고 artifact SHA-256으로 다시 route한다.
+내부 bounded reference research를 수행하고 검증된 ResearchBundle 파일로 다시
+route한다.
 
 ```bash
+maestro validate-research --artifact /tmp/research-bundle.json --json
 maestro route --goal "최신 레퍼런스로 랜딩 페이지 디자인" \
   --risk medium --intent implementation --host codex \
-  --route-version v2 --research-evidence-digest "<sha256>" --json
+  --route-version v2 --research-evidence /tmp/research-bundle.json --json
 ```
 
-일반 디자인·개발 작업은 `mode=reuse`이므로 이 단계가 생기지 않는다. digest는
-research artifact의 내용 주소이고 source 품질을 대신 검증하지 않는다.
+일반 디자인·개발 작업은 `mode=reuse`이므로 이 단계가 생기지 않는다. CLI는 검증된
+파일에서 digest를 계산하며 raw digest만 전달하면 거부한다. digest는 research
+artifact의 내용 주소이고 source 품질을 대신 검증하지 않는다.
 
 v2의 Assignment는 Host가 실행할 정적 계획이며 실행 로그가 아니다. `plan_id`,
 dependency, Packet과 side-effect 계약은 Maestro가 검증하지만 실제 호출 모델,

@@ -48,7 +48,10 @@
         "maestro-adapter-builder",
         "maestro-govern",
         "maestro-product-design",
-        "maestro-expertise-builder"
+        "maestro-expertise-builder",
+        "maestro-reference-research",
+        "maestro-marketing",
+        "maestro-software-qa"
       ],
       "properties": {
         "maestro": {
@@ -64,6 +67,15 @@
           "$ref": "#/$defs/tree"
         },
         "maestro-expertise-builder": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-reference-research": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-marketing": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-software-qa": {
           "$ref": "#/$defs/tree"
         }
       }

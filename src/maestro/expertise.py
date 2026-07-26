@@ -13,10 +13,18 @@ MAX_SELECTED_PACKS = 1
 MAX_SELECTED_GUIDES = 4
 DISCOVERY_TRIGGERS = (
     "expert criteria",
+    "expert workflow",
+    "specialist workflow",
+    "expertise pack",
+    "specialist skill",
     "best practice",
     "technology stack",
     "architecture choice",
     "전문가 기준",
+    "전문가 작업 방식",
+    "전문가 워크플로우",
+    "전문성 팩",
+    "전문가 스킬",
     "모범 사례",
     "기술 스택",
     "아키텍처 선택",
@@ -82,8 +90,22 @@ def select_expertise(
         if pack["status"] in {"pilot", "active"}
     ]
     for pack in eligible_packs:
+        selectable_triggers = set(pack["triggers"])
+        selectable_triggers.update(
+            trigger
+            for guide in pack["guides"]
+            for trigger in guide["triggers"]
+        )
+        selectable_triggers.update(
+            pack["research_policy"]["contextualize_triggers"]
+        )
+        selectable_triggers.update(
+            pack["research_policy"]["refresh_triggers"]
+        )
         score = sum(
-            1 for trigger in pack["triggers"] if _matches(goal_terms, trigger)
+            1
+            for trigger in selectable_triggers
+            if _matches(goal_terms, trigger)
         )
         if score:
             ranked.append((score, pack["expertise_pack_id"], pack))
@@ -106,7 +128,6 @@ def select_expertise(
         matched_guides.sort(
             key=lambda guide: (
                 guide["freshness"] != "volatile",
-                guide["guide_id"] == "design-brief",
                 guide["guide_id"],
             )
         )

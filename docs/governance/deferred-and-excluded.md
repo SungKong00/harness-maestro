@@ -64,8 +64,8 @@ sensitivity: internal
 | architecture/implementation 순서 자동 최적화 | deferred | 비교 가능한 실제 baseline이 없음 | task stratum별 bounded Pilot과 critical regression 0 |
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
-| research wave 자동 운영 | deferred | 출처 lane 분해와 artifact schema가 아직 runtime에 없음 | 최대 3 lane, stop rule, claim provenance, 합성 forward test |
-| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | route v2는 Assignment의 명시적 Packet ID와 Executor accepts·returns만 검사하며, Finding·Review·Research 내부 의미와 source ref·tier 규칙 전체는 아직 비강제 계약임 | source ref, tier 채택 규칙과 모든 Packet conformance test |
+| research wave 자동 scheduler·fan-out | deferred | lane·artifact 계약과 validator는 구현했지만 CLI가 researcher 실행·cancel·retry를 runtime에서 강제하지 않음 | host capability 계약, bounded cancel, 실제 비용·품질 forward test |
+| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | SpecialistFinding과 ResearchPacket은 검사하지만 모든 실행·검토 Packet 내부 의미까지 같은 수준으로 강제하지 않음 | 남은 Packet별 source ref와 conformance test |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
 
 ## 큰 자동화 기능의 재평가

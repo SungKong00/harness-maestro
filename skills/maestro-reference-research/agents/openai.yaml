@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Reference Research"
+  short_description: "Build bounded source-ranked research evidence"
+  default_prompt: "Use $maestro-reference-research for the research gate selected by the current Maestro workflow."
+policy:
+  allow_implicit_invocation: false

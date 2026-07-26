@@ -1,34 +1,46 @@
 {
   "framework_version": "0.3.0",
   "registry": {
-    "sha256": "beed3ad2a2a93d41815f621afb901e5f38df2e49d52814b52d5a305c9965c3d0"
+    "sha256": "b828c608c0880cf4360715c589f5ee15e4aebfcd44ff3146437e5c2f6a912352"
   },
-  "release_id": "bbe56275e9ca7086f39eeebabda2655c3a9aeb9966561e4fe8c07c74b295d146",
+  "release_id": "cacce6ee4c25e29f27419be8afd67ccb9af1c1fcbf081ddccd7daa4b98a277b5",
   "runtime": {
-    "file_count": 53,
-    "sha256": "90dd277fe44c30e27a891986d284ea5c0924cbdc6c2d4342fcbd840afaed2bac"
+    "file_count": 57,
+    "sha256": "6cf1e2f6200a6270c144a21d0e3d8cabfaa8fba7c229b1e9c46d94794bf2fad8"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 7,
-      "sha256": "e531c11d220bb5a85c0cad82a5c2fa3c7b29dc2a1dd465e0432099917f2b73f0"
+      "sha256": "4fab87fdb0ff5b3354ae892dfa1b78218b4454c938f1bdeab3dbca3dc5ab763c"
     },
     "maestro-adapter-builder": {
       "file_count": 4,
       "sha256": "873f1cd67821746433abd1a30bc3dd87da5f91435663286b4ec78741bcbb34c5"
     },
     "maestro-expertise-builder": {
-      "file_count": 4,
-      "sha256": "bf8d66b96b5cdb360fc9c50b779b9d4a3f9fe72f66bfbe8870b2699eb0613997"
+      "file_count": 6,
+      "sha256": "7979d9e600861e47e6eb4a3a6bec5a3bc36afe3a74c7d3f0d3aaad7c4ef82241"
     },
     "maestro-govern": {
       "file_count": 4,
       "sha256": "29fbe46362a5a40bbe104c1b7336cd921e8a2eaa7776d8c1503b4ba61b0c439a"
     },
+    "maestro-marketing": {
+      "file_count": 11,
+      "sha256": "85a640fd924f32382fd5954cfa63e329d3b1d26264991ec8fa9b37c211476488"
+    },
     "maestro-product-design": {
       "file_count": 9,
-      "sha256": "b09c853b59f1843fe5f33388dc14745a7025215c5fe23bda70dbf26744e2914a"
+      "sha256": "8e50802abcfed2a78f5dde45b3141672143b1085805f889b976942f69935d86e"
+    },
+    "maestro-reference-research": {
+      "file_count": 5,
+      "sha256": "8c74d90e515343d94c69006e2f52cd9e28468a452819b4a605acf07897e0f001"
+    },
+    "maestro-software-qa": {
+      "file_count": 10,
+      "sha256": "459da6ec9cc2fbacab3e81c404077cca5eaa41193ee073b5ad3305ba56732ff7"
     }
   }
 }

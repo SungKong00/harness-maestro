@@ -29,7 +29,11 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Unknown `auto` wording defaults to read-only review.
    - A request that says to review, design, decide, or plan **before**
      implementation is staged. Do not create or run a mutation Assignment yet.
-   - If the user explicitly names another installed Skill, such as `$reference-research-team`, `$orchestrated-work-session`, or a frontend Skill, use it at the relevant step while Maestro remains workflow owner. Do not search every installed Skill, create a resolver, or copy external Skill content into this repository.
+   - If the user explicitly names another installed Skill, including
+     `$reference-research-team` or `$orchestrated-work-session`, use it at the
+     relevant step while Maestro remains workflow owner. Built-in Expertise
+     research uses `$maestro-reference-research`; it must not depend on a
+     user's unrelated global Skill installation.
 5. Do not preemptively research every task. Let the route first select reusable
    expertise and classify any research need. Only explicit current-fact or
    external-evidence requests may start research before routing.
@@ -81,9 +85,10 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - If `research_requirement.gate` is `not-required`, reuse the selected guides
      without repeating general research.
    - If the gate is `open`, read `references/research-and-evidence.md`, run the
-     narrow host-approved reference research workflow, save a compact artifact,
-     compute its SHA-256, and rerun the same route with
-     `--research-evidence-digest <digest>`. Do not execute Assignments until
+     Maestro-owned `$maestro-reference-research` workflow, save and validate
+     one compact ResearchBundle, and rerun the same route with
+     `--research-evidence <bundle.json>`. The CLI computes and binds its digest;
+     a digest alone is rejected. Do not execute Assignments until
      `maestro validate-plan` returns `execution_status: READY`.
    - `contextualize` gathers current examples or task context; `refresh`
      revalidates the pack's sources; `discover` covers an important expert

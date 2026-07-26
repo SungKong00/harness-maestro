@@ -24,24 +24,37 @@ def _rehash(plan: dict[str, object]) -> None:
 
 
 class ExpertiseRegistryTests(unittest.TestCase):
-    def test_product_design_pack_is_registry_backed_and_resolvable(self) -> None:
+    def test_expertise_packs_are_registry_backed_and_resolvable(self) -> None:
         registry = load_registry()
 
         self.assertEqual([], validate_registry(registry))
-        self.assertEqual(1, len(registry["expertise_packs"]))
-        pack = registry["expertise_packs"][0]
-        self.assertEqual("expertise-pack", pack["kind"])
-        self.assertEqual("product-design", pack["expertise_pack_id"])
-        self.assertEqual("pilot", pack["status"])
-
-        skill_root = ROOT / "skills" / pack["skill_id"]
-        self.assertTrue((skill_root / "SKILL.md").is_file())
-        self.assertTrue((skill_root / pack["source_manifest"]).is_file())
-        self.assertTrue((skill_root / pack["evaluation_suite"]).is_file())
-        for guide in pack["guides"]:
-            self.assertTrue(
-                (skill_root / "references" / f"{guide['guide_id']}.md").is_file()
-            )
+        self.assertEqual(
+            {"marketing", "product-design", "software-qa"},
+            {
+                pack["expertise_pack_id"]
+                for pack in registry["expertise_packs"]
+            },
+        )
+        for pack in registry["expertise_packs"]:
+            with self.subTest(pack=pack["expertise_pack_id"]):
+                self.assertEqual("expertise-pack", pack["kind"])
+                self.assertEqual("pilot", pack["status"])
+                skill_root = ROOT / "skills" / pack["skill_id"]
+                self.assertTrue((skill_root / "SKILL.md").is_file())
+                self.assertTrue(
+                    (skill_root / pack["source_manifest"]).is_file()
+                )
+                self.assertTrue(
+                    (skill_root / pack["evaluation_suite"]).is_file()
+                )
+                for guide in pack["guides"]:
+                    self.assertTrue(
+                        (
+                            skill_root
+                            / "references"
+                            / f"{guide['guide_id']}.md"
+                        ).is_file()
+                    )
 
     def test_expertise_candidate_schema_and_builder_are_bundled(self) -> None:
         schema = json.loads(
@@ -195,7 +208,7 @@ class ExpertiseRoutingTests(unittest.TestCase):
         self.assertEqual("PASS", result["status"])
         self.assertEqual("READY", result["execution_status"])
 
-    def test_cli_research_digest_requires_v2(self) -> None:
+    def test_cli_research_digest_requires_artifact(self) -> None:
         output = StringIO()
         with redirect_stdout(output):
             exit_code = main(
@@ -211,7 +224,10 @@ class ExpertiseRoutingTests(unittest.TestCase):
 
         result = json.loads(output.getvalue())
         self.assertEqual(2, exit_code)
-        self.assertEqual("ROUTE_VERSION_REQUIRED", result["code"])
+        self.assertEqual(
+            "RESEARCH_EVIDENCE_ARTIFACT_REQUIRED",
+            result["code"],
+        )
 
     def test_validate_plan_uses_nonzero_exit_for_open_research_gate(self) -> None:
         plan = route_goal_v2(
@@ -262,6 +278,58 @@ class ExpertiseRoutingTests(unittest.TestCase):
                         expertise["selected_guide_ids"]
                     )
                 )
+
+    def test_frozen_marketing_and_qa_cases_match_modes_and_guides(self) -> None:
+        for skill_id in ("maestro-marketing", "maestro-software-qa"):
+            cases = json.loads(
+                (ROOT / f"skills/{skill_id}/evals/cases.json").read_text(
+                    encoding="utf-8"
+                )
+            )["cases"]
+            for case in cases:
+                with self.subTest(skill=skill_id, case=case["case_id"]):
+                    plan = route_goal_v2(
+                        case["goal"],
+                        "medium",
+                        intent="implementation",
+                    )
+                    expertise = plan.get(
+                        "expertise",
+                        {
+                            "selected_guide_ids": [],
+                            "research_requirement": {"mode": "reuse"},
+                        },
+                    )
+                    self.assertEqual(
+                        case["expected_mode"],
+                        expertise["research_requirement"]["mode"],
+                    )
+                    self.assertTrue(
+                        set(case["expected_guides"]).issubset(
+                            expertise["selected_guide_ids"]
+                        )
+                    )
+
+    def test_landing_page_routes_by_dominant_decision(self) -> None:
+        visual = route_goal_v2(
+            "Improve the Korean typography and visual hierarchy of this landing page",
+            "medium",
+            intent="review",
+        )
+        message = route_goal_v2(
+            "Choose positioning and landing page messaging for this campaign",
+            "medium",
+            intent="review",
+        )
+
+        self.assertEqual(
+            ["product-design"],
+            visual["expertise"]["selected_pack_ids"],
+        )
+        self.assertEqual(
+            ["marketing"],
+            message["expertise"]["selected_pack_ids"],
+        )
 
 
 class ExpertiseReceiptTests(unittest.TestCase):

@@ -1,0 +1,172 @@
+{
+  "schema_version": "maestro_expertise_pack_v1",
+  "kind": "expertise-pack",
+  "expertise_pack_id": "software-qa",
+  "summary": "Risk-based software QA criteria for traceability, test design, state and failure exploration, quality handoffs, regression and release evidence, and reproducible defects.",
+  "status": "pilot",
+  "portability": "global",
+  "version": 1,
+  "triggers": [
+    "software qa",
+    "quality assurance",
+    "qa strategy",
+    "test strategy",
+    "test plan",
+    "regression plan",
+    "release quality",
+    "quality risk",
+    "defect report",
+    "bug reproduction",
+    "소프트웨어 QA",
+    "품질 보증",
+    "QA 전략",
+    "테스트 전략",
+    "테스트 계획",
+    "회귀 계획",
+    "릴리스 품질",
+    "품질 위험",
+    "결함 보고서",
+    "버그 재현"
+  ],
+  "skill_id": "maestro-software-qa",
+  "default_guides": [
+    "qa-risk-traceability",
+    "qa-test-design",
+    "qa-regression-release"
+  ],
+  "guides": [
+    {
+      "guide_id": "qa-risk-traceability",
+      "summary": "Rank failure modes by exposure, impact, reversibility, and detectability, then trace high-risk behavior and constraints to evidence.",
+      "triggers": [
+        "quality risk",
+        "risk based testing",
+        "traceability",
+        "acceptance criteria",
+        "test plan",
+        "품질 위험",
+        "위험 기반 테스트",
+        "추적성",
+        "인수 기준",
+        "테스트 계획"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "qa-test-design",
+      "summary": "Derive high-information tests using partitions, boundaries, decision tables, negative paths, failure injection, and the cheapest sufficient test level.",
+      "triggers": [
+        "test design",
+        "test cases",
+        "boundary value",
+        "negative test",
+        "failure injection",
+        "테스트 설계",
+        "테스트 케이스",
+        "경계값",
+        "부정 테스트",
+        "장애 주입"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "qa-scenario-state-exploration",
+      "summary": "Explore state transitions, retries, cancellation, concurrency, idempotency, permissions, partial failure, recovery, locale, time, and environment.",
+      "triggers": [
+        "state transition",
+        "concurrency",
+        "transaction isolation",
+        "retry",
+        "rollback",
+        "exploratory testing",
+        "상태 전이",
+        "동시성",
+        "트랜잭션 격리",
+        "재시도",
+        "롤백",
+        "탐색적 테스트"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "qa-quality-handoffs",
+      "summary": "Define testable acceptance, observability, fixtures, build and environment identity, executed evidence, gaps, waivers, and independent verification handoffs.",
+      "triggers": [
+        "quality handoff",
+        "qa handoff",
+        "testability",
+        "verification handoff",
+        "quality ownership",
+        "품질 핸드오프",
+        "QA 핸드오프",
+        "테스트 가능성",
+        "검증 인계",
+        "품질 책임"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "qa-regression-release",
+      "summary": "Select proportionate regression from the change graph and produce revision-bound release evidence with residual risk and rollback checks.",
+      "triggers": [
+        "regression",
+        "release evidence",
+        "release quality",
+        "smoke test",
+        "rollback validation",
+        "회귀",
+        "릴리스 증거",
+        "릴리스 품질",
+        "스모크 테스트",
+        "롤백 검증"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "qa-defect-evidence",
+      "summary": "Capture minimal reproducible steps, exact environment and build, observed versus expected behavior, impact, frequency, artifacts, and safe diagnostic evidence.",
+      "triggers": [
+        "defect report",
+        "bug reproduction",
+        "reproduction steps",
+        "intermittent failure",
+        "fix verification",
+        "결함 보고서",
+        "버그 재현",
+        "재현 단계",
+        "간헐적 실패",
+        "수정 검증"
+      ],
+      "freshness": "stable"
+    }
+  ],
+  "research_policy": {
+    "default_mode": "reuse",
+    "contextualize_triggers": [
+      "current browser compatibility",
+      "current device compatibility",
+      "current platform behavior",
+      "current compliance",
+      "production incident",
+      "vendor behavior",
+      "dependency behavior",
+      "현재 브라우저 호환성",
+      "현재 기기 호환성",
+      "현재 플랫폼 동작",
+      "현재 규정 준수",
+      "프로덕션 사고",
+      "벤더 동작",
+      "의존성 동작"
+    ],
+    "refresh_triggers": [
+      "refresh qa expertise",
+      "update qa sources",
+      "refresh software qa pack",
+      "QA 전문성 갱신",
+      "QA 출처 갱신",
+      "소프트웨어 QA 팩 업데이트"
+    ]
+  },
+  "source_manifest": "evidence/sources.json",
+  "evaluation_suite": "evals/cases.json"
+}

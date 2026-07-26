@@ -314,6 +314,193 @@ def _product_design_specialists(
     ]
 
 
+def _marketing_specialists(
+    selected_guides: list[str],
+) -> list[dict[str, Any]]:
+    strategy_guides = [
+        item
+        for item in selected_guides
+        if item
+        in {
+            "marketing-brief",
+            "positioning-message",
+            "measurement-experiment",
+        }
+    ]
+    evidence_guides = [
+        item
+        for item in selected_guides
+        if item
+        in {
+            "claim-substantiation",
+            "customer-market-evidence",
+            "competitor-reference-analysis",
+            "channel-platform-rules",
+        }
+    ]
+    return [
+        _specialist(
+            "marketing-strategy",
+            summary=(
+                "Judge audience, offer, positioning, message hierarchy, and "
+                "measurement without publishing or implementing."
+            ),
+            owns=[
+                "audience-and-offer",
+                "marketing-measurement",
+                "message-hierarchy",
+                "positioning",
+            ],
+            out_of_scope=[
+                "implementation-command",
+                "legal-conclusion",
+                "publication",
+                "visual-design",
+            ],
+            allowed_inputs=[
+                "GoalDigest",
+                "ProjectContext",
+                "SelectedDecisionGuides",
+                "ResearchArtifact",
+            ],
+            allowed_claim_kinds=[
+                "constraint",
+                "finding",
+                "risk",
+                "question",
+            ],
+            guide_ids=strategy_guides,
+        ),
+        _specialist(
+            "marketing-evidence",
+            summary=(
+                "Audit claims, customer and competitor evidence, and current "
+                "channel constraints without inventing facts."
+            ),
+            owns=[
+                "channel-constraint",
+                "claim-substantiation",
+                "competitor-evidence",
+                "customer-evidence",
+            ],
+            out_of_scope=[
+                "implementation-command",
+                "legal-conclusion",
+                "positioning",
+                "publication",
+            ],
+            allowed_inputs=[
+                "GoalDigest",
+                "ProjectContext",
+                "SelectedDecisionGuides",
+                "ResearchArtifact",
+            ],
+            allowed_claim_kinds=[
+                "constraint",
+                "finding",
+                "risk",
+                "question",
+            ],
+            guide_ids=evidence_guides,
+        ),
+        _technical_specialist(),
+    ]
+
+
+def _software_qa_specialists(
+    selected_guides: list[str],
+) -> list[dict[str, Any]]:
+    design_guides = [
+        item
+        for item in selected_guides
+        if item
+        in {
+            "qa-risk-traceability",
+            "qa-test-design",
+            "qa-scenario-state-exploration",
+        }
+    ]
+    evidence_guides = [
+        item
+        for item in selected_guides
+        if item
+        in {
+            "qa-quality-handoffs",
+            "qa-regression-release",
+            "qa-defect-evidence",
+        }
+    ]
+    return [
+        _specialist(
+            "qa-risk-design",
+            summary=(
+                "Judge quality risk, traceability, and scenario design without "
+                "running tests or modifying code."
+            ),
+            owns=[
+                "quality-risk",
+                "requirement-traceability",
+                "test-design",
+                "test-scenarios",
+            ],
+            out_of_scope=[
+                "implementation-command",
+                "release-authorization",
+                "test-result",
+                "verification-verdict",
+            ],
+            allowed_inputs=[
+                "GoalDigest",
+                "ProjectContext",
+                "SelectedDecisionGuides",
+                "RepositoryEvidence",
+                "ResearchArtifact",
+            ],
+            allowed_claim_kinds=[
+                "constraint",
+                "finding",
+                "risk",
+                "question",
+            ],
+            guide_ids=design_guides,
+        ),
+        _specialist(
+            "qa-release-evidence",
+            summary=(
+                "Judge regression, release, handoff, and defect evidence "
+                "requirements without claiming unrun checks passed."
+            ),
+            owns=[
+                "defect-evidence",
+                "quality-handoff",
+                "regression-scope",
+                "release-evidence",
+            ],
+            out_of_scope=[
+                "implementation-command",
+                "quality-risk-priority",
+                "release-authorization",
+                "test-execution",
+            ],
+            allowed_inputs=[
+                "GoalDigest",
+                "ProjectContext",
+                "SelectedDecisionGuides",
+                "RepositoryEvidence",
+                "ResearchArtifact",
+            ],
+            allowed_claim_kinds=[
+                "constraint",
+                "finding",
+                "risk",
+                "question",
+            ],
+            guide_ids=evidence_guides,
+        ),
+        _technical_specialist(),
+    ]
+
+
 def _lens_specialists(
     lens_cards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -539,9 +726,18 @@ def build_decision_plan(
         host_id=host_id,
         intent="review",
     )
-    product_design = "product-design" in expertise["selected_pack_ids"]
+    selected_pack_ids = expertise["selected_pack_ids"]
+    product_design = "product-design" in selected_pack_ids
     if product_design:
         specialists = _product_design_specialists(
+            expertise["selected_guide_ids"]
+        )
+    elif "marketing" in selected_pack_ids:
+        specialists = _marketing_specialists(
+            expertise["selected_guide_ids"]
+        )
+    elif "software-qa" in selected_pack_ids:
+        specialists = _software_qa_specialists(
             expertise["selected_guide_ids"]
         )
     else:

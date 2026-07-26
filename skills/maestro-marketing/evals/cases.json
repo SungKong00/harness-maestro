@@ -1,0 +1,54 @@
+{
+  "schema_version": "maestro_expertise_eval_v1",
+  "expertise_pack_id": "marketing",
+  "cases": [
+    {
+      "case_id": "routine-positioning",
+      "goal": "Define positioning and landing page messaging for our developer tool",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "marketing-brief",
+        "positioning-message",
+        "claim-substantiation"
+      ]
+    },
+    {
+      "case_id": "unsupported-comparison",
+      "goal": "Review whether our marketing claim that we are twice as fast is supportable",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "claim-substantiation"
+      ]
+    },
+    {
+      "case_id": "current-customer-evidence",
+      "goal": "Research current customer language and market evidence for this offer",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "customer-market-evidence"
+      ]
+    },
+    {
+      "case_id": "competitor-analysis",
+      "goal": "Analyze current competitor messaging before choosing our campaign direction",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "competitor-reference-analysis"
+      ]
+    },
+    {
+      "case_id": "campaign-measurement",
+      "goal": "Design a marketing experiment and measurement plan for the new offer",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "measurement-experiment"
+      ]
+    },
+    {
+      "case_id": "visual-landing-page-nontrigger",
+      "goal": "Improve the Korean typography and visual hierarchy of this landing page",
+      "expected_mode": "reuse",
+      "expected_guides": []
+    }
+  ]
+}

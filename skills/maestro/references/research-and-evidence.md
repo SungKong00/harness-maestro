@@ -1,6 +1,11 @@
 # Research and evidence
 
-Research depth and Researcher count are separate decisions. Start with the narrowest source lane that can answer the question. Add a lane only when its evidence is independent and can change the recommendation. Use at most three initial lanes and one narrow follow-up for a material conflict with new evidence.
+Use `$maestro-reference-research` when an Expertise route opens a research gate.
+Maestro remains the workflow owner. Research depth and Researcher count are
+separate decisions. Start with the narrowest source lane that can answer the
+question. Add a lane only when its evidence is independent and can change the
+recommendation. Use at most three initial lanes and one narrow follow-up for a
+material conflict with new evidence.
 
 Useful lanes are:
 
@@ -22,9 +27,15 @@ Useful lanes are:
 
 Classify each claim as fact, policy, preference, or prediction. Tier alone does not decide authority: direct execution leads facts, explicit user or team decisions lead policy, the user leads preference, and comparable experiments lead predictions.
 
-Return sources and claims through `ResearchPacket`. Local Tier 0 evidence may use an artifact reference without a URL. Preserve version, checked date, limitations, and material conflicts. Never assign authority merely because a claim appears in a packet.
+Return sources and claims through validated `maestro_research_packet_v1`
+artifacts, then synthesize one validated `maestro_research_bundle_v1`. Local
+Tier 0 evidence may use an artifact reference without a URL. Preserve version,
+checked date, limitations, and material conflicts. Never assign authority merely
+because a claim appears in a packet.
 
-When route v2 opens an Expertise research gate, the packet is a preflight
-artifact. Hash the complete bounded artifact, reroute with that digest, and keep
-the artifact out of normal prompts unless an Assignment needs its claims. A
-digest proves plan-to-artifact identity, not truth or source authority.
+When route v2 opens an Expertise research gate, the bundle is a preflight
+artifact. Run `maestro validate-research --artifact <bundle.json>`, then reroute
+with `--research-evidence <bundle.json>`. The CLI validates the file and computes
+its canonical digest. A raw digest cannot satisfy the gate. Keep the bundle out
+of normal prompts unless an Assignment needs its claims. Its digest proves
+plan-to-artifact identity, not truth or source authority.

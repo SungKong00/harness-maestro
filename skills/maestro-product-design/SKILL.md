@@ -42,8 +42,8 @@ Read `expertise.research_requirement`.
 - `not-required`: use the selected guides and project evidence; do not repeat
   general design research.
 - `open`: stop implementation. Run the host-approved reference research
-  workflow for the exact screen pattern, save a compact research artifact, and
-  reroute with its SHA-256 digest.
+  workflow through `$maestro-reference-research` for the exact screen pattern,
+  save a validated compact ResearchBundle, and reroute with its artifact path.
 - `satisfied`: use the artifact as contextual evidence, not as permission to
   copy a reference.
 - `in-plan`: the current read-only research Assignment produces the evidence.

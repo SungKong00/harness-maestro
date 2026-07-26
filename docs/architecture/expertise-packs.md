@@ -30,8 +30,8 @@ sensitivity: internal
   → 필요한 Decision Guide 최대 4개 선택
   ├─ 일반 기준으로 충분: reuse → 바로 Assignment 실행
   └─ 최신 사례·새 분야 필요: research gate
-       → 작은 reference research artifact
-       → artifact digest로 같은 목표 재-route
+       → 내부 research Skill의 독립 source lane
+       → 검증된 ResearchBundle 파일로 같은 목표 재-route
        → gate가 READY일 때만 Assignment 실행
   → 실제 결과 검증
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
@@ -64,8 +64,13 @@ route v2의 `expertise`는 optional additive extension이다. 기존 v2 계획�
 | `discover` | 중요한 전문가 선택인데 active 팩이 없음 | artifact digest 전 `open` |
 
 implementation·review의 open gate는 기존 최대 5개 Assignment DAG 밖의 preflight다.
-조사가 끝나면 `--research-evidence-digest`로 같은 목표를 재-route한다. 이 방식은
-Deep의 독립 Lens 세 개를 줄이거나 Assignment 상한을 여섯 개로 깨지 않는다.
+조사는 `$maestro-reference-research`가 최대 세 개 독립 source lane과 충돌 시 한 번의
+follow-up으로 수행한다. 각 `ResearchPacket`과 합성 `ResearchBundle`은
+`maestro validate-research`로 source reference, tier별 채택 한계, 역할 소유권과
+follow-up 정당성을 검사한다. 조사가 끝나면 `--research-evidence <bundle.json>`으로
+같은 목표를 재-route한다. CLI가 검증된 파일에서 digest를 계산하므로 임의의 raw
+digest만으로 gate를 닫을 수 없다. 이 preflight는 Deep의 독립 Lens 세 개를 줄이거나
+Assignment 상한을 여섯 개로 깨지 않는다.
 
 Validator는 구조가 올바른 open gate를 `status=PASS`,
 `execution_status=RESEARCH_REQUIRED`로 반환한다. Host는 `READY` 전까지 Assignment를
@@ -73,9 +78,9 @@ Validator는 구조가 올바른 open gate를 `status=PASS`,
 동일성만 증명하며 내용의 진실성이나 source
 권위를 증명하지 않는다.
 
-### 3. 첫 파일럿: product-design
+### 3. 파일럿 Expertise Pack
 
-첫 팩은 디자인 스타일 preset이 아니라 다음 Decision Guide를 제공한다.
+`product-design`은 디자인 스타일 preset이 아니라 다음 Decision Guide를 제공한다.
 
 - `design-brief`
 - `typography-korean`
@@ -87,7 +92,17 @@ Validator는 구조가 올바른 open gate를 `status=PASS`,
 layout은 research 없이 기준을 재사용하고, 최신 랜딩 페이지 레퍼런스를 요구하면
 `reference-selection`과 contextual research gate를 함께 연다.
 
-상태는 `pilot`이다. task-specific rendered verification 없이 active로 간주하지 않는다.
+`marketing`은 “마케팅 잘하는 persona” 대신 audience·offer brief, positioning,
+message hierarchy, claim substantiation, current customer·competitor evidence,
+channel rules와 measurement를 분리한다.
+
+`software-qa`는 테스트 실행자나 최종 판정자가 아니라 risk·requirement traceability,
+boundary·negative·state·concurrency test design, quality handoff,
+regression·release와 defect evidence를 제공한다.
+
+세 팩은 모두 `pilot`이다. 디자인은 rendered artifact, 마케팅은 claim·message·
+experiment artifact, QA는 실제 test·build evidence와 독립 Verifier 없이 active나
+task completion으로 간주하지 않는다.
 
 ### 4. Candidate와 기록
 
@@ -102,7 +117,9 @@ RunReceipt에는 다음 선택 정보만 optional로 기록한다.
 `maestro govern report`는 팩 사용과 research mode만 집계한다.
 
 `$maestro-expertise-builder`는 admission gate가 통과할 때만 다음 project-local
-candidate를 만든다.
+candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide → 새 Pack
+순으로 더 작은 표면을 검토한다. 현재 외부 근거가 필요하면 내부
+`$maestro-reference-research`의 validated bundle만 입력으로 받는다.
 
 ```text
 .maestro/state/candidates/expertise/<candidate-id>/
@@ -119,7 +136,8 @@ candidate를 만든다.
 
 ## 평가 계약
 
-새 팩 또는 큰 guide 변경은 가능하면 같은 frozen task에서 다음을 비교한다.
+새 팩 또는 큰 guide 변경은 현재 저장소만 사용하는 RED baseline으로 실제 공백을
+재현하고, 같은 frozen task에서 다음을 비교한다.
 
 1. pack 없음
 2. persona prompt만 있음
@@ -138,8 +156,10 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 - research artifact digest 뒤 같은 Assignment 구조로 READY
 - pack·guide 변조는 validator 실패
 
-실제 디자인 품질 A/B는 다양한 렌더링 task와 독립 평가가 쌓인 뒤 active 승격
-근거로 사용한다.
+각 팩은 normal·edge·non-trigger·overlap case를 갖는다. 특히 landing page의
+시각 위계는 product-design, positioning과 copy는 marketing이 우선되어야 하며,
+단순 unit test 실행은 software-qa 팩을 불필요하게 열지 않아야 한다. 실제 품질
+A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로 사용한다.
 
 ## 벤치마킹과 차용 범위
 
@@ -166,7 +186,8 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 | 단계 | 상태 | 조건 |
 |---|---|---|
 | Registry pack, route gate, validator | 현재 구현 | 전체 unit·wheel·strict Doctor |
-| product-design 파일럿 | 현재 구현 | frozen route cases + 실제 rendered evaluation |
+| product-design·marketing·software-qa 파일럿 | 현재 구현 | frozen route cases + 실제 artifact evaluation |
+| 내부 ResearchPacket·ResearchBundle validator | 현재 구현 | source-tier·reference·follow-up·artifact binding tests |
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
 | 후보 생성 CLI | 보류 | Skill 후보 생성이 반복되고 schema validation 요구가 측정됨 |
 | 자동 candidate 제안 | 보류 | 반복 fingerprint가 전문성 공백과 안정적으로 연결됨 |
@@ -177,6 +198,7 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 - pack 최대 1개, guide 최대 4개
 - 기존 Assignment 최대 5개 유지
 - 신규 database, embedding, vector search, scheduler 없음
-- guide별 agent, 상주 디자인 부서, 전역 자동 설치 없음
+- guide별 agent, 상주 디자인·마케팅·QA 부서, 전역 자동 설치 없음
 - raw research와 transcript의 정상 context 재주입 없음
-- 첫 milestone에서 product-design 한 팩만 파일럿
+- custom Agent는 다른 tool·permission·sandbox·model·approval 경계가 실제로
+  필요할 때만 별도 제안하고 자동 생성하지 않음

@@ -13,6 +13,7 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [문서 지도](docs/README.md) ·
 [전문성 팩 구조](docs/architecture/expertise-packs.md) ·
 [판단 우선 구조](docs/architecture/decision-workflow.md) ·
+[내부 리서치·전문성 경계](docs/decisions/0009-internal-research-and-expertise-boundary.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
 
 ## 먼저 이것만 알면 됩니다
@@ -27,6 +28,30 @@ Maestro에는 역할이 다른 두 부분이 있습니다.
 즉, CLI가 코드를 대신 구현하는 것은 아닙니다. CLI는 안전한 실행 계획을 만들고,
 `$maestro`를 호출받은 Codex 같은 에이전트가 그 계획에 따라 코드를 읽고 수정하고
 검증합니다.
+
+### 용어를 이렇게 구분합니다
+
+| 구성요소 | 질문 | 하는 일 | 새 Agent가 생기나? |
+|---|---|---|---|
+| **Lens** | 무엇을 볼까? | 데이터 무결성, 사용자 흐름, 테스트 증명처럼 놓치기 쉬운 실패 관점 | 아니오 |
+| **Expertise Pack** | 어떤 전문가 기준을 적용할까? | 디자인·마케팅·QA의 재사용 가능한 Decision Guide | 아니오 |
+| **Specialist** | 이번 판단을 누가 분리해서 검토할까? | decision-first 단계의 읽기 전용 임시 역할 | 상주 Agent 아님 |
+| **Executor** | 누가 어떤 권한으로 실행할까? | 구현, 리서치, 검증의 모델·도구·권한 경계 | 기존 Executor를 선택 |
+
+따라서 “마케팅 전문가를 불렀다”는 말은 마케팅 Pack의 기준으로 먼저 판단한다는
+뜻입니다. 곧바로 광고를 발행하거나 코드를 쓰는 별도 Agent를 만든다는 뜻이 아닙니다.
+현재는 한 작업에 Pack 최대 1개, Guide 최대 4개만 선택합니다.
+
+### 지금 포함된 전문성
+
+| Pack | 주로 다루는 판단 | 리서치가 열리는 경우 |
+|---|---|---|
+| `product-design` | 화면 목적, 한글 타이포그래피, 위계, 상호작용, 접근성 | 최신 레퍼런스·트렌드가 결정을 바꿀 때 |
+| `marketing` | 고객·오퍼, 포지셔닝, 메시지, claim 근거, 채널, 측정 | 현재 고객·시장·경쟁사·플랫폼·규제 정보가 필요할 때 |
+| `software-qa` | 위험·추적성, 테스트 설계, 상태·동시성, 회귀·릴리스 근거 | 현재 브라우저·기기·플랫폼·규정·사고·벤더 동작이 필요할 때 |
+
+세 Pack 모두 아직 `pilot`입니다. 결과가 그럴듯해 보이는지만으로 전역 활성화하지
+않으며, 실제 작업의 독립 평가와 owner 승인이 있어야 승격을 검토합니다.
 
 ## 전체 사용 흐름
 
@@ -44,12 +69,13 @@ maestro init → project/architecture 초안 작성 → status → upgrade → d
               │
               ├─ 관련 문서만 선택
               ├─ 작업에 맞는 전문가 기준만 선택
-              ├─ 최신 사례가 필요할 때만 reference research
+              ├─ 최신·외부 근거가 필요할 때만 내부 reference research
+              │    └─ 독립 lane → 검증된 ResearchBundle → 같은 작업 재-route
               ├─ 위험에 맞는 Fast / Standard / Deep 경로 선택
               ├─ 필요한 경우 독립 Lens 검토
               ├─ 방향이 정해진 변경: 한 명의 writer가 구현
-              ├─ 설계·기술 선택: decide → 독립 전문가 판단 → 결정 번들
-              │                 → enact 승인 뒤 한 명의 writer가 구현
+              ├─ 설계·기술 선택: decide → blind Specialist 판단 → 충돌만 합성
+              │                 → 기술 타당성 → enact 승인 → 한 명의 writer
               └─ test·lint·diff로 검증
               │
               ▼
@@ -64,17 +90,19 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 
 | 상황 | 사용 | 결과 |
 |---|---|---|
-| 새 프로젝트에 처음 적용 | `maestro init` 또는 `$maestro-adapter-builder` | Markdown 문서 체계와 프로젝트 설정을 미리보기 후 생성 |
+| 새 프로젝트에 처음 적용 | `$maestro 이 프로젝트를 Maestro로 초기화해줘` | Markdown 문서 체계와 프로젝트 설정을 미리보기 후 생성 |
 | 기능 구현·버그 수정·리팩터링 | `$maestro <요청>` | 관련 문서만 읽고 작업 위험에 맞춰 구현·검증 |
 | 패턴·아키텍처를 판단만 함 | `$maestro <요청>` 또는 `maestro decide --intent review` | 읽기 전용 판단 결과만 반환하고 구현하지 않음 |
 | 판단한 뒤 구현 | `$maestro <요청>` | `decide`로 역할별 판단 후 검증된 결정 번들만 `enact`하여 구현 |
 | 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide를 역할별로 적용하고 최신 사례가 필요할 때만 조사 |
+| 현재 근거가 필요한 전문 판단 | `$maestro <요청>` | 내부 source lane 조사·ResearchBundle 검증 뒤에만 다음 단계 진행 |
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
 | Codex Desktop 설치 배선 확인 | `maestro doctor --host codex` | CLI 버전과 루트·companion Skill 연결을 읽기 전용 검사 |
 | 프로젝트 Convention 초안 | `maestro convention draft` | preview/apply 뒤에도 활성화되지 않는 정형 draft 생성 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
 | 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
+| 반복되는 전문성 공백을 후보로 만들기 | `$maestro-expertise-builder` | RED baseline·frozen case를 거친 프로젝트 로컬 후보만 생성 |
 | 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
 
 ## 빠른 시작
@@ -113,7 +141,8 @@ uv tool install /path/to/harness-maestro
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
 for skill in maestro maestro-adapter-builder maestro-govern \
-  maestro-product-design maestro-expertise-builder
+  maestro-product-design maestro-expertise-builder \
+  maestro-reference-research maestro-marketing maestro-software-qa
 do
   ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
 done
@@ -122,7 +151,7 @@ done
 기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
 **restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
 
-연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 다섯 Skill이 같은
+연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 여덟 Skill이 같은
 `release_id`인지 함께 확인합니다.
 
 ```bash
@@ -130,6 +159,15 @@ maestro doctor --repo /path/to/harness-maestro --host codex --strict --json
 ```
 
 ### 3. 프로젝트마다 한 번: 초기화
+
+Codex Desktop에서는 먼저 다음처럼 말하는 것으로 충분합니다.
+
+```text
+$maestro 이 프로젝트를 Maestro로 초기화하고, 기존 문서를 보존하면서 현재 구조를 점검해줘.
+```
+
+`$maestro`가 init 미리보기, 적용 전 검토, 초안 보완 순서를 안내합니다. 아래 CLI는
+CI·자동화나 수동으로 정확히 같은 절차를 실행하고 싶을 때 사용합니다.
 
 `init`은 바로 쓰지 않고 변경 plan을 먼저 보여줍니다. 검토한 같은 plan만 적용할 수
 있습니다.
@@ -166,6 +204,14 @@ $maestro 인증 API를 변경해줘. 현재 Convention을 확인하고 구현한
 $maestro 결제 화면의 정보 구조와 시각 위계를 먼저 판단하고, 기술 타당성 확인까지 끝난 뒤 구현해줘.
 ```
 
+마케팅 또는 QA 기준이 중요한 작업:
+
+```text
+$maestro 새 기능의 포지셔닝과 claim 근거를 먼저 판단하고, 방향이 확정되면 랜딩 페이지를 구현해줘.
+
+$maestro 이 결제 변경의 QA 위험·회귀 범위를 먼저 정하고, 근거가 충분할 때만 구현과 검증을 진행해줘.
+```
+
 두 번째 요청은 곧바로 코드를 수정하지 않습니다. 디자인과 UX가 서로의 최초 결론을
 보지 않고 읽기 전용으로 판단하고, Maestro가 공통점·충돌을 합성한 뒤 기술 타당성을
 확인합니다. blocking question이 없고 결정 번들·현재 checkout이 유효할 때만 별도
@@ -193,9 +239,10 @@ Maestro workflow는 다음 순서로 진행합니다.
    고릅니다.
 4. 등록된 Expertise Pack이 있으면 작업에 필요한 전문가 판단 가이드만 최대 네 개
    선택합니다. 예를 들어 한글 UI는 font·글자 위계 검증을 추가합니다.
-5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 먼저 작은 reference
-   research를 하고, 결과 digest로 같은 작업을 다시 route합니다. 일반 작업은 이
-   단계를 건너뜁니다.
+5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 내부 reference research가
+   source lane을 분리해 조사합니다. 각 claim의 source tier·한계·충돌을 담은
+   `ResearchPacket`을 합성하고, 검증된 `ResearchBundle` **파일**로 같은 작업을 다시
+   route합니다. 임의 digest 문자열만으로는 research gate를 통과할 수 없습니다.
 6. 방향 선택이 필요한 요청은 구현 전에 읽기 전용 Decision Plan을 만듭니다.
    Specialist는 자신의 `owns`에 속한 finding만 반환하고, 다른 역할의 문제는 typed
    escalation으로 넘깁니다.
@@ -203,7 +250,7 @@ Maestro workflow는 다음 순서로 진행합니다.
    먼저 검토합니다.
 8. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
    실패 영향으로 결정합니다.
-9. 결정 번들에 열린 blocker가 없고 checkout·Registry·research digest가 그대로일
+9. 결정 번들에 열린 blocker가 없고 checkout·Registry·research bundle digest가 그대로일
    때만 실행 승인을 만들며, 그 뒤 한 명의 writer가 코드를 수정하고
    test·lint·schema·diff 같은 실제 artifact로 검증합니다.
 10. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
@@ -216,13 +263,17 @@ Maestro workflow는 다음 순서로 진행합니다.
 - **컨텍스트 절약** — `project`, `architecture`, 관련 ADR·Convention만 제한된
   예산 안에서 선택합니다.
 - **선택형 전문성** — generic persona 대신 실제 판단 기준을 Pack과 작은 Guide로
-  두고, 최대 한 팩·네 가이드만 읽습니다.
+  두고, 디자인·마케팅·QA 중 필요한 최대 한 팩·네 가이드만 읽습니다.
 - **판단과 실행 분리** — 디자인·아키텍처·기술 선택은 read-only `decide`로
   확정하고, digest와 checkout에 묶인 `enact` 승인 뒤에만 writer를 엽니다.
 - **역할 오염 제한** — Specialist는 소유 concern과 claim 종류만 반환합니다.
   코드 지시나 다른 역할의 결론은 packet validation에서 거부합니다.
 - **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
-  전문 분야에서만 research gate를 엽니다.
+  전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
+  ResearchBundle 파일 없이는 gate를 통과하지 못합니다.
+- **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
+  baseline과 frozen case를 거쳐 프로젝트 후보로만 만들며, 전역 승격이나 Agent
+  설치는 자동화하지 않습니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.
 - **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
@@ -275,6 +326,7 @@ project/
 | 현재 릴리스 TODO | [v0.3 릴리스 계획](docs/plans/active/v0.3-release.md) |
 | Assignment Plan·검증·HTML 도입 경계 | [Typed Assignment Plan](docs/architecture/typed-assignment-plan.md) |
 | 전문가 기준 재사용·조건부 조사·후보 관리 | [Expertise Pack](docs/architecture/expertise-packs.md) |
+| 내부 research·Skill·Custom Agent의 경계 | [ADR-0009](docs/decisions/0009-internal-research-and-expertise-boundary.md) |
 | 판단·역할 검토·결정 번들·실행 승인 | [Decision Workflow](docs/architecture/decision-workflow.md) |
 | Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
 | 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
@@ -290,6 +342,7 @@ project/
 - CLI가 agent를 직접 생성하거나 자유 토론을 자동 실행
 - 모든 Lens마다 별도 agent를 자동 배정
 - 다수결이나 자기평가만으로 완료 판정
+- 모든 작업에서 외부 리서치를 강제하거나 raw digest만으로 근거를 인정
 - Notion 같은 외부 문서 시스템의 양방향 동기화
 - 한 작업의 성공만으로 전역 Skill·Agent·Lens·Executor 자동 수정
 - 매 실행마다 대화 전문이나 장문 Markdown 보고서 축적

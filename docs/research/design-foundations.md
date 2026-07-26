@@ -365,9 +365,10 @@ session learning 재주입을 그대로 복사하지 않는다. 이런 선택은
 workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 경로 원칙에서는
 불필요한 호출과 project-specific preference를 만들 수 있다.
 
-첫 파일럿과 research gate 계약은
+파일럿 팩과 내부 research gate 계약은
 [Expertise Pack](../architecture/expertise-packs.md),
-저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)에 있다.
+저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)과
+[ADR-0009](../decisions/0009-internal-research-and-expertise-boundary.md)에 있다.
 
 ## 9. 판단과 실행 권한은 다른 artifact로 연결한다
 

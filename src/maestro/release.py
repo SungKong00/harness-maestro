@@ -17,6 +17,9 @@ CODEX_SKILLS = (
     "maestro-govern",
     "maestro-product-design",
     "maestro-expertise-builder",
+    "maestro-reference-research",
+    "maestro-marketing",
+    "maestro-software-qa",
 )
 _HEX_DIGITS = frozenset("0123456789abcdef")
 

@@ -242,6 +242,36 @@ class DecisionPlanTests(unittest.TestCase):
             plan["request_contract"]["side_effect_policy"],
         )
 
+    def test_marketing_and_qa_use_bounded_domain_specialists(self) -> None:
+        cases = (
+            (
+                "Choose marketing positioning and campaign messaging before implementation",
+                {"marketing-strategy", "marketing-evidence", "technical-feasibility"},
+            ),
+            (
+                "Create a software QA strategy and regression plan before implementation",
+                {"qa-risk-design", "qa-release-evidence", "technical-feasibility"},
+            ),
+        )
+        for goal, expected in cases:
+            with self.subTest(goal=goal):
+                plan = build_decision_plan(ROOT, goal, "medium")
+                specialist_ids = {
+                    item["specialist_id"]
+                    for item in plan["specialist_contracts"]
+                }
+                self.assertEqual(expected, specialist_ids)
+                self.assertEqual(
+                    "PASS",
+                    validate_decision_plan(plan)["status"],
+                )
+                self.assertTrue(
+                    all(
+                        item["allowed_side_effects"] == []
+                        for item in plan["specialist_contracts"]
+                    )
+                )
+
     def test_review_only_decision_remains_non_enactable(self) -> None:
         plan = build_decision_plan(
             ROOT,
