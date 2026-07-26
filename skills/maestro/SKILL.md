@@ -22,10 +22,9 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - If `convention_status` is `none`, continue from current code patterns and reproducible project evidence; absence of a convention is not a blocker.
 4. Define the outcome, verification, boundaries, risk, and stop condition before non-trivial work.
    - If the user explicitly names another installed Skill, such as `$reference-research-team`, `$orchestrated-work-session`, or a frontend Skill, use it at the relevant step while Maestro remains workflow owner. Do not search every installed Skill, create a resolver, or copy external Skill content into this repository.
-5. Decide whether the recommendation depends on current external facts, an uncertain architecture choice, or conflicting evidence.
-   - If yes, read `references/research-and-evidence.md`.
-   - Start with one high-value source lane. Add independent lanes only when each can change the decision.
-   - Keep Maestro as workflow owner; Researcher runs return only compact `ResearchPacket` results.
+5. Do not preemptively research every task. Let the route first select reusable
+   expertise and classify any research need. Only explicit current-fact or
+   external-evidence requests may start research before routing.
 6. Create a validated Assignment plan with `maestro route --goal "<goal>" --risk <low|medium|high|critical> --host <host> --route-version v2 --json`.
    - The CLI keeps v1 as its compatibility default. This managed Skill intentionally opts into v2 so the Host receives explicit dependency, read-only, and one-writer boundaries.
    - The result preserves the v1 selection while adding at most five typed Assignments, their dependencies, Packet contracts, side-effect owner, per-Assignment model routes, terminal condition, and plan digest.
@@ -33,20 +32,38 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --plan <path> --json` before execution.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
-7. If Lens selection adds a new evidence boundary, rerun `maestro docs` with the selected Lens IDs. Deduplicate by path and read only newly selected documents.
-8. Apply the Assignment plan in dependency order:
+7. Inspect the optional `expertise` selection before executing Assignments.
+   - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
+     A pack supplies decision criteria; it does not create another permanent
+     agent or replace the route's Executor.
+   - If `research_requirement.gate` is `not-required`, reuse the selected guides
+     without repeating general research.
+   - If the gate is `open`, read `references/research-and-evidence.md`, run the
+     narrow host-approved reference research workflow, save a compact artifact,
+     compute its SHA-256, and rerun the same route with
+     `--research-evidence-digest <digest>`. Do not execute Assignments until
+     `maestro validate-plan` returns `execution_status: READY`.
+   - `contextualize` gathers current examples or task context; `refresh`
+     revalidates the pack's sources; `discover` covers an important expert
+     decision for which no active pack exists. These are not interchangeable.
+   - A research-intent plan may use `gate: in-plan`; its read-only Research
+     Assignment produces the evidence.
+   - Pilot packs require task-specific verification. A successful use does not
+     make them active.
+8. If Lens selection adds a new evidence boundary, rerun `maestro docs` with the selected Lens IDs. Deduplicate by path and read only newly selected documents.
+9. Apply the Assignment plan in dependency order:
    - `fast`: Main applies zero or one Lens; do not spawn.
    - `standard`: one read-only Lens Reviewer pass may apply one or two selected Lenses.
    - `deep`: up to three selected Lenses may use fresh, isolated reviewer contexts.
    - Only the Assignment named by `mutation_owner_assignment_id` may write. Research, review, and verification Assignments stay read-only.
    - Stop when a required gate fails, a user decision is required, or the bounded budget is exhausted. The CLI does not schedule, retry, checkpoint, or resume Assignments.
-9. Before launching reviewers, record the exact expected Lens IDs. Keep initial conclusions hidden from other reviewers and return compact evidence packets, not transcripts.
-10. Bound coordination:
+10. Before launching reviewers, record the exact expected Lens IDs. Keep initial conclusions hidden from other reviewers and return compact evidence packets, not transcripts.
+11. Bound coordination:
    - Use a bounded host wait. After one no-progress wake, request compact completion once; after the next no-progress wake, cancel that lane and mark its evidence unavailable.
    - As soon as every expected Lens has returned a packet or terminal failure, synthesis is the parent's next action. Do not inspect more files, rerun routing, launch another lane, or wait again unless a material conflict names the new evidence required.
-11. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
-12. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Apply selected conventions and run deterministic verification plus an independent completion check proportional to risk.
-13. After implementation evidence passes, classify newly learned knowledge:
+12. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
+13. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Apply selected conventions and run deterministic verification plus an independent completion check proportional to risk.
+14. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
     - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
@@ -55,16 +72,17 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - When the mode is `off`, mention the possible rule in the final report without writing a Convention or governance candidate.
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
-    - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run.
-14. For a non-trivial initialized run, write one compact RunReceipt after the final verdict with `maestro record --repo <repo> --receipt <temporary-json> --json`.
+    - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only when its admission gate passes.
+15. For a non-trivial initialized run, write one compact RunReceipt after the final verdict with `maestro record --repo <repo> --receipt <temporary-json> --json`.
     - Record actual duration and token values only when available; use `null` otherwise.
     - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
     - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.
+    - When route v2 contains `expertise`, copy only its selected pack IDs, guide IDs, research mode, and final gate into the matching optional RunReceipt fields. Never copy guide bodies or research content.
     - For `created` or `updated`, include `project_convention_evidence`: the active Convention SHA-256, a basis-matching kind, and one repository-local verification artifact path and SHA-256. `owner_decision` also needs a bounded summary of the explicit user decision. The `command_artifact_ref` must name that artifact.
     - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
     - Do not write checkpoints or one event per agent exchange.
-15. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
+16. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
 
 ## Reference routing
 
@@ -83,6 +101,8 @@ outcome:
 route:
 selected_documents:
 selected_lenses:
+selected_expertise:
+research_gate:
 executor_binding:
 changes:
 verification:

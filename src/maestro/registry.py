@@ -56,6 +56,33 @@ ADAPTER_ALLOWED = {
     "authority_policy",
     "writes",
 }
+EXPERTISE_PACK_ALLOWED = {
+    "schema_version",
+    "kind",
+    "expertise_pack_id",
+    "summary",
+    "status",
+    "portability",
+    "version",
+    "triggers",
+    "skill_id",
+    "default_guides",
+    "guides",
+    "research_policy",
+    "source_manifest",
+    "evaluation_suite",
+}
+EXPERTISE_GUIDE_ALLOWED = {
+    "guide_id",
+    "summary",
+    "triggers",
+    "freshness",
+}
+EXPERTISE_RESEARCH_POLICY_ALLOWED = {
+    "default_mode",
+    "contextualize_triggers",
+    "refresh_triggers",
+}
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REGISTRY_FORMAT_VERSION = 1
 MODEL_CLASSES = ("economy", "balanced", "frontier")
@@ -89,6 +116,10 @@ def load_registry() -> dict[str, list[dict[str, Any]]]:
         "executors": [_load_file(item) for item in _json_files("registry/executors")],
         "departments": [_load_file(item) for item in _json_files("registry/departments")],
         "adapters": [_load_file(item) for item in _json_files("registry/adapters")],
+        "expertise_packs": [
+            _load_file(item)
+            for item in _json_files("registry/expertise-packs")
+        ],
     }
 
 
@@ -187,6 +218,10 @@ def definition_digest_maps() -> dict[str, dict[str, str]]:
             item["executor_id"]: sha256_text(canonical_json(item))
             for item in registry["executors"]
         },
+        "expertise_packs": {
+            item["expertise_pack_id"]: sha256_text(canonical_json(item))
+            for item in registry["expertise_packs"]
+        },
     }
 
 
@@ -220,8 +255,15 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
     executor_ids: set[str] = set()
     department_ids: set[str] = set()
     adapter_ids: set[str] = set()
+    expertise_pack_ids: set[str] = set()
 
-    required_groups = {"lenses", "executors", "departments", "adapters"}
+    required_groups = {
+        "lenses",
+        "executors",
+        "departments",
+        "adapters",
+        "expertise_packs",
+    }
     missing_groups = sorted(required_groups - set(registry))
     extra_groups = sorted(set(registry) - required_groups)
     if missing_groups:
@@ -664,6 +706,159 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
             or writes.get("delete_supported") is not False
         ):
             errors.append(f"adapter {adapter_id or '?'} write policy is unsafe")
+
+    for pack in registry["expertise_packs"]:
+        if not isinstance(pack, dict):
+            errors.append("expertise pack entries must be objects")
+            continue
+        errors.extend(
+            _required(
+                pack,
+                tuple(sorted(EXPERTISE_PACK_ALLOWED)),
+                "expertise pack",
+            )
+        )
+        pack_id = pack.get("expertise_pack_id")
+        if pack.get("kind") != "expertise-pack":
+            errors.append(
+                f"expertise pack {pack_id or '?'} has kind={pack.get('kind')!r}"
+            )
+        if pack.get("schema_version") != "maestro_expertise_pack_v1":
+            errors.append(
+                f"expertise pack {pack_id or '?'} has unsupported schema_version"
+            )
+        unexpected = sorted(set(pack) - EXPERTISE_PACK_ALLOWED)
+        if unexpected:
+            errors.append(
+                f"expertise pack {pack_id or '?'} has unsupported fields: "
+                f"{', '.join(unexpected)}"
+            )
+        if not _valid_id(pack_id):
+            errors.append(f"expertise pack {pack_id or '?'} ID is invalid")
+        else:
+            if pack_id in expertise_pack_ids:
+                errors.append(f"duplicate expertise_pack_id: {pack_id}")
+            expertise_pack_ids.add(pack_id)
+        if not isinstance(pack.get("summary"), str) or not pack["summary"].strip():
+            errors.append(
+                f"expertise pack {pack_id or '?'} summary must be a non-empty string"
+            )
+        if pack.get("status") not in {
+            "candidate",
+            "pilot",
+            "active",
+            "deprecated",
+            "retired",
+        }:
+            errors.append(f"expertise pack {pack_id or '?'} status is invalid")
+        if pack.get("portability") not in {"global", "profile", "project"}:
+            errors.append(
+                f"expertise pack {pack_id or '?'} portability is invalid"
+            )
+        version = pack.get("version")
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version < 1
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} version must be a positive integer"
+            )
+        if not _unique_string_list(pack.get("triggers"), nonempty=True):
+            errors.append(
+                f"expertise pack {pack_id or '?'} triggers must be unique"
+            )
+        if not _valid_id(pack.get("skill_id")):
+            errors.append(f"expertise pack {pack_id or '?'} skill_id is invalid")
+        for field in ("source_manifest", "evaluation_suite"):
+            value = pack.get(field)
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or value.startswith(("/", "."))
+                or ".." in value.split("/")
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} {field} must be a safe relative path"
+                )
+
+        guides = pack.get("guides")
+        guide_ids: set[str] = set()
+        if not isinstance(guides, list) or not guides:
+            errors.append(
+                f"expertise pack {pack_id or '?'} guides must be a non-empty list"
+            )
+            guides = []
+        for guide in guides:
+            if not isinstance(guide, dict):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide entries must be objects"
+                )
+                continue
+            if set(guide) != EXPERTISE_GUIDE_ALLOWED:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide fields are invalid"
+                )
+            guide_id = guide.get("guide_id")
+            if not _valid_id(guide_id):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide_id is invalid"
+                )
+            elif guide_id in guide_ids:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} has duplicate guide: {guide_id}"
+                )
+            else:
+                guide_ids.add(guide_id)
+            if (
+                not isinstance(guide.get("summary"), str)
+                or not guide["summary"].strip()
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide summary is invalid"
+                )
+            if not _unique_string_list(guide.get("triggers"), nonempty=True):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide triggers must be unique"
+                )
+            if guide.get("freshness") not in {
+                "stable",
+                "versioned",
+                "volatile",
+            }:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide freshness is invalid"
+                )
+        default_guides = pack.get("default_guides")
+        if (
+            not _unique_string_list(default_guides, nonempty=True)
+            or not set(default_guides).issubset(guide_ids)
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} default_guides must reference guides"
+            )
+
+        research_policy = pack.get("research_policy")
+        if (
+            not isinstance(research_policy, dict)
+            or set(research_policy) != EXPERTISE_RESEARCH_POLICY_ALLOWED
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} research_policy fields are invalid"
+            )
+            research_policy = {}
+        if research_policy.get("default_mode") != "reuse":
+            errors.append(
+                f"expertise pack {pack_id or '?'} default research mode must be reuse"
+            )
+        for field in ("contextualize_triggers", "refresh_triggers"):
+            if not _unique_string_list(
+                research_policy.get(field),
+                nonempty=True,
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} {field} must be unique"
+                )
 
     return errors
 

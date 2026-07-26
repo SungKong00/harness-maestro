@@ -28,7 +28,13 @@ def _emit(value: dict[str, Any], as_json: bool) -> None:
         return
     status = value.get("status") or value.get("evidence_status") or "ok"
     print(f"{value.get('schema_version', 'maestro')}: {status}")
-    for key in ("repo_root", "plan_id", "selected_lenses", "changed_paths"):
+    for key in (
+        "repo_root",
+        "plan_id",
+        "execution_status",
+        "selected_lenses",
+        "changed_paths",
+    ):
         if key in value:
             print(f"{key}: {value[key]}")
 
@@ -91,6 +97,13 @@ def parser() -> argparse.ArgumentParser:
         choices=["v1", "v2"],
         default="v1",
         help="Keep v1 compatibility by default; v2 emits a validated Assignment DAG",
+    )
+    route.add_argument(
+        "--research-evidence-digest",
+        help=(
+            "SHA-256 digest of a bounded research artifact that satisfies an "
+            "open route v2 expertise gate"
+        ),
     )
     route.add_argument("--json", action="store_true")
 
@@ -168,20 +181,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "route":
-            route_builder = (
-                route_goal_v2
-                if args.route_version == "v2"
-                else route_goal
-            )
-            result = route_builder(
-                args.goal,
-                args.risk,
-                args.lens or None,
-                args.department,
-                args.conflict_evidence,
-                args.host,
-                args.intent,
-            )
+            if args.route_version == "v2":
+                result = route_goal_v2(
+                    args.goal,
+                    args.risk,
+                    args.lens or None,
+                    args.department,
+                    args.conflict_evidence,
+                    args.host,
+                    args.intent,
+                    args.research_evidence_digest,
+                )
+            else:
+                if args.research_evidence_digest is not None:
+                    raise MaestroError(
+                        "ROUTE_VERSION_REQUIRED",
+                        "--research-evidence-digest is supported only by route v2.",
+                    )
+                result = route_goal(
+                    args.goal,
+                    args.risk,
+                    args.lens or None,
+                    args.department,
+                    args.conflict_evidence,
+                    args.host,
+                    args.intent,
+                )
             _emit(result, args.json)
             return 0
         if args.command == "validate-plan":
@@ -189,7 +214,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 read_json(Path(args.plan).expanduser().resolve())
             )
             _emit(result, args.json)
-            return 0 if result["status"] == "PASS" else 2
+            if result["status"] != "PASS":
+                return 2
+            return 4 if result["execution_status"] == "RESEARCH_REQUIRED" else 0
         if args.command == "adapt":
             result = inspect_adapter(args.repo)
             _emit(result, args.json)

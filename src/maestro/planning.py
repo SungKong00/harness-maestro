@@ -6,6 +6,7 @@ from collections import Counter, deque
 from typing import Any
 
 from .errors import MaestroError
+from .expertise import select_expertise
 from .registry import (
     _model_route,
     load_registry,
@@ -51,7 +52,9 @@ ROUTE_V2_FIELDS = {
     "entry_assignments",
     "terminal_assignments",
     "mutation_owner_assignment_id",
+    "expertise",
 }
+ROUTE_V2_OPTIONAL_FIELDS = {"expertise"}
 
 ASSIGNMENT_FIELDS = {
     "assignment_id",
@@ -69,6 +72,10 @@ ASSIGNMENT_FIELDS = {
     "max_children",
     "max_rounds",
 }
+ASSIGNMENT_OPTIONAL_FIELDS = {
+    "expertise_pack_ids",
+    "decision_guide_ids",
+}
 V2_EXTENSION_FIELDS = {
     "plan_id",
     "source_route_version",
@@ -79,6 +86,7 @@ V2_EXTENSION_FIELDS = {
     "entry_assignments",
     "terminal_assignments",
     "mutation_owner_assignment_id",
+    "expertise",
 }
 SOURCE_ROUTE_FIELDS = ROUTE_V2_FIELDS - V2_EXTENSION_FIELDS
 MODEL_ROUTE_FIELDS = {
@@ -430,7 +438,7 @@ def _assignment(
     mutation_owner: bool,
 ) -> dict[str, Any]:
     executor = executors[executor_id]
-    return {
+    assignment = {
         "assignment_id": assignment_id,
         "kind": kind,
         "executor_id": executor_id,
@@ -446,6 +454,15 @@ def _assignment(
         "max_children": 0,
         "max_rounds": 1,
     }
+    expertise = route.get("expertise")
+    if kind != "verification" and isinstance(expertise, dict):
+        assignment["expertise_pack_ids"] = list(
+            expertise.get("selected_pack_ids", [])
+        )
+        assignment["decision_guide_ids"] = list(
+            expertise.get("selected_guide_ids", [])
+        )
+    return assignment
 
 
 def _review_assignments(
@@ -483,7 +500,11 @@ def _review_assignments(
     ]
 
 
-def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
+def compile_route_v2(
+    route_v1: dict[str, Any],
+    *,
+    research_evidence_digest: str | None = None,
+) -> dict[str, Any]:
     """Normalize a v1 route into a bounded, host-executed Assignment DAG."""
 
     if route_v1.get("schema_version") != ROUTE_V1:
@@ -492,18 +513,30 @@ def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
             f"Expected {ROUTE_V1} as the normalization input.",
         )
 
+    expertise, _ = select_expertise(
+        route_v1["goal"],
+        intent=route_v1["intent"],
+        research_evidence_digest=research_evidence_digest,
+    )
+    route_context = copy.deepcopy(route_v1)
+    if (
+        expertise["selected_pack_ids"]
+        or expertise["research_requirement"]["mode"] != "reuse"
+    ):
+        route_context["expertise"] = expertise
+
     executors = _executor_map()
     assignments: list[dict[str, Any]] = []
-    intent = route_v1["intent"]
-    bound_executor = route_v1["binding"]["executor"]
+    intent = route_context["intent"]
+    bound_executor = route_context["binding"]["executor"]
     deterministic_only = (
-        route_v1["model_route"]["task_class"] == "deterministic-verification"
+        route_context["model_route"]["task_class"] == "deterministic-verification"
     )
 
     if deterministic_only:
         assignments.append(
             _assignment(
-                route_v1,
+                route_context,
                 executors,
                 assignment_id="verification",
                 kind="verification",
@@ -517,18 +550,18 @@ def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
     elif intent == "implementation":
         review_ids: list[str] = []
         if bound_executor == "lens-reviewer":
-            reviews = _review_assignments(route_v1, executors)
+            reviews = _review_assignments(route_context, executors)
             assignments.extend(reviews)
             review_ids = [item["assignment_id"] for item in reviews]
 
         writer_lenses = (
-            list(route_v1["selected_lenses"])
+            list(route_context["selected_lenses"])
             if bound_executor == "implementation-engineer"
             else []
         )
         assignments.append(
             _assignment(
-                route_v1,
+                route_context,
                 executors,
                 assignment_id="implementation",
                 kind="implementation",
@@ -541,7 +574,7 @@ def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
         )
         assignments.append(
             _assignment(
-                route_v1,
+                route_context,
                 executors,
                 assignment_id="verification",
                 kind="verification",
@@ -555,23 +588,23 @@ def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
     elif intent == "research":
         assignments.append(
             _assignment(
-                route_v1,
+                route_context,
                 executors,
                 assignment_id="research",
                 kind="research",
                 executor_id="researcher",
-                lens_ids=list(route_v1["selected_lenses"]),
+                lens_ids=list(route_context["selected_lenses"]),
                 depends_on=[],
                 read_only=True,
                 mutation_owner=False,
             )
         )
     elif bound_executor == "lens-reviewer":
-        assignments.extend(_review_assignments(route_v1, executors))
+        assignments.extend(_review_assignments(route_context, executors))
     else:
         assignments.append(
             _assignment(
-                route_v1,
+                route_context,
                 executors,
                 assignment_id="research",
                 kind="research",
@@ -607,7 +640,7 @@ def compile_route_v2(route_v1: dict[str, Any]) -> dict[str, Any]:
         None,
     )
 
-    plan = copy.deepcopy(route_v1)
+    plan = copy.deepcopy(route_context)
     plan["schema_version"] = ROUTE_V2
     plan["source_route_version"] = ROUTE_V1
     plan["source_route_digest"] = _source_route_digest(plan)
@@ -656,6 +689,7 @@ def route_goal_v2(
     conflict_evidence: str | None = None,
     host_id: str = "codex",
     intent: str = "auto",
+    research_evidence_digest: str | None = None,
 ) -> dict[str, Any]:
     route = route_goal(
         goal,
@@ -666,7 +700,10 @@ def route_goal_v2(
         host_id,
         intent,
     )
-    return compile_route_v2(route)
+    return compile_route_v2(
+        route,
+        research_evidence_digest=research_evidence_digest,
+    )
 
 
 def validate_route_v2(plan: Any) -> dict[str, Any]:
@@ -676,6 +713,7 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
         return {
             "schema_version": "maestro_route_validation_v1",
             "status": "FAIL",
+            "execution_status": "INVALID",
             "plan_id": None,
             "source_route_version": None,
             "issues": [
@@ -794,7 +832,9 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
             )
         )
 
-    missing_fields = sorted(ROUTE_V2_FIELDS - set(plan))
+    missing_fields = sorted(
+        ROUTE_V2_FIELDS - ROUTE_V2_OPTIONAL_FIELDS - set(plan)
+    )
     unknown_fields = sorted(set(plan) - ROUTE_V2_FIELDS)
     for field in missing_fields:
         diagnostics.append(
@@ -851,6 +891,48 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
                 "The active Registry is invalid.",
             )
         )
+    expertise = plan.get("expertise")
+    expertise_gate: str | None = "not-required"
+    if "expertise" in plan and not isinstance(expertise, dict):
+        diagnostics.append(
+            _diagnostic(
+                "ADAG_EXPERTISE_INVALID",
+                "expertise",
+                "expertise must be a Registry-backed selection object.",
+            )
+        )
+    elif isinstance(expertise, dict):
+        requirement = expertise.get("research_requirement")
+        evidence_digest = (
+            requirement.get("evidence_digest")
+            if isinstance(requirement, dict)
+            else None
+        )
+        expertise_gate = (
+            requirement.get("gate")
+            if isinstance(requirement, dict)
+            and isinstance(requirement.get("gate"), str)
+            else None
+        )
+        try:
+            expected_expertise, _ = select_expertise(
+                plan.get("goal", ""),
+                intent=plan.get("intent", ""),
+                research_evidence_digest=evidence_digest,
+            )
+        except MaestroError:
+            expected_expertise = None
+        if expected_expertise is None or expertise != expected_expertise:
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_EXPERTISE_SELECTION_MISMATCH",
+                    "expertise",
+                    (
+                        "Expertise Pack, Decision Guide, and research gate "
+                        "selection must match the active Registry."
+                    ),
+                )
+            )
     expected_source = _reconstruct_source_route(plan)
     preserved_source = _source_route_projection(plan)
     if expected_source is None:
@@ -1040,12 +1122,61 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
                     f"Required assignment field is missing: {field}.",
                 )
             )
-        for field in sorted(set(assignment) - ASSIGNMENT_FIELDS):
+        for field in sorted(
+            set(assignment) - ASSIGNMENT_FIELDS - ASSIGNMENT_OPTIONAL_FIELDS
+        ):
             diagnostics.append(
                 _diagnostic(
                     "ADAG_UNKNOWN_FIELD",
                     f"{path}.{field}",
                     f"Unsupported assignment field: {field}.",
+                )
+            )
+
+        selected_pack_ids = expertise.get("selected_pack_ids", []) if isinstance(
+            expertise, dict
+        ) else []
+        selected_guide_ids = expertise.get("selected_guide_ids", []) if isinstance(
+            expertise, dict
+        ) else []
+        assignment_pack_ids = assignment.get("expertise_pack_ids")
+        assignment_guide_ids = assignment.get("decision_guide_ids")
+        if not isinstance(expertise, dict):
+            if (
+                assignment_pack_ids is not None
+                or assignment_guide_ids is not None
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "ADAG_EXPERTISE_BINDING_MISMATCH",
+                        path,
+                        "Assignment expertise IDs require a top-level expertise selection.",
+                    )
+                )
+        elif assignment.get("kind") == "verification":
+            if (
+                assignment_pack_ids is not None
+                or assignment_guide_ids is not None
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "ADAG_EXPERTISE_BINDING_MISMATCH",
+                        path,
+                        "Verification must not load Expertise Pack guidance.",
+                    )
+                )
+        elif (
+            assignment_pack_ids != selected_pack_ids
+            or assignment_guide_ids != selected_guide_ids
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_EXPERTISE_BINDING_MISMATCH",
+                    path,
+                    (
+                        "Non-verification assignments must bind the selected "
+                        "Expertise Pack and Decision Guide IDs."
+                    ),
                 )
             )
 
@@ -1689,6 +1820,13 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
     return {
         "schema_version": "maestro_route_validation_v1",
         "status": "PASS" if not diagnostics else "FAIL",
+        "execution_status": (
+            "RESEARCH_REQUIRED"
+            if not diagnostics and expertise_gate == "open"
+            else "READY"
+            if not diagnostics
+            else "INVALID"
+        ),
         "plan_id": plan.get("plan_id"),
         "source_route_version": plan.get("source_route_version"),
         "issues": diagnostics,

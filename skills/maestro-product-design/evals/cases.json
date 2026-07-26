@@ -1,0 +1,55 @@
+{
+  "schema_version": "maestro_expertise_eval_v1",
+  "expertise_pack_id": "product-design",
+  "cases": [
+    {
+      "case_id": "routine-dashboard",
+      "goal": "Improve the product dashboard layout",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "design-brief",
+        "visual-hierarchy-layout",
+        "interaction-responsive-accessibility"
+      ]
+    },
+    {
+      "case_id": "korean-type",
+      "goal": "한글 웹 디자인의 폰트와 글자 위계를 개선해줘",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "typography-korean",
+        "visual-hierarchy-layout"
+      ]
+    },
+    {
+      "case_id": "current-references",
+      "goal": "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "reference-selection"
+      ]
+    },
+    {
+      "case_id": "responsive-accessibility",
+      "goal": "Review the mobile UI focus order and responsive accessibility",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "interaction-responsive-accessibility"
+      ]
+    },
+    {
+      "case_id": "refresh-pack",
+      "goal": "디자인 출처 갱신 후 웹 디자인 기준을 업데이트해줘",
+      "expected_mode": "refresh",
+      "expected_guides": [
+        "design-brief"
+      ]
+    },
+    {
+      "case_id": "unknown-expertise",
+      "goal": "Select a technology stack using expert criteria and best practices",
+      "expected_mode": "discover",
+      "expected_guides": []
+    }
+  ]
+}

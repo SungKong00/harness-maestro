@@ -170,6 +170,9 @@
           "type": "null"
         }
       ]
+    },
+    "expertise": {
+      "$ref": "#/$defs/expertiseSelection"
     }
   },
   "$defs": {
@@ -180,6 +183,102 @@
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "expertiseSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "selected_pack_ids",
+        "selected_guide_ids",
+        "pack_cards",
+        "research_requirement",
+        "warnings",
+        "selection_trace"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_expertise_selection_v1"
+        },
+        "selected_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "selected_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "pack_cards": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "object"
+          }
+        },
+        "research_requirement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "gate",
+            "reasons",
+            "evidence_digest"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "reuse",
+                "contextualize",
+                "refresh",
+                "discover"
+              ]
+            },
+            "gate": {
+              "enum": [
+                "not-required",
+                "open",
+                "satisfied",
+                "in-plan"
+              ]
+            },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "evidence_digest": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "selection_trace": {
+          "type": "object"
+        }
+      }
     },
     "modelRoute": {
       "type": "object",
@@ -402,6 +501,22 @@
         },
         "max_rounds": {
           "const": 1
+        },
+        "expertise_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "decision_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
         }
       }
     }

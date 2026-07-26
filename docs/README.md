@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro v0의 활성 문서와 읽는 순서를 안내하는 단일 문서 지도.
 scope: [docs]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -28,6 +28,8 @@ sensitivity: internal
 5. [v0.2 활성 계획](plans/active/v0.md) — 현재 기준선의 릴리스 범위와 완료 조건
 6. [v0.3 Typed Plan 계획](plans/active/v0.3-typed-plan.md) — route v1 호환
    Assignment DAG, 실행 전 검증과 HTML·resume의 단계적 도입 조건
+7. [v0.4 Expertise Pack 계획](plans/active/v0.4-expertise-packs.md) — 선택형
+   전문가 기준, 조건부 reference research와 project-local 후보 수명주기
 
 ## 거버넌스
 
@@ -58,6 +60,7 @@ sensitivity: internal
 - [ADR-0003: 증거 우선 숙의](decisions/0003-evidence-first-deliberation.md)
 - [ADR-0004: 주제별 단일 문서 권위](decisions/0004-single-document-authority.md)
 - [ADR-0005: 프로젝트 로컬 개선과 사용자 문서 Adapter 경계](decisions/0005-project-local-extension-boundary.md)
+- [ADR-0006: 증거를 선택형 전문성 팩으로 컴파일](decisions/0006-evidence-compiled-expertise.md)
 
 ## 역사 자료
 

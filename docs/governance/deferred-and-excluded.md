@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: v0에서 부적절하거나 검증되지 않아 제외·격리·보류한 항목과 재검토 조건.
 scope: [harness-maestro-v0]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -26,6 +26,9 @@ sensitivity: internal
 | 모든 agent의 자유 토론 | excluded | 동조·anchor와 대화 token이 늘고, 합의가 사실성을 증명하지 않음 | 독립 판단보다 나은 task별 비교 증거 |
 | 다수결·합의율 완료 판정 | excluded | 같은 모델·같은 정보의 상관 오류를 여러 표로 셈 | 외부 oracle을 우선하는 명시적 평가 계약 |
 | Lens마다 agent 한 명 자동 생성 | excluded | Lens는 검토 기준이지 실행 주체가 아니며 Standard 작업 비용이 불필요하게 증가 | 고유 corpus/context 격리가 품질을 바꾼다는 Pilot |
+| Decision Guide마다 agent 한 명 자동 생성 | excluded | Guide는 재사용 지식이고 같은 Executor가 여러 기준을 적용할 수 있음 | 별도 tool·권한·sandbox가 결과를 바꾼다는 Pilot |
+| 모든 전문 작업의 선행 외부 research | excluded | stable 기준도 매번 재수집해 token·지연·결과 편차를 키움 | freshness·현재 맥락이 결정을 바꾸는 명시적 gate |
+| vector·graph 지식 database | excluded | 현재 pack 1개·guide 5개에서 정적 Registry보다 운영·평가 비용이 큼 | 선택 정확도나 규모가 정적 최대 1 pack·4 guide 계약을 실제로 초과 |
 | 동적 “부서”와 빈 specialist 자리 | excluded | 사용 근거 없이 조직과 prompt 표면만 늘어남 | 반복 task와 독립 rubric이 있는 실제 pack |
 | 실행 중 전역 Skill·Agent·Lens·Executor·Adapter 자동 수정·삭제 | excluded | 현재 작업의 bias가 곧 여러 프로젝트 정책이 되고 rollback·감사가 불가능 | 격리 candidate, frozen eval, 사람 승인, version rollback |
 | 기록 개수만으로 자동 승격 | excluded | 반복된 동일 오류나 오염 로그도 횟수는 많을 수 있음 | project/checkout/version namespace와 품질·비용 비교 |
@@ -57,7 +60,7 @@ sensitivity: internal
 | workspace lease와 base-revision gate | deferred | 동시 writer 안전성을 파일 문구만으로 보장할 수 없음 | 격리 worktree 통합 test와 crash recovery |
 | 외부 API 쓰기 capability broker | deferred | idempotency, 승인, read-after-write와 compensation 계약이 없음 | service별 adapter와 명시적 user approval |
 | Notion 양방향 sync·쓰기 | deferred | dual master, freshness, deletion, 민감 정보 문제가 해결되지 않음 | topic별 단일 권위, revision/digest, tombstone, 실패 복구 |
-| 자동 candidate 생성·Pilot·promote | deferred | read-only report를 정책 변경 권한과 합치면 자기강화 오류가 생김 | offline evaluator, 승인자 분리, signed/versioned promotion |
+| 자동 expertise candidate 생성·Pilot·promote | deferred | 수동 project-local scaffold는 가능하지만 관찰을 자동 정책 변경과 합치면 자기강화 오류가 생김 | 전문성 공백 fingerprint, offline evaluator, 승인자 분리, signed/versioned promotion |
 | architecture/implementation 순서 자동 최적화 | deferred | 비교 가능한 실제 baseline이 없음 | task stratum별 bounded Pilot과 critical regression 0 |
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |

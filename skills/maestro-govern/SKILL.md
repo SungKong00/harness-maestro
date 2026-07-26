@@ -5,7 +5,9 @@ description: Use when reviewing Harness Maestro observations, repeated gaps, dup
 
 # Maestro Govern
 
-Generate evidence-backed improvement decisions, not live self-mutation. v0 supports read-only reporting only.
+Generate evidence-backed improvement decisions, not live self-mutation. The
+report is read-only; an explicitly requested Expertise candidate may be
+scaffolded separately with `$maestro-expertise-builder`.
 
 ## Workflow
 
@@ -15,6 +17,8 @@ Generate evidence-backed improvement decisions, not live self-mutation. v0 suppo
 4. Read `references/candidate-lifecycle.md` before proposing a durable change.
 5. Read `references/evaluation-contract.md` before recommending promotion, absorption, or retirement.
 6. Return a candidate brief or `insufficient evidence`. Do not patch the active skill, registry, adapter, or canonical convention.
+7. If the owner requests a reusable expertise draft and the admission gate
+   passes, hand off only the cited evidence to `$maestro-expertise-builder`.
 
 ## Output contract
 
@@ -38,6 +42,7 @@ recommended_disposition:
 - Do not create a candidate from usage count alone.
 - Do not let the producer self-certify its own improvement.
 - Do not promote, deprecate, archive, delete, or update the live installation in v0.
+- A project-local expertise candidate is not an active Harness update.
 - Do not turn every Lens into a custom agent. Require distinct capability and repeated evaluated value.
 - Do not use a single successful run, majority vote, or response preference as a promotion gate.
 - Keep old/new versions, frozen cases, approval provenance, and rollback in any future pilot.

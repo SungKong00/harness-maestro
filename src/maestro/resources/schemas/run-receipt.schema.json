@@ -71,6 +71,40 @@
         "minLength": 1
       }
     },
+    "selected_expertise_packs": {
+      "type": "array",
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "selected_decision_guides": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "expertise_research_mode": {
+      "enum": [
+        "reuse",
+        "contextualize",
+        "refresh",
+        "discover"
+      ]
+    },
+    "expertise_research_gate": {
+      "enum": [
+        "not-required",
+        "satisfied",
+        "in-plan",
+        "open"
+      ]
+    },
     "executor_runs": {
       "type": "integer",
       "minimum": 1

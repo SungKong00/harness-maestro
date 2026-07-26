@@ -5,7 +5,7 @@ type: architecture
 status: active
 authority: repository
 owner: harness-maestro
-summary: Lens, Executor, Department, Research Lane과 Assignment의 분리 계약.
+summary: Lens, Executor, Expertise Pack, Decision Guide, Department, Research Lane과 Assignment의 분리 계약.
 scope: [src/maestro/resources/registry, skills]
 last_verified: 2026-07-24
 supersedes: []
@@ -24,6 +24,8 @@ sensitivity: internal
 |---|---|---|---|
 | LensCard | 무엇을 보고 무엇이 결정을 기각하는가? | trigger, 질문, 요구 증거, reject 조건, finding 한도 | 모델명, tool, 권한, token budget |
 | ExecutorProfile | 누가 어떤 경계에서 수행하는가? | capability, 금지 capability, context 정책, 입출력 packet | 도메인 결론, 검토 질문 |
+| ExpertisePackCard | 반복 가능한 전문가 절차를 언제 재사용하는가? | trigger, 상태, portability, Skill, guide index, research policy | 모델·권한, task별 결론, 원시 source 본문 |
+| DecisionGuide | 한 종류의 전문가 판단을 어떻게 수행·검증하는가? | 입력, 결정 질문, 요구 증거, 중단·기각·검증 기준 | 상주 agent identity, 전체 source archive |
 | Department | 이 종류의 목표에서 어떤 Lens 후보를 고르는가? | 후보 Lens, 최대 선택 수, 숙의 규칙 | 상주 agent 조직도 |
 | ResearchLaneCard | 어떤 출처 묶음을 조사하는가? | corpus 경계, 출처 tier, stop rule | 장기 persona |
 | Assignment | 이번 실행에서 무엇을 결합하는가? | goal, 선택 Lens, Executor, 권한, budget, 입력 digest | 재사용 Registry 정의의 수정 |
@@ -56,6 +58,11 @@ Executor는 `lens-reviewer`, `researcher`, `implementation-engineer`, `verifier`
 둔다. 이는 네 명의 상주 agent를 반드시 만든다는 뜻이 아니다. 한 실행 주체가 허용된
 경계 안에서 여러 Assignment를 순차적으로 수행할 수 있다.
 
+Expertise Pack은 다섯 번째 Executor가 아니다. 같은 `implementation-engineer`나
+`lens-reviewer`가 route에서 선택된 전문가 기준을 적용한다. 고유 tool, 권한,
+sandbox 또는 context isolation이 필요하다는 평가가 있을 때만 specialist Executor를
+별도로 검토한다.
+
 ## 선택과 컨텍스트 절약
 
 1. task의 명시적 위험과 trigger로 후보 Lens를 정렬한다.
@@ -67,6 +74,28 @@ Executor는 `lens-reviewer`, `researcher`, `implementation-engineer`, `verifier`
 
 선택되지 않은 Lens 정의와 archive 문서는 prompt에 넣지 않는다. Registry 전체를
 에이전트에게 전달하는 대신 Assignment에 필요한 LensCard만 투영한다.
+
+## Expertise Pack과 research gate
+
+route v2는 task trigger로 active 또는 pilot Expertise Pack을 최대 한 개 선택하고,
+그 안에서 기본과 직접 관련된 Decision Guide를 최대 네 개 선택한다.
+
+```text
+stable/versioned guide로 충분 → reuse
+현재 사례가 결정에 필요      → contextualize
+팩 source 재검증              → refresh
+중요한 기준인데 팩이 없음     → discover
+```
+
+`reuse`는 추가 research를 만들지 않는다. 나머지 implementation·review route는
+`gate=open` 상태로 유효한 계획을 반환하지만 실행 준비는 되지 않는다. bounded research
+artifact의 digest로 같은 목표를 다시 route해 `gate=satisfied`가 된 뒤 기존 Assignment
+DAG를 실행한다. research intent는 자신의 read-only Assignment 안에서
+`gate=in-plan`으로 조사할 수 있다.
+
+Research gate를 DAG 밖 preflight로 둔 이유는 Deep의 독립 Lens 세 개와 기존
+Assignment 최대 5개를 그대로 유지하기 위해서다. 외부 조사가 없으면 일반 작업
+경로와 비용은 늘어나지 않는다.
 
 ## 증거 등급
 

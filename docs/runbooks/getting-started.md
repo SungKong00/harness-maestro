@@ -6,8 +6,8 @@ status: active
 authority: repository
 owner: harness-maestro
 summary: Harness Maestro를 설치하고 프로젝트를 초기화해 일반 작업과 선택적 관리 흐름을 실행하는 운용 절차.
-scope: [setup, cli, skills, adapter, governance]
-last_verified: 2026-07-24
+scope: [setup, cli, skills, adapter, governance, expertise]
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -48,23 +48,24 @@ maestro --help
 
 ## 2. Skill 연결
 
-평소 개발에 필요한 기본 Skill은 `maestro` 하나다.
+`maestro`가 workflow를 소유하고, 선택된 전문성 팩과 관리 Skill을 필요할 때만
+호출한다. 저장소의 기본 Skill 세트를 연결한다.
 
 ```bash
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
-ln -s "$maestro_source/skills/maestro" ~/.agents/skills/maestro
+for skill in maestro maestro-adapter-builder maestro-govern \
+  maestro-product-design maestro-expertise-builder
+do
+  ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
+done
 readlink ~/.agents/skills/maestro
 ```
 
-초기 설정이나 custom 문서 시스템 진단이 필요하면
-`maestro-adapter-builder`, 누적 기록의 읽기 전용 검토가 필요하면
-`maestro-govern`을 선택적으로 연결한다.
-
-```bash
-ln -s "$maestro_source/skills/maestro-adapter-builder" ~/.agents/skills/maestro-adapter-builder
-ln -s "$maestro_source/skills/maestro-govern" ~/.agents/skills/maestro-govern
-```
+`maestro-product-design`은 첫 파일럿 Expertise Pack이고 평소 직접 호출할 필요가
+없다. route가 선택한 경우에만 해당 Skill과 필요한 guide를 연다.
+`maestro-expertise-builder`도 반복된 공백의 project-local candidate를 만들 때만
+명시적으로 사용한다.
 
 기존 경로가 있으면 먼저 실제 target을 확인한다. `ln`은 기존 경로를 덮어쓰지
 않는다. 연결 뒤에는 agent client를 재시작해 Skill 목록을 다시 읽게 한다.
@@ -146,6 +147,19 @@ maestro validate-plan --plan "$maestro_route" --json
 rm -- "$maestro_route"
 ```
 
+validation의 `execution_status`가 `RESEARCH_REQUIRED`이면 exit code 4를 반환하며
+Assignment를 실행하지 않는다. route의 `expertise.research_requirement`에 따라
+bounded reference research를 수행하고 artifact SHA-256으로 다시 route한다.
+
+```bash
+maestro route --goal "최신 레퍼런스로 랜딩 페이지 디자인" \
+  --risk medium --intent implementation --host codex \
+  --route-version v2 --research-evidence-digest "<sha256>" --json
+```
+
+일반 디자인·개발 작업은 `mode=reuse`이므로 이 단계가 생기지 않는다. digest는
+research artifact의 내용 주소이고 source 품질을 대신 검증하지 않는다.
+
 v2의 Assignment는 Host가 실행할 정적 계획이며 실행 로그가 아니다. `plan_id`,
 dependency, Packet과 side-effect 계약은 Maestro가 검증하지만 실제 호출 모델,
 token, 시간과 성공 결과는 Host가 직접 제공해야 한다.
@@ -198,6 +212,9 @@ maestro govern report --repo /path/to/project --window 20 --json
 ```
 
 govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하지 않는다.
+반복된 전문성 공백이 있고 owner가 candidate 작성을 요청한 경우에만
+`$maestro-expertise-builder`가 `.maestro/state/candidates/expertise/` 아래에
+격리된 draft와 frozen eval을 만든다.
 
 ## 쓰기 경계 요약
 

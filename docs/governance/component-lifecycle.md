@@ -5,9 +5,9 @@ type: governance
 status: active
 authority: repository
 owner: harness-maestro
-summary: Lens, Executor, Skill, Adapter와 Convention을 증거 기반으로 개선하는 생명주기.
+summary: Lens, Executor, Expertise Pack, Decision Guide, Skill, Adapter와 Convention을 증거 기반으로 개선하는 생명주기.
 scope: [skills, src/maestro/resources/registry, docs/conventions, .maestro/state]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -16,7 +16,8 @@ sensitivity: internal
 
 ## 대상
 
-이 절차는 Lens, Executor, Department routing, Skill, Adapter, Convention과
+이 절차는 Lens, Executor, Expertise Pack, Decision Guide, Department routing,
+Skill, Adapter, Convention과
 specialist 사용 규칙에 적용한다. 실행 중인 하네스를 스스로 바로 수정하는 절차가
 아니라, 운영 신호를 격리된 후보로 바꾸고 검증한 뒤 사람이 승격하는 절차다.
 
@@ -77,6 +78,26 @@ severity, evidence, command artifact를 함께 기록해야 한다. 동일 `run_
 checker로 해결 가능한지를 판단한다. 규칙 문서나 linter로 충분한 경우 별도 agent를
 추가하지 않는다.
 
+### Expertise 후보
+
+전문성 공백은 다음 순서로 가장 작은 표면에 둔다.
+
+1. deterministic checker·schema
+2. 현재 프로젝트 Convention
+3. 기존 Expertise Pack의 Decision Guide 하나
+4. 새 Expertise Pack
+5. 고유 도구·권한·격리가 필요한 specialist Executor
+
+`$maestro-expertise-builder`는 승인된 경우
+`.maestro/state/candidates/expertise/<candidate-id>/`에만 draft, source manifest와
+frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외되며, candidate
+생성은 active Registry 변경이 아니다. `review_after`가 지난 후보는 다시 검증하거나
+기각·제거하기 전까지 평가 입력으로 사용하지 않는다.
+
+portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
+platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은
+권위가 있으면 `global`이다. 사용 횟수만으로 범위를 넓히지 않는다.
+
 ## Pilot 계약
 
 Pilot은 다음을 먼저 고정한다.
@@ -107,6 +128,8 @@ Pilot은 다음을 먼저 고정한다.
 - 정정 횟수, 심각도, rework ratio, overdesign 제거량
 - 실제 token, wall time, tool·agent 호출 수
 - 사용되지 않은 packet, 중복 조사, handoff bounce
+- 팩 없이 수행, persona만 사용, pack 사용, pack+조건부 research 비교
+- 선택 guide별 omission 방지와 pack source freshness
 
 ## Specialist 판정
 

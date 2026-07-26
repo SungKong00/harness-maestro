@@ -1,0 +1,7 @@
+interface:
+  display_name: "Maestro Product Design"
+  short_description: "Apply routed product design criteria"
+  default_prompt: "Use $maestro-product-design with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false
+

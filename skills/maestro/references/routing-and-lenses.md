@@ -8,6 +8,8 @@
 | Executor | model policy, capabilities, context isolation, packet types | domain questions |
 | Department | Lens candidates and selection limits | permanent agent organization |
 | Adapter | project facts, commands, authority choices | generic Lens content |
+| Expertise Pack | reusable expert criteria and Decision Guide routing | tools, permissions, permanent agent identity |
+| Decision Guide | one compact family of professional decision checks | full source archive, runtime log, generic persona |
 | Maestro | routing, budgets, synthesis, completion | unapproved project policy |
 
 ## Depth
@@ -48,6 +50,12 @@ handoff, and top-level model route, then adds a bounded Assignment DAG.
 - Each Assignment declares Registry-backed input and output Packet IDs and its
   own model route.
 - Managed plan generation has no semantic-validation bypass.
+- The optional `expertise` extension selects at most one pack and four guides.
+  Non-verification Assignments bind only those IDs.
+- `research_requirement.gate=open` is a preflight stop condition. Research is
+  performed outside the fixed five-Assignment DAG, then the same goal is
+  rerouted with the evidence digest. This keeps research conditional without
+  weakening Deep review isolation or increasing the Assignment cap.
 - A plan is not an actual trace. Only Host-provided results may describe calls,
   tokens, duration, retries, or outcomes.
 

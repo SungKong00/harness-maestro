@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 활성 Markdown, 외부 원본, 실행 기록과 archive를 분리하는 문서 생명주기.
 scope: [docs, .maestro/state]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -42,9 +42,18 @@ sensitivity: internal
 | 채택된 조사 | `docs/research/` | claim이 필요할 때 |
 | 과거 자료 | `docs/archive/` | 기본 제외 |
 | 실행 이벤트·비용 | `.maestro/state/**/*.jsonl` | 집계 시에만 |
+| 전문성 후보 | `.maestro/state/candidates/expertise/` | 평가·승격 검토 때만 |
+| 활성 전문가 절차 | `skills/<expertise-skill>/SKILL.md` | pack 선택 때만 |
+| 세부 판단 기준 | `skills/<expertise-skill>/references/` | guide 선택 때만 |
+| source·eval | `skills/<expertise-skill>/{evidence,evals}/` | refresh·평가 때만 |
 
 디렉터리는 실제 문서가 처음 생길 때 만든다. 빈 전문 부서나 빈 분류 폴더를 미리
 생성하지 않는다.
+
+Expertise Pack은 프로젝트 사실 문서와 다른 배포 단위다. 정상 작업은 Skill 본문과
+선택된 guide만 열며, source manifest와 evaluation을 항상 prompt에 넣지 않는다.
+runtime candidate와 research artifact는 검증 없이 `docs/`나 active Skill로
+복사하지 않는다.
 
 ## Frontmatter 계약
 

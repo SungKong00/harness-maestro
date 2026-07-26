@@ -15,7 +15,7 @@ from typing import Any
 from . import __version__
 from .errors import MaestroError
 from .project import checkout_id
-from .registry import definition_digest_maps, registry_digest
+from .registry import definition_digest_maps, load_registry, registry_digest
 from .util import (
     canonical_json,
     ensure_repo,
@@ -41,6 +41,10 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "risk",
     "route_depth",
     "selected_lenses",
+    "selected_expertise_packs",
+    "selected_decision_guides",
+    "expertise_research_mode",
+    "expertise_research_gate",
     "executor_runs",
     "primary_executor_id",
     "executor_ids",
@@ -321,6 +325,76 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             f"Unknown lenses={unknown_lenses} executors={unknown_executors}",
         )
+    selected_expertise_packs = receipt.get("selected_expertise_packs", [])
+    selected_decision_guides = receipt.get("selected_decision_guides", [])
+    expertise_research_mode = receipt.get("expertise_research_mode", "reuse")
+    expertise_research_gate = receipt.get(
+        "expertise_research_gate",
+        "not-required",
+    )
+    if (
+        not isinstance(selected_expertise_packs, list)
+        or len(selected_expertise_packs) > 1
+        or len(set(selected_expertise_packs)) != len(selected_expertise_packs)
+        or not all(
+            isinstance(item, str) and item.strip()
+            for item in selected_expertise_packs
+        )
+        or not isinstance(selected_decision_guides, list)
+        or len(selected_decision_guides) > 4
+        or len(set(selected_decision_guides)) != len(selected_decision_guides)
+        or not all(
+            isinstance(item, str) and item.strip()
+            for item in selected_decision_guides
+        )
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise Pack and Decision Guide selections exceed their bounds.",
+        )
+    unknown_packs = sorted(
+        set(selected_expertise_packs) - set(definitions["expertise_packs"])
+    )
+    registry = load_registry()
+    guide_ids = {
+        guide["guide_id"]
+        for pack in registry["expertise_packs"]
+        if pack["expertise_pack_id"] in selected_expertise_packs
+        for guide in pack["guides"]
+    }
+    unknown_guides = sorted(set(selected_decision_guides) - guide_ids)
+    if unknown_packs or unknown_guides:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"Unknown expertise packs={unknown_packs} guides={unknown_guides}",
+        )
+    if expertise_research_mode not in {
+        "reuse",
+        "contextualize",
+        "refresh",
+        "discover",
+    } or expertise_research_gate not in {
+        "not-required",
+        "satisfied",
+        "in-plan",
+        "open",
+    }:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise research mode or gate is invalid.",
+        )
+    if (
+        (expertise_research_mode == "reuse")
+        != (expertise_research_gate == "not-required")
+        or (
+            expertise_research_gate == "open"
+            and receipt.get("outcome") not in {"blocked", "no_change"}
+        )
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise research mode, gate, and outcome are inconsistent.",
+        )
     event_kind = receipt.get("kind", "run_summary")
     finding_severity = receipt.get("finding_severity")
     explicit_fingerprint = receipt.get("fingerprint")
@@ -487,9 +561,17 @@ def record_run(
             executor_id: definitions["executors"][executor_id]
             for executor_id in executor_ids
         },
+        "expertise_pack_definition_digests": {
+            pack_id: definitions["expertise_packs"][pack_id]
+            for pack_id in selected_expertise_packs
+        },
         "risk": receipt.get("risk"),
         "route_depth": receipt.get("route_depth"),
         "selected_lenses": selected_lenses,
+        "selected_expertise_packs": selected_expertise_packs,
+        "selected_decision_guides": selected_decision_guides,
+        "expertise_research_mode": expertise_research_mode,
+        "expertise_research_gate": expertise_research_gate,
         "executor_runs": receipt.get("executor_runs"),
         "primary_executor_id": receipt.get("primary_executor_id"),
         "executor_ids": executor_ids,
@@ -606,9 +688,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "registry_digest",
         "lens_definition_digests",
         "executor_definition_digests",
+        "expertise_pack_definition_digests",
         "risk",
         "route_depth",
         "selected_lenses",
+        "selected_expertise_packs",
+        "selected_decision_guides",
+        "expertise_research_mode",
+        "expertise_research_gate",
         "executor_runs",
         "primary_executor_id",
         "executor_ids",
@@ -693,8 +780,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or any(character not in "0123456789abcdef" for character in registry_digest)
     ):
         return False
-    for field in ("lens_definition_digests", "executor_definition_digests"):
+    for field in (
+        "lens_definition_digests",
+        "executor_definition_digests",
+        "expertise_pack_definition_digests",
+    ):
         digests = event.get(field)
+        if digests is None and field == "expertise_pack_definition_digests":
+            continue
         if not isinstance(digests, dict) or not all(
             isinstance(key, str)
             and isinstance(value, str)
@@ -716,6 +809,42 @@ def _valid_event(event: dict[str, Any]) -> bool:
             for item in selected_lenses
         )
         or len(set(selected_lenses)) != len(selected_lenses)
+    ):
+        return False
+    selected_expertise_packs = event.get("selected_expertise_packs", [])
+    selected_decision_guides = event.get("selected_decision_guides", [])
+    expertise_research_mode = event.get("expertise_research_mode", "reuse")
+    expertise_research_gate = event.get(
+        "expertise_research_gate",
+        "not-required",
+    )
+    if (
+        not isinstance(selected_expertise_packs, list)
+        or len(selected_expertise_packs) > 1
+        or len(set(selected_expertise_packs)) != len(selected_expertise_packs)
+        or not all(
+            isinstance(item, str) and bool(item.strip())
+            for item in selected_expertise_packs
+        )
+        or not isinstance(selected_decision_guides, list)
+        or len(selected_decision_guides) > 4
+        or len(set(selected_decision_guides)) != len(selected_decision_guides)
+        or not all(
+            isinstance(item, str) and bool(item.strip())
+            for item in selected_decision_guides
+        )
+        or expertise_research_mode
+        not in {"reuse", "contextualize", "refresh", "discover"}
+        or expertise_research_gate
+        not in {"not-required", "satisfied", "in-plan", "open"}
+        or (
+            (expertise_research_mode == "reuse")
+            != (expertise_research_gate == "not-required")
+        )
+        or (
+            expertise_research_gate == "open"
+            and event.get("outcome") not in {"blocked", "no_change"}
+        )
     ):
         return False
     executor_runs = event.get("executor_runs")
@@ -1009,9 +1138,18 @@ def _definition_digests_match(
     executor_definitions = event["executor_definition_digests"]
     if set(executor_definitions) != set(event["executor_ids"]):
         return False
-    return all(
+    if not all(
         expected["executors"].get(executor_id) == digest
         for executor_id, digest in executor_definitions.items()
+    ):
+        return False
+    pack_ids = event.get("selected_expertise_packs", [])
+    pack_definitions = event.get("expertise_pack_definition_digests", {})
+    if set(pack_definitions) != set(pack_ids):
+        return False
+    return all(
+        expected["expertise_packs"].get(pack_id) == digest
+        for pack_id, digest in pack_definitions.items()
     )
 
 
@@ -1440,6 +1578,15 @@ def govern_report(
         event.get("project_convention_action", "none")
         for event in unique_runs
     )
+    expertise_pack_usage = Counter(
+        pack_id
+        for event in unique_runs
+        for pack_id in event.get("selected_expertise_packs", [])
+    )
+    expertise_research_modes = Counter(
+        event.get("expertise_research_mode", "reuse")
+        for event in unique_runs
+    )
     return {
         "schema_version": "maestro_govern_report_v1",
         "repo_root": str(repo),
@@ -1499,6 +1646,10 @@ def govern_report(
         "experiment_arms": dict(sorted(experiment_arms.items())),
         "project_convention_actions": dict(
             sorted(project_convention_actions.items())
+        ),
+        "expertise_pack_usage": dict(sorted(expertise_pack_usage.items())),
+        "expertise_research_modes": dict(
+            sorted(expertise_research_modes.items())
         ),
         "writes_performed": False,
         "promotion_supported": False,

@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro의 숙의, 컨텍스트, 오케스트레이션, 자가개선과 문서 구조에 영향을 준 연구·공학 자료와 실제 채택 범위.
 scope: [routing, research, docs, skills, self-improvement]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -323,6 +323,52 @@ exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않�
 구현 범위와 HTML Inspector의 도입 게이트는
 [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)에 고정한다.
 
+## 8. 전문가 역할은 persona가 아니라 선택형 판단 기준으로 만든다
+
+### 확인한 형식과 저장소
+
+- [Agent Skills specification](https://agentskills.io/specification)은 최소
+  `SKILL.md`, 필요할 때 읽는 `references/`와 progressive disclosure를 정의하고,
+  긴 세부 자료를 분리해 작은 reference를 on-demand로 읽도록 권한다.
+- [Anthropic Skills](https://github.com/anthropics/skills)은 self-contained Skill
+  package가 반복 가능한 specialized workflow를 제공하되 실제 환경에서 충분히
+  평가해야 한다고 명시한다.
+- [gstack Skill guide](https://github.com/garrytan/gstack/blob/main/docs/skills.md)는
+  planning, design review, engineering review, QA처럼 작업별 전문 절차를 별도
+  Skill로 제공한다. 특히 design review는 정보 구조, interaction state, user
+  journey, design system, responsive·accessibility를 구체적인 pass로 나눠
+  generic persona보다 omission 경계가 분명하다.
+- 같은 gstack의 project learning은 source와 referenced file을 가진 compact
+  learning과 stale pruning 사례를 제공한다.
+- [Superpowers](https://github.com/obra/superpowers)는 composable Skill과 단계별
+  workflow, skill 작성·평가 절차를 함께 제공한다.
+
+### Maestro에 반영한 동작
+
+- `Expertise Pack`은 반복 가능한 전문가 절차이고, `Decision Guide`는 typography,
+  hierarchy, transaction isolation처럼 한 종류의 판단 기준이다.
+- Pack은 Lens가 아니다. Lens는 finding과 reject 조건을 소유하고, Pack은 작업자가
+  적용할 재사용 절차를 제공한다.
+- Pack은 Executor도 아니다. 선택된 Guide가 늘어도 모델·도구·권한·agent 수를
+  자동으로 늘리지 않는다.
+- route는 pack 최대 한 개와 guide 최대 네 개만 반환하고, source manifest와 eval은
+  정상 작업에서 열지 않는다.
+- stable·versioned 기준은 재사용하고, volatile한 현재 사례나 없는 전문 분야만
+  research gate로 조사한다.
+- candidate는 프로젝트 state에 격리하고 no-pack, persona-only, pack,
+  pack+conditional-research frozen comparison 뒤에만 승격을 검토한다.
+
+### 차용하지 않은 부분
+
+gstack의 구체적인 persona, 0–10 rating, 모든 UI 작업의 고정 review chain, 자동
+session learning 재주입을 그대로 복사하지 않는다. 이런 선택은 gstack의 제품
+workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 경로 원칙에서는
+불필요한 호출과 project-specific preference를 만들 수 있다.
+
+첫 파일럿과 research gate 계약은
+[v0.4 Expertise Pack 계획](../plans/active/v0.4-expertise-packs.md),
+저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)에 있다.
+
 ## 세부 동작과 근거 연결표
 
 | 실제 동작 | 주 근거 | 저장소 권위 |
@@ -337,6 +383,7 @@ exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않�
 | custom Adapter는 handoff만 하고 임의 명령은 실행하지 않음 | 최소 커널과 프로젝트 권한 경계 | [ADR-0005](../decisions/0005-project-local-extension-boundary.md) |
 | 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
 | v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md) |
+| 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
 
 ## 아직 검증하지 않았거나 주장하지 않는 것
 

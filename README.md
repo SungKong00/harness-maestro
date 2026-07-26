@@ -11,6 +11,7 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [전체 사용 흐름](#전체-사용-흐름) · [빠른 시작](#빠른-시작) ·
 [언제 무엇을 쓰나요?](#언제-무엇을-쓰나요) ·
 [문서 지도](docs/README.md) ·
+[전문성 팩 계획](docs/plans/active/v0.4-expertise-packs.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
 
 ## 먼저 이것만 알면 됩니다
@@ -41,6 +42,8 @@ maestro init → project/architecture 초안 작성 → status → upgrade → d
 "$maestro 로그인 API를 수정해줘"
               │
               ├─ 관련 문서만 선택
+              ├─ 작업에 맞는 전문가 기준만 선택
+              ├─ 최신 사례가 필요할 때만 reference research
               ├─ 위험에 맞는 Fast / Standard / Deep 경로 선택
               ├─ 필요한 경우 독립 Lens 검토
               ├─ 한 명의 writer가 구현
@@ -61,6 +64,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 새 프로젝트에 처음 적용 | `maestro init` 또는 `$maestro-adapter-builder` | Markdown 문서 체계와 프로젝트 설정을 미리보기 후 생성 |
 | 기능 구현·버그 수정·리팩터링 | `$maestro <요청>` | 관련 문서만 읽고 작업 위험에 맞춰 구현·검증 |
 | 패턴·아키텍처 선택 | `$maestro <요청>` | 필요한 Lens가 독립 검토하고 중요한 충돌만 비교 |
+| 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide만 선택하고 최신 사례가 필요할 때만 조사 |
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
@@ -95,7 +99,11 @@ uv tool install /path/to/harness-maestro
 ```bash
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
-ln -s "$maestro_source/skills/maestro" ~/.agents/skills/maestro
+for skill in maestro maestro-adapter-builder maestro-govern \
+  maestro-product-design maestro-expertise-builder
+do
+  ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
+done
 ```
 
 기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
@@ -148,13 +156,18 @@ Maestro workflow는 다음 순서로 진행합니다.
 2. 결제 webhook과 관련된 ADR·Convention만 추가로 선택합니다.
 3. 변경 범위와 위험을 보고 Fast, Standard, Deep 중 가장 작은 충분한 경로를
    고릅니다.
-4. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
+4. 등록된 Expertise Pack이 있으면 작업에 필요한 전문가 판단 가이드만 최대 네 개
+   선택합니다. 예를 들어 한글 UI는 font·글자 위계 검증을 추가합니다.
+5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 먼저 작은 reference
+   research를 하고, 결과 digest로 같은 작업을 다시 route합니다. 일반 작업은 이
+   단계를 건너뜁니다.
+6. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
    먼저 검토합니다.
-5. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
+7. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
    실패 영향으로 결정합니다.
-6. 한 명의 writer가 코드를 수정하고 test·lint·schema·diff 같은 실제 artifact로
+8. 한 명의 writer가 코드를 수정하고 test·lint·schema·diff 같은 실제 artifact로
    검증합니다.
-7. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
+9. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
    성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
 
 ## 무엇을 해결하나요?
@@ -163,6 +176,10 @@ Maestro workflow는 다음 순서로 진행합니다.
   충돌만 한 번 반박합니다.
 - **컨텍스트 절약** — `project`, `architecture`, 관련 ADR·Convention만 제한된
   예산 안에서 선택합니다.
+- **선택형 전문성** — generic persona 대신 실제 판단 기준을 Pack과 작은 Guide로
+  두고, 최대 한 팩·네 가이드만 읽습니다.
+- **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
+  전문 분야에서만 research gate를 엽니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.
 - **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
@@ -191,7 +208,7 @@ project/
 │   ├── project.json        # 기계가 읽는 프로젝트 설정
 │   ├── managed.json        # Maestro 관리 경계
 │   ├── lock.json           # framework·registry 기준선
-│   └── state/              # Git에서 제외되는 compact 실행 기록
+│   └── state/              # Git에서 제외되는 compact 실행 기록과 전문성 후보
 └── docs/
     ├── README.md           # 활성 문서 지도
     ├── project.md          # 목표·사용자·범위·비목표·우선순위
@@ -213,6 +230,7 @@ project/
 | 설치, 초기화, 일반 운용 | [시작 및 운용 가이드](docs/runbooks/getting-started.md) |
 | 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
 | v0.3 Assignment Plan·검증·HTML 후속 계획 | [v0.3 Typed Plan 계획](docs/plans/active/v0.3-typed-plan.md) |
+| 전문가 기준 재사용·조건부 조사·후보 관리 | [v0.4 Expertise Pack 계획](docs/plans/active/v0.4-expertise-packs.md) |
 | Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
 | 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
 | 개선 후보가 Convention이 되는 조건 | [구성요소 생명주기](docs/governance/component-lifecycle.md) |

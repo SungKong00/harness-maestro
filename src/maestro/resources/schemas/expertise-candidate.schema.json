@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-candidate.schema.json",
+  "title": "Harness Maestro Project-local Expertise Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "expertise_pack_id",
+    "status",
+    "portability",
+    "owner",
+    "review_after",
+    "problem",
+    "reusable_when",
+    "not_for",
+    "existing_coverage",
+    "evidence_refs",
+    "proposed_guides",
+    "evaluation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_candidate_v1"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "expertise_pack_id": {
+      "$ref": "#/$defs/id"
+    },
+    "status": {
+      "const": "candidate"
+    },
+    "portability": {
+      "enum": [
+        "global",
+        "profile",
+        "project"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_after": {
+      "type": "string",
+      "format": "date"
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reusable_when": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "not_for": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "existing_coverage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "proposed_guides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guide_id",
+          "failure_prevented",
+          "decision_checks",
+          "freshness"
+        ],
+        "properties": {
+          "guide_id": {
+            "$ref": "#/$defs/id"
+          },
+          "failure_prevented": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision_checks": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 12,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "freshness": {
+            "enum": [
+              "stable",
+              "versioned",
+              "volatile"
+            ]
+          }
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "cases_path",
+        "pass_criteria",
+        "regression_criteria"
+      ],
+      "properties": {
+        "baseline": {
+          "enum": [
+            "no-pack",
+            "persona-only",
+            "existing-pack"
+          ]
+        },
+        "cases_path": {
+          "$ref": "#/$defs/safeRelativePath"
+        },
+        "pass_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "regression_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!\\.)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+    }
+  }
+}
