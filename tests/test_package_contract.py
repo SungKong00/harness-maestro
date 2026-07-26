@@ -73,6 +73,10 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("checkout --detach v0.2.2", readme)
         self.assertIn("uv tool install /path/to/harness-maestro", readme)
         self.assertIn("command -v maestro", readme)
+        self.assertIn("maestro --version", readme)
+        self.assertIn("maestro doctor --repo", readme)
+        self.assertIn("--host codex", readme)
+        self.assertIn("maestro convention draft", readme)
         self.assertIn("restart the agent client", readme)
         self.assertNotIn(
             "python3 -m pip install -e /path/to/harness-maestro",

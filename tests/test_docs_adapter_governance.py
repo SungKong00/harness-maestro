@@ -22,6 +22,60 @@ from maestro.project import checkout_id, inspect_adapter
 
 
 class DocumentSelectionTests(unittest.TestCase):
+    def test_evidence_is_optional_until_the_task_opens_research(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            docs = repo / "docs"
+            docs.mkdir()
+            (docs / "README.md").write_text(
+                canonical_document(
+                    "doc-map",
+                    summary="Documentation map.",
+                    body="# Documentation map\n",
+                ).replace("type: convention", "type: map"),
+                encoding="utf-8",
+            )
+            evidence = docs / "research/design-foundations.md"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text(
+                canonical_document(
+                    "design-foundations",
+                    summary="Documentation governance research evidence.",
+                    body=(
+                        "# Documentation governance\n\n"
+                        + ("documentation governance evidence " * 1200)
+                    ),
+                ).replace("type: convention", "type: evidence"),
+                encoding="utf-8",
+            )
+
+            routine = select_documents(
+                repo,
+                "문서 링크를 기계적으로 검사",
+                ["documentation-governance"],
+            )
+            research = select_documents(
+                repo,
+                "문서 거버넌스 근거와 출처를 리서치",
+                ["documentation-governance"],
+            )
+
+            routine_paths = [item["path"] for item in routine["documents"]]
+            optional_paths = [
+                item["path"] for item in routine["optional_documents"]
+            ]
+            research_paths = [item["path"] for item in research["documents"]]
+            self.assertNotIn("docs/research/design-foundations.md", routine_paths)
+            self.assertIn("docs/research/design-foundations.md", optional_paths)
+            self.assertIn("docs/research/design-foundations.md", research_paths)
+            self.assertEqual(routine["documents"], routine["required_documents"])
+            self.assertEqual("sufficient", routine["evidence_status"])
+            self.assertLess(
+                routine["selection_trace"]["required_document_bytes"],
+                research["selection_trace"]["required_document_bytes"],
+            )
+
     def test_selection_uses_active_matches_and_never_loads_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

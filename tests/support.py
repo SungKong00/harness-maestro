@@ -47,7 +47,12 @@ def canonical_document(
         f"status: {status}\n"
         "authority: repository\n"
         "owner: test\n"
+        f"topic: {doc_id}\n"
+        "scope: [test]\n"
         f"summary: {summary}\n"
+        "last_verified: 2026-07-24\n"
+        "supersedes: []\n"
+        "sensitivity: internal\n"
         "---\n\n"
         f"{body}"
     )

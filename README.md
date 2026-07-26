@@ -70,6 +70,8 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 판단한 뒤 구현 | `$maestro <요청>` | `decide`로 역할별 판단 후 검증된 결정 번들만 `enact`하여 구현 |
 | 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide를 역할별로 적용하고 최신 사례가 필요할 때만 조사 |
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
+| Codex Desktop 설치 배선 확인 | `maestro doctor --host codex` | CLI 버전과 루트·companion Skill 연결을 읽기 전용 검사 |
+| 프로젝트 Convention 초안 | `maestro convention draft` | preview/apply 뒤에도 활성화되지 않는 정형 draft 생성 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
 | 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
@@ -87,6 +89,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 git clone https://github.com/SungKong00/harness-maestro.git /path/to/harness-maestro
 uv tool install --editable /path/to/harness-maestro
 command -v maestro
+maestro --version
 ```
 
 검토된 tag가 발행된 뒤 재현 가능한 버전을 고정할 때:
@@ -112,6 +115,12 @@ done
 
 기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
 **restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
+
+연결 상태와 editable 설치 버전을 함께 확인할 수 있습니다.
+
+```bash
+maestro doctor --repo /path/to/harness-maestro --host codex --json
+```
 
 ### 3. 프로젝트마다 한 번: 초기화
 
@@ -171,7 +180,8 @@ Maestro workflow는 다음 순서로 진행합니다.
 
 1. `docs/project.md`와 `docs/architecture.md`에서 프로젝트 목표와 현재 경계를
    확인합니다.
-2. 결제 webhook과 관련된 ADR·Convention만 추가로 선택합니다.
+2. 결제 webhook과 관련된 ADR·Convention만 필수 문서로 선택합니다. 큰 research
+   문서와 active plan은 조건부 후보로만 반환하고 근거 경계가 열릴 때만 읽습니다.
 3. 변경 범위와 위험을 보고 Fast, Standard, Deep 중 가장 작은 충분한 경로를
    고릅니다.
 4. 등록된 Expertise Pack이 있으면 작업에 필요한 전문가 판단 가이드만 최대 네 개

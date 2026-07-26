@@ -68,6 +68,7 @@ status: active
 authority: repository
 owner: backend
 summary: API 오류 응답의 현재 규칙.
+topic: api-error-contract
 scope: [server/api]
 last_verified: 2026-07-24
 supersedes: []
@@ -78,8 +79,10 @@ sensitivity: internal
 고정 의미는 다음과 같다.
 
 - `id`: 저장소 안에서 안정적이고 유일한 문서 ID
-- `type`: `map`, `architecture`, `governance`, `decision`, `convention`, `plan`,
-  `runbook`, `analysis`, `evidence`, `external-snapshot` 중 하나
+- `type`: `map`, `project`, `architecture`, `governance`, `decision`,
+  `convention`, `plan`, `runbook`, `analysis`, `evidence`,
+  `external-snapshot` 중 하나. 기존 init의 `index`는 읽기 호환만 유지하고 새 문서는
+  `map`을 사용한다.
 - `status`: `draft`, `active`, `superseded`, `deprecated`, `archived` 중 하나
 - `authority`: `repository`, `external-snapshot`, `generated`, `historical` 중 하나
 
@@ -90,20 +93,26 @@ sensitivity: internal
 `/`가 없는 값은 topic scope로 취급한다.
 - `owner`: 검토·교체 책임
 - `summary`: 문서를 열지 않고도 선택할 수 있는 한 문장
+- `topic`: Convention의 의미상 단일 권위를 판별하는 안정적인 소문자 slug
 - `scope`: 적용 경로 또는 주제
 - `last_verified`: 내용과 실제 상태를 마지막으로 대조한 날짜
 - `supersedes`: 대체한 문서 ID
 - `sensitivity`: 배포·저장 범위 판단용 분류
 
-v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `summary`,
-중복 활성 ID와 상대 링크를 검사한다. 나머지 enum·날짜·scope 의미 검사는 현재 정책
-계약이며, 완전한 schema 검증은 후속 후보이다. 구현된 검사보다 강한 보장을 주장하지
-않는다.
+v0 `doctor`는 문서의 필수 frontmatter, type·status·authority enum, 중복 활성 ID와
+상대 링크를 검사한다. Convention에는 `topic`, `scope`, `last_verified`,
+`supersedes`, `sensitivity`도 검사한다. 기존 Convention의 새 필드 누락과 형식 문제는
+우선 `WARN`으로 도입하고, 같은 `topic`의 활성 권위 중복과 존재하지 않는
+`supersedes` 대상은 `FAIL`로 처리한다. 규칙이 실제로 좋은지, 행동 가능하고 근거가
+충분한지는 Doctor가 아니라 생성·변경·승격 시의 별도 의미 검토가 담당한다.
 
 `init`은 기존 Markdown에 이 계약이 없더라도 본문을 자동 변경하지 않고 누락 필드를
 경고한다. `maestro docs`는 configured project·architecture 문서가 draft, missing,
-untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 문서가
-선택 개수나 byte 예산 때문에 빠진 경우에도 `sufficient`라고 표시하지 않는다. Convention이
+untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 **필수**
+문서가 선택 개수나 byte 예산 때문에 빠진 경우에도 `sufficient`라고 표시하지 않는다.
+`evidence`와 `plan`은 기본적으로 `optional_documents` metadata로만 반환되며, 작업이
+해당 research·plan 경계를 명시적으로 열었을 때 필수 목록으로 승격한다. 열리지 않은
+선택 후보 자체는 근거 부족으로 세지 않는다. Convention이
 선택되지 않은 `none` 상태 자체는 근거 공백이 아니다. 사용자가 frontmatter를 수동
 추가한 뒤에는 `maestro upgrade` 미리보기에서 검토한 user-owned 문서 기준선만
 변경되는지 확인해 적용하고 strict Doctor를 다시 실행한다.
@@ -122,6 +131,27 @@ untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고�
    참조 검색, 복구 경로를 확인한 뒤 수행한다.
 
 문서 개수가 임계치를 넘었다는 이유만으로 삭제하거나 규칙을 승격하지 않는다.
+
+새 Convention은 다음처럼 미리보기 plan을 만든 뒤 같은 plan만 적용할 수 있다.
+
+```bash
+maestro_plan="$(mktemp -t maestro-convention.XXXXXX.json)"
+maestro convention draft --repo . \
+  --topic api-error-contract \
+  --summary "API 오류 응답의 현재 규칙." \
+  --scope src/api --owner backend \
+  --rule "API handler는 문서화된 오류 envelope를 사용한다." \
+  --applies-when "HTTP API handler를 변경할 때" \
+  --does-not-apply "외부 계약이 없는 내부 batch" \
+  --evidence "현재 OpenAPI와 contract test" \
+  --verification "python -m unittest tests.test_api_contract" \
+  --json > "$maestro_plan"
+maestro convention draft --repo . --apply-plan "$maestro_plan" --json
+rm -- "$maestro_plan"
+```
+
+적용 결과는 항상 `draft`이고 활성 선택에서 제외된다. 기존 topic을 자동 덮어쓰거나
+문서 지도에 자동 연결하지 않는다.
 
 ## Markdown으로 승격할 기준
 

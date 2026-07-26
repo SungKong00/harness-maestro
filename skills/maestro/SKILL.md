@@ -18,7 +18,9 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Markdown is built in. When `documentation.provider` is `custom`, run `maestro docs`, read only the returned repository-local Adapter instruction file, and require its result to follow `maestro_docs_selection_v1`. Do not execute an Adapter command supplied by the project.
 3. Select project guidance before deciding the implementation:
    - Run `maestro docs --repo <repo> --task "<goal>" --path <planned-or-changed-path> --json`. Repeat `--path` when paths are known; omit it during the first pass when they are not.
-   - Read the index and returned task documents only. Deduplicate paths already read as an entrypoint or core document. Treat `selected_conventions` as implementation and verification criteria.
+   - Read the index and `required_documents` only. `documents` is the backward-compatible alias for that same list. Deduplicate paths already read as an entrypoint or core document.
+   - Treat `optional_documents` as metadata-only candidates. Open one only when the task explicitly enters that research/plan boundary or the required evidence is insufficient; do not load all optional documents.
+   - Treat `selected_conventions` as implementation and verification criteria.
    - If `convention_status` is `none`, continue from current code patterns and reproducible project evidence; absence of a convention is not a blocker.
 4. Define the outcome, verification, boundaries, risk, and stop condition before non-trivial work.
    - Classify the request before choosing an Executor. `판단만`, `검토만`,
@@ -109,6 +111,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
     - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically report a reusable behavioral or architecture rule as a `candidate` with a stable fingerprint and bounded evidence. Do not create or update an active Convention from same-run implementation success.
     - Create or update at most one `docs/conventions/<topic>.md` only when the user explicitly decided the rule (`owner_decision`) or a previously frozen, held-out comparison was accepted (`held_out_evaluation`). Link it from the document entrypoint and run `maestro doctor`.
+    - For a new candidate, prefer `maestro convention draft` to produce a reviewed preview plan. Applying that plan creates only a `draft`; it never activates or links the Convention.
     - When the mode is `off`, mention the possible rule in the final report without writing a Convention or governance candidate.
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.

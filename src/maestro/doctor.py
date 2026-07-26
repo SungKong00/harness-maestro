@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -8,10 +10,12 @@ from .documents import (
     REQUIRED_DOCUMENT_FIELDS,
     active_documents,
     broken_links,
+    frontmatter_list,
     frontmatter_fields,
     scan_document_paths,
 )
 from .errors import MaestroError
+from .host import host_installation_checks
 from .project import (
     AGENTS_BEGIN,
     AGENTS_END,
@@ -335,7 +339,11 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
     return errors
 
 
-def doctor_report(repo_path: str | Path) -> dict[str, Any]:
+def doctor_report(
+    repo_path: str | Path,
+    *,
+    host_id: str | None = None,
+) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     checks: list[dict[str, str]] = []
     required = [
@@ -600,6 +608,20 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
         )
     )
     allowed_statuses = {"active", "draft", "superseded", "deprecated", "archived"}
+    allowed_types = {
+        "map",
+        "index",
+        "project",
+        "architecture",
+        "governance",
+        "decision",
+        "convention",
+        "plan",
+        "runbook",
+        "analysis",
+        "evidence",
+        "external-snapshot",
+    }
     allowed_authorities = {
         "repository",
         "external-snapshot",
@@ -609,6 +631,8 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
     invalid_values: dict[str, list[str]] = {}
     for path, metadata in indexed_metadata:
         problems: list[str] = []
+        if metadata.get("type") and metadata["type"] not in allowed_types:
+            problems.append(f"unsupported type={metadata['type']!r}")
         if metadata.get("status") and metadata["status"] not in allowed_statuses:
             problems.append(f"unsupported status={metadata['status']!r}")
         if metadata.get("authority") and metadata["authority"] not in allowed_authorities:
@@ -624,6 +648,115 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
             f"invalid={invalid_values}",
             "Use the documented status and authority vocabulary."
             if invalid_values
+            else "",
+        )
+    )
+
+    document_ids = {
+        metadata.get("id", "")
+        for _, metadata in indexed_metadata
+        if metadata.get("id")
+    }
+    convention_metadata_issues: dict[str, list[str]] = {}
+    convention_supersession_issues: dict[str, list[str]] = {}
+    active_topics: dict[str, list[str]] = {}
+    convention_fields = {
+        "topic",
+        "scope",
+        "last_verified",
+        "supersedes",
+        "sensitivity",
+    }
+    for path, metadata in indexed_metadata:
+        if metadata.get("type") != "convention":
+            continue
+        issues: list[str] = []
+        missing = sorted(
+            field
+            for field in convention_fields
+            if field not in metadata or not metadata[field].strip()
+        )
+        if missing:
+            issues.append(f"missing={missing}")
+        topic = metadata.get("topic")
+        if topic and re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", topic) is None:
+            issues.append("topic must be a lowercase ASCII slug")
+        scopes = frontmatter_list(metadata.get("scope"))
+        if "scope" in metadata and not scopes:
+            issues.append("scope must contain at least one path or topic")
+        for scope in scopes:
+            normalized = scope.replace("\\", "/")
+            if (
+                normalized.startswith("/")
+                or normalized.startswith("./")
+                or ".." in Path(normalized).parts
+            ):
+                issues.append(f"unsafe scope={scope!r}")
+        last_verified = metadata.get("last_verified")
+        if metadata.get("status") == "active":
+            try:
+                if last_verified is None:
+                    raise ValueError
+                date.fromisoformat(last_verified)
+            except ValueError:
+                issues.append("active last_verified must use YYYY-MM-DD")
+        elif last_verified not in {None, "null"}:
+            try:
+                date.fromisoformat(last_verified)
+            except ValueError:
+                issues.append("last_verified must be null or YYYY-MM-DD")
+        sensitivity = metadata.get("sensitivity")
+        if sensitivity and sensitivity not in {"public", "internal", "restricted"}:
+            issues.append(f"unsupported sensitivity={sensitivity!r}")
+        if issues:
+            convention_metadata_issues[path] = issues
+
+        supersedes = frontmatter_list(metadata.get("supersedes"))
+        missing_targets = sorted(
+            target for target in supersedes if target not in document_ids
+        )
+        if missing_targets:
+            convention_supersession_issues[path] = [
+                f"unknown document IDs: {missing_targets}"
+            ]
+        if metadata.get("status") == "active" and topic:
+            active_topics.setdefault(topic, []).append(path)
+
+    checks.append(
+        _check(
+            "CONVENTION_METADATA",
+            "WARN" if convention_metadata_issues else "PASS",
+            f"issues={convention_metadata_issues}",
+            (
+                "Add stable topic, scope, verification date, supersession, and "
+                "sensitivity metadata before activating or revising the Convention."
+            )
+            if convention_metadata_issues
+            else "",
+        )
+    )
+    duplicate_topics = {
+        topic: paths
+        for topic, paths in active_topics.items()
+        if len(paths) > 1
+    }
+    checks.append(
+        _check(
+            "CONVENTION_TOPIC_AUTHORITY",
+            "FAIL" if duplicate_topics else "PASS",
+            f"duplicates={duplicate_topics}",
+            "Keep one active Convention authority per stable topic."
+            if duplicate_topics
+            else "",
+        )
+    )
+    checks.append(
+        _check(
+            "CONVENTION_SUPERSESSION",
+            "FAIL" if convention_supersession_issues else "PASS",
+            f"issues={convention_supersession_issues}",
+            "Point supersedes only to an existing document ID."
+            if convention_supersession_issues
             else "",
         )
     )
@@ -761,6 +894,9 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
             )
         )
 
+    if host_id is not None:
+        checks.extend(host_installation_checks(host_id))
+
     failures = [item for item in checks if item["status"] == "FAIL"]
     warnings = [item for item in checks if item["status"] == "WARN"]
     return {
@@ -775,4 +911,5 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
         },
         "writes_performed": False,
         "project_id": project.get("project_id") if project else None,
+        "host_id": host_id,
     }

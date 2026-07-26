@@ -53,8 +53,10 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro upgrade --repo <path> --json` | 현재 init 계약으로 관리 파일 변경을 미리보기 | 없음 |
 | `maestro upgrade --repo <path> --apply-plan <plan> --json` | 검토한 upgrade plan만 적용 | 저장소 내부의 소유 경로만 |
 | `maestro status --repo <path> --json` | 초기화·Doctor·upgrade 필요 상태를 요약 | 없음 |
-| `maestro doctor --repo <path> --json` | 상태, managed hash, registry, 문서 링크 검사 | 없음 |
-| `maestro docs --repo <path> --task "<goal>" --json` | 관련 활성 문서의 경로와 digest 선택 | 없음 |
+| `maestro doctor --repo <path> [--host codex] --json` | 상태, managed hash, registry, 문서 링크와 선택적 Codex 설치 배선 검사 | 없음 |
+| `maestro docs --repo <path> --task "<goal>" --json` | 필수 활성 문서와 조건부 research·plan 후보의 경로와 digest 선택 | 없음 |
+| `maestro convention draft ... --json` | 새 Convention의 비활성 draft 생성 plan 미리보기 | 없음 |
+| `maestro convention draft --apply-plan <plan> --json` | 검토한 동일 plan으로 draft 한 건 생성 | `docs/conventions/`의 새 draft 한 건 |
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 optional Expertise Pack·research gate를 검증 | 없음 |
 | `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
@@ -88,7 +90,8 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 ### 일상 작업
 
 1. 목표와 되돌리기 어려움으로 위험도를 정한다.
-2. `docs`로 관련 문서를 좁힌다.
+2. `docs`로 관련 문서를 좁힌다. 기본적으로 `required_documents`만 읽고,
+   `optional_documents`의 research·plan은 해당 근거 경계가 열릴 때만 추가한다.
 3. `route`가 Fast, Standard, Deep 중 가장 작은 충분한 경로를 만든다.
 4. 방향이 이미 정해진 작은 변경은 route v2로 정규화해 Assignment 의존 관계와
    Packet·권한 계약을 실행 전에 검사한다.

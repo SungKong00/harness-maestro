@@ -6,11 +6,16 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
+from . import __version__
 from .decisions import (
     build_decision_plan,
     build_execution_plan,
     validate_decision_plan,
     validate_specialist_packet,
+)
+from .conventions import (
+    apply_convention_draft_plan,
+    build_convention_draft_plan,
 )
 from .doctor import doctor_report
 from .documents import select_documents
@@ -47,6 +52,11 @@ def _emit(value: dict[str, Any], as_json: bool) -> None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="maestro")
+    root.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     commands = root.add_subparsers(dest="command", required=True)
 
     init = commands.add_parser("init", help="Preview or apply a safe project initialization plan")
@@ -68,6 +78,11 @@ def parser() -> argparse.ArgumentParser:
 
     doctor = commands.add_parser("doctor", help="Run read-only harness checks")
     doctor.add_argument("--repo", default=".")
+    doctor.add_argument(
+        "--host",
+        choices=["codex"],
+        help="Also inspect the selected agent host's local CLI and Skill wiring",
+    )
     doctor.add_argument("--strict", action="store_true")
     doctor.add_argument("--json", action="store_true")
 
@@ -82,6 +97,32 @@ def parser() -> argparse.ArgumentParser:
         help="Repository-relative planned or changed path; repeat as needed",
     )
     docs.add_argument("--json", action="store_true")
+
+    convention = commands.add_parser(
+        "convention",
+        help="Preview or apply project Convention authoring operations",
+    )
+    convention_commands = convention.add_subparsers(
+        dest="convention_command",
+        required=True,
+    )
+    draft = convention_commands.add_parser(
+        "draft",
+        help="Create a reviewed draft plan; never activate a Convention",
+    )
+    draft.add_argument("--repo", default=".")
+    draft.add_argument("--topic")
+    draft.add_argument("--summary")
+    draft.add_argument("--scope", action="append", default=[])
+    draft.add_argument("--owner")
+    draft.add_argument("--rule")
+    draft.add_argument("--applies-when", action="append", default=[])
+    draft.add_argument("--does-not-apply", action="append", default=[])
+    draft.add_argument("--evidence", action="append", default=[])
+    draft.add_argument("--verification", action="append", default=[])
+    draft.add_argument("--exception", action="append", default=[])
+    draft.add_argument("--apply-plan")
+    draft.add_argument("--json", action="store_true")
 
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
     route.add_argument("--goal", required=True)
@@ -223,7 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "doctor":
-            result = doctor_report(args.repo)
+            result = doctor_report(args.repo, host_id=args.host)
             _emit(result, args.json)
             if result["status"] == "FAIL":
                 return 2
@@ -236,6 +277,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.task,
                 args.lens,
                 args.path,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "convention" and args.convention_command == "draft":
+            result = (
+                apply_convention_draft_plan(args.apply_plan, args.repo)
+                if args.apply_plan
+                else build_convention_draft_plan(
+                    args.repo,
+                    topic=args.topic,
+                    summary=args.summary,
+                    scopes=args.scope,
+                    owner=args.owner,
+                    rule=args.rule,
+                    applies_when=args.applies_when,
+                    does_not_apply=args.does_not_apply,
+                    evidence=args.evidence,
+                    verification=args.verification,
+                    exceptions=args.exception,
+                )
             )
             _emit(result, args.json)
             return 0

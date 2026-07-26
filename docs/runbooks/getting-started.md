@@ -40,6 +40,7 @@ uv tool install /path/to/harness-maestro
 
 ```bash
 command -v maestro
+maestro --version
 maestro --help
 ```
 
@@ -60,6 +61,7 @@ do
   ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
 done
 readlink ~/.agents/skills/maestro
+maestro doctor --repo /path/to/harness-maestro --host codex --json
 ```
 
 `maestro-product-design`은 첫 파일럿 Expertise Pack이고 평소 직접 호출할 필요가
@@ -69,6 +71,10 @@ readlink ~/.agents/skills/maestro
 
 기존 경로가 있으면 먼저 실제 target을 확인한다. `ln`은 기존 경로를 덮어쓰지
 않는다. 연결 뒤에는 agent client를 재시작해 Skill 목록을 다시 읽게 한다.
+`--host codex`는 전역 파일을 수정하지 않고 CLI 발견 경로, 설치 metadata 버전,
+루트 Skill과 bundled companion Skill의 filesystem 배선만 검사한다. Codex가 이미
+catalog를 다시 읽었는지는 CLI가 증명할 수 없으므로 연결 변경 뒤 재시작은 여전히
+필요하다.
 
 ## 3. 프로젝트 초기화
 
@@ -130,7 +136,10 @@ maestro route --goal "결제 webhook 재시도 변경" \
   --risk medium --intent implementation --host codex --json
 ```
 
-`docs` 결과가 `insufficient`이면 누락된 core 문서나 예산 때문에 제외된 자료를
+`docs`의 `required_documents`가 기본 읽기 목록이며 `documents`는 같은 목록의
+호환 별칭이다. `optional_documents`에는 관련된 research evidence나 active plan의
+metadata만 들어간다. 현재 작업이 해당 근거 경계를 명시적으로 열었거나 필수 근거가
+부족할 때만 하나씩 연다. `insufficient`이면 누락된 core 문서나 필수 문서 예산을
 먼저 확인한다. Lens 수를 임의로 늘리는 것은 해결책이 아니다.
 
 직접 CLI를 호출하는 기존 자동화의 기본 route 출력은 호환성을 위해 v1이다.
@@ -258,12 +267,37 @@ govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하�
 `$maestro-expertise-builder`가 `.maestro/state/candidates/expertise/` 아래에
 격리된 draft와 frozen eval을 만든다.
 
+새 프로젝트 Convention 초안이 필요하면 LLM이 임의로 활성 문서를 바로 쓰게 하지
+말고 preview/apply 경계를 사용한다.
+
+```bash
+maestro_plan="$(mktemp -t maestro-convention.XXXXXX.json)"
+maestro convention draft --repo /path/to/project \
+  --topic api-error-contract \
+  --summary "API 오류 응답의 현재 규칙." \
+  --scope src/api --owner backend \
+  --rule "API handler는 문서화된 오류 envelope를 사용한다." \
+  --applies-when "HTTP API handler를 변경할 때" \
+  --does-not-apply "외부 계약이 없는 내부 batch" \
+  --evidence "현재 OpenAPI와 contract test" \
+  --verification "python -m unittest tests.test_api_contract" \
+  --json > "$maestro_plan"
+maestro convention draft --repo /path/to/project \
+  --apply-plan "$maestro_plan" --json
+rm -- "$maestro_plan"
+```
+
+적용 결과는 `draft`이며 active 문서 선택에 들어가지 않는다. 기존 topic 권위의 수정,
+owner 결정 또는 held-out 평가를 통한 활성화는 별도 검토 작업이다.
+
 ## 쓰기 경계 요약
 
 - `status`, `doctor`, `docs`, `adapt`, `route`, `validate-plan`, `decide`,
   `validate-decision`, `enact`,
   `govern report`는 읽기 전용이다.
 - `init`, `upgrade`는 `--apply-plan`이 없으면 미리보기만 한다.
+- `convention draft`도 `--apply-plan`이 없으면 미리보기만 하며 적용해도
+  비활성 draft 한 건만 생성한다.
 - `record`는 검증된 project-scoped JSONL receipt 한 건만 append한다.
 - 동일한 `run_id`와 동일 내용의 재시도는 no-op이고, 내용이 다르면 거부한다.
 - manifest에서 찾은 검증 명령은 candidate이며 자동 실행 권한이 아니다.

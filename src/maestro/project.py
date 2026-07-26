@@ -103,7 +103,7 @@ def _docs_index(core_documents: dict[str, str]) -> str:
     return f"""---
 maestro_doc: 1
 id: project-docs-index
-type: index
+type: map
 status: active
 authority: repository
 owner: project
@@ -128,7 +128,7 @@ Create directories only when the first real document needs them:
 - `research/` — adopted research briefs and source provenance
 - `archive/` — superseded material; excluded from default retrieval
 
-Run `maestro docs --repo . --task "<goal>" --json` to select relevant documents without loading the full tree.
+Run `maestro docs --repo . --task "<goal>" --json` to select relevant documents without loading the full tree. Read `required_documents` by default; open `optional_documents` only when the task enters that research or plan boundary.
 Use returned `selected_conventions` as implementation and verification criteria. No matching convention is not a blocker.
 """
 
@@ -224,6 +224,9 @@ summary: One searchable sentence.
 ```
 
 Required fields are `id`, `type`, `status`, `authority`, `owner`, and `summary`.
+Convention documents also declare stable `topic`, `scope`, `last_verified`,
+`supersedes`, and `sensitivity` metadata. Use `maestro convention draft` to
+preview a structured inactive draft; applying the reviewed plan never activates it.
 Use `draft` while project facts are incomplete and `active` only after they have
 been checked. Supported status values are `draft`, `active`, `superseded`,
 `deprecated`, and `archived`. Supported authority values are `repository`,

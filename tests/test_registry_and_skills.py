@@ -484,6 +484,37 @@ class RoutingContractTests(unittest.TestCase):
             retries["selected_lenses"],
         )
 
+    def test_duplicate_trigger_requires_an_effect_context(self) -> None:
+        document_check = route_goal(
+            "중복 문서 ID와 링크를 검사해줘",
+            "medium",
+        )
+        duplicate_delivery = route_goal(
+            "결제 이벤트 중복 전달과 재시도를 검토해줘",
+            "medium",
+        )
+        duplicate_processing = route_goal(
+            "결제 요청의 중복 처리를 방지해줘",
+            "medium",
+        )
+
+        self.assertNotIn(
+            "transaction-concurrency",
+            document_check["selected_lenses"],
+        )
+        self.assertNotEqual(
+            "frontier",
+            document_check["model_route"]["selected_class"],
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            duplicate_delivery["selected_lenses"],
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            duplicate_processing["selected_lenses"],
+        )
+
     def test_every_route_binding_names_a_registered_executor(self) -> None:
         executor_ids = {
             item["executor_id"] for item in load_registry()["executors"]

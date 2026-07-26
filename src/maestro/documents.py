@@ -15,6 +15,7 @@ from .util import ensure_repo, read_json, safe_target
 
 MAX_SELECTED_DOCUMENTS = 8
 MAX_SELECTED_DOCUMENT_BYTES = 48 * 1024
+MAX_OPTIONAL_DOCUMENTS = 4
 MAX_DOCUMENT_ENTRIES = 5_000
 MAX_DOCUMENT_FILE_BYTES = 1_000_000
 MAX_DOCUMENT_TOTAL_BYTES = 16_000_000
@@ -35,7 +36,12 @@ STOPWORDS = {
     "by",
     "change",
     "changes",
+    "check",
+    "checks",
     "code",
+    "docs",
+    "document",
+    "documentation",
     "for",
     "from",
     "feature",
@@ -65,15 +71,18 @@ STOPWORDS = {
     "work",
     "개발",
     "검토",
+    "검사",
     "기능",
     "변경",
     "수정",
     "작업",
+    "문서",
     "진행",
     "처리",
     "추가",
     "코드",
     "프로젝트",
+    "확인",
 }
 SEARCHABLE_METADATA_FIELDS = frozenset(
     {
@@ -84,6 +93,36 @@ SEARCHABLE_METADATA_FIELDS = frozenset(
         "supersedes",
         "tags",
     }
+)
+RESEARCH_TASK_TERMS = (
+    "research",
+    "evidence",
+    "source",
+    "sources",
+    "reference",
+    "references",
+    "benchmark",
+    "latest",
+    "current guidance",
+    "리서치",
+    "연구",
+    "근거",
+    "출처",
+    "자료 조사",
+    "레퍼런스",
+    "벤치마크",
+    "공식 문서",
+    "최신",
+)
+PLAN_TASK_TERMS = (
+    "plan",
+    "roadmap",
+    "milestone",
+    "implementation plan",
+    "계획",
+    "로드맵",
+    "마일스톤",
+    "구현 계획",
 )
 
 
@@ -354,7 +393,7 @@ def active_documents(
     return documents
 
 
-def _frontmatter_list(value: str | None) -> list[str]:
+def frontmatter_list(value: str | None) -> list[str]:
     if not isinstance(value, str):
         return []
     stripped = value.strip()
@@ -369,7 +408,7 @@ def _frontmatter_list(value: str | None) -> list[str]:
 
 def _path_scopes(metadata: dict[str, str]) -> list[str]:
     scopes: list[str] = []
-    for item in _frontmatter_list(metadata.get("scope")):
+    for item in frontmatter_list(metadata.get("scope")):
         if item.startswith("path:"):
             pattern = item.removeprefix("path:").strip()
         elif any(marker in item for marker in ("/", "*", "?")):
@@ -409,6 +448,33 @@ def _scope_matches(target_path: str, scope: str) -> bool:
         prefix = normalized_scope.rstrip("/")
         return target_path == prefix or target_path.startswith(f"{prefix}/")
     return fnmatchcase(target_path, normalized_scope)
+
+
+def _terms_match_any(
+    terms: frozenset[str] | set[str],
+    candidates: tuple[str, ...],
+) -> bool:
+    return any(term_matches(terms, candidate) for candidate in candidates)
+
+
+def _document_required_by_task(
+    document_type: str,
+    task_terms: frozenset[str],
+    target_paths: list[str],
+) -> bool:
+    """Keep expensive evidence and plan documents out of the default hot path."""
+
+    if document_type == "evidence":
+        return (
+            _terms_match_any(task_terms, RESEARCH_TASK_TERMS)
+            or any(path.startswith("docs/research/") for path in target_paths)
+        )
+    if document_type == "plan":
+        return (
+            _terms_match_any(task_terms, PLAN_TASK_TERMS)
+            or any(path.startswith("docs/plans/") for path in target_paths)
+        )
+    return True
 
 
 def _custom_adapter_handoff(
@@ -457,6 +523,8 @@ def _custom_adapter_handoff(
         "requested_lenses": lenses,
         "inferred_lenses": [],
         "documents": [],
+        "required_documents": [],
+        "optional_documents": [],
         "core_document_status": [],
         "selected_conventions": [],
         "convention_status": "adapter_required",
@@ -718,8 +786,36 @@ def select_documents(
         *[item for item in ranked if item[2]["document_type"] == "convention"],
         *[item for item in ranked if item[2]["document_type"] != "convention"],
     ]
+    required_ranked = [
+        item
+        for item in ranked
+        if _document_required_by_task(
+            item[2]["document_type"],
+            task_tokens,
+            normalized_target_paths,
+        )
+    ]
+    optional_ranked = [
+        item
+        for item in ranked
+        if not _document_required_by_task(
+            item[2]["document_type"],
+            task_tokens,
+            normalized_target_paths,
+        )
+    ]
     candidates = ([selected_index] if selected_index else []) + [
-        item[2] for item in ranked
+        item[2] for item in required_ranked
+    ]
+    optional_documents = [
+        {
+            **item[2],
+            "reason": (
+                f"{item[2]['reason']}; optional {item[2]['document_type']} "
+                "document, load only when the task opens that evidence boundary"
+            ),
+        }
+        for item in optional_ranked[:MAX_OPTIONAL_DOCUMENTS]
     ]
     selected: list[dict[str, Any]] = []
     budget_skipped_documents: list[str] = []
@@ -740,7 +836,7 @@ def select_documents(
         item["path"] == "docs/README.md"
         for item in selected
     )
-    matched_documents = len(selected) - (1 if index_selected else 0)
+    matched_documents = len(ranked)
     archive_count = scan_trace["archive_documents_seen"]
     core_status = core_document_status(repo)
     missing_evidence: list[str] = []
@@ -776,6 +872,8 @@ def select_documents(
         "requested_lenses": lenses,
         "inferred_lenses": inferred_lenses,
         "documents": selected,
+        "required_documents": selected,
+        "optional_documents": optional_documents,
         "core_document_status": core_status,
         "selected_conventions": selected_conventions,
         "convention_status": "found" if selected_conventions else "none",
@@ -791,6 +889,14 @@ def select_documents(
             "matched_documents": matched_documents,
             "selected_document_count": len(selected),
             "selected_document_bytes": selected_bytes,
+            "required_document_count": len(selected),
+            "required_document_bytes": selected_bytes,
+            "optional_document_count": len(optional_documents),
+            "optional_document_bytes": sum(
+                item["bytes"] for item in optional_documents
+            ),
+            "optional_document_candidates": len(optional_ranked),
+            "optional_document_limit": MAX_OPTIONAL_DOCUMENTS,
             "selection_byte_budget": MAX_SELECTED_DOCUMENT_BYTES,
             "selection_budget_truncated": bool(budget_skipped_documents),
             "budget_skipped_documents": budget_skipped_documents,
