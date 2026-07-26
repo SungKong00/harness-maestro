@@ -20,6 +20,11 @@ from .conventions import (
 from .doctor import doctor_report
 from .documents import select_documents
 from .errors import MaestroError
+from .expertise_lifecycle import (
+    apply_expertise_activation_plan,
+    build_expertise_activation_plan,
+    expertise_inventory,
+)
 from .governance import govern_report, record_run
 from .project import (
     apply_plan,
@@ -167,7 +172,36 @@ def parser() -> argparse.ArgumentParser:
     draft.add_argument("--apply-plan")
     draft.add_argument("--json", action="store_true")
 
+    expertise = commands.add_parser(
+        "expertise",
+        help="Inspect or explicitly activate project-local Expertise",
+    )
+    expertise_commands = expertise.add_subparsers(
+        dest="expertise_command",
+        required=True,
+    )
+    expertise_list = expertise_commands.add_parser(
+        "list",
+        help="List bundled, active project, and retained candidate Expertise",
+    )
+    expertise_list.add_argument("--repo", default=".")
+    expertise_list.add_argument("--json", action="store_true")
+    expertise_activate = expertise_commands.add_parser(
+        "activate",
+        help="Preview or apply candidate publication as a tracked project pilot",
+    )
+    expertise_activate.add_argument("--repo", default=".")
+    expertise_activate.add_argument("--candidate")
+    expertise_activate.add_argument("--approval-ref")
+    expertise_activate.add_argument("--apply-plan")
+    expertise_activate.add_argument("--json", action="store_true")
+
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
+    route.add_argument(
+        "--repo",
+        default=".",
+        help="Repository whose explicitly enabled project Expertise may be routed.",
+    )
     route.add_argument("--goal", required=True)
     route.add_argument("--risk", choices=["low", "medium", "high", "critical"], default="medium")
     route.add_argument(
@@ -209,6 +243,11 @@ def parser() -> argparse.ArgumentParser:
         help="Validate a route v2 Assignment DAG before host execution",
     )
     validate_plan.add_argument("--plan", required=True)
+    validate_plan.add_argument(
+        "--repo",
+        default=".",
+        help="Repository used to re-resolve project Expertise.",
+    )
     validate_plan.add_argument("--json", action="store_true")
 
     validate_research = commands.add_parser(
@@ -367,6 +406,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "expertise" and args.expertise_command == "list":
+            result = expertise_inventory(args.repo)
+            _emit(result, args.json)
+            return 0
+        if args.command == "expertise" and args.expertise_command == "activate":
+            if args.apply_plan:
+                result = apply_expertise_activation_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.approval_ref:
+                    raise MaestroError(
+                        "EXPERTISE_ACTIVATION_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --approval-ref.",
+                    )
+                result = build_expertise_activation_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    approval_ref=args.approval_ref,
+                )
+            _emit(result, args.json)
+            return 0
         if args.command == "route":
             research_evidence_digest = _research_evidence_digest(
                 args.research_evidence,
@@ -382,6 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.host,
                     args.intent,
                     research_evidence_digest,
+                    repo_path=args.repo,
                 )
             else:
                 if research_evidence_digest is not None:
@@ -402,7 +465,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "validate-plan":
             result = validate_route_v2(
-                read_json(Path(args.plan).expanduser().resolve())
+                read_json(Path(args.plan).expanduser().resolve()),
+                repo_path=args.repo,
             )
             _emit(result, args.json)
             if result["status"] != "PASS":

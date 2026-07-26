@@ -14,8 +14,9 @@ from typing import Any
 
 from . import __version__
 from .errors import MaestroError
+from .expertise import expertise_definition_map, load_expertise_catalog
 from .project import checkout_id
-from .registry import definition_digest_maps, load_registry, registry_digest
+from .registry import definition_digest_maps, registry_digest
 from .util import (
     canonical_json,
     ensure_repo,
@@ -305,6 +306,7 @@ def record_run(
             f"RunReceipt is missing fields: {missing}",
         )
     definitions = definition_digest_maps()
+    definitions["expertise_packs"] = expertise_definition_map(repo)
     selected_lenses = receipt.get("selected_lenses")
     executor_ids = receipt.get("executor_ids")
     if not isinstance(selected_lenses, list) or not isinstance(executor_ids, list):
@@ -355,10 +357,10 @@ def record_run(
     unknown_packs = sorted(
         set(selected_expertise_packs) - set(definitions["expertise_packs"])
     )
-    registry = load_registry()
+    catalog = load_expertise_catalog(repo)
     guide_ids = {
         guide["guide_id"]
-        for pack in registry["expertise_packs"]
+        for pack in catalog
         if pack["expertise_pack_id"] in selected_expertise_packs
         for guide in pack["guides"]
     }
@@ -1308,6 +1310,7 @@ def govern_report(
             "The governance events path must be a directory",
         )
     expected_definitions = definition_digest_maps()
+    expected_definitions["expertise_packs"] = expertise_definition_map(repo)
     invalid_records = 0
     excluded_version_records = 0
     excluded_definition_records = 0

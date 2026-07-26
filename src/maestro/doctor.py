@@ -15,6 +15,7 @@ from .documents import (
     scan_document_paths,
 )
 from .errors import MaestroError
+from .expertise import load_expertise_catalog
 from .host import host_installation_checks
 from .project import (
     AGENTS_BEGIN,
@@ -81,6 +82,7 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
             "verification_commands",
             "approval_required_for",
             "self_improvement",
+            "expertise",
         }
         unexpected = sorted(set(value) - allowed)
         if unexpected:
@@ -159,6 +161,22 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
                 errors.append(f"{field} must be a list")
         if not isinstance(value.get("verification_commands", []), list):
             errors.append("verification_commands must be a list")
+        expertise = value.get(
+            "expertise",
+            {"active_pack_paths": []},
+        )
+        if (
+            not isinstance(expertise, dict)
+            or set(expertise) != {"active_pack_paths"}
+            or not isinstance(expertise.get("active_pack_paths"), list)
+            or any(
+                not isinstance(path, str) or not path.strip()
+                for path in expertise.get("active_pack_paths", [])
+            )
+            or len(expertise.get("active_pack_paths", []))
+            != len(set(expertise.get("active_pack_paths", [])))
+        ):
+            errors.append("expertise active_pack_paths is invalid")
         for field in ("adapters", "profiles", "approval_required_for"):
             items = value.get(field)
             if isinstance(items, list) and not all(
@@ -507,6 +525,43 @@ def doctor_report(
                 else "",
             )
         )
+        try:
+            catalog = load_expertise_catalog(repo)
+            project_packs = [
+                pack
+                for pack in catalog
+                if pack["_maestro"]["origin"] == "project"
+            ]
+            ignored_project_packs = [
+                pack["_maestro"]["pack_path"]
+                for pack in project_packs
+                if git_ignored(repo, pack["_maestro"]["pack_path"]) is True
+            ]
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE",
+                    "FAIL" if ignored_project_packs else "PASS",
+                    (
+                        f"active={len(project_packs)} "
+                        f"ignored={ignored_project_packs}"
+                    ),
+                    (
+                        "Keep active project Expertise under tracked "
+                        ".agents/skills paths."
+                    )
+                    if ignored_project_packs
+                    else "",
+                )
+            )
+        except MaestroError as exc:
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE",
+                    "FAIL",
+                    f"{exc.code}: {exc.message}",
+                    "Repair or disable the invalid project Expertise Pack.",
+                )
+            )
         custom_errors: list[str] = []
         if documentation["provider"] == "custom":
             instructions_path = documentation["custom_adapter"]["instructions_path"]

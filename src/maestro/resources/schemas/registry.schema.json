@@ -619,6 +619,28 @@
         },
         "evaluation_suite": {
           "$ref": "#/$defs/safeRelativePath"
+        },
+        "extends": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expertise_pack_id",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "expertise_pack_id": {
+              "$ref": "#/$defs/id"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
         }
       }
     },

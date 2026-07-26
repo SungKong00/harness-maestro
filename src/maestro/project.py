@@ -480,6 +480,9 @@ def _project_state(repo: Path, inspection: dict[str, Any]) -> dict[str, Any]:
         "profiles": inspection["profiles_detected"],
         "commands": inspection["candidate_commands"],
         "verification_commands": [],
+        "expertise": {
+            "active_pack_paths": [],
+        },
         "approval_required_for": CORE_APPROVAL_GATES,
     }
 
@@ -549,6 +552,10 @@ def _desired_seed_files(
         updated_project["profiles"] = inspection["profiles_detected"]
         updated_project["commands"] = inspection["candidate_commands"]
         updated_project.setdefault("verification_commands", [])
+        updated_project.setdefault(
+            "expertise",
+            {"active_pack_paths": []},
+        )
         existing_approval_gates = updated_project.get("approval_required_for")
         if not isinstance(existing_approval_gates, list) or not all(
             isinstance(item, str) and bool(item.strip())

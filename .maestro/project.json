@@ -24,6 +24,9 @@
     "external_topics": {},
     "provider": "markdown"
   },
+  "expertise": {
+    "active_pack_paths": []
+  },
   "kind": "project",
   "profiles": [
     "python"

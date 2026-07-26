@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import re
 from collections import Counter, deque
+from pathlib import Path
 from typing import Any
 
 from .errors import MaestroError
@@ -505,6 +506,7 @@ def compile_route_v2(
     route_v1: dict[str, Any],
     *,
     research_evidence_digest: str | None = None,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Normalize a v1 route into a bounded, host-executed Assignment DAG."""
 
@@ -518,6 +520,7 @@ def compile_route_v2(
         route_v1["goal"],
         intent=route_v1["intent"],
         research_evidence_digest=research_evidence_digest,
+        repo_path=repo_path,
     )
     route_context = copy.deepcopy(route_v1)
     if (
@@ -678,7 +681,7 @@ def compile_route_v2(
     plan["mutation_owner_assignment_id"] = mutation_owner
     plan["plan_id"] = _plan_id(plan)
 
-    require_valid_route_v2(plan)
+    require_valid_route_v2(plan, repo_path=repo_path)
     return plan
 
 
@@ -692,6 +695,7 @@ def route_goal_v2(
     intent: str = "auto",
     research_evidence_digest: str | None = None,
     decision_authorized: bool = False,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     route = route_goal(
         goal,
@@ -706,10 +710,15 @@ def route_goal_v2(
     return compile_route_v2(
         route,
         research_evidence_digest=research_evidence_digest,
+        repo_path=repo_path,
     )
 
 
-def validate_route_v2(plan: Any) -> dict[str, Any]:
+def validate_route_v2(
+    plan: Any,
+    *,
+    repo_path: str | Path | None = None,
+) -> dict[str, Any]:
     """Return deterministic structural and cross-contract diagnostics."""
 
     if not isinstance(plan, dict):
@@ -922,6 +931,7 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
                 plan.get("goal", ""),
                 intent=plan.get("intent", ""),
                 research_evidence_digest=evidence_digest,
+                repo_path=repo_path,
             )
         except MaestroError:
             expected_expertise = None
@@ -1837,8 +1847,12 @@ def validate_route_v2(plan: Any) -> dict[str, Any]:
     }
 
 
-def require_valid_route_v2(plan: dict[str, Any]) -> None:
-    result = validate_route_v2(plan)
+def require_valid_route_v2(
+    plan: dict[str, Any],
+    *,
+    repo_path: str | Path | None = None,
+) -> None:
+    result = validate_route_v2(plan, repo_path=repo_path)
     if result["status"] == "PASS":
         return
     codes = sorted({item["code"] for item in result["issues"]})

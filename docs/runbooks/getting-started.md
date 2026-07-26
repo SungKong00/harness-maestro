@@ -154,7 +154,7 @@ CLI로 현재 작업에 필요한 문서와 route를 미리 볼 수도 있다.
 maestro docs --repo /path/to/project \
   --task "결제 webhook 재시도 변경" --path src/payments/webhook.py --json
 
-maestro route --goal "결제 webhook 재시도 변경" \
+maestro route --repo /path/to/project --goal "결제 webhook 재시도 변경" \
   --risk medium --intent implementation --host codex --json
 ```
 
@@ -171,10 +171,10 @@ metadata만 들어간다. 현재 작업이 해당 근거 경계를 명시적으�
 
 ```bash
 maestro_route="$(mktemp -t maestro-route.XXXXXX.json)"
-maestro route --goal "결제 webhook 재시도 변경" \
+maestro route --repo /path/to/project --goal "결제 webhook 재시도 변경" \
   --risk medium --intent implementation --host codex \
   --route-version v2 --json > "$maestro_route"
-maestro validate-plan --plan "$maestro_route" --json
+maestro validate-plan --repo /path/to/project --plan "$maestro_route" --json
 rm -- "$maestro_route"
 ```
 
@@ -185,7 +185,8 @@ route한다.
 
 ```bash
 maestro validate-research --artifact /tmp/research-bundle.json --json
-maestro route --goal "최신 레퍼런스로 랜딩 페이지 디자인" \
+maestro route --repo /path/to/project \
+  --goal "최신 레퍼런스로 랜딩 페이지 디자인" \
   --risk medium --intent implementation --host codex \
   --route-version v2 --research-evidence /tmp/research-bundle.json --json
 ```
@@ -292,6 +293,26 @@ govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하�
 `$maestro-expertise-builder`가 `.maestro/state/candidates/expertise/` 아래에
 격리된 draft와 frozen eval을 만든다.
 
+후보를 실제 프로젝트에서 계속 사용할 가치가 검증되면 inventory와 diff를 검토한다.
+
+```bash
+maestro expertise list --repo /path/to/project --json
+maestro_expertise_plan="$(mktemp -t maestro-expertise.XXXXXX.json)"
+maestro expertise activate --repo /path/to/project \
+  --candidate project-design \
+  --approval-ref held_out_evaluation:eval-7 \
+  --json > "$maestro_expertise_plan"
+maestro expertise activate --repo /path/to/project \
+  --apply-plan "$maestro_expertise_plan" --json
+maestro doctor --repo /path/to/project --strict --json
+rm -- "$maestro_expertise_plan"
+```
+
+활성 결과는 `.agents/skills/<skill-id>/`의 추적 가능한 project `pilot`이다.
+후보는 삭제하지 않으며, 범용 Registry·원격 저장소·전역 Agent는 바뀌지 않는다.
+기존 범용 Pack의 프로젝트 특화라면 고정 `extends`가 기본이고, 맞는 base가 없는
+새 판단 분야만 standalone으로 만든다.
+
 새 프로젝트 Convention 초안이 필요하면 LLM이 임의로 활성 문서를 바로 쓰게 하지
 말고 preview/apply 경계를 사용한다.
 
@@ -319,10 +340,12 @@ owner 결정 또는 held-out 평가를 통한 활성화는 별도 검토 작업�
 
 - `status`, `doctor`, `docs`, `adapt`, `route`, `validate-plan`, `decide`,
   `validate-decision`, `enact`,
-  `govern report`는 읽기 전용이다.
+  `expertise list`, `govern report`는 읽기 전용이다.
 - `init`, `upgrade`는 `--apply-plan`이 없으면 미리보기만 한다.
 - `convention draft`도 `--apply-plan`이 없으면 미리보기만 하며 적용해도
   비활성 draft 한 건만 생성한다.
+- `expertise activate`도 `--apply-plan` 전에는 미리보기만 하며 적용해도
+  allowlist에 든 tracked project pilot만 게시한다.
 - `record`는 검증된 project-scoped JSONL receipt 한 건만 append한다.
 - 동일한 `run_id`와 동일 내용의 재시도는 no-op이고, 내용이 다르면 거부한다.
 - manifest에서 찾은 검증 명령은 candidate이며 자동 실행 권한이 아니다.

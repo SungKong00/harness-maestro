@@ -56,7 +56,7 @@ ADAPTER_ALLOWED = {
     "authority_policy",
     "writes",
 }
-EXPERTISE_PACK_ALLOWED = {
+EXPERTISE_PACK_REQUIRED = {
     "schema_version",
     "kind",
     "expertise_pack_id",
@@ -71,6 +71,12 @@ EXPERTISE_PACK_ALLOWED = {
     "research_policy",
     "source_manifest",
     "evaluation_suite",
+}
+EXPERTISE_PACK_ALLOWED = EXPERTISE_PACK_REQUIRED | {"extends"}
+EXPERTISE_EXTENDS_ALLOWED = {
+    "expertise_pack_id",
+    "version",
+    "digest",
 }
 EXPERTISE_GUIDE_ALLOWED = {
     "guide_id",
@@ -714,7 +720,7 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         errors.extend(
             _required(
                 pack,
-                tuple(sorted(EXPERTISE_PACK_ALLOWED)),
+                tuple(sorted(EXPERTISE_PACK_REQUIRED)),
                 "expertise pack",
             )
         )
@@ -763,6 +769,21 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         ):
             errors.append(
                 f"expertise pack {pack_id or '?'} version must be a positive integer"
+            )
+        extends = pack.get("extends")
+        if extends is not None and (
+            not isinstance(extends, dict)
+            or set(extends) != EXPERTISE_EXTENDS_ALLOWED
+            or not _valid_id(extends.get("expertise_pack_id"))
+            or extends.get("expertise_pack_id") == pack_id
+            or not isinstance(extends.get("version"), int)
+            or isinstance(extends.get("version"), bool)
+            or extends.get("version") < 1
+            or not isinstance(extends.get("digest"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", extends["digest"]) is None
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} extends contract is invalid"
             )
         if not _unique_string_list(pack.get("triggers"), nonempty=True):
             errors.append(

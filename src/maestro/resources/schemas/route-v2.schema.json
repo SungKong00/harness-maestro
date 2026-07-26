@@ -191,6 +191,7 @@
         "schema_version",
         "selected_pack_ids",
         "selected_guide_ids",
+        "pack_definition_digests",
         "pack_cards",
         "research_requirement",
         "warnings",
@@ -214,6 +215,13 @@
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/id"
+          }
+        },
+        "pack_definition_digests": {
+          "type": "object",
+          "maxProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/digest"
           }
         },
         "pack_cards": {

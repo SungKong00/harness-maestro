@@ -52,8 +52,10 @@ Read `references/compilation-format.md`, then create only:
 ```text
 .maestro/state/candidates/expertise/<candidate-id>/
 ├── candidate.json
+├── draft/maestro-pack.json
 ├── draft/SKILL.md
 ├── draft/references/<guide-id>.md
+├── draft/agents/openai.yaml
 ├── evidence/sources.json
 └── evals/cases.json
 ```
@@ -63,6 +65,17 @@ Read `references/compilation-format.md`, then create only:
 The directory is project-local runtime state and is excluded from normal
 document selection. Give every candidate a `review_after` date; an expired
 candidate must be revalidated, rejected, or removed instead of silently reused.
+Keep `draft/agents/openai.yaml` explicit-only with
+`allow_implicit_invocation: false`; Maestro owns selection.
+
+Use one of two shapes:
+
+1. standalone when no bundled pack owns the decision family;
+2. `extends` when project criteria add to one bundled pack.
+
+Prefer `extends`. Pin the bundled `expertise_pack_id`, `version`, and canonical
+manifest `digest`; inheritance is additive and one level only. Use a distinct
+local pack and Skill ID. Never shadow or redefine an inherited guide ID.
 
 ## Evaluation
 
@@ -100,4 +113,10 @@ recommended_disposition:
 
 Candidate creation is not promotion. `maestro-govern` and the owner must review
 the evidence, evaluation, overlap, portability, rollback, and versioned diff.
+After an owner decision or accepted held-out evaluation, preview
+`maestro expertise activate --repo . --candidate <id>
+--approval-ref <owner_decision:ref|held_out_evaluation:ref> --json`, save the
+plan, review it, and apply it with `--apply-plan`. Activation copies the
+candidate to tracked `.agents/skills/`, adds it to the project allowlist, keeps
+it in `pilot`, and retains the ignored candidate.
 Global promotion always requires an explicit repository change and approval.

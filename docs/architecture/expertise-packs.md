@@ -36,6 +36,7 @@ sensitivity: internal
   → 실제 결과 검증
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
   → 반복된 재사용 공백만 project-local candidate 검토
+  → owner 결정/held-out 평가가 있으면 tracked project pilot으로 활성화
 ```
 
 ## 현재 구현 범위
@@ -49,6 +50,8 @@ sensitivity: internal
 - guide ID, summary, trigger와 freshness
 - 기본 `reuse`, 조건부 `contextualize`·`refresh` research policy
 - source manifest와 frozen evaluation 위치
+- bundled/project origin, definition digest와 선택된 Skill 경로
+- project extension이면 고정된 base와 guide별 원본 Skill
 
 route v2의 `expertise`는 optional additive extension이다. 기존 v2 계획은 이 필드가
 없어도 유효하고, 팩이나 discovery gate가 없는 일반 작업에는 이 필드를 출력하지
@@ -124,8 +127,10 @@ candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide �
 ```text
 .maestro/state/candidates/expertise/<candidate-id>/
 ├── candidate.json
+├── draft/maestro-pack.json
 ├── draft/SKILL.md
 ├── draft/references/
+├── draft/agents/openai.yaml
 ├── evidence/sources.json
 └── evals/cases.json
 ```
@@ -133,6 +138,40 @@ candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide �
 이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 승격이 아니다.
 각 candidate는 `review_after`를 가지며, 만료 뒤에는 재검증·기각·삭제 중 하나를
 선택하기 전까지 재사용하지 않는다.
+
+검토된 후보는 다음 preview/apply로 프로젝트 pilot이 된다.
+
+```text
+.agents/skills/<skill-id>/
+├── maestro-pack.json
+├── SKILL.md
+├── references/
+├── agents/openai.yaml
+├── evidence/sources.json
+├── evals/cases.json
+└── activation.json
+```
+
+`.maestro/project.json`에 명시된 `active_pack_paths`만 라우팅한다. Pack 파일이
+우연히 존재하거나 candidate가 쌓였다는 이유로 활성화하지 않는다. 기본 구성은
+bundled Pack 하나를 ID·version·digest로 고정하는 단일 `extends`이고, 새로운 판단
+분야에만 standalone Pack을 쓴다. 동일 ID shadowing, inherited guide 재정의,
+local-to-local·재귀 상속은 실패한다. project Pack은 implicit invocation을 끄고,
+Maestro route가 선택한 Skill과 guide만 연다.
+
+```bash
+maestro expertise list --repo /path/to/project --json
+maestro expertise activate --repo /path/to/project \
+  --candidate project-design \
+  --approval-ref held_out_evaluation:eval-7 \
+  --json > /tmp/maestro-expertise-plan.json
+maestro expertise activate --repo /path/to/project \
+  --apply-plan /tmp/maestro-expertise-plan.json --json
+maestro doctor --repo /path/to/project --strict --json
+```
+
+활성화는 프로젝트 파일만 바꾸고 candidate를 보존한다. 전역 Harness Registry,
+원격 저장소와 Agent 권한은 바꾸지 않는다.
 
 ## 평가 계약
 
@@ -189,7 +228,8 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | product-design·marketing·software-qa 파일럿 | 현재 구현 | frozen route cases + 실제 artifact evaluation |
 | 내부 ResearchPacket·ResearchBundle validator | 현재 구현 | source-tier·reference·follow-up·artifact binding tests |
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
-| 후보 생성 CLI | 보류 | Skill 후보 생성이 반복되고 schema validation 요구가 측정됨 |
+| 후보 활성화 CLI | 현재 구현 | owner/held-out 근거 + reviewed preview/apply + strict Doctor |
+| 후보 생성 CLI | 보류 | Skill 기반 후보 생성이 반복되고 정형 입력 요구가 측정됨 |
 | 자동 candidate 제안 | 보류 | 반복 fingerprint가 전문성 공백과 안정적으로 연결됨 |
 | active 전역 승격 자동화 | 제외 | owner 승인과 versioned repository change 유지 |
 

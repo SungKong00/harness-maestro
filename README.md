@@ -14,6 +14,7 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [전문성 팩 구조](docs/architecture/expertise-packs.md) ·
 [판단 우선 구조](docs/architecture/decision-workflow.md) ·
 [내부 리서치·전문성 경계](docs/decisions/0009-internal-research-and-expertise-boundary.md) ·
+[프로젝트 로컬 Expertise 활성화](docs/decisions/0010-project-local-expertise-activation.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
 
 ## 먼저 이것만 알면 됩니다
@@ -103,6 +104,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
 | 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
 | 반복되는 전문성 공백을 후보로 만들기 | `$maestro-expertise-builder` | RED baseline·frozen case를 거친 프로젝트 로컬 후보만 생성 |
+| 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 후보를 추적되는 project pilot으로 preview/apply 활성화 |
 | 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
 
 ## 빠른 시작
@@ -272,7 +274,8 @@ Maestro workflow는 다음 순서로 진행합니다.
   전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
   ResearchBundle 파일 없이는 gate를 통과하지 못합니다.
 - **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
-  baseline과 frozen case를 거쳐 프로젝트 후보로만 만들며, 전역 승격이나 Agent
+  baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 후보만
+  `.agents/skills`의 tracked pilot으로 명시적 활성화하며, 전역 승격이나 Agent
   설치는 자동화하지 않습니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.

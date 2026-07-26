@@ -719,6 +719,7 @@ def build_decision_plan(
         goal,
         intent=expertise_intent,
         research_evidence_digest=research_evidence_digest,
+        repo_path=repo_path,
     )
     review_route = route_goal(
         goal,
@@ -727,16 +728,24 @@ def build_decision_plan(
         intent="review",
     )
     selected_pack_ids = expertise["selected_pack_ids"]
-    product_design = "product-design" in selected_pack_ids
+    selected_families = {
+        *selected_pack_ids,
+        *(
+            card["extends"]["expertise_pack_id"]
+            for card in expertise["pack_cards"]
+            if card.get("extends") is not None
+        ),
+    }
+    product_design = "product-design" in selected_families
     if product_design:
         specialists = _product_design_specialists(
             expertise["selected_guide_ids"]
         )
-    elif "marketing" in selected_pack_ids:
+    elif "marketing" in selected_families:
         specialists = _marketing_specialists(
             expertise["selected_guide_ids"]
         )
-    elif "software-qa" in selected_pack_ids:
+    elif "software-qa" in selected_families:
         specialists = _software_qa_specialists(
             expertise["selected_guide_ids"]
         )
@@ -787,6 +796,9 @@ def build_decision_plan(
         "expertise": {
             "selected_pack_ids": expertise["selected_pack_ids"],
             "selected_guide_ids": expertise["selected_guide_ids"],
+            "pack_definition_digests": expertise[
+                "pack_definition_digests"
+            ],
             "research_requirement": expertise["research_requirement"],
         },
         "specialist_contracts": specialists,
@@ -1961,12 +1973,14 @@ def build_execution_plan(
         intent="implementation",
         research_evidence_digest=evidence_digest,
         decision_authorized=True,
+        repo_path=repo_path,
     )
     current_expertise = route_plan.get(
         "expertise",
         {
             "selected_pack_ids": [],
             "selected_guide_ids": [],
+            "pack_definition_digests": {},
             "research_requirement": {
                 "mode": "reuse",
                 "gate": "not-required",
@@ -1980,6 +1994,8 @@ def build_execution_plan(
         != bundle["expertise"]["selected_pack_ids"]
         or current_expertise["selected_guide_ids"]
         != bundle["expertise"]["selected_guide_ids"]
+        or current_expertise["pack_definition_digests"]
+        != bundle["expertise"]["pack_definition_digests"]
         or current_expertise["research_requirement"]
         != bundle["expertise"]["research_requirement"]
     ):

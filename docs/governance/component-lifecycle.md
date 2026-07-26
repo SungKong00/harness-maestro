@@ -105,6 +105,13 @@ frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외
 생성은 active Registry 변경이 아니다. `review_after`가 지난 후보는 다시 검증하거나
 기각·제거하기 전까지 평가 입력으로 사용하지 않는다.
 
+owner 결정 또는 accepted held-out evaluation을 받은 후보는
+`maestro expertise activate`의 preview/apply 경계로
+`.agents/skills/<skill-id>/`의 project `pilot`이 될 수 있다. project manifest
+allowlist에 든 Pack만 라우팅하며 candidate는 보존한다. 기존 범용 Pack에 속하는
+판단은 base ID·version·digest를 고정한 한 단계 `extends`를 기본으로 사용한다.
+동일 ID shadowing, inherited guide 재정의와 자동 전역 승격은 허용하지 않는다.
+
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은
 권위가 있으면 `global`이다. 사용 횟수만으로 범위를 넓히지 않는다.

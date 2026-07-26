@@ -40,7 +40,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
 6. Choose one of two paths.
    - **Direct execution** is only for an explicit, small, reversible change whose
      direction is already settled. Create a validated Assignment plan with
-     `maestro route --goal "<goal>" --risk <low|medium|high|critical> --intent implementation --host <host> --route-version v2 --json`.
+     `maestro route --repo <repo> --goal "<goal>" --risk <low|medium|high|critical> --intent implementation --host <host> --route-version v2 --json`.
    - **Decision first** is for design, architecture, technology choice, material
      trade-offs, or any request that explicitly asks to decide before building.
      Run `maestro decide --repo <repo> --goal "<goal>" --risk <risk> --intent implementation --host <host> --json`.
@@ -75,11 +75,13 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - The CLI keeps v1 as its compatibility default. This managed Skill intentionally opts into v2 so the Host receives explicit dependency, read-only, and one-writer boundaries.
    - The result preserves the v1 selection while adding at most five typed Assignments, their dependencies, Packet contracts, side-effect owner, per-Assignment model routes, terminal condition, and plan digest.
    - Route v2 is a host-executed plan, not an execution trace or scheduler. Never describe planned values as actual calls, tokens, duration, or outcomes.
-   - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --plan <path> --json` before execution.
+   - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --repo <repo> --plan <path> --json` before execution.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
 9. Inspect the optional `expertise` selection before executing Assignments.
    - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
+     For a project pack, use `pack_cards[].skill_path`; load inherited guide
+     IDs from each guide card's `skill_id`. Never load every active pack.
      A pack supplies decision criteria; it does not create another permanent
      agent or replace the route's Executor.
    - If `research_requirement.gate` is `not-required`, reuse the selected guides
