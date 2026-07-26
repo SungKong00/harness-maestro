@@ -37,7 +37,7 @@ const outcomeLabels = {
   sufficient: "판단 가능한 근거",
   available: "사용 가능",
   no_change: "변경 없음",
-  not_run: "실행하지 않음",
+  not_run: "별도 Verifier 없음",
   evidence_gathering: "근거 수집 중",
   awaiting_usage: "사용 근거 수집 전",
   review_due: "정기 검토 필요",
