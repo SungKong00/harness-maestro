@@ -57,6 +57,13 @@ summary만 가진다. `host_reported`는 Host가 실행 단위 값을 직접 제
 Desktop의 비공개 session JSONL을 읽지 않는다. 현재 Host가 안정적인 공개 값을
 주지 않으면 미측정 상태를 정직하게 유지한다.
 
+최근 작업 목록은 한 번에 한 Run만 여는 inline disclosure다. 선택한 Run의 상세
+단계는 전체 목록 뒤의 분리된 패널이 아니라 해당 행 바로 다음 행에 렌더링한다.
+같은 행을 다시 선택하면 닫히며, 다른 행을 선택하면 기존 상세를 닫고 새 상세만
+연다. 작업명 안의 실제 button이 `aria-expanded`, `aria-controls`와 상세 region의
+`aria-labelledby`를 연결하므로 마우스로 행을 선택하는 동작과 키보드
+Enter·Space 동작이 같은 상태 전이를 사용한다.
+
 ## 검증 명령 승인
 
 초기화 때 탐지한 명령은 실행 권위가 아니라 candidate다. 뷰어는 candidate ID로만

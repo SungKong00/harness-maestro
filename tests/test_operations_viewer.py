@@ -216,6 +216,25 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertIn("run.host_observation.quality", viewer_source)
             self.assertIn("run.host_observation.correlation_id", viewer_source)
 
+    def test_run_details_use_one_inline_accessible_disclosure(self) -> None:
+        viewer_root = ROOT / "src/maestro/resources/viewer"
+        viewer_source = (viewer_root / "app.js").read_text(encoding="utf-8")
+        viewer_markup = (viewer_root / "index.html").read_text(encoding="utf-8")
+        viewer_styles = (viewer_root / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'state.selectedRun = expanded ? null : run.run_id',
+            viewer_source,
+        )
+        self.assertIn('toggle.setAttribute("aria-expanded"', viewer_source)
+        self.assertIn('toggle.setAttribute("aria-controls"', viewer_source)
+        self.assertIn('detail.setAttribute("aria-labelledby"', viewer_source)
+        self.assertIn('className: "run-detail-row"', viewer_source)
+        self.assertIn("target.append(detailRow)", viewer_source)
+        self.assertNotIn('id="run-detail"', viewer_markup)
+        self.assertIn("바로 아래에서 세부 흐름이 열리고", viewer_markup)
+        self.assertIn(".run-detail-row", viewer_styles)
+
     def test_expertise_signal_requires_repeated_reusable_evidence(self) -> None:
         events = [
             {

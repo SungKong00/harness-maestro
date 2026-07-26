@@ -275,17 +275,43 @@ function renderRuns(snapshot) {
     cell.colSpan = 6;
     row.append(cell);
     target.append(row);
-    renderRunDetail(null);
     return;
   }
 
-  snapshot.runs.forEach((run) => {
-    const row = element("tr");
-    row.tabIndex = 0;
-    if (state.selectedRun === run.run_id) row.classList.add("selected");
+  if (!snapshot.runs.some((run) => run.run_id === state.selectedRun)) {
+    state.selectedRun = null;
+  }
+
+  snapshot.runs.forEach((run, index) => {
+    const expanded = state.selectedRun === run.run_id;
+    const detailId = `run-detail-${index}`;
+    const toggleId = `run-toggle-${index}`;
+    const row = element("tr", { className: "run-row" });
+    row.dataset.runId = run.run_id;
+    if (expanded) row.classList.add("selected");
     const task = element("td");
-    task.append(element("span", { className: "run-title", text: run.task_label }));
-    task.append(element("span", { className: "run-id", text: run.run_id }));
+    const toggle = element("button", { className: "run-toggle" });
+    toggle.type = "button";
+    toggle.id = toggleId;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.setAttribute("aria-controls", detailId);
+    const disclosure = element("span", {
+      className: "disclosure-icon",
+      text: "›",
+    });
+    disclosure.setAttribute("aria-hidden", "true");
+    toggle.append(disclosure);
+    const taskIdentity = element("span");
+    taskIdentity.append(element("span", {
+      className: "run-title",
+      text: run.task_label,
+    }));
+    taskIdentity.append(element("span", {
+      className: "run-id",
+      text: run.run_id,
+    }));
+    toggle.append(taskIdentity);
+    task.append(toggle);
     row.append(task);
     const result = element("td");
     result.append(pill(run.outcome));
@@ -299,35 +325,45 @@ function renderRuns(snapshot) {
     row.append(element("td", {
       text: run.expertise.packs.join(", ") || "사용 없음",
     }));
+
     const select = () => {
-      state.selectedRun = run.run_id;
+      state.selectedRun = expanded ? null : run.run_id;
       renderRuns(snapshot);
-      renderRunDetail(run);
+      document.getElementById(toggleId)?.focus({ preventScroll: true });
     };
-    row.addEventListener("click", select);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") select();
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      select();
+    });
+    row.addEventListener("click", (event) => {
+      if (event.target.closest?.("button, a, input, select, textarea")) return;
+      select();
     });
     target.append(row);
-  });
 
-  const selected = snapshot.runs.find((run) => run.run_id === state.selectedRun);
-  renderRunDetail(selected || snapshot.runs[0]);
+    if (expanded) {
+      const detailRow = element("tr", { className: "run-detail-row" });
+      const detailCell = element("td");
+      detailCell.colSpan = 6;
+      const detail = buildRunDetail(run);
+      detail.id = detailId;
+      detail.setAttribute("role", "region");
+      detail.setAttribute("aria-labelledby", toggleId);
+      detailCell.append(detail);
+      detailRow.append(detailCell);
+      target.append(detailRow);
+    }
+  });
 }
 
 function addMeta(target, text) {
   target.append(element("span", { className: "coverage-item", text }));
 }
 
-function renderRunDetail(run) {
-  const target = document.getElementById("run-detail");
-  clear(target);
-  if (!run) {
-    target.className = "detail-panel empty";
-    target.textContent = "작업을 선택하면 실행 단계가 표시됩니다.";
-    return;
-  }
-  target.className = "detail-panel";
+function buildRunDetail(run) {
+  const target = element("div", {
+    className: "detail-panel run-detail-inline",
+  });
   target.append(element("h3", { text: run.task_label }));
   target.append(element("p", {
     className: "muted",
@@ -383,6 +419,7 @@ function renderRunDetail(run) {
     flow.append(row);
   });
   target.append(flow);
+  return target;
 }
 
 function renderExpertise(snapshot) {
