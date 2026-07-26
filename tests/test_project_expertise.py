@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import unittest
+import urllib.request
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -12,6 +14,7 @@ from tests.support import apply_fresh_init, check_by_id, write_json
 
 from maestro.doctor import doctor_report
 from maestro.cli import main
+from maestro.dashboard import create_dashboard_server
 from maestro.expertise import expertise_manifest_digest
 from maestro.expertise_lifecycle import (
     EXPERTISE_AUTHORITY_BLOCK,
@@ -292,6 +295,15 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "guide-addition",
                 validation["component_change"]["kind"],
             )
+            value = json.loads(bundle.read_text(encoding="utf-8"))
+            value["promotion"]["automatic_install_allowed"] = True
+            write_json(bundle, value)
+            invalid = validate_expertise_contribution(bundle)
+            self.assertEqual("FAIL", invalid["status"])
+            self.assertIn(
+                "EXPERTISE_CONTRIBUTION_PROMOTION_INVALID",
+                {issue["code"] for issue in invalid["issues"]},
+            )
 
     def test_component_change_must_match_the_candidate_guide_set(
         self,
@@ -318,6 +330,68 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "EXPERTISE_CANDIDATE_INVALID",
                 {issue["code"] for issue in report["issues"]},
             )
+
+    def test_dashboard_exports_only_after_typed_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo, portability="global")
+            server, token, url = create_dashboard_server(repo)
+            thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+            )
+            thread.start()
+            base = url.split("/#token=", 1)[0]
+
+            def post(path: str, payload: dict[str, object]):
+                request = urllib.request.Request(
+                    f"{base}{path}",
+                    method="POST",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Maestro-Token": token,
+                        "Origin": base,
+                    },
+                )
+                with urllib.request.urlopen(
+                    request,
+                    timeout=5,
+                ) as response:
+                    return json.loads(response.read())
+
+            try:
+                preview = post(
+                    "/api/expertise-actions/preview",
+                    {
+                        "action": "export",
+                        "candidate_id": "project-design",
+                        "pack_id": None,
+                    },
+                )
+                self.assertFalse(preview["writes_performed"])
+                self.assertFalse(
+                    (repo / preview["output_path"]).exists()
+                )
+
+                result = post(
+                    "/api/expertise-actions/apply",
+                    {
+                        "plan_id": preview["plan_id"],
+                        "plan_digest": preview["plan_digest"],
+                    },
+                )
+
+                self.assertEqual("exported", result["status"])
+                self.assertTrue(
+                    (repo / result["output_path"]).is_file()
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
 
     def test_candidate_bundle_validation_checks_semantic_links_and_receipt(
         self,

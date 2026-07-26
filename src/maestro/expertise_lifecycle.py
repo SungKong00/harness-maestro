@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from datetime import date
 from pathlib import Path
@@ -1104,6 +1105,7 @@ def validate_expertise_contribution(
         )
     files = contribution.get("files")
     file_digests: dict[str, str] = {}
+    file_contents: dict[str, str] = {}
     if (
         not isinstance(files, list)
         or not 7 <= len(files) <= 32
@@ -1135,6 +1137,107 @@ def validate_expertise_contribution(
                 )
                 break
             file_digests[item["path"]] = item["sha256"]
+            file_contents[item["path"]] = item["content"]
+    required_paths = {
+        "candidate.json",
+        f"draft/{PROJECT_PACK_FILENAME}",
+        "draft/SKILL.md",
+        "draft/agents/openai.yaml",
+        "evidence/sources.json",
+        "evals/cases.json",
+        "evals/results.json",
+    }
+    if file_contents and not required_paths.issubset(file_contents):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_FILES_INCOMPLETE",
+                "message": "Contribution is missing one or more canonical candidate files.",
+            }
+        )
+    candidate: dict[str, Any] | None = None
+    pack: dict[str, Any] | None = None
+    try:
+        candidate_value = json.loads(file_contents["candidate.json"])
+        pack_value = json.loads(
+            file_contents[f"draft/{PROJECT_PACK_FILENAME}"]
+        )
+        if not isinstance(candidate_value, dict) or not isinstance(
+            pack_value,
+            dict,
+        ):
+            raise ValueError("Candidate and Pack files must contain objects.")
+        candidate = candidate_value
+        pack = pack_value
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        if file_contents:
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_CONTENT_INVALID",
+                    "message": f"Embedded candidate or Pack is invalid: {exc}",
+                }
+            )
+    if candidate is not None and pack is not None:
+        guide_ids = {
+            guide.get("guide_id")
+            for guide in pack.get("guides", [])
+            if isinstance(guide, dict)
+            and isinstance(guide.get("guide_id"), str)
+        }
+        expected_guide_paths = {
+            f"draft/references/{guide_id}.md"
+            for guide_id in guide_ids
+        }
+        if (
+            not _candidate_contract_valid(
+                candidate,
+                contribution.get("candidate_id", ""),
+            )
+            or candidate.get("expertise_pack_id")
+            != contribution.get("expertise_pack_id")
+            or candidate.get("portability")
+            != contribution.get("portability")
+            or _candidate_component_change(candidate, pack)
+            != contribution.get("component_change")
+            or pack.get("expertise_pack_id")
+            != contribution.get("expertise_pack_id")
+            or pack.get("version") != contribution.get("pack_version")
+            or pack.get("portability") != "project"
+            or pack.get("status") != "pilot"
+        ):
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_CONTENT_MISMATCH",
+                    "message": "Embedded candidate, Pack, component change, or bundle identity differs.",
+                }
+            )
+        if not expected_guide_paths.issubset(file_contents):
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_GUIDES_INCOMPLETE",
+                    "message": "Contribution is missing a Guide referenced by its Pack.",
+                }
+            )
+    promotion = contribution.get("promotion")
+    if (
+        not isinstance(promotion, dict)
+        or set(promotion)
+        != {
+            "status",
+            "automatic_install_allowed",
+            "requires_repository_review",
+            "requires_release",
+        }
+        or promotion.get("status") not in {"project_only", "review_required"}
+        or promotion.get("automatic_install_allowed") is not False
+        or promotion.get("requires_repository_review") is not True
+        or promotion.get("requires_release") is not True
+    ):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_PROMOTION_INVALID",
+                "message": "Contribution must preserve the review-and-release promotion boundary.",
+            }
+        )
     if (
         file_digests
         and contribution.get("candidate_digest")
@@ -2097,15 +2200,20 @@ def apply_expertise_export_plan(
             "Export content digest does not match the plan.",
             exit_code=3,
         )
-    atomic_write(target, content.encode("utf-8"))
-    validation = validate_expertise_contribution(target)
+    temporary = safe_target(
+        repo,
+        f"{output_path}.{plan['plan_id']}.tmp",
+    )
+    atomic_write(temporary, content.encode("utf-8"))
+    validation = validate_expertise_contribution(temporary)
     if validation["status"] != "PASS":
-        target.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
         raise MaestroError(
             "EXPERTISE_EXPORT_INVALID",
             "Generated contribution failed validation.",
             exit_code=3,
         )
+    temporary.replace(target)
     return {
         "schema_version": "maestro_expertise_export_result_v1",
         "status": "exported",
