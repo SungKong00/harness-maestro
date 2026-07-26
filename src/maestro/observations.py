@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,8 @@ MAX_PLAN_ASSIGNMENTS = 5
 MAX_INFLIGHT_OBSERVATIONS = 100
 MAX_OBSERVATION_FILE_BYTES = 128_000
 MAX_MODEL_REROUTES = 4
+MAX_APP_SERVER_TRACE_BYTES = 4_000_000
+MAX_APP_SERVER_TRACE_MESSAGES = 20_000
 
 
 def _utc_now() -> datetime:
@@ -581,10 +584,48 @@ def record_host_observation(
             if key != "observed_at"
         }
         if comparable != expected:
-            raise MaestroError(
-                "HOST_OBSERVATION_CONFLICT",
-                "This run already has different Host telemetry.",
+            same_identity = (
+                existing.get("schema_version") == HOST_OBSERVATION_VERSION
+                and existing.get("source") == host_observation["source"]
+                and existing.get("quality") == host_observation["quality"]
+                and existing.get("correlation_id")
+                == host_observation["correlation_id"]
             )
+            monotonic_enrichment = (
+                same_identity
+                and existing.get("requested_model")
+                in {None, host_observation["requested_model"]}
+                and existing.get("applied_model")
+                in {None, host_observation["applied_model"]}
+                and existing.get("model_event_evidence")
+                in {"unavailable", host_observation["model_event_evidence"]}
+                and (
+                    existing.get("reroutes") == []
+                    or existing.get("reroutes")
+                    == host_observation["reroutes"]
+                )
+                and (
+                    existing.get("tokens") is None
+                    or existing.get("tokens") == host_observation["tokens"]
+                )
+            )
+            if not monotonic_enrichment:
+                raise MaestroError(
+                    "HOST_OBSERVATION_CONFLICT",
+                    "This run already has different Host telemetry.",
+                )
+            value["host_observation"] = host_observation
+            atomic_write(target, pretty_json(value).encode("utf-8"))
+            return {
+                "schema_version": "maestro_command_result_v1",
+                "command": "observe-host",
+                "status": "enriched",
+                "repo_root": str(repo),
+                "run_id": run_id,
+                "observation_id": observation_id,
+                "telemetry": host_observation,
+                "writes_performed": True,
+            }
         return {
             "schema_version": "maestro_command_result_v1",
             "command": "observe-host",
@@ -605,6 +646,246 @@ def record_host_observation(
         "observation_id": observation_id,
         "telemetry": host_observation,
         "writes_performed": True,
+    }
+
+
+def _rpc_id(value: Any) -> tuple[str, str] | None:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    return type(value).__name__, str(value)
+
+
+def _app_server_trace_messages(trace_path: str | Path) -> list[dict[str, Any]]:
+    path = Path(trace_path).expanduser().resolve()
+    try:
+        valid = (
+            not path.is_symlink()
+            and path.is_file()
+            and path.stat().st_size <= MAX_APP_SERVER_TRACE_BYTES
+        )
+    except OSError:
+        valid = False
+    if not valid:
+        raise MaestroError(
+            "CODEX_APP_SERVER_TRACE_INVALID",
+            "App Server trace is missing, unsafe, or exceeds the 4 MB limit.",
+        )
+    messages: list[dict[str, Any]] = []
+    try:
+        lines = path.open(encoding="utf-8", errors="strict")
+    except OSError as exc:
+        raise MaestroError(
+            "CODEX_APP_SERVER_TRACE_INVALID",
+            f"Cannot read App Server trace: {exc}",
+        ) from exc
+    with lines:
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            if len(messages) >= MAX_APP_SERVER_TRACE_MESSAGES:
+                raise MaestroError(
+                    "CODEX_APP_SERVER_TRACE_INVALID",
+                    "App Server trace exceeds the 20,000-message limit.",
+                )
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise MaestroError(
+                    "CODEX_APP_SERVER_TRACE_INVALID",
+                    f"Invalid JSON-RPC message at line {line_number}.",
+                ) from exc
+            if not isinstance(message, dict):
+                raise MaestroError(
+                    "CODEX_APP_SERVER_TRACE_INVALID",
+                    f"Trace line {line_number} must be one JSON-RPC object.",
+                )
+            messages.append(message)
+    if not messages:
+        raise MaestroError(
+            "CODEX_APP_SERVER_TRACE_INVALID",
+            "App Server trace contains no JSON-RPC messages.",
+        )
+    return messages
+
+
+def _token_summary_from_app_server(value: Any) -> dict[str, int] | None:
+    if not isinstance(value, dict):
+        return None
+    fields = {
+        "inputTokens": "input",
+        "outputTokens": "output",
+        "cachedInputTokens": "cached",
+        "reasoningOutputTokens": "reasoning",
+        "totalTokens": "total",
+    }
+    if any(
+        not isinstance(value.get(source), int)
+        or isinstance(value.get(source), bool)
+        or value[source] < 0
+        for source in fields
+    ):
+        return None
+    return {
+        target: value[source]
+        for source, target in fields.items()
+    }
+
+
+def import_codex_app_server_trace(
+    repo_path: str | Path,
+    *,
+    observation_id: str,
+    run_id: str,
+    trace_path: str | Path,
+    turn_id: str | None = None,
+) -> dict[str, Any]:
+    """Import one fully captured public Codex App Server turn event stream."""
+
+    messages = _app_server_trace_messages(trace_path)
+    requests: dict[tuple[str, str], dict[str, Any]] = {}
+    responses: dict[tuple[str, str], dict[str, Any]] = {}
+    notifications: list[dict[str, Any]] = []
+    for message in messages:
+        identifier = _rpc_id(message.get("id"))
+        method = message.get("method")
+        if identifier is not None and isinstance(method, str):
+            requests[identifier] = message
+        elif identifier is not None and (
+            "result" in message or "error" in message
+        ):
+            responses[identifier] = message
+        elif isinstance(method, str) and isinstance(message.get("params"), dict):
+            notifications.append(message)
+
+    thread_models: dict[str, str] = {}
+    turn_requests: list[dict[str, Any]] = []
+    for identifier, request in requests.items():
+        response = responses.get(identifier)
+        if not isinstance(response, dict) or not isinstance(
+            response.get("result"),
+            dict,
+        ):
+            continue
+        params = request.get("params")
+        result = response["result"]
+        if not isinstance(params, dict):
+            continue
+        if request.get("method") == "thread/start":
+            thread = result.get("thread")
+            model = (
+                params.get("model")
+                if isinstance(params.get("model"), str)
+                and params["model"].strip()
+                else result.get("model")
+            )
+            if (
+                isinstance(thread, dict)
+                and isinstance(thread.get("id"), str)
+                and isinstance(model, str)
+                and model.strip()
+            ):
+                thread_models[thread["id"]] = model.strip()
+        elif request.get("method") == "turn/start":
+            turn = result.get("turn")
+            thread = params.get("threadId")
+            if (
+                isinstance(turn, dict)
+                and isinstance(turn.get("id"), str)
+                and isinstance(thread, str)
+            ):
+                turn_requests.append(
+                    {
+                        "turn_id": turn["id"],
+                        "thread_id": thread,
+                        "requested_model": (
+                            params["model"].strip()
+                            if isinstance(params.get("model"), str)
+                            and params["model"].strip()
+                            else thread_models.get(thread)
+                        ),
+                    }
+                )
+    if turn_id is not None:
+        turn_requests = [
+            item for item in turn_requests
+            if item["turn_id"] == turn_id
+        ]
+    if len(turn_requests) != 1:
+        raise MaestroError(
+            "CODEX_APP_SERVER_TURN_AMBIGUOUS",
+            "Trace must contain exactly one matching turn/start response; pass --turn-id when needed.",
+        )
+    selected = turn_requests[0]
+    selected_turn = selected["turn_id"]
+    selected_thread = selected["thread_id"]
+    completion: dict[str, Any] | None = None
+    reroutes: list[dict[str, str]] = []
+    tokens: dict[str, int] | None = None
+    for message in notifications:
+        params = message["params"]
+        if params.get("threadId") != selected_thread:
+            continue
+        method = message["method"]
+        if method == "turn/completed":
+            turn = params.get("turn")
+            if isinstance(turn, dict) and turn.get("id") == selected_turn:
+                completion = turn
+            continue
+        if params.get("turnId") != selected_turn:
+            continue
+        if method == "model/rerouted":
+            reroutes.append(
+                {
+                    "from_model": params.get("fromModel"),
+                    "to_model": params.get("toModel"),
+                    "reason": params.get("reason"),
+                }
+            )
+        elif method == "thread/tokenUsage/updated":
+            usage = params.get("tokenUsage")
+            if isinstance(usage, dict):
+                observed = _token_summary_from_app_server(usage.get("last"))
+                if observed is not None:
+                    tokens = observed
+    if completion is None or completion.get("status") not in {
+        "completed",
+        "interrupted",
+        "failed",
+    }:
+        raise MaestroError(
+            "CODEX_APP_SERVER_TRACE_INCOMPLETE",
+            "A complete turn/completed notification is required before telemetry is trusted.",
+        )
+    requested_model = selected["requested_model"]
+    applied_model = (
+        reroutes[-1]["to_model"]
+        if reroutes
+        else requested_model
+    )
+    evidence = (
+        "complete"
+        if requested_model is not None and applied_model is not None
+        else "unavailable"
+    )
+    recorded = record_host_observation(
+        repo_path,
+        observation_id=observation_id,
+        run_id=run_id,
+        source="codex-app-server",
+        quality="host_reported",
+        correlation_id=f"{selected_thread}:{selected_turn}",
+        requested_model=requested_model,
+        applied_model=applied_model if evidence == "complete" else None,
+        model_event_evidence=evidence,
+        reroutes=reroutes if evidence == "complete" else [],
+        tokens=tokens,
+    )
+    return {
+        **recorded,
+        "command": "observe-import-codex",
+        "turn_status": completion["status"],
+        "turn_duration_ms": completion.get("durationMs"),
+        "trace_sha256": sha256_text(canonical_json(messages)),
     }
 
 

@@ -37,7 +37,9 @@ sensitivity: internal
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
   → 반복된 재사용 공백만 project-local candidate 검토
   → owner 결정/held-out 평가가 있으면 tracked project pilot으로 활성화
+  → 선택 횟수·명시적 문제 신호가 임계치에 닿으면 Guide 단위 검토
   → 다음 버전은 새 후보로 검증해 update, 불필요하면 파일을 보존한 채 deactivate
+  → 범용성이 검증된 후보만 기여 Bundle로 추출해 Harness 릴리스 검토
 ```
 
 ## 현재 구현 범위
@@ -131,6 +133,12 @@ RunReceipt에는 다음 선택 정보만 optional로 기록한다.
 대화 전문, guide 본문, screenshot, web page와 research 원문은 JSONL에 복사하지 않는다.
 `maestro govern report`는 팩 사용과 research mode만 집계한다.
 
+Guide 추가·수정·폐기, trigger 조정, source 갱신과 평가 확장도 같은 후보 공간을
+사용한다. `candidate.json.component_change`가 변경 종류와 대상 Guide를 표시하지만,
+게시 단위는 언제나 완전한 Pack 다음 버전이다. Guide 파일만 active Skill에 직접
+복사하거나 지우지 않는다. 그래야 Pack manifest, source coverage, routing trigger와
+frozen evaluation이 하나의 digest와 rollback 단위를 유지한다.
+
 `$maestro-expertise-builder`는 admission gate가 통과할 때만 다음 project-local
 candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
 `decision-guide` 또는 `expertise-pack`을 반환해야 한다. 동일 trigger·판단 family는
@@ -197,6 +205,14 @@ maestro expertise deactivate --repo /path/to/project \
   --pack project-design --json > /tmp/maestro-expertise-off.json
 maestro expertise deactivate --repo /path/to/project \
   --apply-plan /tmp/maestro-expertise-off.json --json
+maestro expertise export --repo /path/to/project \
+  --candidate project-design-v2 \
+  --json > /tmp/maestro-expertise-export.json
+maestro expertise export --repo /path/to/project \
+  --apply-plan /tmp/maestro-expertise-export.json --json
+maestro expertise validate-contribution \
+  --bundle /path/to/project/.maestro/exports/expertise/project-design-v2.maestro-contribution.json \
+  --json
 maestro doctor --repo /path/to/project --strict --json
 ```
 
@@ -207,6 +223,21 @@ Pack·Skill ID를 유지하고 version을 정확히 하나 올리며, 현재 bun
 보일 수 있다. 세 명령 모두 프로젝트 파일만 바꾸며 candidate, 전역 Harness Registry,
 원격 저장소와 Agent 권한은 바꾸지 않는다. Doctor는 active Skill과 project manifest가
 Git index에 없는 경우 경고하지만 stage·commit·push는 하지 않는다.
+
+통합 뷰어는 Pack과 Guide별 선택 횟수, 마지막 사용, source 수, 검증 실패·수정의
+동반 횟수와 명시적 Expertise observation을 보여 준다. 기본 검토 간격은 서로 다른
+Run 선택 5회이며, 반복 음성 신호 3회 또는 critical 신호는 즉시 검토를 연다.
+이는 효용 점수나 원인 증명이 아니다. Host의 Guide load attestation이 없으면
+`host_attestation_unavailable`을 그대로 표시한다. 사용자는 뷰어에서 검토 가능한
+후보의 activate/update/export 또는 project Pack deactivate plan을 미리보고 두 번째
+확인으로 적용할 수 있다. live Guide를 행 단위로 즉시 삭제하는 기능은 없다.
+
+`export`는 `.maestro/exports/expertise/`에 content-addressed contribution bundle을
+쓸 뿐, Harness 저장소나 다른 프로젝트를 변경하지 않는다. maintainer가 privacy,
+source license, 중복, 평가와 diff를 검토해 bundled Skill·Registry에 반영하고
+정상 릴리스를 발행해야 한다. 다른 프로젝트는 그 릴리스를 설치한 뒤 `upgrade`와
+strict Doctor로 새 기준선을 받아들인다. 백그라운드 다운로드와 조용한 자동
+활성화는 하지 않는다.
 
 ## 평가 계약
 
@@ -270,7 +301,7 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
 | 후보 활성화 CLI | 현재 구현 | owner/held-out 근거 + reviewed preview/apply + strict Doctor |
 | 후보 bundle validator | 현재 구현 | source·Guide·평가 artifact 교차 참조 + read-only CLI |
-| 후보 생성 CLI | 보류 | Skill 기반 후보 생성이 반복되고 정형 입력 요구가 측정됨 |
+| 후보 생성 CLI | 보류 | Builder Skill이 후보를 만들고 validator가 자동 검사하는 현재 경계로 충분; 반복된 정형 입력 병목이 측정되면 재검토 |
 | 자동 candidate 제안 | 보류 | 반복 fingerprint가 전문성 공백과 안정적으로 연결됨 |
 | active 전역 승격 자동화 | 제외 | owner 승인과 versioned repository change 유지 |
 

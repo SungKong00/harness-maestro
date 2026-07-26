@@ -51,6 +51,13 @@
       "verdict": "pass"
     },
     {
+      "case_id": "operations-dashboard-verification",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
       "case_id": "unknown-expertise",
       "observed_pack_id": null,
       "observed_mode": "discover",

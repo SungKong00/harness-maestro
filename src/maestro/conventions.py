@@ -14,6 +14,7 @@ from .util import (
     canonical_json,
     ensure_repo,
     file_sha256,
+    pretty_json,
     read_json,
     safe_target,
     sha256_text,
@@ -766,6 +767,82 @@ def _text_operation(
     }
 
 
+def _managed_baseline_operations(
+    repo: Path,
+    *,
+    entrypoint_path: str,
+    entrypoint_content: str,
+) -> list[dict[str, Any]]:
+    managed_path = safe_target(repo, ".maestro/managed.json")
+    lock_path = safe_target(repo, ".maestro/lock.json")
+    if (
+        managed_path.is_symlink()
+        or lock_path.is_symlink()
+        or not managed_path.is_file()
+        or not lock_path.is_file()
+    ):
+        raise MaestroError(
+            "CONVENTION_MANAGED_STATE_INVALID",
+            "Convention lifecycle requires intact managed and lock state.",
+        )
+    managed = read_json(managed_path)
+    lock = read_json(lock_path)
+    if (
+        managed.get("schema_version") != "maestro_managed_v1"
+        or managed.get("kind") != "managed"
+        or not isinstance(managed.get("entries"), list)
+        or lock.get("schema_version") != "maestro_lock_v1"
+        or lock.get("kind") != "lock"
+        or lock.get("managed", {}).get("sha256") != file_sha256(managed_path)
+    ):
+        raise MaestroError(
+            "CONVENTION_MANAGED_STATE_INVALID",
+            "Managed state is invalid or no longer matches lock.json.",
+        )
+    entries: list[dict[str, Any]] = []
+    replaced = False
+    for item in managed["entries"]:
+        if not isinstance(item, dict):
+            raise MaestroError(
+                "CONVENTION_MANAGED_STATE_INVALID",
+                "managed.json entries must be objects.",
+            )
+        entry = dict(item)
+        if entry.get("path") == entrypoint_path:
+            entry = {
+                "path": entrypoint_path,
+                "ownership": "user_owned",
+                "sha256": sha256_text(entrypoint_content),
+                "preserve_on_drift": True,
+            }
+            replaced = True
+        entries.append(entry)
+    if not replaced:
+        entries.append(
+            {
+                "path": entrypoint_path,
+                "ownership": "user_owned",
+                "sha256": sha256_text(entrypoint_content),
+                "preserve_on_drift": True,
+            }
+        )
+    entries.sort(key=lambda item: item.get("path", ""))
+    managed_content = pretty_json(
+        {
+            "schema_version": "maestro_managed_v1",
+            "kind": "managed",
+            "entries": entries,
+        }
+    )
+    updated_lock = dict(lock)
+    updated_lock["managed"] = {"sha256": sha256_text(managed_content)}
+    lock_content = pretty_json(updated_lock)
+    return [
+        _text_operation(repo, ".maestro/managed.json", managed_content),
+        _text_operation(repo, ".maestro/lock.json", lock_content),
+    ]
+
+
 def _finalize_lifecycle_plan(base: dict[str, Any]) -> dict[str, Any]:
     digest = sha256_text(canonical_json(base))
     base["plan_id"] = digest[:20]
@@ -867,6 +944,11 @@ def build_convention_activation_plan(
             "operations": [
                 _text_operation(repo, target_path, active),
                 _text_operation(repo, entrypoint_path, indexed),
+                *_managed_baseline_operations(
+                    repo,
+                    entrypoint_path=entrypoint_path,
+                    entrypoint_content=indexed,
+                ),
             ],
             "warnings": [
                 "Activation changes repository documentation authority.",
@@ -987,6 +1069,11 @@ def build_convention_update_plan(
             "operations": [
                 _text_operation(repo, target_path, updated),
                 _text_operation(repo, entrypoint_path, indexed),
+                *_managed_baseline_operations(
+                    repo,
+                    entrypoint_path=entrypoint_path,
+                    entrypoint_content=indexed,
+                ),
             ],
             "warnings": [
                 "This plan updates exactly one active Convention topic.",
@@ -1166,15 +1253,21 @@ def apply_convention_lifecycle_plan(
         )
     entrypoint_path, _ = _markdown_entrypoint(repo)
     operations = plan.get("operations")
+    expected_operation_paths = {
+        target_path,
+        entrypoint_path,
+        ".maestro/managed.json",
+        ".maestro/lock.json",
+    }
     if (
         not isinstance(operations, list)
-        or len(operations) != 2
+        or len(operations) != 4
         or {item.get("path") for item in operations if isinstance(item, dict)}
-        != {target_path, entrypoint_path}
+        != expected_operation_paths
     ):
         raise MaestroError(
             "CONVENTION_LIFECYCLE_PLAN_INVALID",
-            "Convention lifecycle operations are not the bounded target and index pair.",
+            "Convention lifecycle operations are not the bounded target, index, and managed baseline set.",
             exit_code=3,
         )
     originals: dict[Path, bytes | None] = {}
@@ -1209,7 +1302,7 @@ def apply_convention_lifecycle_plan(
         originals[path] = path.read_bytes() if path.is_file() else None
         if operation["path"] == target_path:
             _validate_active_content(operation["path"], operation["content"])
-        elif (
+        elif operation["path"] == entrypoint_path and (
             CONVENTION_INDEX_BEGIN not in operation["content"]
             or CONVENTION_INDEX_END not in operation["content"]
         ):
@@ -1218,6 +1311,45 @@ def apply_convention_lifecycle_plan(
                 "Convention document index marker is missing.",
                 exit_code=3,
             )
+    operation_by_path = {
+        operation["path"]: operation
+        for operation in operations
+    }
+    try:
+        planned_managed = json.loads(
+            operation_by_path[".maestro/managed.json"]["content"]
+        )
+        planned_lock = json.loads(
+            operation_by_path[".maestro/lock.json"]["content"]
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise MaestroError(
+            "CONVENTION_LIFECYCLE_PLAN_INVALID",
+            "Managed baseline operations are not valid JSON.",
+            exit_code=3,
+        ) from exc
+    entrypoint_digest = operation_by_path[entrypoint_path]["after_sha256"]
+    matching_entries = [
+        item
+        for item in planned_managed.get("entries", [])
+        if isinstance(item, dict) and item.get("path") == entrypoint_path
+    ]
+    if (
+        planned_managed.get("schema_version") != "maestro_managed_v1"
+        or planned_managed.get("kind") != "managed"
+        or len(matching_entries) != 1
+        or matching_entries[0].get("ownership") != "user_owned"
+        or matching_entries[0].get("sha256") != entrypoint_digest
+        or planned_lock.get("schema_version") != "maestro_lock_v1"
+        or planned_lock.get("kind") != "lock"
+        or planned_lock.get("managed", {}).get("sha256")
+        != sha256_text(operation_by_path[".maestro/managed.json"]["content"])
+    ):
+        raise MaestroError(
+            "CONVENTION_LIFECYCLE_PLAN_INVALID",
+            "Managed baseline does not bind the updated Convention index.",
+            exit_code=3,
+        )
     if basis == "held_out_evaluation":
         target_operation = next(
             operation
@@ -1239,6 +1371,8 @@ def apply_convention_lifecycle_plan(
         for target, original in originals.items():
             if original is not None:
                 atomic_write(target, original)
+            elif target.exists() and not target.is_symlink():
+                target.unlink()
         raise
     return {
         "schema_version": "maestro_command_result_v1",

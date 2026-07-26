@@ -41,6 +41,8 @@ Prefer an existing Guide revision for the same trigger and decision family.
 Prefer a new Guide in an existing Pack when its source and evaluation family
 match. Create a Pack only for an independent domain with at least two
 selectable Guides and its own trigger, source, evaluation, and result boundary.
+Trigger, source and evaluation changes that keep the same domain also remain
+changes to the owning Pack; do not create a parallel lifecycle for each file.
 
 ## Establish evidence
 
@@ -68,6 +70,12 @@ Read `references/compilation-format.md`, then create only:
 
 `candidate.json` must follow
 `src/maestro/resources/schemas/expertise-candidate.schema.json` when available.
+Set `component_change` to the smallest intended change:
+`new-pack`, `guide-addition`, `guide-revision`, `guide-deprecation`,
+`trigger-adjustment`, `source-refresh`, or `evaluation-extension`. Guide
+changes name one `target_guide_id`; the other kinds use `null`. The draft is
+still a complete next Pack snapshot so source, routing and evaluation cannot be
+published at different versions.
 The directory is project-local runtime state and is excluded from normal
 document selection. Give every candidate a `review_after` date; an expired
 candidate must be revalidated, rejected, or removed instead of silently reused.
@@ -114,6 +122,12 @@ bundle, cross-file references, authority block, source-to-Guide coverage, and
 evaluation artifact digest; it does not claim that a source is true or that a
 domain artifact is good.
 
+After a project pilot is selected in real work, let the ordinary RunReceipt
+record only Pack and Guide IDs plus bounded observations. The Viewer reports a
+Guide after five measured selections, or earlier when critical/repeated
+negative signals exist. Selection, correction and verifier co-occurrence open
+a review; they never prove causality and never mutate the Pack automatically.
+
 ## Output
 
 ```text
@@ -150,4 +164,12 @@ one version increment. To stop using a Pack, preview/apply
 entry and preserves the Skill files. Run Doctor, stage, and commit the reviewed
 project files after each operation. No command stages, commits, pushes, or
 promotes globally.
-Global promotion always requires an explicit repository change and approval.
+
+When the candidate is genuinely reusable outside the project, preview/apply
+`maestro expertise export --candidate <id>`. This writes one content-addressed
+review bundle under `.maestro/exports/expertise/`; validate it with
+`maestro expertise validate-contribution --bundle <path>`. Export does not
+install, promote, commit or push anything. A maintainer must review privacy,
+licensing, overlap and frozen evaluations, then make a normal Harness
+repository change and release. Other projects receive it only after updating
+to that reviewed release; no running project silently downloads new Guides.

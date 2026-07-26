@@ -46,3 +46,22 @@ observed Pack, mode, Guides, and pass/fail verdict. Bind that file by path and
 SHA-256 from `evals/cases.json`; never rewrite the results after preview without
 creating a new candidate. The receipt proves which evaluated result was
 reviewed, not that the model or source was inherently correct.
+
+## In-use review
+
+After activation, keep the evidence cheap:
+
+- count distinct Run IDs where the Pack and Guide were selected;
+- retain only the last selection time and a bounded recent Run ID list;
+- count verifier failure and correction only as co-occurring review signals;
+- record explicit `missing_guide`, `trigger_false_positive`,
+  `guide_not_loaded`, `guide_ineffective`, `pack_conflict` or similar bounded
+  observations when the executor or verifier has durable evidence;
+- leave actual Guide-load proof unavailable unless the Host attests it.
+
+Five selections open a routine review. Three negative observations,
+verification failures or corrected runs open a problem review; one critical
+observation opens it immediately. These thresholds request human inspection,
+not activation, deletion or a claim that the Guide caused the outcome. A
+reviewed change becomes a new full Pack candidate and repeats the frozen-case
+gate.

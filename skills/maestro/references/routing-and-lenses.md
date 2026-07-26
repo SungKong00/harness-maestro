@@ -40,9 +40,11 @@ extended once when a material gap identifies an unselected Lens.
 only the Assignment's Lens cards and guide IDs, bounded document/artifact
 references, and validated direct dependency packets. It emits no file body,
 parent conversation, raw transcript, hidden reasoning, or other blind
-reviewer's first conclusion. `maestro validate-packet` then binds a
+reviewer’s first conclusion. `maestro validate-packet` then binds a
 FindingPacket v2 or terminal Assignment result to the same plan and Assignment
-before downstream use.
+before downstream use. A dependent Assignment receives both the validated
+Packet and the exact source projection digest; rebuilding a smaller projection
+would discard document and Convention selection evidence and is forbidden.
 
 Projection is a deterministic allowlist artifact. Actual fresh-context and
 tool isolation remain Host behavior and must be recorded as requested,

@@ -161,6 +161,63 @@
           }
         }
       }
+    },
+    "component_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target_guide_id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "new-pack",
+            "guide-addition",
+            "guide-revision",
+            "guide-deprecation",
+            "trigger-adjustment",
+            "source-refresh",
+            "evaluation-extension"
+          ]
+        },
+        "target_guide_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "guide-addition",
+                  "guide-revision",
+                  "guide-deprecation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_guide_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "target_guide_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "$defs": {

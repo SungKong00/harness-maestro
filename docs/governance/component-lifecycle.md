@@ -125,6 +125,11 @@ publication 검토 전 `maestro expertise validate-candidate`가 공통 권한 �
 평가 결과를 통과해야 한다. 이는 구조와 provenance를 검사하는 gate이며 출처의
 진실성이나 domain 산출물 품질을 자동 승인하지 않는다.
 
+Pack 하위 요소도 별도 live 디렉터리를 직접 수정하지 않는다. Guide 추가·수정·폐기,
+trigger 조정, source refresh와 evaluation 확장은 `component_change`로 의도를
+표시한 완전한 다음 Pack 후보가 된다. 이 방식은 하위 요소별 효용을 관찰하면서도
+manifest·source·평가·rollback의 배포 단위를 하나로 유지한다.
+
 owner 결정 또는 accepted held-out evaluation을 받은 후보는
 `maestro expertise activate`의 preview/apply 경계로
 `.agents/skills/<skill-id>/`의 project `pilot`이 될 수 있다. project manifest
@@ -135,6 +140,17 @@ allowlist에 든 Pack만 라우팅하며 candidate와 게시 시점 snapshot은 
 Pack에 속하는 판단은 base ID·version·digest를 고정한 한 단계 `extends`를 기본으로
 사용한다. 동일 ID shadowing, inherited guide 재정의, 활성 파일 직접 수정과 자동
 전역 승격은 허용하지 않는다.
+
+활성 Pack과 Guide는 RunReceipt의 선택 기록과 bounded Expertise observation으로
+관찰한다. Guide 5회 선택은 정기 검토를, 반복된 음성 신호 3회 또는 critical 신호는
+문제 검토를 연다. 사용·수정·검증 실패의 동시 발생은 원인 증명이 아니며, 임계치는
+후보를 자동 만들거나 active 파일을 바꾸지 않는다. 실제 변경은 다시
+candidate → frozen evaluation → preview/apply를 거친다.
+
+`profile` 또는 `global`로 판단된 프로젝트 후보는
+`maestro expertise export`로 content-addressed contribution bundle을 만들 수 있다.
+이는 검토용 운반 형식일 뿐이다. Harness maintainer의 별도 저장소 diff와 릴리스가
+완료된 뒤에만 다른 프로젝트가 새 설치 버전으로 받아들인다.
 
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은

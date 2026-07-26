@@ -17,11 +17,14 @@ from maestro.expertise_lifecycle import (
     EXPERTISE_AUTHORITY_BLOCK,
     apply_expertise_activation_plan,
     apply_expertise_deactivation_plan,
+    apply_expertise_export_plan,
     apply_expertise_update_plan,
     build_expertise_activation_plan,
     build_expertise_deactivation_plan,
+    build_expertise_export_plan,
     build_expertise_update_plan,
     expertise_inventory,
+    validate_expertise_contribution,
     validate_expertise_candidate,
 )
 from maestro.governance import govern_report, record_run
@@ -50,6 +53,8 @@ def _candidate(
     ),
     stale_base: bool = False,
     standalone: bool = False,
+    portability: str = "project",
+    component_change: dict[str, object] | None = None,
 ) -> None:
     root = (
         repo
@@ -67,7 +72,7 @@ def _candidate(
         "candidate_id": candidate_id,
         "expertise_pack_id": pack_id,
         "status": "candidate",
-        "portability": "project",
+        "portability": portability,
         "owner": "test-owner",
         "review_after": "2026-08-31",
         "problem": "Project typography rules are repeatedly omitted.",
@@ -90,6 +95,8 @@ def _candidate(
             "regression_criteria": ["Does not trigger on backend work"],
         },
     }
+    if component_change is not None:
+        candidate["component_change"] = component_change
     pack = {
         "schema_version": "maestro_expertise_pack_v1",
         "kind": "expertise-pack",
@@ -242,6 +249,76 @@ def _candidate(
 
 
 class ProjectExpertiseLifecycleTests(unittest.TestCase):
+    def test_component_change_is_visible_and_exports_as_a_review_bundle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                portability="global",
+                component_change={
+                    "kind": "guide-addition",
+                    "target_guide_id": "project-type-rules",
+                },
+            )
+
+            candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual(
+                {
+                    "kind": "guide-addition",
+                    "target_guide_id": "project-type-rules",
+                },
+                candidate["component_change"],
+            )
+            preview = build_expertise_export_plan(
+                repo,
+                candidate_id="project-design",
+            )
+            self.assertFalse(preview["writes_performed"])
+            self.assertFalse(
+                (repo / preview["output_path"]).exists()
+            )
+            result = apply_expertise_export_plan(preview, repo)
+            bundle = repo / result["output_path"]
+            validation = validate_expertise_contribution(bundle)
+
+            self.assertEqual("exported", result["status"])
+            self.assertFalse(result["promotion_performed"])
+            self.assertEqual("PASS", validation["status"])
+            self.assertEqual(
+                "guide-addition",
+                validation["component_change"]["kind"],
+            )
+
+    def test_component_change_must_match_the_candidate_guide_set(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                component_change={
+                    "kind": "guide-revision",
+                    "target_guide_id": "missing-guide",
+                },
+            )
+
+            report = validate_expertise_candidate(
+                repo,
+                "project-design",
+            )
+
+            self.assertEqual("FAIL", report["status"])
+            self.assertIn(
+                "EXPERTISE_CANDIDATE_INVALID",
+                {issue["code"] for issue in report["issues"]},
+            )
+
     def test_candidate_bundle_validation_checks_semantic_links_and_receipt(
         self,
     ) -> None:

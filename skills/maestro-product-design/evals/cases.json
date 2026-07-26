@@ -4,7 +4,7 @@
   "evaluated_on": "2026-07-27",
   "evaluation_artifact": {
     "path": "evals/results.json",
-    "sha256": "261b4928b5e6c8d71edef5670aba3f4740c972caa3423fd85f351360d42c0471"
+    "sha256": "e6a5d04c454df137824b9f8657eb4a1652578c8c616434a0674516739fb0b94f"
   },
   "cases": [
     {
@@ -69,6 +69,16 @@
       ],
       "observable_criteria": ["Routes the request through refresh research"],
       "forbidden_behaviors": ["Updates reusable guidance without refreshed evidence"]
+    },
+    {
+      "case_id": "operations-dashboard-verification",
+      "stratum": "non-trigger",
+      "goal": "Verify the dashboard backend and operations telemetry",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": ["Keeps operational verification outside the product-design Pack"],
+      "forbidden_behaviors": ["Selects product design from the generic surface noun dashboard"]
     },
     {
       "case_id": "unknown-expertise",

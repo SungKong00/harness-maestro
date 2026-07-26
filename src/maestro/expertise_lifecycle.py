@@ -30,6 +30,8 @@ from .util import (
 ACTIVATION_PLAN_VERSION = "maestro_expertise_activation_plan_v1"
 UPDATE_PLAN_VERSION = "maestro_expertise_update_plan_v1"
 DEACTIVATION_PLAN_VERSION = "maestro_expertise_deactivation_plan_v1"
+EXPORT_PLAN_VERSION = "maestro_expertise_export_plan_v1"
+CONTRIBUTION_VERSION = "maestro_expertise_contribution_v1"
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 APPROVAL_PATTERN = re.compile(
     r"^(?:owner_decision|held_out_evaluation):\S.+$"
@@ -68,6 +70,25 @@ CANDIDATE_REQUIRED_FIELDS = {
     "evidence_refs",
     "proposed_guides",
     "evaluation",
+}
+CANDIDATE_OPTIONAL_FIELDS = {"component_change"}
+COMPONENT_CHANGE_FIELDS = {
+    "kind",
+    "target_guide_id",
+}
+COMPONENT_CHANGE_KINDS = {
+    "new-pack",
+    "guide-addition",
+    "guide-revision",
+    "guide-deprecation",
+    "trigger-adjustment",
+    "source-refresh",
+    "evaluation-extension",
+}
+GUIDE_COMPONENT_CHANGE_KINDS = {
+    "guide-addition",
+    "guide-revision",
+    "guide-deprecation",
 }
 PROPOSED_GUIDE_FIELDS = {
     "guide_id",
@@ -115,7 +136,9 @@ def _candidate_contract_valid(
     candidate_id: str,
 ) -> bool:
     if (
-        set(candidate) != CANDIDATE_REQUIRED_FIELDS
+        not CANDIDATE_REQUIRED_FIELDS.issubset(candidate)
+        or set(candidate) - CANDIDATE_REQUIRED_FIELDS
+        - CANDIDATE_OPTIONAL_FIELDS
         or candidate.get("schema_version") != "maestro_expertise_candidate_v1"
         or candidate.get("candidate_id") != candidate_id
         or candidate.get("status") != "candidate"
@@ -160,6 +183,36 @@ def _candidate_contract_valid(
         guide_ids.append(guide["guide_id"])
     if len(guide_ids) != len(set(guide_ids)):
         return False
+    component_change = candidate.get("component_change")
+    if component_change is not None:
+        if (
+            not isinstance(component_change, dict)
+            or set(component_change) != COMPONENT_CHANGE_FIELDS
+            or component_change.get("kind") not in COMPONENT_CHANGE_KINDS
+        ):
+            return False
+        target_guide_id = component_change.get("target_guide_id")
+        if component_change["kind"] in GUIDE_COMPONENT_CHANGE_KINDS:
+            if (
+                not isinstance(target_guide_id, str)
+                or ID_PATTERN.fullmatch(target_guide_id) is None
+            ):
+                return False
+            if (
+                component_change["kind"] in {
+                    "guide-addition",
+                    "guide-revision",
+                }
+                and target_guide_id not in guide_ids
+            ):
+                return False
+            if (
+                component_change["kind"] == "guide-deprecation"
+                and target_guide_id in guide_ids
+            ):
+                return False
+        elif target_guide_id is not None:
+            return False
     evaluation = candidate.get("evaluation")
     return (
         isinstance(evaluation, dict)
@@ -170,6 +223,27 @@ def _candidate_contract_valid(
         and _nonempty_unique_strings(evaluation.get("pass_criteria"))
         and _nonempty_unique_strings(evaluation.get("regression_criteria"))
     )
+
+
+def _candidate_component_change(
+    candidate: dict[str, Any],
+    pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    declared = candidate.get("component_change")
+    if isinstance(declared, dict):
+        return copy.deepcopy(declared)
+    if isinstance(pack, dict) and pack.get("extends") is not None:
+        guide_ids = [
+            guide["guide_id"]
+            for guide in candidate.get("proposed_guides", [])
+            if isinstance(guide, dict)
+            and isinstance(guide.get("guide_id"), str)
+        ]
+        return {
+            "kind": "guide-addition",
+            "target_guide_id": guide_ids[0] if len(guide_ids) == 1 else None,
+        }
+    return {"kind": "new-pack", "target_guide_id": None}
 
 
 def _candidate_root(repo: Path, candidate_id: str) -> Path:
@@ -788,6 +862,40 @@ def _candidate_publication_contents(
     return contents, sha256_text(canonical_json(source_digests))
 
 
+def _candidate_contribution_files(
+    candidate_root: Path,
+    pack: dict[str, Any],
+) -> list[dict[str, str]]:
+    relative_paths = {
+        "candidate.json",
+        f"draft/{PROJECT_PACK_FILENAME}",
+        "draft/SKILL.md",
+        "draft/agents/openai.yaml",
+        "evidence/sources.json",
+        "evals/cases.json",
+    }
+    suite = read_json(safe_target(candidate_root, "evals/cases.json"))
+    evaluation_artifact = suite.get("evaluation_artifact", {}).get("path")
+    if isinstance(evaluation_artifact, str):
+        relative_paths.add(evaluation_artifact)
+    for guide in pack["guides"]:
+        relative_paths.add(
+            f"draft/references/{guide['guide_id']}.md"
+        )
+
+    files: list[dict[str, str]] = []
+    for relative_path in sorted(relative_paths):
+        content = _read_text_file(candidate_root, relative_path)
+        files.append(
+            {
+                "path": relative_path,
+                "sha256": sha256_text(content),
+                "content": content,
+            }
+        )
+    return files
+
+
 def _publication_record(
     *,
     action: str,
@@ -858,6 +966,212 @@ def _finalize_plan(base: dict[str, Any]) -> dict[str, Any]:
     return base
 
 
+def build_expertise_export_plan(
+    repo_path: str | Path,
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    repo = ensure_repo(repo_path)
+    candidate_root, candidate, pack = _fresh_candidate_pack(
+        repo,
+        candidate_id,
+    )
+    files = _candidate_contribution_files(candidate_root, pack)
+    repository_path = str(repo)
+    if any(repository_path in item["content"] for item in files):
+        raise MaestroError(
+            "EXPERTISE_CONTRIBUTION_PRIVATE_PATH",
+            "Candidate content contains the producing repository's absolute path.",
+        )
+    file_digests = {
+        item["path"]: item["sha256"] for item in files
+    }
+    contribution = {
+        "schema_version": CONTRIBUTION_VERSION,
+        "candidate_id": candidate_id,
+        "expertise_pack_id": candidate["expertise_pack_id"],
+        "portability": candidate["portability"],
+        "component_change": _candidate_component_change(
+            candidate,
+            pack,
+        ),
+        "base": copy.deepcopy(pack.get("extends")),
+        "pack_version": pack["version"],
+        "candidate_digest": sha256_text(
+            canonical_json(file_digests)
+        ),
+        "files": files,
+        "promotion": {
+            "status": (
+                "review_required"
+                if candidate["portability"] in {"profile", "global"}
+                else "project_only"
+            ),
+            "automatic_install_allowed": False,
+            "requires_repository_review": True,
+            "requires_release": True,
+        },
+    }
+    contribution["bundle_digest"] = sha256_text(
+        canonical_json(contribution)
+    )
+    content = pretty_json(contribution)
+    output_path = (
+        f".maestro/exports/expertise/{candidate_id}."
+        "maestro-contribution.json"
+    )
+    base = {
+        "schema_version": EXPORT_PLAN_VERSION,
+        "command": "expertise-export",
+        "repo_realpath": str(repo),
+        "candidate_id": candidate_id,
+        "candidate_digest": contribution["candidate_digest"],
+        "output_path": output_path,
+        "output_before_sha256": file_sha256(
+            safe_target(repo, output_path)
+        ),
+        "output_after_sha256": sha256_text(content),
+        "content": content,
+        "warnings": [
+            (
+                "Export is a review bundle, not a global promotion, install, "
+                "commit, or push."
+            ),
+            (
+                "Review the bundle for project-private knowledge and source "
+                "licensing before moving it to the Harness repository."
+            ),
+        ],
+        "writes_performed": False,
+    }
+    return _finalize_plan(base)
+
+
+def validate_expertise_contribution(
+    bundle_path: str | Path,
+) -> dict[str, Any]:
+    path = Path(bundle_path).expanduser().resolve()
+    try:
+        contribution = read_json(path)
+    except MaestroError as exc:
+        return {
+            "schema_version": "maestro_expertise_contribution_validation_v1",
+            "status": "FAIL",
+            "issues": [{"code": exc.code, "message": exc.message}],
+            "writes_performed": False,
+        }
+    issues: list[dict[str, str]] = []
+    required = {
+        "schema_version",
+        "candidate_id",
+        "expertise_pack_id",
+        "portability",
+        "component_change",
+        "base",
+        "pack_version",
+        "candidate_digest",
+        "files",
+        "promotion",
+        "bundle_digest",
+    }
+    if set(contribution) != required:
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_FIELDS_INVALID",
+                "message": "Contribution fields do not match the v1 contract.",
+            }
+        )
+    if (
+        contribution.get("schema_version") != CONTRIBUTION_VERSION
+        or not isinstance(contribution.get("candidate_id"), str)
+        or ID_PATTERN.fullmatch(contribution.get("candidate_id", "")) is None
+        or not isinstance(contribution.get("expertise_pack_id"), str)
+        or ID_PATTERN.fullmatch(
+            contribution.get("expertise_pack_id", "")
+        )
+        is None
+        or contribution.get("portability")
+        not in {"project", "profile", "global"}
+        or not isinstance(contribution.get("pack_version"), int)
+        or isinstance(contribution.get("pack_version"), bool)
+        or contribution.get("pack_version", 0) < 1
+    ):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_IDENTITY_INVALID",
+                "message": "Contribution identity, portability, or version is invalid.",
+            }
+        )
+    files = contribution.get("files")
+    file_digests: dict[str, str] = {}
+    if (
+        not isinstance(files, list)
+        or not 7 <= len(files) <= 32
+    ):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_FILES_INVALID",
+                "message": "Contribution must contain a bounded file list.",
+            }
+        )
+    else:
+        for item in files:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"path", "sha256", "content"}
+                or not isinstance(item.get("path"), str)
+                or _safe_candidate_reference(Path("/"), item["path"]) is None
+                or not isinstance(item.get("sha256"), str)
+                or not isinstance(item.get("content"), str)
+                or sha256_text(item.get("content", ""))
+                != item.get("sha256")
+                or item["path"] in file_digests
+            ):
+                issues.append(
+                    {
+                        "code": "EXPERTISE_CONTRIBUTION_FILE_INVALID",
+                        "message": "Contribution contains an unsafe, duplicate, or mismatched file.",
+                    }
+                )
+                break
+            file_digests[item["path"]] = item["sha256"]
+    if (
+        file_digests
+        and contribution.get("candidate_digest")
+        != sha256_text(canonical_json(file_digests))
+    ):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_DIGEST_INVALID",
+                "message": "Contribution candidate digest does not match its files.",
+            }
+        )
+    unsigned = {
+        key: value
+        for key, value in contribution.items()
+        if key != "bundle_digest"
+    }
+    if contribution.get("bundle_digest") != sha256_text(
+        canonical_json(unsigned)
+    ):
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_BUNDLE_TAMPERED",
+                "message": "Contribution bundle digest does not match its contents.",
+            }
+        )
+    return {
+        "schema_version": "maestro_expertise_contribution_validation_v1",
+        "status": "FAIL" if issues else "PASS",
+        "candidate_id": contribution.get("candidate_id"),
+        "expertise_pack_id": contribution.get("expertise_pack_id"),
+        "portability": contribution.get("portability"),
+        "component_change": contribution.get("component_change"),
+        "issues": issues,
+        "writes_performed": False,
+    }
+
+
 def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     catalog = load_expertise_catalog(repo)
@@ -923,6 +1237,22 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                 }
             except MaestroError:
                 publication = None
+        sources_by_guide: dict[str, list[dict[str, Any]]] = {
+            guide["guide_id"]: [] for guide in pack["guides"]
+        }
+        if source_manifest is not None:
+            for source in source_manifest["sources"]:
+                if not isinstance(source, dict):
+                    continue
+                for guide_id in source.get("used_by", []):
+                    if guide_id in sources_by_guide:
+                        sources_by_guide[guide_id].append(
+                            {
+                                "source_id": source.get("source_id"),
+                                "tier": source.get("tier"),
+                                "freshness": source.get("freshness"),
+                            }
+                        )
         entries.append(
             {
                 "expertise_pack_id": pack["expertise_pack_id"],
@@ -935,11 +1265,20 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                 "pack_path": metadata["pack_path"],
                 "definition_digest": metadata["definition_digest"],
                 "extends": metadata["base"],
+                "triggers": list(pack.get("triggers", [])),
+                "dominance_triggers": list(
+                    pack.get("dominance_triggers", [])
+                ),
                 "guides": [
                     {
                         "guide_id": guide["guide_id"],
                         "summary": guide["summary"],
                         "freshness": guide["freshness"],
+                        "triggers": list(guide.get("triggers", [])),
+                        "sources": sources_by_guide.get(
+                            guide["guide_id"],
+                            [],
+                        ),
                     }
                     for guide in pack["guides"]
                 ],
@@ -985,6 +1324,22 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
             try:
                 _, candidate = _read_candidate(repo, path.name)
                 validation = validate_expertise_candidate(repo, path.name)
+                candidate_pack = read_json(
+                    safe_target(
+                        path,
+                        f"draft/{PROJECT_PACK_FILENAME}",
+                    )
+                )
+                matching_project_pack = next(
+                    (
+                        pack
+                        for pack in catalog
+                        if pack["_maestro"]["origin"] == "project"
+                        and pack["expertise_pack_id"]
+                        == candidate["expertise_pack_id"]
+                    ),
+                    None,
+                )
                 candidates.append(
                     {
                         "candidate_id": candidate["candidate_id"],
@@ -1002,6 +1357,15 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                         "validation_issue_codes": [
                             issue["code"] for issue in validation["issues"]
                         ],
+                        "component_change": _candidate_component_change(
+                            candidate,
+                            candidate_pack,
+                        ),
+                        "recommended_action": (
+                            "update"
+                            if matching_project_pack is not None
+                            else "activate"
+                        ),
                     }
                 )
             except MaestroError as exc:
@@ -1302,14 +1666,18 @@ def build_expertise_deactivation_plan(
 
 
 def _read_publication_plan(
-    plan_path: str | Path,
+    plan_path: dict[str, Any] | str | Path,
     *,
     schema_version: str,
     command: str,
     allowed_fields: set[str],
     label: str,
 ) -> dict[str, Any]:
-    plan = read_json(Path(plan_path).expanduser().resolve())
+    plan = (
+        copy.deepcopy(plan_path)
+        if isinstance(plan_path, dict)
+        else read_json(Path(plan_path).expanduser().resolve())
+    )
     if (
         set(plan) != allowed_fields
         or plan.get("schema_version") != schema_version
@@ -1485,7 +1853,7 @@ def _published_skill_root(plan: dict[str, Any]) -> str:
 
 
 def apply_expertise_activation_plan(
-    plan_path: str | Path,
+    plan_path: dict[str, Any] | str | Path,
     repo_override: str | Path | None = None,
 ) -> dict[str, Any]:
     plan = _read_publication_plan(
@@ -1540,7 +1908,7 @@ def apply_expertise_activation_plan(
 
 
 def apply_expertise_update_plan(
-    plan_path: str | Path,
+    plan_path: dict[str, Any] | str | Path,
     repo_override: str | Path | None = None,
 ) -> dict[str, Any]:
     plan = _read_publication_plan(
@@ -1602,7 +1970,7 @@ def apply_expertise_update_plan(
 
 
 def apply_expertise_deactivation_plan(
-    plan_path: str | Path,
+    plan_path: dict[str, Any] | str | Path,
     repo_override: str | Path | None = None,
 ) -> dict[str, Any]:
     allowed_fields = {
@@ -1656,5 +2024,95 @@ def apply_expertise_deactivation_plan(
         "preserved_pack_path": plan["pack_path"],
         "changed_paths": [".maestro/project.json"],
         "git_stage_paths": [".maestro/project.json"],
+        "writes_performed": True,
+    }
+
+
+def apply_expertise_export_plan(
+    plan_path: dict[str, Any] | str | Path,
+    repo_override: str | Path | None = None,
+) -> dict[str, Any]:
+    allowed_fields = {
+        "schema_version",
+        "command",
+        "repo_realpath",
+        "candidate_id",
+        "candidate_digest",
+        "output_path",
+        "output_before_sha256",
+        "output_after_sha256",
+        "content",
+        "warnings",
+        "writes_performed",
+        "plan_id",
+        "plan_digest",
+    }
+    plan = _read_publication_plan(
+        plan_path,
+        schema_version=EXPORT_PLAN_VERSION,
+        command="expertise-export",
+        allowed_fields=allowed_fields,
+        label="EXPORT",
+    )
+    repo = _publication_repo(
+        plan,
+        repo_override=repo_override,
+        label="EXPORT",
+    )
+    fresh = build_expertise_export_plan(
+        repo,
+        candidate_id=plan["candidate_id"],
+    )
+    if fresh != plan:
+        raise MaestroError(
+            "EXPERTISE_EXPORT_PLAN_STALE",
+            "Candidate or existing export changed after preview.",
+            exit_code=3,
+        )
+    output_path = plan["output_path"]
+    if (
+        not isinstance(output_path, str)
+        or not output_path.startswith(".maestro/exports/expertise/")
+        or not output_path.endswith(".maestro-contribution.json")
+    ):
+        raise MaestroError(
+            "EXPERTISE_EXPORT_PATH_INVALID",
+            "Expertise exports must use the project-local export directory.",
+            exit_code=3,
+        )
+    target = safe_target(repo, output_path)
+    if file_sha256(target) != plan["output_before_sha256"]:
+        raise MaestroError(
+            "EXPERTISE_EXPORT_PLAN_STALE",
+            "Existing export changed after preview.",
+            exit_code=3,
+        )
+    content = plan.get("content")
+    if (
+        not isinstance(content, str)
+        or sha256_text(content) != plan.get("output_after_sha256")
+    ):
+        raise MaestroError(
+            "EXPERTISE_EXPORT_PLAN_TAMPERED",
+            "Export content digest does not match the plan.",
+            exit_code=3,
+        )
+    atomic_write(target, content.encode("utf-8"))
+    validation = validate_expertise_contribution(target)
+    if validation["status"] != "PASS":
+        target.unlink(missing_ok=True)
+        raise MaestroError(
+            "EXPERTISE_EXPORT_INVALID",
+            "Generated contribution failed validation.",
+            exit_code=3,
+        )
+    return {
+        "schema_version": "maestro_expertise_export_result_v1",
+        "status": "exported",
+        "candidate_id": plan["candidate_id"],
+        "output_path": output_path,
+        "candidate_digest": plan["candidate_digest"],
+        "promotion_performed": False,
+        "install_performed": False,
         "writes_performed": True,
     }

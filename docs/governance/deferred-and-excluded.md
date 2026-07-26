@@ -61,7 +61,8 @@ sensitivity: internal
 | workspace lease와 base-revision gate | deferred | 동시 writer 안전성을 파일 문구만으로 보장할 수 없음 | 격리 worktree 통합 test와 crash recovery |
 | 외부 API 쓰기 capability broker | deferred | idempotency, 승인, read-after-write와 compensation 계약이 없음 | service별 adapter와 명시적 user approval |
 | Notion 양방향 sync·쓰기 | deferred | dual master, freshness, deletion, 민감 정보 문제가 해결되지 않음 | topic별 단일 권위, revision/digest, tombstone, 실패 복구 |
-| 자동 expertise candidate 생성·Pilot·promote | deferred | 수동 project-local scaffold는 가능하지만 관찰을 자동 정책 변경과 합치면 자기강화 오류가 생김 | 전문성 공백 fingerprint, offline evaluator, 승인자 분리, signed/versioned promotion |
+| 자동 expertise candidate 생성·Pilot·promote | deferred | Builder Skill의 격리 후보·자동 validator·사용 임계치 보고와 typed 사용자 조치는 가능하지만, 관찰을 자동 정책 변경과 합치면 자기강화 오류가 생김 | 전문성 공백 fingerprint, offline evaluator, 승인자 분리, signed/versioned promotion |
+| 원격 Expertise 자동 다운로드·활성화 | deferred | 기여 Bundle 추출은 가능하지만 실행 중 새 기준을 조용히 주입하면 현재 route와 검증 기준선이 바뀜 | 서명된 immutable release catalog, 사용자 승인, project version pin, rollback과 clean-host conformance |
 | 비-Expertise component candidate의 activate·promote | deferred | 분류·격리 후보·frozen case 검증은 가능하지만 Lens·Executor·Packet 등은 route와 Host 계약을 바꾸므로 공통 승격 명령이 과도한 권한 표면이 됨 | kind별 held-out route 평가, migration·rollback, release owner 승인과 clean-host conformance |
 | 별도 Convention candidate queue와 자동 병합 | deferred | 현재 compact RunReceipt signal, typed draft·activate·update로 수명주기가 닫히며 또 하나의 장기 저장소는 중복과 정리 비용을 만든다 | 서로 다른 실행에서 rule·scope·예외·owner를 보존하지 못해 draft 품질이 반복 저하되는 측정 사례 |
 | Convention deactivate·archive·rollback 전용 CLI | deferred | activate/update plan이 before/after digest와 Git revision을 보존하고 현재 권위는 Git으로 복구 가능해, 별도 상태 기계를 먼저 만들 이득이 작음 | 두 프로젝트 이상에서 수동 supersede·복구 실수 또는 반복 운영 비용이 관찰됨 |

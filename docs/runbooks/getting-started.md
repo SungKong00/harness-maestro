@@ -62,7 +62,7 @@ maestro --help
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
 for skill in maestro maestro-adapter-builder maestro-govern \
-  maestro-product-design maestro-expertise-builder \
+  maestro-product-design maestro-expertise-builder maestro-registry-builder \
   maestro-reference-research maestro-marketing maestro-software-qa
 do
   ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
@@ -213,6 +213,12 @@ maestro validate-packet --repo /path/to/project \
   --plan "$maestro_route" --assignment review \
   --projection /tmp/assignment-input.json \
   --packet /tmp/finding-packet.json --json
+
+maestro assignment project --repo /path/to/project \
+  --plan "$maestro_route" --assignment implementation \
+  --baseline /tmp/engineering-baseline.json \
+  --dependency-packet /tmp/review-packet.json \
+  --dependency-projection /tmp/review-assignment-input.json --json
 ```
 
 baseline은 affected artifact·boundary·stakeholder·lifecycle state와 여섯 coverage
@@ -220,7 +226,9 @@ check만 가진다. file body, 사용자 대화와 hidden reasoning은 projectio
 않는다. mutation Assignment는 coverage gap이 남아 있으면 시작할 수 없고, invalid
 Packet은 dependency로 전달할 수 없다. CLI는 허용 payload를 검증하지만 실제 Host가
 fresh context를 만들었는지는 증명하지 않으므로 release 전 Host conformance가
-별도로 필요하다.
+별도로 필요하다. dependency Packet에는 그 Packet을 검증할 때 사용한 원본
+projection을 함께 전달한다. Downstream 단계가 축약 projection을 새로 만들지
+않으므로 문서·Convention 선택 digest가 단계 사이에서 유실되지 않는다.
 
 `$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
 검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
@@ -244,6 +252,12 @@ maestro observe host --repo /path/to/project \
   --applied-model <applied-model> \
   --model-event-evidence complete \
   --total-tokens <actual-total> --json
+
+# Codex App Server를 소유한 Host는 위 필드를 손으로 옮기지 않고 완전한
+# JSON-RPC event stream을 같은 observation에 가져온다.
+maestro observe import-codex --repo /path/to/project \
+  --observation <observation-id> --run-id run-20260726-01 \
+  --trace <complete-app-server-jsonl> --json
 
 maestro record --repo /path/to/project \
   --receipt /tmp/run-receipt.json \
@@ -317,6 +331,26 @@ Maestro가 on-demand 서버를 시작하고 브라우저를 열며 종료도 맡
 시험할 때만 `maestro dashboard --repo /path/to/project`를 직접 사용한다. 브라우저
 새로고침이 같은 snapshot API를 다시 읽는다. 매 작업별 HTML 생성, 외부 서버 전송과
 raw 대화 저장은 없다.
+
+최근 작업은 각 행 왼쪽 체크박스로 선택한다. 새 묶음 이름을 입력하거나 기존 묶음을
+고른 뒤 `미리보기 → 확인`하면 원본 RunReceipt는 그대로 두고
+`.maestro/state/history/`의 작은 manifest와 summary에 연결한다. 묶인 작업은 긴
+최근 목록에서 빠지고 위의 `작업 묶음`에서 접힌 상태로 보인다. 영문으로 남은 과거
+제목은 작업 상세의 `표시 이름 바꾸기`에서 한글 표시 이름을 붙일 수 있으며 원본
+event는 수정하지 않는다.
+
+Expertise 영역은 Pack과 Guide별 선택 횟수, source, 검증 실패·수정 동반 신호를
+보여 준다. 서로 다른 Run에서 Guide를 5회 선택하거나 반복 문제 신호가 3회 쌓이면
+검토 항목으로 올리지만 자동으로 고치거나 지우지 않는다. validator를 통과한 후보는
+`프로젝트 Pilot 추가`, `다음 Pack 버전 적용`, `기여 Bundle 추출`을 미리본 뒤
+확인할 수 있다. 활성 project Pack의 `비활성화`는 allowlist만 바꾸고 파일을
+보존한다. Guide 하나의 변경도 완전한 다음 Pack 후보로 처리한다.
+
+Expertise 카탈로그는 사용 이력이 없는 항목을 `사용 근거 수집 전`, 사용 중인
+항목을 `근거 수집 중`으로 구분한다. 다섯 번 선택하거나 같은 부정 신호가 세 번
+반복되면 검토를 권하지만 자동 변경하지 않는다. 검증된 project 후보의
+추가·갱신·비활성화·기여 Bundle 추출도 뷰어에서 먼저 변경 경로를 보고 두 번째로
+확인한다. 이 동작은 명령 실행, 전역 설치, 커밋과 push를 하지 않는다.
 
 `upgrade`도 `init`과 같이 미리보기 후 같은 plan을 적용한다.
 
@@ -421,6 +455,29 @@ git -C /path/to/project add -- .maestro/project.json
 git -C /path/to/project commit -m "chore: deactivate project expertise"
 rm -- "$maestro_expertise_off"
 ```
+
+프로젝트에서 검증한 Guide나 Pack 변경을 Harness 기본 후보로 제안하려면 먼저
+`candidate.json.portability`가 `profile` 또는 `global`인지 검토하고, 기여 Bundle만
+추출한다.
+
+```bash
+maestro_expertise_export="$(mktemp -t maestro-expertise-export.XXXXXX.json)"
+maestro expertise export --repo /path/to/project \
+  --candidate project-design-v2 \
+  --json > "$maestro_expertise_export"
+maestro expertise export --repo /path/to/project \
+  --apply-plan "$maestro_expertise_export" --json
+maestro expertise validate-contribution \
+  --bundle /path/to/project/.maestro/exports/expertise/project-design-v2.maestro-contribution.json \
+  --json
+rm -- "$maestro_expertise_export"
+```
+
+이 Bundle은 설치 파일이 아니라 maintainer review 입력이다. private 프로젝트 정보와
+source license를 확인한 뒤 Harness 저장소의 Skill·Registry·평가에 일반 PR로
+반영하고 릴리스를 발행해야 한다. 다른 프로젝트는 그 릴리스를 설치하고
+`maestro upgrade`를 적용한 이후에만 새 bundled Pack을 보게 된다. 실행 중 자동
+다운로드나 자동 활성화는 없다.
 
 새 프로젝트 Convention 초안이 필요하면 LLM이 임의로 활성 문서를 바로 쓰게 하지
 말고 preview/apply 경계를 사용한다.

@@ -1639,6 +1639,7 @@ def project_assignment_input(
     *,
     document_paths: Iterable[str] = (),
     dependency_packets: Iterable[dict[str, Any]] = (),
+    dependency_projections: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Project the explicit allowlist for one Host-executed Assignment."""
 
@@ -1763,6 +1764,35 @@ def project_assignment_input(
         )
         if isinstance(artifact, dict)
     ]
+    dependency_projection_by_id: dict[str, dict[str, Any]] = {}
+    for index, projection in enumerate(dependency_projections):
+        projected_value = _projection_value(projection)
+        projected_assignment_id = (
+            projected_value.get("assignment_id")
+            if isinstance(projected_value, dict)
+            else None
+        )
+        if (
+            not isinstance(projected_assignment_id, str)
+            or projected_assignment_id in dependency_projection_by_id
+            or not _projection_bound(
+                projection,
+                plan_value.get("plan_id"),
+                projected_assignment_id,
+            )
+        ):
+            issues.append(
+                _issue(
+                    "PROJECTION_DEPENDENCY_PROJECTION_INVALID",
+                    f"dependency_projections[{index}]",
+                    "Each dependency needs one unique, intact source projection bound to this plan.",
+                )
+            )
+            continue
+        dependency_projection_by_id[projected_assignment_id] = copy.deepcopy(
+            projection
+        )
+
     dependency_by_id: dict[str, dict[str, Any]] = {}
     for index, packet in enumerate(dependency_packets):
         packet_assignment_id = (
@@ -1780,20 +1810,18 @@ def project_assignment_input(
                 )
             )
             continue
-        dependency_projection = {
-            "schema_version": ASSIGNMENT_INPUT_VERSION,
-            "projection_digest": "",
-            "plan_id": plan_value.get("plan_id"),
-            "assignment_id": packet_assignment_id,
-            "artifact_refs": baseline_artifact_refs,
-            "document_refs": documents,
-            "dependency_packets": [],
-        }
-        dependency_payload = copy.deepcopy(dependency_projection)
-        dependency_payload.pop("projection_digest")
-        dependency_projection["projection_digest"] = sha256_text(
-            canonical_json(dependency_payload)
+        dependency_projection = dependency_projection_by_id.get(
+            packet_assignment_id
         )
+        if dependency_projection is None:
+            issues.append(
+                _issue(
+                    "PROJECTION_DEPENDENCY_PROJECTION_REQUIRED",
+                    f"dependency_packets[{index}]",
+                    "Provide the exact source projection used to validate this dependency Packet.",
+                )
+            )
+            continue
         validation = validate_assignment_packet(
             packet,
             plan,
@@ -1815,6 +1843,14 @@ def project_assignment_input(
     expected_dependencies = (
         set(assignment["depends_on"]) if assignment is not None else set()
     )
+    if set(dependency_projection_by_id) != expected_dependencies:
+        issues.append(
+            _issue(
+                "PROJECTION_DEPENDENCY_PROJECTION_SET_INVALID",
+                "dependency_projections",
+                "Provide exactly one intact source projection for every direct dependency.",
+            )
+        )
     if set(dependency_by_id) != expected_dependencies:
         issues.append(
             _issue(
@@ -1974,6 +2010,9 @@ def project_assignment_input(
             {
                 "ref_id": f"dependency-{dependency_id}",
                 "assignment_id": dependency_id,
+                "projection_digest": _projection_value(
+                    dependency_projection_by_id[dependency_id]
+                )["projection_digest"],
                 "packet": dependency_by_id[dependency_id],
             }
             for dependency_id in assignment["depends_on"]

@@ -3,8 +3,60 @@
 const state = {
   snapshot: null,
   selectedRun: null,
+  selectedEventIds: new Set(),
   verificationPlan: null,
+  historyPlan: null,
+  expertisePlan: null,
 };
+
+const outcomeLabels = {
+  completed: "완료",
+  passed: "통과",
+  failed: "실패",
+  blocked: "중단",
+  corrected: "수정 후 완료",
+  interrupted: "중단됨",
+  ready: "준비됨",
+  planned_only: "계획만 있음",
+  not_observed: "이전 기록 · 관측 없음",
+  PASS: "통과",
+  WARN: "주의",
+  FAIL: "실패",
+  not_initialized: "초기화 필요",
+  no_evidence: "아직 근거 없음",
+  insufficient_evidence: "근거 부족",
+  complete: "관측 완료",
+  unavailable: "Host 미연결",
+  active: "진행 중",
+  in_progress: "진행 중",
+  record_pending: "최종 기록 대기",
+  stale: "오래 열린 작업",
+  sufficient: "판단 가능한 근거",
+  available: "사용 가능",
+  no_change: "변경 없음",
+  not_run: "실행하지 않음",
+  evidence_gathering: "근거 수집 중",
+  awaiting_usage: "사용 근거 수집 전",
+  review_due: "정기 검토 필요",
+  review_required: "문제 검토 필요",
+  host_attestation_unavailable: "Host 로드 증명 없음",
+};
+
+function displayStatus(value) {
+  return outcomeLabels[value] || value || "미기록";
+}
+
+function displayResearch(value) {
+  const labels = {
+    reuse: "기존 근거 사용",
+    discover: "새 근거 조사",
+    refresh: "근거 갱신",
+    "not-required": "추가 조사 불필요",
+    open: "근거 확보 전",
+    satisfied: "근거 충족",
+  };
+  return labels[value] || value || "미기록";
+}
 
 function element(tag, options = {}) {
   const node = document.createElement(tag);
@@ -47,18 +99,24 @@ function formatDate(value) {
   });
 }
 
-function formatModels(values) {
+function formatModels(values, fallback = "미측정") {
   return Array.isArray(values) && values.length
     ? values.join(", ")
-    : "미측정";
+    : fallback;
 }
 
-function appendModelLine(target, label, values, className = "") {
+function appendModelLine(
+  target,
+  label,
+  values,
+  className = "",
+  fallback = "미측정",
+) {
   const line = element("span", {
     className: `model-line ${className}`.trim(),
   });
   line.append(element("small", { text: label }));
-  line.append(element("strong", { text: formatModels(values) }));
+  line.append(element("strong", { text: formatModels(values, fallback) }));
   target.append(line);
 }
 
@@ -74,7 +132,7 @@ function outcomeClass(value) {
 function pill(text, className) {
   return element("span", {
     className: `pill ${className || outcomeClass(text)}`,
-    text,
+    text: displayStatus(text),
   });
 }
 
@@ -86,9 +144,10 @@ function renderMetrics(snapshot) {
   const target = document.getElementById("metrics");
   clear(target);
   const values = [
-    ["준비 상태", snapshot.overview.readiness],
-    ["Doctor", snapshot.overview.doctor],
+    ["준비 상태", displayStatus(snapshot.overview.readiness)],
+    ["Doctor", displayStatus(snapshot.overview.doctor)],
     ["최근 작업", snapshot.overview.runs],
+    ["완료 묶음", snapshot.overview.history_bundles || 0],
     ["진행 중", snapshot.overview.inflight],
     ["검토 필요", snapshot.overview.attention],
   ];
@@ -119,6 +178,39 @@ function renderMetrics(snapshot) {
   });
 }
 
+function selectedRuns() {
+  if (!state.snapshot) return [];
+  return state.snapshot.runs.filter((run) => (
+    state.selectedEventIds.has(run.event_id)
+  ));
+}
+
+function syncBundleControls(snapshot) {
+  const selected = selectedRuns();
+  const controls = document.getElementById("bundle-controls");
+  controls.hidden = selected.length === 0;
+  document.getElementById("selected-count").textContent = `${selected.length}개 선택`;
+  const select = document.getElementById("existing-bundle");
+  clear(select);
+  const placeholder = element("option", {
+    text: snapshot.history_bundles.length
+      ? "추가할 묶음 선택"
+      : "기존 묶음 없음",
+  });
+  placeholder.value = "";
+  select.append(placeholder);
+  snapshot.history_bundles.forEach((bundle) => {
+    const option = element("option", {
+      text: `${bundle.label} (${bundle.event_count}개)`,
+    });
+    option.value = bundle.bundle_id;
+    select.append(option);
+  });
+  document.getElementById("add-to-bundle").disabled = (
+    selected.length === 0 || snapshot.history_bundles.length === 0
+  );
+}
+
 function renderAttention(snapshot) {
   const target = document.getElementById("attention");
   clear(target);
@@ -130,11 +222,26 @@ function renderAttention(snapshot) {
     const row = element("article", { className: "notice" });
     row.append(pill(item.severity || "review", outcomeClass(item.severity)));
     const body = element("div");
+    const labels = {
+      review_governance_candidate: "반복 개선 신호 검토",
+      review_expertise_signal: "전문 지식 보강 검토",
+      review_expertise_component: "Expertise 구성요소 정기 검토",
+      review_stale_run: "오래 열린 작업 확인",
+      initialize_project: "프로젝트 초기화",
+      repair_managed_state: "관리 상태 복구",
+      repair_doctor_findings: "Doctor 문제 복구",
+    };
+    const reasons = {
+      "Doctor reports drift or invalid project state.":
+        "관리 기준선이 현재 파일과 다르거나 프로젝트 상태가 유효하지 않습니다.",
+    };
     body.append(element("strong", {
-      text: item.id.replaceAll("_", " "),
+      text: labels[item.id] || item.id.replaceAll("_", " "),
     }));
     body.append(element("p", {
-      text: item.reason || "사용자 검토가 필요합니다.",
+      text: reasons[item.reason]
+        || item.reason
+        || "사용자 검토가 필요합니다.",
     }));
     row.append(body);
     row.append(element("span", {
@@ -279,24 +386,137 @@ function renderVerification(snapshot) {
   });
 }
 
+function renderHistoryBundles(snapshot) {
+  const target = document.getElementById("history-bundles");
+  clear(target);
+  if (!snapshot.history_bundles.length) {
+    target.append(empty(
+      "아직 작업 묶음이 없습니다. 최근 작업을 체크해 첫 묶음을 만드세요.",
+    ));
+    return;
+  }
+  snapshot.history_bundles.forEach((bundle) => {
+    const details = element("details", { className: "history-bundle" });
+    const summary = element("summary");
+    const identity = element("span");
+    identity.append(element("strong", { text: bundle.label }));
+    identity.append(element("small", {
+      text: `${bundle.event_count}개 작업 · 마지막 변경 ${formatDate(bundle.updated_at)}`,
+    }));
+    summary.append(identity);
+    const outcomeText = Object.entries(bundle.outcomes || {})
+      .map(([key, value]) => `${displayStatus(key)} ${value}`)
+      .join(" · ");
+    summary.append(element("span", {
+      className: "muted",
+      text: outcomeText || "결과 미기록",
+    }));
+    details.append(summary);
+    const list = element("ul", { className: "bundle-run-list" });
+    bundle.runs.forEach((run) => {
+      const item = element("li");
+      item.append(element("strong", { text: run.task_label }));
+      item.append(element("span", {
+        text: `${displayStatus(run.outcome)} · ${formatDate(run.timestamp)} · ${formatTokens(run.tokens)}`,
+      }));
+      list.append(item);
+    });
+    details.append(list);
+    target.append(details);
+  });
+}
+
+function renderHistoryPreview(preview) {
+  const target = document.getElementById("bundle-preview");
+  clear(target);
+  if (!preview) {
+    target.hidden = true;
+    target.className = "detail-panel empty";
+    return;
+  }
+  target.hidden = false;
+  target.className = "detail-panel bundle-confirmation";
+  target.append(element("h3", {
+    text: `“${preview.label}” 묶음 변경 확인`,
+  }));
+  target.append(element("p", {
+    text: `${preview.added_event_count}개 작업을 묶습니다. 최근 작업 목록에서는 접히지만 원본 RunReceipt는 그대로 보존됩니다.`,
+  }));
+  const actions = element("div", { className: "inline-actions" });
+  const apply = element("button", { text: "확인하고 묶기" });
+  apply.type = "button";
+  apply.addEventListener("click", async () => {
+    apply.disabled = true;
+    try {
+      await actionRequest("/api/history-bundles/apply", {
+        plan_id: preview.plan_id,
+        plan_digest: preview.plan_digest,
+      });
+      state.historyPlan = null;
+      state.selectedEventIds.clear();
+      document.getElementById("new-bundle-label").value = "";
+      renderHistoryPreview(null);
+      await refresh();
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      apply.disabled = false;
+    }
+  });
+  const cancel = element("button", {
+    className: "secondary-button",
+    text: "취소",
+  });
+  cancel.type = "button";
+  cancel.addEventListener("click", () => {
+    state.historyPlan = null;
+    renderHistoryPreview(null);
+  });
+  actions.append(apply, cancel);
+  target.append(actions);
+}
+
+async function previewHistoryBundle({ label, bundleId }) {
+  const selected = selectedRuns();
+  if (!selected.length) return;
+  const result = await actionRequest("/api/history-bundles/preview", {
+    label,
+    event_ids: selected.map((run) => run.event_id),
+    bundle_id: bundleId,
+  });
+  state.historyPlan = result;
+  renderHistoryPreview(result);
+  document.getElementById("bundle-preview").scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+  });
+}
+
 function renderRuns(snapshot) {
   const target = document.getElementById("run-table");
   clear(target);
   if (!snapshot.runs.length) {
+    state.selectedEventIds.clear();
     const row = element("tr");
     const cell = element("td", {
       className: "muted",
       text: "아직 기록된 작업이 없습니다.",
     });
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     row.append(cell);
     target.append(row);
+    syncBundleControls(snapshot);
     return;
   }
 
   if (!snapshot.runs.some((run) => run.run_id === state.selectedRun)) {
     state.selectedRun = null;
   }
+  state.selectedEventIds = new Set(
+    [...state.selectedEventIds].filter((eventId) => (
+      snapshot.runs.some((run) => run.event_id === eventId)
+    )),
+  );
 
   snapshot.runs.forEach((run, index) => {
     const expanded = state.selectedRun === run.run_id;
@@ -305,6 +525,18 @@ function renderRuns(snapshot) {
     const row = element("tr", { className: "run-row" });
     row.dataset.runId = run.run_id;
     if (expanded) row.classList.add("selected");
+    const checkCell = element("td", { className: "check-column" });
+    const checkbox = element("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.selectedEventIds.has(run.event_id);
+    checkbox.setAttribute("aria-label", `${run.task_label} 묶음 선택`);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedEventIds.add(run.event_id);
+      else state.selectedEventIds.delete(run.event_id);
+      syncBundleControls(snapshot);
+    });
+    checkCell.append(checkbox);
+    row.append(checkCell);
     const task = element("td");
     const toggle = element("button", { className: "run-toggle" });
     toggle.type = "button";
@@ -335,13 +567,29 @@ function renderRuns(snapshot) {
     row.append(element("td", { text: formatDuration(run.duration_ms) }));
     row.append(element("td", { text: formatTokens(run.tokens) }));
     const models = element("td", { className: "model-summary" });
-    appendModelLine(models, "요청", run.models.requested);
-    appendModelLine(models, "적용", run.models.applied);
+    const hostFallback = run.models.measurement_state === "host_not_connected"
+      ? "Host 미연결"
+      : "미측정";
+    appendModelLine(
+      models,
+      "메인 요청",
+      run.models.requested,
+      "",
+      hostFallback,
+    );
+    appendModelLine(
+      models,
+      "실제 적용",
+      run.models.applied,
+      "",
+      hostFallback,
+    );
     appendModelLine(
       models,
       "Route 권고",
       run.models.route_recommended,
       "model-line-recommended",
+      "미기록",
     );
     row.append(models);
     row.append(element("td", {
@@ -366,7 +614,7 @@ function renderRuns(snapshot) {
     if (expanded) {
       const detailRow = element("tr", { className: "run-detail-row" });
       const detailCell = element("td");
-      detailCell.colSpan = 6;
+      detailCell.colSpan = 7;
       const detail = buildRunDetail(run);
       detail.id = detailId;
       detail.setAttribute("role", "region");
@@ -376,6 +624,7 @@ function renderRuns(snapshot) {
       target.append(detailRow);
     }
   });
+  syncBundleControls(snapshot);
 }
 
 function addMeta(target, text) {
@@ -386,16 +635,59 @@ function buildRunDetail(run) {
   const target = element("div", {
     className: "detail-panel run-detail-inline",
   });
-  target.append(element("h3", { text: run.task_label }));
+  const titleRow = element("div", { className: "run-title-editor" });
+  const title = element("h3", { text: run.task_label });
+  const rename = element("button", {
+    className: "secondary-button compact-button",
+    text: "표시 이름 바꾸기",
+  });
+  rename.type = "button";
+  rename.addEventListener("click", () => {
+    clear(titleRow);
+    const input = element("input");
+    input.type = "text";
+    input.maxLength = 100;
+    input.value = run.task_label;
+    input.setAttribute("aria-label", "작업 표시 이름");
+    const save = element("button", { text: "저장" });
+    save.type = "button";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        await actionRequest("/api/run-display-labels/apply", {
+          event_id: run.event_id,
+          label: input.value,
+        });
+        await refresh();
+      } catch (reason) {
+        showError(reason);
+      } finally {
+        save.disabled = false;
+      }
+    });
+    titleRow.append(input, save);
+    input.focus();
+  });
+  titleRow.append(title, rename);
+  target.append(titleRow);
   target.append(element("p", {
     className: "muted",
-    text: `${formatDate(run.timestamp)} · ${run.flow_evidence === "summary_only" ? "요약 기록" : "단계별 관측"}`,
+    text: `${formatDate(run.timestamp)} · ${run.flow_evidence === "summary_only" ? "최종 결과만 남은 요약 기록" : "계획과 단계별 실행 기록"}`,
   }));
+  if (run.original_task_label !== run.task_label) {
+    target.append(element("p", {
+      className: "muted",
+      text: `원래 기록 이름: ${run.original_task_label}`,
+    }));
+  }
   const meta = element("div", { className: "detail-meta" });
   addMeta(meta, `렌즈 ${run.lenses.join(", ") || "없음"}`);
   addMeta(meta, `Expertise ${run.expertise.packs.join(", ") || "없음"}`);
   addMeta(meta, `가이드 ${run.expertise.guides.join(", ") || "없음"}`);
-  addMeta(meta, `리서치 ${run.expertise.research_mode}/${run.expertise.research_gate}`);
+  addMeta(
+    meta,
+    `리서치 ${displayResearch(run.expertise.research_mode)} · ${displayResearch(run.expertise.research_gate)}`,
+  );
   if (run.conventions) {
     const applied = run.conventions.items.filter(
       (item) => item.disposition === "applied",
@@ -409,12 +701,21 @@ function buildRunDetail(run) {
     addMeta(meta, "Convention 적용 근거 미기록");
   }
   addMeta(meta, `수정 ${run.correction_count}회`);
-  addMeta(meta, `검증 ${run.verifier_result}`);
-  addMeta(meta, `메인 요청 모델 ${formatModels(run.models.requested)}`);
-  addMeta(meta, `실제 적용 모델 ${formatModels(run.models.applied)}`);
+  addMeta(meta, `검증 ${displayStatus(run.verifier_result)}`);
+  const hostFallback = run.models.measurement_state === "host_not_connected"
+    ? "Host 미연결"
+    : "미측정";
   addMeta(
     meta,
-    `Route 권고 모델 ${formatModels(run.models.route_recommended)}`,
+    `메인 요청 모델 ${formatModels(run.models.requested, hostFallback)}`,
+  );
+  addMeta(
+    meta,
+    `실제 적용 모델 ${formatModels(run.models.applied, hostFallback)}`,
+  );
+  addMeta(
+    meta,
+    `Route 권고 모델 ${formatModels(run.models.route_recommended, "미기록")}`,
   );
   if (run.models.reroutes.length) {
     addMeta(meta, `Host reroute ${run.models.reroutes.length}회`);
@@ -431,6 +732,11 @@ function buildRunDetail(run) {
       `Host ${run.host_observation.source} · ${run.host_observation.quality}`,
     );
     addMeta(meta, `상관 ID ${run.host_observation.correlation_id}`);
+  } else {
+    addMeta(
+      meta,
+      "Host 미연결 · 모델·토큰을 거짓으로 추정하지 않음",
+    );
   }
   target.append(meta);
 
@@ -450,15 +756,24 @@ function buildRunDetail(run) {
     }
     row.append(identity);
     const status = element("div");
-    status.append(element("small", { text: "상태" }));
+    status.append(element("small", {
+      text: stage.status_evidence === "plan_only"
+        ? "계획 상태"
+        : "실행 결과",
+    }));
     status.append(pill(stage.status));
+    status.append(element("small", {
+      text: stage.status_evidence === "plan_only"
+        ? "실행 결과가 아니라 예정 단계"
+        : "Host/receipt 근거",
+    }));
     row.append(status);
     const model = element("div");
-    model.append(element("small", { text: "실제 적용 모델" }));
+    model.append(element("small", { text: "실제 적용 모델 · 실측" }));
     model.append(element("span", {
-      text: stage.applied_model || "미측정",
+      text: stage.applied_model || hostFallback,
     }));
-    model.append(element("small", { text: "Route 권고 모델" }));
+    model.append(element("small", { text: "Route 권고 모델 · 계획" }));
     model.append(element("span", {
       text: stage.route_recommended_model || "미기록",
     }));
@@ -479,11 +794,21 @@ function renderExpertise(snapshot) {
   const target = document.getElementById("expertise");
   clear(target);
   const packs = snapshot.expertise.packs || [];
+  const decisionGuideUsage =
+    snapshot.governance.decision_guide_usage || {};
+  const componentHealth = snapshot.expertise.component_health || {
+    packs: [],
+    review_items: [],
+  };
+  const healthByPack = new Map(
+    componentHealth.packs.map((item) => [item.pack_id, item]),
+  );
   if (!packs.length) {
     target.append(empty("등록된 Expertise Pack이 없습니다."));
     return;
   }
   packs.forEach((pack) => {
+    const packHealth = healthByPack.get(pack.expertise_pack_id);
     const card = element("article", { className: "card" });
     const heading = element("div", { className: "section-heading" });
     heading.append(element("h3", { text: pack.expertise_pack_id }));
@@ -496,23 +821,58 @@ function renderExpertise(snapshot) {
     card.append(element("p", {
       text: `v${pack.version} · ${pack.portability} · 최근 사용 ${usage}회`,
     }));
+    if (packHealth) {
+      const health = element("div", { className: "detail-meta" });
+      addMeta(health, `운영 판단 ${displayStatus(packHealth.utility_verdict)}`);
+      addMeta(health, `Trigger ${packHealth.trigger_count}개`);
+      addMeta(health, `Source ${displayStatus(packHealth.source_status)}`);
+      card.append(health);
+    }
     const guides = element("ul", { className: "card-list" });
     pack.guides.forEach((guide) => {
-      const usage = snapshot.governance.decision_guide_usage
-        ? snapshot.governance.decision_guide_usage[guide.guide_id]
+      const usage = decisionGuideUsage[guide.guide_id] || {
+        count: 0,
+        last_used_timestamp: null,
+        recent_run_ids: [],
+        failed_verification_run_count: 0,
+        corrected_run_count: 0,
+      };
+      const guideHealth = packHealth
+        ? packHealth.guides.find((item) => item.guide_id === guide.guide_id)
         : null;
-      const usageText = usage
-        ? ` · 최근 사용 ${usage.count}회 · 마지막 ${formatDate(usage.last_used_timestamp)}`
-        : " · 최근 사용 0회";
-      const outcomeSignals = usage
-        ? ` · 검증 실패 동시 발생 ${usage.failed_verification_run_count}회 · 수정 동시 발생 ${usage.corrected_run_count}회`
-        : "";
-      const recentRuns = usage && usage.recent_run_ids.length
-        ? ` · 실행 ${usage.recent_run_ids.join(", ")}`
-        : "";
-      guides.append(element("li", {
-        text: `${guide.guide_id} · ${guide.summary}${usageText}${outcomeSignals}${recentRuns}`,
-      }));
+      const item = element("li", { className: "guide-health" });
+      const title = element("div", { className: "guide-health-heading" });
+      title.append(element("strong", { text: guide.guide_id }));
+      title.append(pill(
+        guideHealth ? guideHealth.utility_verdict : "awaiting_usage",
+      ));
+      item.append(title);
+      item.append(element("p", { text: guide.summary }));
+      if (guideHealth) {
+        item.append(element("p", {
+          className: "muted",
+          text: (
+            `사용 ${usage.count}회 · Source ${guideHealth.source_count}개`
+            + ` · 검증 실패 동반 ${usage.failed_verification_run_count}회`
+            + ` · 수정 동반 ${usage.corrected_run_count}회`
+            + ` · 실제 로드 ${displayStatus(guideHealth.load_evidence)}`
+          ),
+        }));
+        item.append(element("p", {
+          className: "muted",
+          text: (
+            `마지막 선택 ${formatDate(usage.last_used_timestamp)}`
+            + ` · 최근 Run ${usage.recent_run_ids.join(", ") || "없음"}`
+          ),
+        }));
+        if (guideHealth.review_reasons.length) {
+          item.append(element("p", {
+            className: "review-reason",
+            text: guideHealth.review_reasons.join(" · "),
+          }));
+        }
+      }
+      guides.append(item);
     });
     card.append(guides);
     const sources = pack.source_manifest && pack.source_manifest.sources
@@ -542,6 +902,23 @@ function renderExpertise(snapshot) {
     } else {
       card.append(element("p", { text: "출처 manifest를 읽을 수 없습니다." }));
     }
+    if (pack.origin === "project") {
+      const actions = element("div", { className: "card-actions" });
+      const deactivate = element("button", {
+        className: "secondary-button",
+        text: "프로젝트에서 비활성화",
+      });
+      deactivate.type = "button";
+      deactivate.addEventListener("click", () => (
+        previewExpertiseAction({
+          action: "deactivate",
+          candidateId: null,
+          packId: pack.expertise_pack_id,
+        })
+      ));
+      actions.append(deactivate);
+      card.append(actions);
+    }
     target.append(card);
   });
   (snapshot.expertise.candidates || []).forEach((candidate) => {
@@ -561,8 +938,132 @@ function renderExpertise(snapshot) {
     card.append(element("p", {
       text: candidate.error || `review after ${candidate.review_after || "미정"}`,
     }));
+    if (candidate.component_change) {
+      card.append(element("p", {
+        text: (
+          `변경 ${candidate.component_change.kind}`
+          + (
+            candidate.component_change.target_guide_id
+              ? ` · ${candidate.component_change.target_guide_id}`
+              : ""
+          )
+        ),
+      }));
+    }
+    if (candidate.ready_for_activation_review) {
+      const actions = element("div", { className: "card-actions" });
+      const publish = element("button", {
+        text: candidate.recommended_action === "update"
+          ? "다음 Pack 버전 적용 검토"
+          : "프로젝트 Pilot 추가 검토",
+      });
+      publish.type = "button";
+      publish.addEventListener("click", () => (
+        previewExpertiseAction({
+          action: candidate.recommended_action,
+          candidateId: candidate.candidate_id,
+          packId: null,
+        })
+      ));
+      const exportButton = element("button", {
+        className: "secondary-button",
+        text: "기여 Bundle 추출 검토",
+      });
+      exportButton.type = "button";
+      exportButton.addEventListener("click", () => (
+        previewExpertiseAction({
+          action: "export",
+          candidateId: candidate.candidate_id,
+          packId: null,
+        })
+      ));
+      actions.append(publish, exportButton);
+      card.append(actions);
+    }
     target.append(card);
   });
+}
+
+function renderExpertisePreview(preview) {
+  const target = document.getElementById("expertise-preview");
+  clear(target);
+  if (!preview) {
+    target.className = "detail-panel empty";
+    target.textContent = "작업을 선택하면 변경 경로와 안전 경계를 먼저 보여줍니다.";
+    return;
+  }
+  target.className = "detail-panel";
+  const labels = {
+    activate: "프로젝트 Pilot 추가",
+    update: "프로젝트 Pack 버전 갱신",
+    deactivate: "프로젝트 Pack 비활성화",
+    export: "기여 Bundle 추출",
+  };
+  target.append(element("h3", {
+    text: `${labels[preview.action] || preview.action} 미리보기`,
+  }));
+  const paths = preview.changed_paths && preview.changed_paths.length
+    ? preview.changed_paths.join(", ")
+    : preview.output_path || "변경 경로 없음";
+  target.append(element("p", {
+    className: "command-preview",
+    text: paths,
+  }));
+  (preview.warnings || []).forEach((warning) => {
+    target.append(element("p", { className: "muted", text: warning }));
+  });
+  target.append(element("p", {
+    className: "muted",
+    text: "명령 실행·커밋·푸시는 하지 않습니다. 아래 확인을 눌러야 적용됩니다.",
+  }));
+  const actions = element("div", { className: "card-actions" });
+  const apply = element("button", { text: "확인하고 적용" });
+  apply.type = "button";
+  apply.addEventListener("click", async () => {
+    apply.disabled = true;
+    try {
+      await actionRequest("/api/expertise-actions/apply", {
+        plan_id: preview.plan_id,
+        plan_digest: preview.plan_digest,
+      });
+      state.expertisePlan = null;
+      renderExpertisePreview(null);
+      await refresh();
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      apply.disabled = false;
+    }
+  });
+  const cancel = element("button", {
+    className: "secondary-button",
+    text: "취소",
+  });
+  cancel.type = "button";
+  cancel.addEventListener("click", () => {
+    state.expertisePlan = null;
+    renderExpertisePreview(null);
+  });
+  actions.append(apply, cancel);
+  target.append(actions);
+}
+
+async function previewExpertiseAction({ action, candidateId, packId }) {
+  try {
+    const preview = await actionRequest("/api/expertise-actions/preview", {
+      action,
+      candidate_id: candidateId,
+      pack_id: packId,
+    });
+    state.expertisePlan = preview;
+    renderExpertisePreview(preview);
+    document.getElementById("expertise-preview").scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  } catch (reason) {
+    showError(reason);
+  }
 }
 
 function renderGovernance(snapshot) {
@@ -570,7 +1071,7 @@ function renderGovernance(snapshot) {
   clear(target);
   const governance = snapshot.governance || {};
   const values = [
-    ["근거 상태", governance.evidence_status || "없음"],
+    ["근거 상태", displayStatus(governance.evidence_status || "없음")],
     ["검토 후보", (governance.candidates_for_review || []).length],
     ["Expertise 신호", snapshot.automation.expertise_signals.length],
     ["누적 수정", governance.correction_summary ? governance.correction_summary.total : 0],
@@ -593,9 +1094,11 @@ function render(snapshot) {
   renderMetrics(snapshot);
   renderAttention(snapshot);
   renderVerification(snapshot);
+  renderHistoryBundles(snapshot);
   renderInflight(snapshot);
   renderRuns(snapshot);
   renderExpertise(snapshot);
+  renderExpertisePreview(state.expertisePlan);
   renderGovernance(snapshot);
 }
 
@@ -625,4 +1128,31 @@ async function refresh() {
 }
 
 document.getElementById("refresh").addEventListener("click", refresh);
+document.getElementById("create-bundle").addEventListener("click", async () => {
+  const label = document.getElementById("new-bundle-label").value.trim();
+  if (!label) {
+    showError("새 묶음 이름을 입력하세요.");
+    return;
+  }
+  try {
+    await previewHistoryBundle({ label, bundleId: null });
+  } catch (reason) {
+    showError(reason);
+  }
+});
+document.getElementById("add-to-bundle").addEventListener("click", async () => {
+  const bundleId = document.getElementById("existing-bundle").value;
+  const bundle = state.snapshot?.history_bundles.find(
+    (item) => item.bundle_id === bundleId,
+  );
+  if (!bundle) {
+    showError("추가할 기존 묶음을 선택하세요.");
+    return;
+  }
+  try {
+    await previewHistoryBundle({ label: bundle.label, bundleId });
+  } catch (reason) {
+    showError(reason);
+  }
+});
 refresh();

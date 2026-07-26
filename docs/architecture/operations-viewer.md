@@ -6,9 +6,9 @@ status: active
 authority: repository
 owner: harness-maestro
 topic: operations-viewer
-scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/resources/viewer/**]
-summary: 작업 계획과 Host 실측값, Expertise 근거, 반복 개선 신호와 제한된 검증 명령 승인을 한 로컬 페이지에서 다루는 최소 운영 구조.
-last_verified: 2026-07-26
+scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/expertise_health.py, src/maestro/resources/viewer/**]
+summary: 작업 계획과 Host 실측값, Expertise 구성요소 근거, 반복 개선 신호와 typed project-local 작업을 한 로컬 페이지에서 다루는 최소 운영 구조.
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -21,7 +21,8 @@ Maestro가 의도한 흐름으로 일하는지 확인하되 관측 시스템 자
 커지지 않게 한다. 작업마다 HTML을 만들지 않고, `.maestro/state/`의 compact
 metadata와 현재 프로젝트 설정을 한 read-only snapshot으로 합성해 하나의 localhost
 페이지가 새로고침할 때 읽는다. 제어 기능은 탐지된 검증 명령 한 건을
-`preview → apply`로 승인하는 동작만 허용한다.
+`preview → apply`로 승인하는 동작, 원본을 보존한 작업 묶음, 표시 이름 sidecar와
+이미 lifecycle 검증을 통과한 프로젝트 Expertise 후보의 제한된 관리로 한정한다.
 
 ```text
 route v2 또는 enact
@@ -48,6 +49,8 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 - bundled·project Expertise Pack, Guide, source manifest와 project 후보
 - compact receipt에서 확인된 Guide별 선택 횟수, 마지막 선택 시각, 최근 Run ID와
   검증 실패·수정이 같은 Run에 함께 나타난 횟수
+- Pack·Guide별 사용 전, 근거 수집 중, 정기 검토, 문제 검토 상태와 Host load
+  증명 유무
 - 반복된 governance finding과 reusable Expertise gap
 
 `메인 요청 모델`, `실제 적용 모델`, `Route 권고 모델`은 서로 다른 필드다. Route가
@@ -76,9 +79,19 @@ Codex Desktop 채팅을 Skill로 실행하는 경로에서는 사용자가 선�
 완전성을 공개 API로 읽을 수 없으므로 미측정으로 유지한다. 비공개 session JSONL은
 읽지 않는다.
 
+Maestro의 `observe import-codex`는 Host가 소유한 완전한 JSON-RPC JSONL에서
+`thread/start` 또는 `turn/start` 요청 모델, `model/rerouted`,
+`thread/tokenUsage/updated`의 turn 사용량과 terminal `turn/completed`를 같은
+thread·turn으로 검증해 observation을 단조롭게 보강한다. 완료 이벤트가 없거나
+여러 turn이 모호하면 기록하지 않는다. Route 권고값은 이 경로의 입력이 아니다.
+
 Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
 수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
 로드됐다고 추정하지 않는다. 이 값만으로 Pack·Guide를 자동 승격·수정·삭제하지 않는다.
+사용 이력이 없으면 `awaiting_usage`, 선택 이력은 있지만 아직 검토 주기에 이르지
+않으면 `evidence_gathering`으로 표시한다. 실제 Skill body가 실행 컨텍스트에
+로드됐다는 Host 증명이 없을 때는 `host_attestation_unavailable`로 표시한다.
+서로 다른 원인을 하나의 모호한 `not_observed` 상태로 합치지 않는다.
 
 최근 작업 목록은 한 번에 한 Run만 여는 inline disclosure다. 선택한 Run의 상세
 단계는 전체 목록 뒤의 분리된 패널이 아니라 해당 행 바로 다음 행에 렌더링한다.
@@ -86,6 +99,33 @@ Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run
 연다. 작업명 안의 실제 button이 `aria-expanded`, `aria-controls`와 상세 region의
 `aria-labelledby`를 연결하므로 마우스로 행을 선택하는 동작과 키보드
 Enter·Space 동작이 같은 상태 전이를 사용한다.
+
+행의 체크박스는 상세 열기와 별도다. 선택한 최대 50개 event를 새 이름 또는 기존
+묶음에 추가하기 전에 정확한 개수와 “raw receipt를 삭제하지 않음”을 다시 보여준다.
+apply는 event digest가 preview 뒤 바뀌지 않았는지 확인한 다음
+`.maestro/state/history/<slug>--<id>/`의 manifest·summary와 작은 index만 쓴다.
+묶인 event는 기본 최근 목록에서 제외하고 접힌 묶음 안에서만 보인다. 표시 이름
+변경도 event를 재작성하지 않고 bounded sidecar를 사용한다.
+
+## Expertise 관리
+
+카탈로그의 운영 상태는 최근 receipt에서 Pack·Guide 선택 횟수와 같은 Run에서
+관찰된 검증 실패·수정·명시적 Expertise observation을 집계한다. 다섯 번 선택할
+때마다 정기 검토를 권하고, 같은 부정 신호가 세 번 이상 또는 critical observation
+한 번이면 문제 검토를 권한다. 이는 상관관계 기반의 저비용 신호이며 Guide가
+결과를 개선하거나 악화시켰다는 인과 증명이 아니다.
+
+프로젝트 후보가 lifecycle validator를 통과한 경우에만 뷰어에서
+`activate`·`update`·`export` 미리보기를 만들 수 있다. 활성 project Pack은
+`deactivate` 미리보기를 만들 수 있다. 모든 동작은 기존 CLI와 같은 digest-bound
+typed plan을 사용하며, 두 번째 확인 전에는 쓰지 않는다. export는 검토 가능한
+project-local contribution bundle만 만들고 전역 설치, 기본 Pack 변경, 커밋,
+push를 수행하지 않는다.
+
+Guide 추가·수정·폐기도 `component_change`가 있는 완전한 다음 Pack 후보로 보인다.
+live Guide 행에서 즉시 편집하거나 삭제하지 않는다. Host가 Guide body의 실제
+load를 증명하지 않으면 선택 기록과 구분해 `host_attestation_unavailable`로 남긴다.
+stale·변조 plan은 lifecycle validator가 거부한다.
 
 ## 검증 명령 승인
 
@@ -132,6 +172,10 @@ maestro observe host --repo /path/to/project \
   --model-event-evidence complete \
   --total-tokens <host-reported-total> --json
 
+maestro observe import-codex --repo /path/to/project \
+  --observation <observation-id> --run-id run-20260726-01 \
+  --trace <complete-app-server-jsonl> --json
+
 maestro record --repo /path/to/project \
   --receipt /tmp/run-receipt.json \
   --observation <observation-id> --json
@@ -155,7 +199,8 @@ maestro dashboard --repo /path/to/project
 
 - server는 `127.0.0.1`에만 bind하며 임의 파일 경로를 제공하지 않는다.
 - snapshot API는 실행마다 생성한 fragment token을 header로 보내야 읽을 수 있다.
-- Host와 Origin을 검사하고, 두 승인 endpoint 이외의 write method를 거부한다.
+- Host와 Origin을 검사하고, 검증 승인·묶음·표시 이름·Expertise lifecycle의
+  명시된 endpoint 이외 write method를 거부한다.
 - CSP, no-store, nosniff, frame 차단을 적용하며 외부 script·font dependency가 없다.
 - raw prompt, 대화, hidden reasoning과 파일 본문은 관측 계약에 없다.
 - 실행당 최종 JSONL 한 건만 장기 기록하고 in-flight marker는 compact metadata만
@@ -168,7 +213,8 @@ maestro dashboard --repo /path/to/project
 - OpenTelemetry backend, 별도 database와 vector store
 - 실시간 websocket, replay, checkpoint와 resume
 - 비용을 추정하거나 모델명을 추측하는 기능
-- 뷰어에서 임의 명령 실행, Convention·Expertise 수정 또는 범용 control plane
+- 뷰어에서 임의 명령 실행, live Guide 직접 편집, 자유 형식 Convention 수정 또는
+  범용 control plane
 - daemon이 주기적으로 LLM을 호출하거나 자동 승격하는 기능
 
 실제 누락 분석에 per-call trace가 반복해서 필요하고 Host가 신뢰 가능한 event ID와

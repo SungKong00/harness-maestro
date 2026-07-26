@@ -107,6 +107,43 @@ def finding_packet(
     }
 
 
+def completed_terminal_packet(
+    plan: dict[str, Any],
+    assignment_id: str,
+    projection: dict[str, Any],
+) -> dict[str, Any]:
+    assignment = next(
+        item
+        for item in plan["assignments"]
+        if item["assignment_id"] == assignment_id
+    )
+    projected = projection["input"]
+    evidence_ref = projected["artifact_refs"][0]["artifact_id"]
+    packet = {
+        "schema_version": TERMINAL_PACKET_VERSION,
+        "plan_id": plan["plan_id"],
+        "assignment_id": assignment_id,
+        "packet_type": assignment["output_packet"],
+        "status": "completed",
+        "summary": f"{assignment_id} completed with projected evidence.",
+        "evidence_refs": [evidence_ref],
+        "retryable": False,
+    }
+    selected = projected["convention_selection"]["selected_conventions"]
+    if assignment["mutation_owner"] and selected:
+        packet["convention_dispositions"] = [
+            {
+                "path": item["path"],
+                "sha256": item["sha256"],
+                "disposition": "applied",
+                "reason": "Applied the selected Convention.",
+                "approval_ref": None,
+            }
+            for item in selected
+        ]
+    return packet
+
+
 class AssignmentBoundaryContractTests(unittest.TestCase):
     def test_projection_is_a_bounded_allowlist_and_does_not_claim_host_proof(
         self,
@@ -390,6 +427,7 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
             "implementation",
             baseline,
             dependency_packets=[dependency],
+            dependency_projections=[review],
         )
         self.assertEqual("BLOCKED", implementation["status"])
         self.assertEqual("GAPS_PRESENT", implementation["execution_status"])
@@ -540,6 +578,12 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
         )
         dependency = finding_packet(plan, "review")
         dependency["inspected"] = ["outside-projection"]
+        review_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "review",
+            baseline_for(plan),
+        )
 
         result = project_assignment_input(
             ROOT,
@@ -547,6 +591,7 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
             "implementation",
             baseline_for(plan),
             dependency_packets=[dependency],
+            dependency_projections=[review_projection],
         )
 
         self.assertEqual("FAIL", result["status"])
@@ -555,6 +600,66 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
             {item["code"] for item in result["issues"]},
         )
         self.assertIsNone(result["input"])
+
+    def test_review_implementation_verification_preserves_source_projections(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Implement the approved Korean typography and visual hierarchy and verify it",
+            "medium",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+        baseline = baseline_for(plan)
+        review_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "review",
+            baseline,
+        )
+        review_packet = finding_packet(plan, "review")
+        implementation_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "implementation",
+            baseline,
+            dependency_packets=[review_packet],
+            dependency_projections=[review_projection],
+        )
+        self.assertEqual("PASS", implementation_projection["status"])
+        implementation_packet = completed_terminal_packet(
+            plan,
+            "implementation",
+            implementation_projection,
+        )
+        self.assertEqual(
+            "PASS",
+            validate_assignment_packet(
+                implementation_packet,
+                plan,
+                "implementation",
+                implementation_projection,
+                repo_path=ROOT,
+            )["status"],
+        )
+
+        verification_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "verification",
+            baseline,
+            dependency_packets=[implementation_packet],
+            dependency_projections=[implementation_projection],
+        )
+
+        self.assertEqual("PASS", verification_projection["status"])
+        dependency_ref = verification_projection["input"][
+            "dependency_packets"
+        ][0]
+        self.assertEqual(
+            implementation_projection["input"]["projection_digest"],
+            dependency_ref["projection_digest"],
+        )
 
     def test_terminal_failure_is_an_observation_not_a_retry_engine(self) -> None:
         plan = route_goal_v2(

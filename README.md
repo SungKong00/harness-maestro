@@ -119,6 +119,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 새 후보를 추적되는 project pilot으로 preview/apply 활성화 |
 | 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
 | 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
+| 검증된 Expertise를 Harness 기여 후보로 추출 | `maestro expertise export` | project-local content-addressed review bundle만 생성; 설치·push는 하지 않음 |
 | 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
 
 ## 빠른 시작
@@ -157,7 +158,7 @@ uv tool install /path/to/harness-maestro
 maestro_source=/path/to/harness-maestro
 mkdir -p ~/.agents/skills
 for skill in maestro maestro-adapter-builder maestro-govern \
-  maestro-product-design maestro-expertise-builder \
+  maestro-product-design maestro-expertise-builder maestro-registry-builder \
   maestro-reference-research maestro-marketing maestro-software-qa
 do
   ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
@@ -364,10 +365,15 @@ Route 권고는 실측값으로 대체 표시하지 않습니다. 요청·적용
 공개 인터페이스와 완전한 model event 구간으로 제공할 때만 기록하고, 없으면
 추정하지 않고 `미측정`으로 표시합니다.
 
-뷰어에서 할 수 있는 변경은 탐지된 검증 명령을 정확히 확인한 뒤 승인하는 것 하나다.
-`승인 검토`는 아무것도 쓰지 않고, 두 번째 `승인`이
-`.maestro/project.json`의 `verification_commands`만 바꿉니다. 명령 자체는 실행하지
-않습니다.
+뷰어에서 할 수 있는 변경은 탐지된 검증 명령 승인, 작업 묶음, 과거 작업의 표시
+이름 변경과 검증을 통과한 프로젝트 Expertise 후보 관리로 제한됩니다. 작업 행을
+체크한 뒤 새 이름 또는 기존 묶음을 고르면, 원본 RunReceipt는 지우지 않고 최근
+목록에서 접어 위의 `작업 묶음`으로 옮깁니다. Expertise는 사용 전·근거 수집 중·
+정기 검토·문제 검토를 구분하고 실제 Skill load 증명이 없으면 별도로
+`Host 로드 증명 없음`이라 표시합니다. Guide 선택 5회 또는 반복 문제 신호는
+검토를 열 뿐 자동 수정하지 않으며, 하위 Guide 변경도 완전한 다음 Pack 후보로
+처리합니다. 모든 권위 변경과 묶음 생성은 미리보기 뒤 두 번째 확인이 필요하고
+명령 자체, 자동 커밋·푸시는 실행하지 않습니다.
 
 일반 개발 요청에서는 사용자가 `observe`나 `record` 명령을 외울 필요가 없습니다.
 `$maestro`가 구현 계획을 확정한 뒤 compact 관측을 시작하고 최종 검증 결과에

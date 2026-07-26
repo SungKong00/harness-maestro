@@ -269,7 +269,12 @@ class ExpertiseRoutingTests(unittest.TestCase):
                     "medium",
                     intent="implementation",
                 )
-                expertise = plan["expertise"]
+                expertise = plan.get("expertise")
+                if expertise is None:
+                    self.assertIsNone(case["expected_pack_id"])
+                    self.assertEqual("reuse", case["expected_mode"])
+                    self.assertEqual([], case["expected_guides"])
+                    continue
                 self.assertEqual(
                     (
                         [case["expected_pack_id"]]

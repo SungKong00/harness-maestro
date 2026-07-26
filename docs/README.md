@@ -35,7 +35,7 @@ sensitivity: internal
    Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
 9. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
    릴리스·실사용 Pilot TODO만 관리
-10. [이름 있는 목표 히스토리 계획](plans/active/named-goal-history.md) — 기존
+10. [이름 있는 작업 히스토리 구현](plans/completed/named-goal-history.md) — 기존
     JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶는 후속 구현 계획
 
 ## 거버넌스

@@ -32,15 +32,22 @@ from .errors import MaestroError
 from .expertise_lifecycle import (
     apply_expertise_activation_plan,
     apply_expertise_deactivation_plan,
+    apply_expertise_export_plan,
     apply_expertise_update_plan,
     build_expertise_activation_plan,
     build_expertise_deactivation_plan,
+    build_expertise_export_plan,
     build_expertise_update_plan,
     expertise_inventory,
+    validate_expertise_contribution,
     validate_expertise_candidate,
 )
 from .governance import govern_report, record_run
-from .observations import record_host_observation, start_run_observation
+from .observations import (
+    import_codex_app_server_trace,
+    record_host_observation,
+    start_run_observation,
+)
 from .project import (
     apply_plan,
     build_init_plan,
@@ -336,6 +343,20 @@ def parser() -> argparse.ArgumentParser:
     expertise_deactivate.add_argument("--pack")
     expertise_deactivate.add_argument("--apply-plan")
     expertise_deactivate.add_argument("--json", action="store_true")
+    expertise_export = expertise_commands.add_parser(
+        "export",
+        help="Preview or write one validated project-local promotion bundle",
+    )
+    expertise_export.add_argument("--repo", default=".")
+    expertise_export.add_argument("--candidate")
+    expertise_export.add_argument("--apply-plan")
+    expertise_export.add_argument("--json", action="store_true")
+    expertise_validate_contribution = expertise_commands.add_parser(
+        "validate-contribution",
+        help="Validate one exported Expertise contribution without importing it",
+    )
+    expertise_validate_contribution.add_argument("--bundle", required=True)
+    expertise_validate_contribution.add_argument("--json", action="store_true")
 
     component = commands.add_parser(
         "component",
@@ -436,6 +457,15 @@ def parser() -> argparse.ArgumentParser:
         "--dependency-packet",
         action="append",
         default=[],
+    )
+    assignment_project.add_argument(
+        "--dependency-projection",
+        action="append",
+        default=[],
+        help=(
+            "Exact source projection paired by assignment_id with each "
+            "dependency Packet"
+        ),
     )
     assignment_project.add_argument("--json", action="store_true")
 
@@ -589,6 +619,22 @@ def parser() -> argparse.ArgumentParser:
     observe_host.add_argument("--reasoning-tokens", type=int)
     observe_host.add_argument("--total-tokens", type=int)
     observe_host.add_argument("--json", action="store_true")
+    observe_import_codex = observe_commands.add_parser(
+        "import-codex",
+        help=(
+            "Import one fully captured public Codex App Server JSON-RPC "
+            "turn stream"
+        ),
+    )
+    observe_import_codex.add_argument("--repo", default=".")
+    observe_import_codex.add_argument("--observation", required=True)
+    observe_import_codex.add_argument("--run-id", required=True)
+    observe_import_codex.add_argument("--trace", required=True)
+    observe_import_codex.add_argument(
+        "--turn-id",
+        help="Required only when the trace contains more than one turn",
+    )
+    observe_import_codex.add_argument("--json", action="store_true")
 
     record = commands.add_parser(
         "record",
@@ -859,6 +905,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             _emit(result, args.json)
             return 0
+        if args.command == "expertise" and args.expertise_command == "export":
+            if args.apply_plan:
+                result = apply_expertise_export_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate:
+                    raise MaestroError(
+                        "EXPERTISE_EXPORT_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate.",
+                    )
+                result = build_expertise_export_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "validate-contribution"
+        ):
+            result = validate_expertise_contribution(args.bundle)
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if (
             args.command == "component"
             and args.component_command == "validate-candidate"
@@ -925,6 +996,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dependency_packets=[
                     read_json(Path(path).expanduser().resolve())
                     for path in args.dependency_packet
+                ],
+                dependency_projections=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.dependency_projection
                 ],
             )
             _emit(result, args.json)
@@ -1024,6 +1099,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reroutes=_host_model_reroutes(args),
                 actual_model=args.actual_model,
                 tokens=_host_token_summary(args),
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "observe"
+            and args.observe_command == "import-codex"
+        ):
+            result = import_codex_app_server_trace(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                trace_path=args.trace,
+                turn_id=args.turn_id,
             )
             _emit(result, args.json)
             return 0

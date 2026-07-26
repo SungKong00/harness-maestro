@@ -10,6 +10,25 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .errors import MaestroError
+from .expertise_lifecycle import (
+    ACTIVATION_PLAN_VERSION,
+    DEACTIVATION_PLAN_VERSION,
+    EXPORT_PLAN_VERSION,
+    UPDATE_PLAN_VERSION,
+    apply_expertise_activation_plan,
+    apply_expertise_deactivation_plan,
+    apply_expertise_export_plan,
+    apply_expertise_update_plan,
+    build_expertise_activation_plan,
+    build_expertise_deactivation_plan,
+    build_expertise_export_plan,
+    build_expertise_update_plan,
+)
+from .history import (
+    apply_history_bundle_plan,
+    build_history_bundle_plan,
+    set_run_display_label,
+)
 from .snapshot import snapshot_report
 from .util import ensure_repo
 from .verification import (
@@ -272,6 +291,11 @@ class MaestroDashboardHandler(BaseHTTPRequestHandler):
         if path not in {
             "/api/verification-approvals/preview",
             "/api/verification-approvals/apply",
+            "/api/history-bundles/preview",
+            "/api/history-bundles/apply",
+            "/api/run-display-labels/apply",
+            "/api/expertise-actions/preview",
+            "/api/expertise-actions/apply",
         }:
             if path in {
                 "/api/health",
@@ -287,7 +311,159 @@ class MaestroDashboardHandler(BaseHTTPRequestHandler):
         if body is None:
             return
         try:
-            if path.endswith("/preview"):
+            if path == "/api/expertise-actions/preview":
+                if set(body) != {"action", "candidate_id", "pack_id"}:
+                    raise MaestroError(
+                        "EXPERTISE_DASHBOARD_PREVIEW_INVALID",
+                        "Expertise preview requires action, candidate_id, and pack_id.",
+                    )
+                action = body.get("action")
+                candidate_id = body.get("candidate_id")
+                pack_id = body.get("pack_id")
+                if action in {"activate", "update", "export"}:
+                    if (
+                        not isinstance(candidate_id, str)
+                        or pack_id is not None
+                    ):
+                        raise MaestroError(
+                            "EXPERTISE_DASHBOARD_PREVIEW_INVALID",
+                            "Candidate actions require candidate_id only.",
+                        )
+                    if action == "activate":
+                        plan = build_expertise_activation_plan(
+                            self.server.repo,
+                            candidate_id=candidate_id,
+                            approval_ref=(
+                                f"owner_decision:dashboard:{candidate_id}"
+                            ),
+                        )
+                    elif action == "update":
+                        plan = build_expertise_update_plan(
+                            self.server.repo,
+                            candidate_id=candidate_id,
+                            approval_ref=(
+                                f"owner_decision:dashboard:{candidate_id}"
+                            ),
+                        )
+                    else:
+                        plan = build_expertise_export_plan(
+                            self.server.repo,
+                            candidate_id=candidate_id,
+                        )
+                elif action == "deactivate":
+                    if (
+                        candidate_id is not None
+                        or not isinstance(pack_id, str)
+                    ):
+                        raise MaestroError(
+                            "EXPERTISE_DASHBOARD_PREVIEW_INVALID",
+                            "Deactivation requires pack_id only.",
+                        )
+                    plan = build_expertise_deactivation_plan(
+                        self.server.repo,
+                        expertise_pack_id=pack_id,
+                    )
+                else:
+                    raise MaestroError(
+                        "EXPERTISE_DASHBOARD_PREVIEW_INVALID",
+                        "Unsupported Expertise action.",
+                    )
+                if len(self.server.action_plans) >= MAX_CACHED_ACTION_PLANS:
+                    oldest = next(iter(self.server.action_plans))
+                    del self.server.action_plans[oldest]
+                self.server.action_plans[plan["plan_id"]] = plan
+                self._json(
+                    200,
+                    {
+                        "schema_version": (
+                            "maestro_dashboard_action_preview_v1"
+                        ),
+                        "action": action,
+                        "status": "preview",
+                        "plan_id": plan["plan_id"],
+                        "plan_digest": plan["plan_digest"],
+                        "candidate_id": plan.get("candidate_id"),
+                        "pack_id": plan.get("expertise_pack_id"),
+                        "changed_paths": [
+                            operation["path"]
+                            for operation in plan.get("operations", [])
+                        ],
+                        "output_path": plan.get("output_path"),
+                        "warnings": plan.get("warnings", []),
+                        "executes_commands": False,
+                        "commits_or_pushes": False,
+                        "writes_performed": False,
+                    },
+                )
+                return
+            if path == "/api/history-bundles/preview":
+                if set(body) != {"label", "event_ids", "bundle_id"}:
+                    raise MaestroError(
+                        "HISTORY_PREVIEW_INVALID",
+                        "History preview requires label, event_ids, and bundle_id.",
+                    )
+                if (
+                    not isinstance(body.get("label"), str)
+                    or not isinstance(body.get("event_ids"), list)
+                    or body.get("bundle_id") is not None
+                    and not isinstance(body.get("bundle_id"), str)
+                ):
+                    raise MaestroError(
+                        "HISTORY_PREVIEW_INVALID",
+                        "History preview fields have invalid types.",
+                    )
+                plan = build_history_bundle_plan(
+                    self.server.repo,
+                    label=body["label"],
+                    event_ids=body["event_ids"],
+                    bundle_id=body["bundle_id"],
+                )
+                if len(self.server.action_plans) >= MAX_CACHED_ACTION_PLANS:
+                    oldest = next(iter(self.server.action_plans))
+                    del self.server.action_plans[oldest]
+                self.server.action_plans[plan["plan_id"]] = plan
+                self._json(
+                    200,
+                    {
+                        "schema_version": "maestro_dashboard_action_preview_v1",
+                        "action": "history_bundle",
+                        "status": "preview",
+                        "plan_id": plan["plan_id"],
+                        "plan_digest": plan["plan_digest"],
+                        "bundle_id": plan["bundle_id"],
+                        "label": plan["label"],
+                        "added_event_count": len(
+                            plan["added_event_digests"]
+                        ),
+                        "change": (
+                            "선택한 작업을 이름이 있는 기록 묶음에 연결하고 "
+                            "최근 작업 목록에서는 접습니다."
+                        ),
+                        "deletes_raw_receipts": False,
+                        "writes_performed": False,
+                    },
+                )
+                return
+            if path == "/api/run-display-labels/apply":
+                if (
+                    set(body) != {"event_id", "label"}
+                    or not isinstance(body.get("event_id"), str)
+                    or not isinstance(body.get("label"), str)
+                ):
+                    raise MaestroError(
+                        "HISTORY_LABEL_INVALID",
+                        "Run label update requires event_id and label.",
+                    )
+                self._json(
+                    200,
+                    set_run_display_label(
+                        self.server.repo,
+                        event_id=body["event_id"],
+                        label=body["label"],
+                    ),
+                )
+                return
+            if path == "/api/verification-approvals/preview":
                 if (
                     set(body) != {"candidate_id"}
                     or not isinstance(body.get("candidate_id"), str)
@@ -339,10 +515,56 @@ class MaestroDashboardHandler(BaseHTTPRequestHandler):
                     "VERIFICATION_APPROVAL_PLAN_NOT_FOUND",
                     "The preview plan is missing or does not match this session.",
                 )
-            result = apply_verification_approval_plan(
-                plan,
-                self.server.repo,
-            )
+            if path == "/api/expertise-actions/apply":
+                schema_version = plan.get("schema_version")
+                if schema_version == ACTIVATION_PLAN_VERSION:
+                    result = apply_expertise_activation_plan(
+                        plan,
+                        self.server.repo,
+                    )
+                elif schema_version == UPDATE_PLAN_VERSION:
+                    result = apply_expertise_update_plan(
+                        plan,
+                        self.server.repo,
+                    )
+                elif schema_version == DEACTIVATION_PLAN_VERSION:
+                    result = apply_expertise_deactivation_plan(
+                        plan,
+                        self.server.repo,
+                    )
+                elif schema_version == EXPORT_PLAN_VERSION:
+                    result = apply_expertise_export_plan(
+                        plan,
+                        self.server.repo,
+                    )
+                else:
+                    raise MaestroError(
+                        "EXPERTISE_DASHBOARD_PLAN_INVALID",
+                        "The cached preview is not an Expertise action plan.",
+                    )
+            elif path == "/api/history-bundles/apply":
+                if plan.get("schema_version") != "maestro_history_bundle_plan_v1":
+                    raise MaestroError(
+                        "HISTORY_PLAN_INVALID",
+                        "The cached preview is not a history bundle plan.",
+                    )
+                result = apply_history_bundle_plan(
+                    plan,
+                    self.server.repo,
+                )
+            else:
+                if plan.get("schema_version") != (
+                    "maestro_verification_approval_plan_v1"
+                ):
+                    raise MaestroError(
+                        "VERIFICATION_APPROVAL_PLAN_INVALID",
+                        "The cached preview is not a verification approval plan.",
+                    )
+                result = apply_verification_approval_plan(
+                    plan,
+                    self.server.repo,
+                )
+            del self.server.action_plans[body["plan_id"]]
             self._json(200, result)
         except MaestroError as exc:
             self._error(409, exc.code, exc.message)
@@ -421,7 +643,15 @@ def serve_dashboard(
         "window": window,
         "snapshot_read_only": True,
         "control_actions": (
-            ["approve_verification_command"]
+            [
+                "approve_verification_command",
+                "bundle_run_history",
+                "set_run_display_label",
+                "review_expertise_components",
+                "activate_or_update_project_expertise",
+                "deactivate_project_expertise",
+                "export_expertise_contribution",
+            ]
             if server.allow_verification_approval
             else []
         ),

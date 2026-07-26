@@ -1,18 +1,18 @@
 {
   "framework_version": "0.3.0",
   "registry": {
-    "sha256": "e082ea18a619a7bd2ddd7d423e0b32a985a08f7aa5131d27a36a4c684ad46546"
+    "sha256": "ac787410084c22e24a046938b88abae68edea3287ca30197d98eea81e33434f4"
   },
-  "release_id": "2e5bfbd81d7bf29074b87d55da88b3f086ed3fa90995ea2fae76898d60826109",
+  "release_id": "266c414c8e5267645016d0d53d47830c8485c0302067b5d97671c7b1669a7ee2",
   "runtime": {
-    "file_count": 79,
-    "sha256": "7451203f63170b185163efffadcf82c47fd514d64d17ed0e5a835570fbedca78"
+    "file_count": 81,
+    "sha256": "e745207623031732be4f782e1a41eaaad99f33099a91cba773f8fbad3548c7c8"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 7,
-      "sha256": "59f20dfe79223e374c23cb87c7ca54ae3505f8dd26256aee879fc7970ae84d61"
+      "sha256": "50eb86eaff16237453308ab47ad88be345776c2fc50875e5f081cce1b3c560a0"
     },
     "maestro-adapter-builder": {
       "file_count": 4,
@@ -20,7 +20,7 @@
     },
     "maestro-expertise-builder": {
       "file_count": 6,
-      "sha256": "ad7e4fd4eee43d807d3bff6001658fc46563292eb0988d7c4bbea963455901a3"
+      "sha256": "d74074c04695d762d6ddbdfa727e0d9346e1d224f1a4a7ebc35136cd377f2e67"
     },
     "maestro-govern": {
       "file_count": 5,
@@ -32,7 +32,7 @@
     },
     "maestro-product-design": {
       "file_count": 10,
-      "sha256": "a7e9ab87ec4b0e03f72faae423e995eefaf483253ebd1ec1e91240a18d611e14"
+      "sha256": "32897ef261c72144290e7610394e09ccf12d6ba457008a5f59f9e444b33784bf"
     },
     "maestro-reference-research": {
       "file_count": 5,

@@ -89,6 +89,10 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      returned observation ID for the final receipt. This stores no prompt,
      message, guide body, or file content. Do not start it for a read-only
      request merely to obtain telemetry.
+   - Write `task-label` as a concise human title in the user's current
+     language. For a Korean request, prefer a Korean label even when code
+     identifiers are English. Do not reuse the raw prompt or an internal
+     English routing phrase as the visible title.
 9. Inspect the optional `expertise` selection before executing Assignments.
    - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
      Use AssignmentInput `expertise_load.packs` to resolve the Skill ID,
@@ -128,8 +132,11 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      unknown ownership as `gap`; do not infer coverage.
    - Run `maestro assignment project --repo <repo> --plan <route-v2.json>
      --assignment <id> --baseline <baseline.json> [--document <path>]
-     [--dependency-packet <packet.json>] --json`. The Host must launch the
-     Assignment from the returned `maestro_assignment_input_v1` only.
+     [--dependency-packet <packet.json> --dependency-projection
+     <source-assignment-input.json>] --json`. Every dependency Packet must be
+     paired with the exact projection used to validate it; never synthesize a
+     reduced projection downstream. The Host must launch the Assignment from
+     the returned `maestro_assignment_input_v1` only.
    - A read-only reviewer may inspect a declared gap. A mutation Assignment is
      blocked while a baseline gap remains. Extend the route at most once when
      a material gap names another Lens; otherwise return
@@ -215,6 +222,12 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       `maestro dashboard --repo <repo>` on their behalf, open the returned local
       URL, and keep ownership of stopping that on-demand server. Do not require
       the user to copy a command and do not install a daemon.
+    - When the Host owns a complete Codex App Server event stream, import it
+      with `maestro observe import-codex` before `record` so requested model,
+      reroutes, applied model, token usage, and turn duration stay correlated.
+      This is a Host action, not a command the user should type. Existing
+      Desktop chat runs without that public stream remain explicitly
+      `host_not_connected`; never scrape private session files or infer values.
     - A request to approve a detected verification command uses
       `maestro verification approve` or the dashboard's exact candidate
       `preview → apply` flow. Treat approval as a project-authority change:

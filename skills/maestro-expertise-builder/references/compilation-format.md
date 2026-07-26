@@ -42,6 +42,23 @@ same project slug. For a revision, give the working candidate a new ID such as
 The CLI copies `candidate.json` into `evidence/candidate.json` on publication;
 do not hand-edit that snapshot.
 
+Declare the component-level intent in `candidate.json`:
+
+```json
+{
+  "component_change": {
+    "kind": "guide-addition",
+    "target_guide_id": "transaction-isolation"
+  }
+}
+```
+
+Use `guide-revision` when the same Guide's checks change and
+`guide-deprecation` only when the target Guide is absent from the complete next
+Pack snapshot. Use `trigger-adjustment`, `source-refresh` or
+`evaluation-extension` with `target_guide_id: null`. This field supports
+component-level inventory and review; it does not authorize an in-place edit.
+
 Each Decision Guide must contain these Markdown sections:
 
 ```text
@@ -70,6 +87,11 @@ Assign freshness:
 Normal routes load only selected guides. Source manifests and evaluations load
 only during refresh, audit, or promotion. Raw transcripts and copied web pages
 do not belong in the candidate.
+
+The contribution export embeds only the bounded candidate files and their
+SHA-256 digests. It is a transport/review artifact, not another runtime Pack
+directory. Do not put secrets, absolute project paths, private source text or
+unlicensed copied material in an exportable candidate.
 
 `evidence/sources.json` follows `maestro_expertise_sources_v1`. Every
 non-volatile Guide must be named by at least one source `used_by` entry.

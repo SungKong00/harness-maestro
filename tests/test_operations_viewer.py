@@ -11,11 +11,20 @@ from pathlib import Path
 from maestro.dashboard import create_dashboard_server
 from maestro.documents import select_documents
 from maestro.errors import MaestroError
+from maestro.expertise_health import expertise_component_health
+from maestro.expertise_lifecycle import expertise_inventory
 from maestro.governance import (
     expertise_management_signals,
     record_run,
 )
+from maestro.history import (
+    apply_history_bundle_plan,
+    build_history_bundle_plan,
+    history_inventory,
+    set_run_display_label,
+)
 from maestro.observations import (
+    import_codex_app_server_trace,
     record_host_observation,
     start_run_observation,
 )
@@ -395,6 +404,171 @@ class OperationsViewerTests(unittest.TestCase):
             )
             self.assertEqual(1, len(recorded["telemetry"]["reroutes"]))
 
+    def test_codex_app_server_trace_imports_requested_applied_and_turn_tokens(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            started = start_run_observation(
+                repo,
+                run_id="app-server-run",
+                task_label="App Server 실측 수집",
+            )
+            trace = root / "app-server.jsonl"
+            messages = [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "thread/start",
+                    "params": {"model": "gpt-5.6-sol"},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"thread": {"id": "thread-1"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "turn/start",
+                    "params": {
+                        "threadId": "thread-1",
+                        "input": [],
+                        "model": None,
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "result": {
+                        "turn": {
+                            "id": "turn-1",
+                            "items": [],
+                            "status": "inProgress",
+                        }
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "method": "model/rerouted",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "fromModel": "gpt-5.6-sol",
+                        "toModel": "gpt-5.6-terra",
+                        "reason": "highRiskCyberActivity",
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "tokenUsage": {
+                            "last": {
+                                "inputTokens": 70,
+                                "outputTokens": 20,
+                                "cachedInputTokens": 10,
+                                "reasoningOutputTokens": 5,
+                                "totalTokens": 90,
+                            },
+                            "total": {
+                                "inputTokens": 70,
+                                "outputTokens": 20,
+                                "cachedInputTokens": 10,
+                                "reasoningOutputTokens": 5,
+                                "totalTokens": 90,
+                            },
+                        },
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turn": {
+                            "id": "turn-1",
+                            "items": [],
+                            "status": "completed",
+                            "durationMs": 2500,
+                        },
+                    },
+                },
+            ]
+            trace.write_text(
+                "".join(
+                    json.dumps(message, ensure_ascii=False) + "\n"
+                    for message in messages
+                ),
+                encoding="utf-8",
+            )
+
+            imported = import_codex_app_server_trace(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="app-server-run",
+                trace_path=trace,
+            )
+
+            self.assertEqual("observe-import-codex", imported["command"])
+            self.assertEqual(
+                "gpt-5.6-sol",
+                imported["telemetry"]["requested_model"],
+            )
+            self.assertEqual(
+                "gpt-5.6-terra",
+                imported["telemetry"]["applied_model"],
+            )
+            self.assertEqual(90, imported["telemetry"]["tokens"]["total"])
+            self.assertEqual(2500, imported["turn_duration_ms"])
+            receipt_path = root / "app-server-receipt.json"
+            write_json(
+                receipt_path,
+                {
+                    "run_id": "app-server-run",
+                    "risk": "low",
+                    "route_depth": "fast",
+                    "selected_lenses": [],
+                    "selected_expertise_packs": [],
+                    "selected_decision_guides": [],
+                    "expertise_research_mode": "reuse",
+                    "expertise_research_gate": "not-required",
+                    "executor_runs": 1,
+                    "primary_executor_id": "implementation-engineer",
+                    "executor_ids": ["implementation-engineer"],
+                    "outcome": "completed",
+                    "evidence_refs": ["tests:app-server"],
+                    "duration_ms": 2500,
+                    "tokens": {
+                        "input": 70,
+                        "output": 20,
+                        "cached": 10,
+                        "reasoning": 5,
+                        "total": 90,
+                    },
+                    "correction_count": 0,
+                    "agent_calls": 1,
+                    "verifier_result": "not_run",
+                    "command_artifact_ref": "tests:app-server",
+                    "stage_results": [],
+                },
+            )
+            record_run(
+                repo,
+                receipt_path,
+                observation_id=started["observation_id"],
+            )
+            run = snapshot_report(repo)["runs"][0]
+            self.assertEqual(["gpt-5.6-sol"], run["models"]["requested"])
+            self.assertEqual(["gpt-5.6-terra"], run["models"]["applied"])
+            self.assertEqual(
+                "host_observed",
+                run["models"]["measurement_state"],
+            )
+
     def test_run_details_use_one_inline_accessible_disclosure(self) -> None:
         viewer_root = ROOT / "src/maestro/resources/viewer"
         viewer_source = (viewer_root / "app.js").read_text(encoding="utf-8")
@@ -411,8 +585,89 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn('className: "run-detail-row"', viewer_source)
         self.assertIn("target.append(detailRow)", viewer_source)
         self.assertNotIn('id="run-detail"', viewer_markup)
-        self.assertIn("바로 아래에서 세부 흐름이 열리고", viewer_markup)
+        self.assertIn("제목을 누르면 계획·관측 단계를 보고", viewer_markup)
+        self.assertIn('checkbox.type = "checkbox"', viewer_source)
+        self.assertIn('id="history-bundles"', viewer_markup)
         self.assertIn(".run-detail-row", viewer_styles)
+
+    def test_history_bundle_hides_selected_runs_without_deleting_receipts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            receipt_path = root / "receipt.json"
+            receipt = {
+                "run_id": "history-run-1",
+                "risk": "low",
+                "route_depth": "fast",
+                "selected_lenses": [],
+                "selected_expertise_packs": [],
+                "selected_decision_guides": [],
+                "expertise_research_mode": "reuse",
+                "expertise_research_gate": "not-required",
+                "executor_runs": 1,
+                "primary_executor_id": "implementation-engineer",
+                "executor_ids": ["implementation-engineer"],
+                "outcome": "completed",
+                "evidence_refs": ["tests:history"],
+                "duration_ms": 100,
+                "tokens": {"input": 10, "output": 5, "total": 15},
+                "correction_count": 0,
+                "agent_calls": 1,
+                "verifier_result": "not_run",
+                "command_artifact_ref": "tests:history",
+                "stage_results": [],
+            }
+            started = start_run_observation(
+                repo,
+                run_id="history-run-1",
+                task_label="History run",
+            )
+            write_json(receipt_path, receipt)
+            record_run(
+                repo,
+                receipt_path,
+                observation_id=started["observation_id"],
+            )
+            before = snapshot_report(repo)
+            event_id = before["runs"][0]["event_id"]
+            set_run_display_label(
+                repo,
+                event_id=event_id,
+                label="결제 안정화 작업",
+            )
+            renamed = snapshot_report(repo)
+            self.assertEqual(
+                "결제 안정화 작업",
+                renamed["runs"][0]["task_label"],
+            )
+
+            plan = build_history_bundle_plan(
+                repo,
+                label="결제 안정화 1차",
+                event_ids=[event_id],
+            )
+            self.assertFalse(plan["writes_performed"])
+            applied = apply_history_bundle_plan(plan, repo)
+            after = snapshot_report(repo)
+
+            self.assertEqual("applied", applied["status"])
+            self.assertEqual([], after["runs"])
+            self.assertEqual(1, after["overview"]["history_bundles"])
+            self.assertEqual(
+                "결제 안정화 1차",
+                after["history_bundles"][0]["label"],
+            )
+            self.assertEqual(
+                [event_id],
+                history_inventory(repo)["bundled_event_ids"],
+            )
+            self.assertTrue(
+                any(
+                    (repo / ".maestro/state/events").glob("*.jsonl")
+                )
+            )
 
     def test_expertise_signal_requires_repeated_reusable_evidence(self) -> None:
         events = [
@@ -441,6 +696,71 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertEqual(3, signals[0]["occurrences"])
         self.assertEqual("review_recommended", signals[0]["status"])
         self.assertFalse(signals[0]["automatic_change_allowed"])
+
+    def test_expertise_health_uses_actionable_states_not_not_observed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self._initialized_repo(Path(temporary))
+            snapshot = snapshot_report(repo)
+            health = snapshot["expertise"]["component_health"]
+
+            self.assertTrue(health["packs"])
+            self.assertTrue(all(
+                pack["utility_verdict"] == "awaiting_usage"
+                for pack in health["packs"]
+            ))
+            self.assertTrue(all(
+                guide["load_evidence"]
+                == "host_attestation_unavailable"
+                for pack in health["packs"]
+                for guide in pack["guides"]
+            ))
+            self.assertNotIn(
+                '"not_observed"',
+                json.dumps(health, sort_keys=True),
+            )
+
+    def test_component_health_reports_guide_review_without_claiming_causality(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self._initialized_repo(Path(temporary))
+            events = [
+                {
+                    "run_id": f"design-{index}",
+                    "timestamp": f"2026-07-{20 + index:02d}T00:00:00Z",
+                    "selected_expertise_packs": ["product-design"],
+                    "selected_decision_guides": ["typography-korean"],
+                    "verifier_result": "passed",
+                    "correction_count": 0,
+                    "expertise_observations": [],
+                }
+                for index in range(1, 6)
+            ]
+            report = expertise_component_health(
+                expertise_inventory(repo),
+                events,
+            )
+            pack = next(
+                item
+                for item in report["packs"]
+                if item["pack_id"] == "product-design"
+            )
+            guide = next(
+                item
+                for item in pack["guides"]
+                if item["guide_id"] == "typography-korean"
+            )
+
+            self.assertEqual("review_due", guide["utility_verdict"])
+            self.assertEqual(5, guide["usage_count"])
+            self.assertEqual(
+                "host_attestation_unavailable",
+                guide["load_evidence"],
+            )
+            self.assertFalse(report["automatic_mutation_allowed"])
+            self.assertIn("not causal proof", report["interpretation"])
 
     def test_dashboard_is_local_read_only_and_token_gated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

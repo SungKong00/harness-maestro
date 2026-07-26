@@ -2,7 +2,7 @@
 maestro_doc: 1
 id: HM-PLAN-002
 type: plan
-status: active
+status: archived
 authority: repository
 owner: harness-maestro
 summary: 실행 JSONL 원본을 보존하면서 사용자가 이름 붙인 목표 단위로 작업 흐름을 묶어 보는 history bundle 도입 계획.
@@ -12,7 +12,7 @@ supersedes: []
 sensitivity: internal
 ---
 
-# 이름 있는 목표 히스토리 계획
+# 이름 있는 작업 히스토리 구현
 
 ## 판정
 
@@ -22,37 +22,34 @@ sensitivity: internal
 append-only로 보존하고, 사용자가 완료한 목표만 별도 bundle로 물질화하는 구조가
 적절하다.
 
-## 사용자 흐름
+## 구현된 사용자 흐름
 
 ```text
-사용자 목표 시작
-  → stable goal_id + 작업 중 run 연결
-  → 뷰어는 현재 목표의 compact 흐름만 우선 표시
-  → 사용자가 "작업 완료" 선택
-  → 사람이 읽을 이름 입력
-  → bundle 미리보기(포함 run, 결과, 기간, 측정률)
+최근 작업 체크박스 선택
+  → 사람이 읽을 새 묶음 이름 또는 기존 묶음 선택
+  → bundle 미리보기(포함 run 수, 원본 보존)
   → 승인
   → 이름 있는 history bundle 생성
 ```
 
-사용자가 입력한 이름은 표시용 `goal_label`이다. 디렉터리는 충돌과 경로 탈출을 막기
-위해 `<slug>--<goal-id>` 형식을 사용한다. 이름만으로 ID를 만들지 않는다.
+사용자가 입력한 이름은 표시용 `label`이다. 디렉터리는 충돌과 경로 탈출을 막기
+위해 `<slug>--<bundle-id>` 형식을 사용한다. 이름만으로 ID를 만들지 않는다.
 
 ## 저장 구조
 
 ```text
 .maestro/state/
-├── events/YYYY-MM-DD.jsonl
-├── goals/active/<goal-id>.json
+├── runs.jsonl
 └── history/
     ├── index.json
-    └── <goal-slug>--<goal-id>/
+    ├── run-labels.json
+    └── <bundle-slug>--<bundle-id>/
         ├── manifest.json
         └── summary.json
 ```
 
 - `events/`가 RunReceipt와 idempotency의 유일한 원본이다.
-- `manifest.json`은 `goal_id`, `goal_label`, 포함 `event_id`, 시작·완료 시각과
+- `manifest.json`은 `bundle_id`, `label`, 포함 `event_id`, 생성·변경 시각과
   bundle schema를 가진다.
 - `summary.json`은 뷰어용 결과·시간·token·모델·Expertise 측정률만 가진 파생
   snapshot이다. 대화, hidden reasoning과 파일 본문은 넣지 않는다.
@@ -66,16 +63,19 @@ append-only로 보존하고, 사용자가 완료한 목표만 별도 bundle로 �
 `legacy-unassigned`로 계속 읽는다. 사용자가 명시적으로 묶고 싶을 때만 immutable
 `event_id`를 참조하는 sidecar manifest를 만든다.
 
-## 구현 순서
+## 구현 결과
 
-1. RunReceipt에 optional `goal_id`, `goal_label`을 추가하고 기존 schema 호환 fixture를
-   고정한다.
-2. `Goal → Run` 연결과 완료 bundle을 만드는 typed `preview → apply` plan을 구현한다.
+1. RunReceipt schema를 넓히지 않고 기존 immutable `event_id`를 사용했다.
+2. 체크박스 선택과 완료 bundle을 만드는 typed `preview → apply` plan을 구현했다.
 3. apply는 현재 event ID와 digest를 다시 확인하고 manifest, summary, index를
    원자적으로 갱신한다. raw JSONL은 이동하거나 다시 쓰지 않는다.
-4. snapshot은 `active_goals`, `history_bundles`, 최근 unassigned run 소수만 반환한다.
-5. 뷰어에 “작업 완료” 이름 입력, 포함 run 미리보기, 승인 동작을 추가한다.
-6. crash, stale plan, 중복 이름, 잘못된 event ID, 재적용, 기존 19개 호환을 검사한다.
+4. snapshot은 `history_bundles`와 최근 unbundled run만 반환한다.
+5. 뷰어에 체크박스, 새/기존 묶음, 미리보기와 승인 동작을 추가했다.
+6. 과거 영문 제목은 bounded `run-labels.json` sidecar로 한글 표시 이름을 붙인다.
+
+초기 계획의 `active goal` 계층과 RunReceipt의 `goal_id` 확장은 현재 요구에 비해
+상태 전이를 늘리므로 제외했다. 사용자가 완료 시점에 기존 run을 명시 선택하는
+방식이 더 단순하고 소급 정리도 가능하다.
 
 ## 채택 근거와 제외
 

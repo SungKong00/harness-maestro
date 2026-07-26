@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .expertise_health import expertise_component_health
 from .expertise_lifecycle import expertise_inventory
 from .governance import (
     expertise_management_signals,
     govern_report,
     recent_run_events,
 )
+from .history import history_inventory, run_display_labels
 from .observations import inflight_observations
 from .status import status_report
 from .errors import MaestroError
@@ -85,6 +87,7 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                     "applied_model": host_models["applied"],
                     "model_evidence": host_models["evidence"],
                     "status": event.get("outcome"),
+                    "status_evidence": "run_receipt",
                     "duration_ms": event.get("duration_ms"),
                     "tokens": event.get("tokens"),
                     "evidence_refs": list(event.get("evidence_refs", []))[:3],
@@ -102,6 +105,7 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     stages: list[dict[str, Any]] = []
     for assignment in plan.get("assignments", []):
         result = stage_results.get(assignment.get("assignment_id"), {})
+        stage_observed = bool(result)
         model_evidence = result.get("model_evidence", "unavailable")
         applied_model = (
             result.get("actual_model")
@@ -120,7 +124,10 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                 "actual_model": applied_model,
                 "applied_model": applied_model,
                 "model_evidence": model_evidence,
-                "status": result.get("status", "not_observed"),
+                "status": result.get("status", "planned_only"),
+                "status_evidence": (
+                    "host_stage_result" if stage_observed else "plan_only"
+                ),
                 "duration_ms": result.get("duration_ms"),
                 "tokens": result.get("tokens"),
                 "evidence_refs": list(result.get("evidence_refs", []))[:3],
@@ -135,10 +142,19 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     return stages, "assignment_observation"
 
 
-def _run_card(event: dict[str, Any]) -> dict[str, Any]:
+def _run_card(
+    event: dict[str, Any],
+    display_labels: dict[str, str] | None = None,
+) -> dict[str, Any]:
     flow, flow_evidence = _run_flow(event)
     host_observation = event.get("host_observation")
     host_models = _host_model_provenance(host_observation)
+    event_id = event["event_id"]
+    original_task_label = event.get("task_label") or event["run_id"]
+    task_label = (display_labels or {}).get(
+        event_id,
+        original_task_label,
+    )
     route_recommended = _unique_strings(
         [stage.get("route_recommended_model") for stage in flow]
     )
@@ -149,8 +165,10 @@ def _run_card(event: dict[str, Any]) -> dict[str, Any]:
         ]
     )
     return {
+        "event_id": event_id,
         "run_id": event["run_id"],
-        "task_label": event.get("task_label") or event["run_id"],
+        "task_label": task_label,
+        "original_task_label": original_task_label,
         "timestamp": event["timestamp"],
         "risk": event["risk"],
         "route_depth": event["route_depth"],
@@ -173,6 +191,11 @@ def _run_card(event: dict[str, Any]) -> dict[str, Any]:
             "planned": route_recommended,
             "actual": applied,
             "estimated": False,
+            "measurement_state": (
+                "host_observed"
+                if host_observation is not None
+                else "host_not_connected"
+            ),
         },
         "host_observation": host_observation,
         "flow_evidence": flow_evidence,
@@ -220,7 +243,8 @@ def _measurement_coverage(runs: list[dict[str, Any]]) -> dict[str, Any]:
             lambda run: bool(run.get("models", {}).get("requested"))
         ),
         "interpretation": (
-            "Unmeasured values are kept null and are never estimated."
+            "측정되지 않은 값은 추정하지 않는다. Host가 공개 이벤트를 연결한 "
+            "실행만 요청·적용 모델과 토큰을 실측으로 표시한다."
         ),
     }
 
@@ -272,12 +296,25 @@ def snapshot_report(
                 "runs": 0,
                 "inflight": 0,
                 "attention": len(status["next_actions"]),
+                "history_bundles": 0,
             },
             "attention": status["next_actions"],
             "measurement_coverage": _measurement_coverage([]),
             "runs": [],
+            "history_bundles": [],
             "inflight": [],
-            "expertise": {"packs": [], "candidates": []},
+            "expertise": {
+                "packs": [],
+                "candidates": [],
+                "component_health": {
+                    "schema_version": "maestro_expertise_component_health_v1",
+                    "review_use_interval": 5,
+                    "negative_signal_threshold": 3,
+                    "packs": [],
+                    "review_items": [],
+                    "automatic_mutation_allowed": False,
+                },
+            },
             "governance": status["governance"],
             "doctor": status["doctor"],
             "status": status,
@@ -295,8 +332,31 @@ def snapshot_report(
         }
 
     history = recent_run_events(repo, window=window)
-    runs = [_run_card(event) for event in history["runs"]]
-    completed_run_ids = {run["run_id"] for run in runs}
+    labels = run_display_labels(repo)
+    history_state = history_inventory(repo)
+    bundled_event_ids = set(history_state["bundled_event_ids"])
+    history_bundles = []
+    for bundle in history_state["bundles"]:
+        rendered = dict(bundle)
+        rendered["runs"] = [
+            {
+                **run,
+                "task_label": labels.get(
+                    run["event_id"],
+                    run["task_label"],
+                ),
+            }
+            for run in bundle["runs"]
+        ]
+        history_bundles.append(rendered)
+    runs = [
+        _run_card(event, labels)
+        for event in history["runs"]
+        if event["event_id"] not in bundled_event_ids
+    ]
+    completed_run_ids = {
+        event["run_id"] for event in history["runs"]
+    }
     inflight = inflight_observations(
         repo,
         completed_run_ids=completed_run_ids,
@@ -304,6 +364,10 @@ def snapshot_report(
     doctor = status["doctor"]
     assert governance is not None
     expertise = expertise_inventory(repo)
+    expertise["component_health"] = expertise_component_health(
+        expertise,
+        history["runs"],
+    )
     verification = verification_inventory(repo)
     expertise_signals = expertise_management_signals(history["runs"])
 
@@ -337,6 +401,24 @@ def snapshot_report(
     )
     attention.extend(
         {
+            "id": "review_expertise_component",
+            "pack_id": item["pack_id"],
+            "guide_id": item["guide_id"],
+            "severity": (
+                "high"
+                if item["utility_verdict"] == "review_required"
+                else "medium"
+            ),
+            "reason": (
+                f"{item['pack_id']}/{item['guide_id']} reached a component "
+                f"review condition after {item['usage_count']} uses: "
+                + "; ".join(item["reasons"])
+            ),
+        }
+        for item in expertise["component_health"]["review_items"]
+    )
+    attention.extend(
+        {
             "id": "review_stale_run",
             "run_id": item["run_id"],
             "severity": "medium",
@@ -359,12 +441,14 @@ def snapshot_report(
             "runs": len(runs),
             "inflight": len(inflight),
             "attention": len(attention),
+            "history_bundles": len(history_bundles),
             "outcomes": dict(sorted(outcomes.items())),
             "corrections": sum(run["correction_count"] for run in runs),
         },
         "attention": attention,
         "measurement_coverage": _measurement_coverage(runs),
         "runs": runs,
+        "history_bundles": history_bundles,
         "inflight": inflight,
         "expertise": expertise,
         "governance": {

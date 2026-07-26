@@ -278,6 +278,18 @@ class ConventionDraftTests(unittest.TestCase):
                     [],
                 )["selected_conventions"],
             )
+            activation_doctor = doctor_report(repo)
+            self.assertEqual(
+                "PASS",
+                check_by_id(
+                    activation_doctor,
+                    "MANAGED:docs/README.md",
+                )["status"],
+            )
+            self.assertEqual(
+                "PASS",
+                check_by_id(activation_doctor, "MANAGED_LOCK")["status"],
+            )
 
             update = build_convention_update_plan(
                 repo,
@@ -305,6 +317,14 @@ class ConventionDraftTests(unittest.TestCase):
             self.assertIn(
                 "versioned error envelope",
                 target.read_text(encoding="utf-8"),
+            )
+            update_doctor = doctor_report(repo)
+            self.assertEqual(
+                "PASS",
+                check_by_id(
+                    update_doctor,
+                    "MANAGED:docs/README.md",
+                )["status"],
             )
 
     def test_held_out_activation_rejects_an_opaque_pass_file(self) -> None:

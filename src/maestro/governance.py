@@ -586,6 +586,10 @@ def _valid_expertise_observations(
                 "missing_guide",
                 "stale_guide",
                 "trigger_miss",
+                "trigger_false_positive",
+                "guide_not_loaded",
+                "guide_ineffective",
+                "pack_conflict",
                 "unnecessary_research",
             }
             or not isinstance(observation.get("domain"), str)
