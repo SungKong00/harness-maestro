@@ -18,7 +18,7 @@ operational JSONL event
 
 Keep active knowledge concise. Exclude `docs/archive/` from normal selection. Do not promote raw transcripts, tool payloads, or one-off implementation notes.
 
-Operational state must include `project_id`, `checkout_id`, and `run_id`. Store actual token or duration values when available; otherwise use `null`, never estimates. Host telemetry also names its public source, quality, and correlation ID. Never infer the actual model from the planned route or scrape private Host session files.
+Operational state must include `project_id`, `checkout_id`, and `run_id`. Store actual token or duration values when available; otherwise use `null`, never estimates. Host telemetry also names its public source, quality, correlation ID, requested model, and model-event evidence. Treat an applied model as measured only when the Host observed the complete model/reroute event range. Never infer it from the Route recommendation or scrape private Host session files.
 
 ## Project convention boundary
 

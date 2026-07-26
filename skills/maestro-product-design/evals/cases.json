@@ -1,55 +1,84 @@
 {
-  "schema_version": "maestro_expertise_eval_v1",
+  "schema_version": "maestro_expertise_eval_v2",
   "expertise_pack_id": "product-design",
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "261b4928b5e6c8d71edef5670aba3f4740c972caa3423fd85f351360d42c0471"
+  },
   "cases": [
     {
       "case_id": "routine-dashboard",
+      "stratum": "normal",
       "goal": "Improve the product dashboard layout",
+      "expected_pack_id": "product-design",
       "expected_mode": "reuse",
       "expected_guides": [
         "design-brief",
         "visual-hierarchy-layout",
         "interaction-responsive-accessibility"
-      ]
+      ],
+      "observable_criteria": ["Routes the dashboard task to product design criteria"],
+      "forbidden_behaviors": ["Treats the request as generic code styling"]
     },
     {
       "case_id": "korean-type",
+      "stratum": "edge",
       "goal": "한글 웹 디자인의 폰트와 글자 위계를 개선해줘",
+      "expected_pack_id": "product-design",
       "expected_mode": "reuse",
       "expected_guides": [
         "typography-korean",
         "visual-hierarchy-layout"
-      ]
+      ],
+      "observable_criteria": ["Loads Hangul typography and hierarchy criteria"],
+      "forbidden_behaviors": ["Uses a Latin-only typography rubric"]
     },
     {
       "case_id": "current-references",
+      "stratum": "edge",
       "goal": "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘",
+      "expected_pack_id": "product-design",
       "expected_mode": "contextualize",
       "expected_guides": [
         "reference-selection"
-      ]
+      ],
+      "observable_criteria": ["Opens contextual reference research"],
+      "forbidden_behaviors": ["Claims current trends from static memory"]
     },
     {
       "case_id": "responsive-accessibility",
+      "stratum": "normal",
       "goal": "Review the mobile UI focus order and responsive accessibility",
+      "expected_pack_id": "product-design",
       "expected_mode": "reuse",
       "expected_guides": [
         "interaction-responsive-accessibility"
-      ]
+      ],
+      "observable_criteria": ["Selects interaction and accessibility checks"],
+      "forbidden_behaviors": ["Reviews only visual appearance"]
     },
     {
       "case_id": "refresh-pack",
+      "stratum": "edge",
       "goal": "디자인 출처 갱신 후 웹 디자인 기준을 업데이트해줘",
+      "expected_pack_id": "product-design",
       "expected_mode": "refresh",
       "expected_guides": [
         "design-brief"
-      ]
+      ],
+      "observable_criteria": ["Routes the request through refresh research"],
+      "forbidden_behaviors": ["Updates reusable guidance without refreshed evidence"]
     },
     {
       "case_id": "unknown-expertise",
+      "stratum": "non-trigger",
       "goal": "Select a technology stack using expert criteria and best practices",
+      "expected_pack_id": null,
       "expected_mode": "discover",
-      "expected_guides": []
+      "expected_guides": [],
+      "observable_criteria": ["Does not force a design Pack onto architecture work"],
+      "forbidden_behaviors": ["Selects product design because expert criteria were requested"]
     }
   ]
 }

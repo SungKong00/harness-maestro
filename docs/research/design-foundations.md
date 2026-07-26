@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro의 숙의, 컨텍스트, 오케스트레이션, 자가개선과 문서 구조에 영향을 준 연구·공학 자료와 실제 채택 범위.
 scope: [routing, research, docs, skills, self-improvement]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -295,6 +295,11 @@ architecture, decision, convention 권위 모델로 축소했다.
 - [JSON Schema 2020-12](https://json-schema.org/specification)는 process 경계의
   JSON instance를 선언된 wire shape에 대해 검증하는 표준이다. 구조 통과가 진실성,
   권한과 evidence 품질을 증명하지는 않는다.
+- [Codex App Server](https://developers.openai.com/codex/app-server/)는
+  `turn/start`의 요청 모델, `model/rerouted`, `thread/tokenUsage/updated`,
+  `turn/completed` 이벤트와 `thread_id`·`turn_id` 상관 경계를 제공한다. 이는
+  App Server 실행과 이벤트 구독을 직접 소유한 Host의 관측 근거이며, 이미 열린
+  Desktop 채팅을 Skill이 소급해서 읽을 수 있다는 의미는 아니다.
 - [Hermes delegation](https://github.com/NousResearch/hermes-agent/blob/eb52760564dbba2e5971fa54bd67384e281cd3b8/website/docs/user-guide/features/delegation.md)은
   child에 goal과 bounded context만 전달하고 final summary만 되돌리는 fresh child
   패턴을 제공한다. Hermes의 background Kanban/runtime 전체는 채택하지 않았다.
@@ -324,6 +329,9 @@ Maestro는 이 저장소들처럼 실행 경계에서 오류를 일찍 발견하
   후보는 자동 실행 권한이 아니다.
 - RunReceipt 기록 전에 risk-depth, executor, verifier와 검증 artifact의 관계를
   검사하고 고칠 수 있는 오류를 반환한다.
+- Viewer에서는 메인 요청 모델, 완전한 Host event 구간이 증명한 실제 적용 모델과
+  Route 권고 모델을 분리한다. 요청만 알거나 event 구간이 불완전하면 적용 모델은
+  `null`이고, 비공개 session 파일을 보조 근거로 사용하지 않는다.
 - 판단이 필요한 high-risk 요청인데 Lens가 하나도 선택되지 않은 경우에만 경고한다.
   단순하거나 결정론적인 high-risk 작업까지 강제로 다중 Lens로 보내지는 않는다.
 - host conformance 결과는 작은 JSON artifact로 남길 수 있지만 scheduler,
@@ -350,6 +358,11 @@ exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않�
 - [Agent Skills specification](https://agentskills.io/specification)은 최소
   `SKILL.md`, 필요할 때 읽는 `references/`와 progressive disclosure를 정의하고,
   긴 세부 자료를 분리해 작은 reference를 on-demand로 읽도록 권한다.
+- Agent Skills의
+  [client implementation guide](https://agentskills.io/client-implementation/adding-skills-support)는
+  발견 단계의 metadata와 활성화 단계의 전체 `SKILL.md` 전달을 구분하고,
+  reference·resource는 필요할 때 추가로 읽는 흐름을 설명한다. 따라서 Skill ID가
+  선택됐다는 사실만으로 실제 지침이 모델 컨텍스트에 들어갔다고 볼 수 없다.
 - [Anthropic Skills](https://github.com/anthropics/skills)은 self-contained Skill
   package가 반복 가능한 specialized workflow를 제공하되 실제 환경에서 충분히
   평가해야 한다고 명시한다.
@@ -373,10 +386,19 @@ exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않�
   자동으로 늘리지 않는다.
 - route는 pack 최대 한 개와 guide 최대 네 개만 반환하고, source manifest와 eval은
   정상 작업에서 열지 않는다.
+- AssignmentInput은 선택한 Skill과 Guide resource path, Skill tree digest를
+  전달한다. 실제 Host load 증거는 별도 attestation이며, 없으면 `unavailable`이다.
+- Pack은 독립적인 쓰기 권한을 만들지 않는다. read-only Assignment에서는 조언만
+  반환하고, 이미 승인된 mutation owner만 같은 Assignment 경계 안에서 기준을
+  구현에 적용한다.
 - stable·versioned 기준은 재사용하고, volatile한 현재 사례나 없는 전문 분야만
   research gate로 조사한다.
 - candidate는 프로젝트 state에 격리하고 no-pack, persona-only, pack,
   pack+conditional-research frozen comparison 뒤에만 승격을 검토한다.
+- JSON Schema는 source·evaluation wire shape를 고정하고 CLI의 application-level
+  validator는 Guide 연결과 artifact digest를 교차 검사한다. 이 검사는 출처의
+  진실성이나 산출물 품질을 대신하지 않으므로 frozen route test와 domain artifact
+  평가를 별도로 유지한다.
 
 ### 차용하지 않은 부분
 

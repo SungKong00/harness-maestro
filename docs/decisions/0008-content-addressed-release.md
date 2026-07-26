@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: CLI runtime, Registry와 bundled Skill을 하나의 콘텐츠 기반 release identity로 결합한다.
 scope: [release, cli, registry, skills, host]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -18,7 +18,7 @@ sensitivity: internal
 
 `src/maestro/resources/release-manifest.json`을 한 릴리스의 기계 권위로 사용한다.
 manifest는 framework version, runtime tree digest, Registry digest와 bundled Skill
-여덟 개의 tree digest를 포함하며, 이 값을 다시 canonical JSON으로 해시한
+아홉 개의 tree digest를 포함하며, 이 값을 다시 canonical JSON으로 해시한
 `release_id`를 가진다.
 
 Codex Host Doctor는 다음을 모두 검사한다.

@@ -1,55 +1,84 @@
 {
-  "schema_version": "maestro_expertise_eval_v1",
+  "schema_version": "maestro_expertise_eval_v2",
   "expertise_pack_id": "software-qa",
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "96c98c5a0639c6d658456f45c39b4ef04ff6353d47d6968fac1e549207c20623"
+  },
   "cases": [
     {
       "case_id": "routine-feature-qa",
+      "stratum": "normal",
       "goal": "Create a risk-based QA and regression plan for this feature change",
+      "expected_pack_id": "software-qa",
       "expected_mode": "reuse",
       "expected_guides": [
         "qa-risk-traceability",
         "qa-test-design",
         "qa-regression-release"
-      ]
+      ],
+      "observable_criteria": ["Selects risk, test design, and regression criteria"],
+      "forbidden_behaviors": ["Produces a flat checklist without risk ranking"]
     },
     {
       "case_id": "transaction-state",
+      "stratum": "edge",
       "goal": "Design QA scenarios for transaction isolation, retries, concurrency, and rollback",
+      "expected_pack_id": "software-qa",
       "expected_mode": "reuse",
       "expected_guides": [
         "qa-scenario-state-exploration",
         "qa-test-design"
-      ]
+      ],
+      "observable_criteria": ["Selects state, concurrency, and failure-path criteria"],
+      "forbidden_behaviors": ["Checks only the happy path"]
     },
     {
       "case_id": "release-evidence",
+      "stratum": "normal",
       "goal": "Review regression coverage and required release evidence",
+      "expected_pack_id": "software-qa",
       "expected_mode": "reuse",
       "expected_guides": [
         "qa-regression-release"
-      ]
+      ],
+      "observable_criteria": ["Selects revision-bound release evidence criteria"],
+      "forbidden_behaviors": ["Treats an unexecuted plan as release evidence"]
     },
     {
       "case_id": "defect-report",
+      "stratum": "edge",
       "goal": "Turn this intermittent failure into reproducible defect evidence",
+      "expected_pack_id": "software-qa",
       "expected_mode": "reuse",
       "expected_guides": [
         "qa-defect-evidence"
-      ]
+      ],
+      "observable_criteria": ["Selects reproducibility and environment evidence"],
+      "forbidden_behaviors": ["Reports a defect without observed versus expected behavior"]
     },
     {
       "case_id": "current-browser-matrix",
+      "stratum": "overlap",
       "goal": "Research current browser and device compatibility before finalizing the QA matrix",
+      "expected_pack_id": "software-qa",
       "expected_mode": "contextualize",
       "expected_guides": [
         "qa-risk-traceability"
-      ]
+      ],
+      "observable_criteria": ["Opens contextual platform research"],
+      "forbidden_behaviors": ["Uses a stale compatibility matrix as current evidence"]
     },
     {
       "case_id": "simple-code-nontrigger",
+      "stratum": "non-trigger",
       "goal": "Implement this pure formatting helper and run its existing unit test",
+      "expected_pack_id": null,
       "expected_mode": "reuse",
-      "expected_guides": []
+      "expected_guides": [],
+      "observable_criteria": ["Does not load QA Pack for a bounded existing-test task"],
+      "forbidden_behaviors": ["Expands a trivial task into a QA program"]
     }
   ]
 }

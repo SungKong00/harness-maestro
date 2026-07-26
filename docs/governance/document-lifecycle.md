@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 활성 Markdown, 외부 원본, 실행 기록과 archive를 분리하는 문서 생명주기.
 scope: [docs, .maestro/state]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -152,6 +152,32 @@ rm -- "$maestro_plan"
 
 적용 결과는 항상 `draft`이고 활성 선택에서 제외된다. 기존 topic을 자동 덮어쓰거나
 문서 지도에 자동 연결하지 않는다.
+
+별도 작업에서 owner 결정 또는 held-out 평가와 repository-local 검증 artifact가
+준비되면 활성화도 같은 preview/apply 경계를 사용한다.
+
+```bash
+maestro_activate="$(mktemp -t maestro-convention-activate.XXXXXX.json)"
+maestro convention activate --repo . \
+  --topic api-error-contract \
+  --basis held_out_evaluation \
+  --approval-ref held_out_evaluation:api-contract-v1 \
+  --verification-artifact .maestro/state/evidence/api-contract-v1.json \
+  --json > "$maestro_activate"
+maestro convention activate --repo . \
+  --apply-plan "$maestro_activate" --json
+rm -- "$maestro_activate"
+```
+
+활성화 plan은 draft 본문, 검증 artifact의 경로·digest, 현재 Git 작업상태와 문서
+entrypoint 변경을 함께 고정한다. `owner_decision`을 쓰면
+`--decision-summary`가 필수다. 적용 전 어느 하나라도 바뀌면 stale로 거부한다.
+
+활성 topic 수정은 `maestro convention update`에서 현재 authoring 필드를 모두 다시
+제시하고 같은 승인·검증 경계를 거친다. 한 명령은 한 topic만 바꾸며, 기존 scope에
+새 범위를 추가하려면 `--allow-scope-expansion`을 명시해야 한다. 현재 명령은
+supersession을 추론하지 않는다. 새 topic으로 권위를 교체하거나 scope 의미가 크게
+달라지는 경우에는 ADR과 수동 supersede 검토를 먼저 수행한다.
 
 ## Markdown으로 승격할 기준
 

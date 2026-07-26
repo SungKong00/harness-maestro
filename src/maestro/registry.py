@@ -81,7 +81,10 @@ EXPERTISE_PACK_REQUIRED = {
     "source_manifest",
     "evaluation_suite",
 }
-EXPERTISE_PACK_ALLOWED = EXPERTISE_PACK_REQUIRED | {"extends"}
+EXPERTISE_PACK_ALLOWED = EXPERTISE_PACK_REQUIRED | {
+    "dominance_triggers",
+    "extends",
+}
 EXPERTISE_EXTENDS_ALLOWED = {
     "expertise_pack_id",
     "version",
@@ -821,6 +824,10 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         if not _unique_string_list(pack.get("triggers"), nonempty=True):
             errors.append(
                 f"expertise pack {pack_id or '?'} triggers must be unique"
+            )
+        if not _unique_string_list(pack.get("dominance_triggers", [])):
+            errors.append(
+                f"expertise pack {pack_id or '?'} dominance_triggers must be unique strings"
             )
         if not _valid_id(pack.get("skill_id")):
             errors.append(f"expertise pack {pack_id or '?'} skill_id is invalid")

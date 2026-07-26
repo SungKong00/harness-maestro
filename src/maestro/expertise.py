@@ -8,6 +8,7 @@ from typing import Any
 from .errors import MaestroError
 from .matching import searchable_terms, term_matches
 from .registry import load_registry, validate_registry
+from .release import load_packaged_release_manifest
 from .util import (
     canonical_json,
     ensure_repo,
@@ -262,6 +263,14 @@ def _load_project_packs(
             resolved["triggers"] = list(
                 dict.fromkeys([*base["triggers"], *pack["triggers"]])
             )
+            resolved["dominance_triggers"] = list(
+                dict.fromkeys(
+                    [
+                        *base.get("dominance_triggers", []),
+                        *pack.get("dominance_triggers", []),
+                    ]
+                )
+            )
             resolved["guides"] = [
                 *copy.deepcopy(base["guides"]),
                 *copy.deepcopy(pack["guides"]),
@@ -306,13 +315,26 @@ def _load_project_packs(
                 "skill_id": base["skill_id"],
             }
 
+        local_skill_digest = _skill_tree_digest(skill_root)
         resolved["_maestro"] = {
             "origin": "project",
             "pack_path": relative_path,
             "skill_path": (
                 skill_root.relative_to(repo) / "SKILL.md"
             ).as_posix(),
-            "definition_digest": _skill_tree_digest(skill_root),
+            "definition_digest": local_skill_digest,
+            "skill_definition_digests": {
+                pack["skill_id"]: local_skill_digest,
+                **(
+                    {
+                        base["skill_id"]: load_packaged_release_manifest()[
+                            "skills"
+                        ][base["skill_id"]]["sha256"]
+                    }
+                    if base_card is not None
+                    else {}
+                ),
+            },
             "guide_origins": guide_origins,
             "base": base_card,
             "candidate_snapshot_path": (
@@ -333,6 +355,7 @@ def load_expertise_catalog(
     if errors:
         raise MaestroError("REGISTRY_INVALID", "; ".join(errors))
     bundled = []
+    release_manifest = load_packaged_release_manifest()
     for pack in registry["expertise_packs"]:
         item = copy.deepcopy(pack)
         item["_maestro"] = {
@@ -340,6 +363,11 @@ def load_expertise_catalog(
             "pack_path": None,
             "skill_path": None,
             "definition_digest": expertise_manifest_digest(pack),
+            "skill_definition_digests": {
+                pack["skill_id"]: release_manifest["skills"][
+                    pack["skill_id"]
+                ]["sha256"]
+            },
             "guide_origins": {
                 guide["guide_id"]: {
                     "origin": "bundled",
@@ -386,6 +414,9 @@ def _minimal_pack_card(
         "pack_path": metadata["pack_path"],
         "skill_path": metadata["skill_path"],
         "definition_digest": metadata["definition_digest"],
+        "skill_definition_digest": metadata["skill_definition_digests"][
+            pack["skill_id"]
+        ],
         "extends": metadata["base"],
         "guides": [
             {
@@ -393,6 +424,10 @@ def _minimal_pack_card(
                 "summary": guide["summary"],
                 "freshness": guide["freshness"],
                 **metadata["guide_origins"][guide["guide_id"]],
+                "resource_path": f"references/{guide['guide_id']}.md",
+                "skill_definition_digest": metadata[
+                    "skill_definition_digests"
+                ][metadata["guide_origins"][guide["guide_id"]]["skill_id"]],
             }
             for guide in selected_guides
         ],
@@ -422,7 +457,7 @@ def select_expertise(
     catalog = load_expertise_catalog(repo_path)
 
     goal_terms = searchable_terms(goal)
-    ranked: list[tuple[int, bool, str, dict[str, Any]]] = []
+    ranked: list[tuple[int, int, bool, str, dict[str, Any]]] = []
     eligible_packs = [
         pack
         for pack in catalog
@@ -447,23 +482,47 @@ def select_expertise(
             if _matches(goal_terms, trigger)
         )
         if score:
+            dominance_score = sum(
+                1
+                for trigger in pack.get("dominance_triggers", [])
+                if _matches(goal_terms, trigger)
+            )
             project_priority = pack["_maestro"]["origin"] == "project"
             ranked.append(
                 (
+                    dominance_score,
                     score,
                     project_priority,
                     pack["expertise_pack_id"],
                     pack,
                 )
             )
-    ranked.sort(key=lambda item: (-item[0], -int(item[1]), item[2]))
-    selected_packs = [item[3] for item in ranked[:MAX_SELECTED_PACKS]]
+    ranked.sort(
+        key=lambda item: (-int(item[2]), -item[0], -item[1], item[3])
+    )
+    selected_packs = [item[4] for item in ranked[:MAX_SELECTED_PACKS]]
 
     selected_guide_ids: list[str] = []
     pack_cards: list[dict[str, Any]] = []
     research_mode = "reuse"
     research_reasons: list[str] = []
     warnings: list[dict[str, Any]] = []
+    if (
+        len(ranked) > 1
+        and ranked[0][2] == ranked[1][2]
+        and ranked[0][0] == ranked[1][0]
+        and ranked[0][1] == ranked[1][1]
+    ):
+        warnings.append(
+            {
+                "code": "EXPERTISE_SELECTION_AMBIGUOUS",
+                "candidate_pack_ids": [ranked[0][3], ranked[1][3]],
+                "message": (
+                    "Two Expertise Packs have equal routing evidence; "
+                    "verify the selected decision domain before execution."
+                ),
+            }
+        )
 
     for pack in selected_packs:
         guide_by_id = {guide["guide_id"]: guide for guide in pack["guides"]}
@@ -590,6 +649,14 @@ def select_expertise(
             "returned_guide_bodies": len(selected_guide_ids),
             "max_selected_packs": MAX_SELECTED_PACKS,
             "max_selected_guides": MAX_SELECTED_GUIDES,
+            "ranked_candidates": [
+                {
+                    "expertise_pack_id": item[3],
+                    "dominance_score": item[0],
+                    "trigger_score": item[1],
+                }
+                for item in ranked[:3]
+            ],
         },
     }
     return selection, warnings

@@ -91,10 +91,16 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      request merely to obtain telemetry.
 9. Inspect the optional `expertise` selection before executing Assignments.
    - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
-     For a project pack, use `pack_cards[].skill_path`; load inherited guide
-     IDs from each guide card's `skill_id`. Never load every active pack.
+     Use AssignmentInput `expertise_load.packs` to resolve the Skill ID,
+     project Skill path when present, Guide resource path, and expected Skill
+     tree digest. Never load every active pack. Selection is not load proof:
+     leave Host attestation unavailable unless the Host can prove the loaded
+     Skill and Guide digests.
      A pack supplies decision criteria; it does not create another permanent
-     agent or replace the route's Executor.
+     agent or replace the route's Executor. It never grants write authority.
+     In a read-only Assignment it is advisory. The existing mutation owner may
+     apply its criteria while implementing but the Pack cannot widen paths or
+     authorize another writer.
    - If `research_requirement.gate` is `not-required`, reuse the selected guides
      without repeating general research.
    - If the gate is `open`, read `references/research-and-evidence.md`, run the
@@ -163,12 +169,13 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - Update an existing topic convention instead of creating a duplicate.
     - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
     - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically report a reusable behavioral or architecture rule as a `candidate` with a stable fingerprint and bounded evidence. Do not create or update an active Convention from same-run implementation success.
-    - Create or update at most one `docs/conventions/<topic>.md` only when the user explicitly decided the rule (`owner_decision`) or a previously frozen, held-out comparison was accepted (`held_out_evaluation`). Link it from the document entrypoint and run `maestro doctor`.
+    - Create or update at most one `docs/conventions/<topic>.md` only when the user explicitly decided the rule (`owner_decision`) or a previously frozen, held-out comparison was accepted (`held_out_evaluation`). Use `maestro convention activate` or `maestro convention update` preview/apply so the Convention, repository-local verification artifact, checkout and document entrypoint are one plan; then run `maestro doctor`.
     - For a new candidate, prefer `maestro convention draft` to produce a reviewed preview plan. Applying that plan creates only a `draft`; it never activates or links the Convention.
     - When the mode is `off`, mention the possible rule in the final report without writing a Convention or governance candidate.
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
-    - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only when its admission gate passes.
+    - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. Before building any durable component, let `$maestro-govern` classify a closed evidence signal with `maestro govern classify`; usage count or persona wording is not a boundary.
+    - A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only for a classified Decision Guide or Expertise Pack. A classified Lens, Executor/Agent, Department, Adapter, Research Lane, Specialist Contract, or Packet contract may be compiled under `.maestro/state/candidates/components/` with `$maestro-registry-builder` only after explicit candidate work is requested. Neither path changes the active Registry in the producing run.
     - Never edit an active project Expertise Skill as same-run self-improvement. A later owner decision or accepted held-out evaluation may publish a new candidate with `maestro expertise update`; keep Pack/Skill identity, increment one version, and use the preview/apply boundary. Use `deactivate` to remove only the allowlist entry when the Pack should stop routing.
 18. For a non-trivial initialized run, write one compact RunReceipt after the
     final verdict with `maestro record --repo <repo> --receipt
@@ -176,17 +183,20 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - When an implementation observation was started, pass its ID so Maestro
       freezes the task label, compact plan, and missing total duration. A
       repeated identical record remains a no-op.
-    - If the Host exposes an actual model or token summary through a supported
-      public event/API, attach it with `maestro observe host` before the final
-      record. Include the Host source, quality, and correlation ID. Do this
-      automatically as part of the run; never ask the user to type the command.
-      Do not scrape private Codex session files. If the Host exposes no stable
-      value, keep it unmeasured.
+    - If the Host exposes a requested model, complete model/reroute event range,
+      or token summary through a supported public event/API, attach it with
+      `maestro observe host` before the final record. Keep requested, applied,
+      and Route-recommended models separate. Record an applied model only with
+      `model_event_evidence=complete`; otherwise keep it unmeasured. Include the
+      Host source, quality, and correlation ID. Do this automatically as part
+      of the run; never ask the user to type the command. Do not scrape private
+      Codex session files.
     - Record actual duration and token values only when available; use `null` otherwise.
     - `stage_results` is optional and bounded to the plan's five Assignments.
-      Record its actual model, duration, tokens, status, and up to three evidence
-      refs only when the Host directly exposes them. Never substitute planned
-      model or aggregate estimates for actual values.
+      Record its applied model, duration, tokens, status, and up to three
+      evidence refs only when the Host directly exposes them. Mark stage model
+      evidence complete before displaying it as applied. Never substitute the
+      Route-recommended model or aggregate estimates for actual values.
     - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
     - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.

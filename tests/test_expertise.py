@@ -271,6 +271,14 @@ class ExpertiseRoutingTests(unittest.TestCase):
                 )
                 expertise = plan["expertise"]
                 self.assertEqual(
+                    (
+                        [case["expected_pack_id"]]
+                        if case["expected_pack_id"] is not None
+                        else []
+                    ),
+                    expertise["selected_pack_ids"],
+                )
+                self.assertEqual(
                     case["expected_mode"],
                     expertise["research_requirement"]["mode"],
                 )
@@ -297,9 +305,18 @@ class ExpertiseRoutingTests(unittest.TestCase):
                     expertise = plan.get(
                         "expertise",
                         {
+                            "selected_pack_ids": [],
                             "selected_guide_ids": [],
                             "research_requirement": {"mode": "reuse"},
                         },
+                    )
+                    self.assertEqual(
+                        (
+                            [case["expected_pack_id"]]
+                            if case["expected_pack_id"] is not None
+                            else []
+                        ),
+                        expertise["selected_pack_ids"],
                     )
                     self.assertEqual(
                         case["expected_mode"],
@@ -322,6 +339,11 @@ class ExpertiseRoutingTests(unittest.TestCase):
             "medium",
             intent="review",
         )
+        implementation_copy = route_goal_v2(
+            "Implement the approved positioning copy on the landing page",
+            "medium",
+            intent="implementation",
+        )
 
         self.assertEqual(
             ["product-design"],
@@ -330,6 +352,10 @@ class ExpertiseRoutingTests(unittest.TestCase):
         self.assertEqual(
             ["marketing"],
             message["expertise"]["selected_pack_ids"],
+        )
+        self.assertEqual(
+            ["marketing"],
+            implementation_copy["expertise"]["selected_pack_ids"],
         )
 
 

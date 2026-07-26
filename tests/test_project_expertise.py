@@ -4,13 +4,17 @@ import json
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from tests.support import apply_fresh_init, check_by_id, write_json
 
 from maestro.doctor import doctor_report
+from maestro.cli import main
 from maestro.expertise import expertise_manifest_digest
 from maestro.expertise_lifecycle import (
+    EXPERTISE_AUTHORITY_BLOCK,
     apply_expertise_activation_plan,
     apply_expertise_deactivation_plan,
     apply_expertise_update_plan,
@@ -18,10 +22,12 @@ from maestro.expertise_lifecycle import (
     build_expertise_deactivation_plan,
     build_expertise_update_plan,
     expertise_inventory,
+    validate_expertise_candidate,
 )
 from maestro.governance import govern_report, record_run
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry
+from maestro.util import file_sha256
 
 
 def _candidate(
@@ -33,7 +39,14 @@ def _candidate(
     guide_id: str = "project-type-rules",
     guide_text: str = (
         "# Project type rules\n\n"
-        "purpose: Preserve the approved project typography.\n"
+        "## Purpose\n\nPreserve the approved project typography.\n\n"
+        "## Use when\n\nProject screens use the approved type system.\n\n"
+        "## Inputs\n\nThe project design tokens and target screen.\n\n"
+        "## Decision checks\n\n- Use approved families.\n- Verify hierarchy.\n\n"
+        "## Required evidence\n\nRendered before and after screenshots.\n\n"
+        "## Reject or stop when\n\nThe approved font assets are unavailable.\n\n"
+        "## Verification\n\nInspect Hangul wrapping and computed fonts.\n\n"
+        "## Counterexamples\n\nDo not apply to unrelated backend changes.\n"
     ),
     stale_base: bool = False,
     standalone: bool = False,
@@ -120,7 +133,8 @@ def _candidate(
         f"description: Use only when Maestro selects the {pack_id} pack.\n"
         "---\n\n"
         "# Project design\n\n"
-        "Load only the selected project guide.\n",
+        "Load only the selected project guide.\n\n"
+        f"{EXPERTISE_AUTHORITY_BLOCK}\n",
         encoding="utf-8",
     )
     (root / f"draft/references/{guide_id}.md").write_text(
@@ -134,11 +148,146 @@ def _candidate(
         "  allow_implicit_invocation: false\n",
         encoding="utf-8",
     )
-    write_json(root / "evidence/sources.json", {"sources": ["project:design-system"]})
-    write_json(root / "evals/cases.json", {"cases": ["target", "near-miss"]})
+    write_json(
+        root / "evidence/sources.json",
+        {
+            "schema_version": "maestro_expertise_sources_v1",
+            "expertise_pack_id": pack_id,
+            "verified_on": "2026-07-27",
+            "sources": [
+                {
+                    "source_id": "project-design-system",
+                    "tier": 1,
+                    "authority": "Project-owned design system",
+                    "url": "https://example.invalid/project-design-system",
+                    "supports": ["Approved typography and hierarchy rules"],
+                    "used_by": [guide_id],
+                    "freshness": "versioned",
+                }
+            ],
+        },
+    )
+    evaluation_cases = [
+        {
+            "case_id": "normal-project-type",
+            "stratum": "normal",
+            "goal": "Apply our project typography to the product design",
+            "expected_pack_id": pack_id,
+            "expected_mode": "reuse",
+            "expected_guides": [guide_id],
+            "observable_criteria": ["Selects the project Pack and Guide"],
+            "forbidden_behaviors": ["Falls back to generic typography only"],
+        },
+        {
+            "case_id": "edge-korean-type",
+            "stratum": "edge",
+            "goal": "프로젝트 타이포그래피를 화면에 적용해줘",
+            "expected_pack_id": pack_id,
+            "expected_mode": "reuse",
+            "expected_guides": [guide_id],
+            "observable_criteria": ["Routes the Korean project phrase"],
+            "forbidden_behaviors": ["Drops the project Guide"],
+        },
+        {
+            "case_id": "non-trigger-backend",
+            "stratum": "non-trigger",
+            "goal": "Implement a backend formatting helper",
+            "expected_pack_id": None,
+            "expected_mode": "reuse",
+            "expected_guides": [],
+            "observable_criteria": ["Does not select the project Pack"],
+            "forbidden_behaviors": ["Routes typography for backend work"],
+        },
+        {
+            "case_id": "overlap-product-design",
+            "stratum": "overlap",
+            "goal": "Review product design using our project typography",
+            "expected_pack_id": pack_id,
+            "expected_mode": "reuse",
+            "expected_guides": [guide_id],
+            "observable_criteria": ["Project Pack dominates its bundled base"],
+            "forbidden_behaviors": ["Selects only the bundled base Pack"],
+        },
+    ]
+    results = {
+        "schema_version": "maestro_expertise_eval_results_v1",
+        "expertise_pack_id": pack_id,
+        "results": [
+            {
+                "case_id": case["case_id"],
+                "observed_pack_id": case["expected_pack_id"],
+                "observed_mode": case["expected_mode"],
+                "observed_guides": case["expected_guides"],
+                "verdict": "pass",
+            }
+            for case in evaluation_cases
+        ],
+    }
+    write_json(root / "evals/results.json", results)
+    result_digest = file_sha256(root / "evals/results.json")
+    assert result_digest is not None
+    write_json(
+        root / "evals/cases.json",
+        {
+            "schema_version": "maestro_expertise_eval_v2",
+            "expertise_pack_id": pack_id,
+            "evaluated_on": "2026-07-27",
+            "evaluation_artifact": {
+                "path": "evals/results.json",
+                "sha256": result_digest,
+            },
+            "cases": evaluation_cases,
+        },
+    )
 
 
 class ProjectExpertiseLifecycleTests(unittest.TestCase):
+    def test_candidate_bundle_validation_checks_semantic_links_and_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+
+            self.assertEqual(
+                "PASS",
+                validate_expertise_candidate(
+                    repo,
+                    "project-design",
+                )["status"],
+            )
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "expertise",
+                        "validate-candidate",
+                        "--repo",
+                        str(repo),
+                        "--candidate",
+                        "project-design",
+                        "--json",
+                    ]
+                )
+            self.assertEqual(0, exit_code)
+            self.assertEqual("PASS", json.loads(output.getvalue())["status"])
+            results = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+                / "evals/results.json"
+            )
+            value = json.loads(results.read_text(encoding="utf-8"))
+            value["results"][0]["verdict"] = "fail"
+            write_json(results, value)
+            report = validate_expertise_candidate(repo, "project-design")
+            self.assertEqual("FAIL", report["status"])
+            self.assertIn(
+                "EXPERTISE_EVALUATION_ARTIFACT_INVALID",
+                {item["code"] for item in report["issues"]},
+            )
+
     def test_candidate_is_not_routed_until_reviewed_activation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "project"
@@ -466,7 +615,14 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 guide_id="project-layout-rules",
                 guide_text=(
                     "# Project layout rules\n\n"
-                    "purpose: Verify hierarchy and layout together.\n"
+                    "## Purpose\n\nVerify hierarchy and layout together.\n\n"
+                    "## Use when\n\nProject layouts use the approved system.\n\n"
+                    "## Inputs\n\nDesign tokens and a rendered screen.\n\n"
+                    "## Decision checks\n\n- Verify hierarchy.\n- Verify layout.\n\n"
+                    "## Required evidence\n\nBefore and after screenshots.\n\n"
+                    "## Reject or stop when\n\nLayout inputs are unavailable.\n\n"
+                    "## Verification\n\nInspect the rendered hierarchy.\n\n"
+                    "## Counterexamples\n\nDo not apply to backend work.\n"
                 ),
             )
             update = build_expertise_update_plan(

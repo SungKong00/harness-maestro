@@ -39,6 +39,7 @@ Maestro에는 역할이 다른 두 부분이 있습니다.
 | **Expertise Pack** | 어떤 전문가 기준을 적용할까? | 디자인·마케팅·QA의 재사용 가능한 Decision Guide | 아니오 |
 | **Specialist** | 이번 판단을 누가 분리해서 검토할까? | decision-first 단계의 읽기 전용 임시 역할 | 상주 Agent 아님 |
 | **Executor** | 누가 어떤 권한으로 실행할까? | 구현, 리서치, 검증의 모델·도구·권한 경계 | 기존 Executor를 선택 |
+| **Component surface** | 새 지식을 어디에 둘까? | checker·Convention·Guide·Pack·Lens·Skill·Executor·Department·Adapter·Packet 중 가장 작은 경계 선택 | 분류만으로는 안 생김 |
 
 따라서 “마케팅 전문가를 불렀다”는 말은 마케팅 Pack의 기준으로 먼저 판단한다는
 뜻입니다. 곧바로 광고를 발행하거나 코드를 쓰는 별도 Agent를 만든다는 뜻이 아닙니다.
@@ -104,12 +105,17 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
 | Codex Desktop 설치 배선 확인 | `maestro doctor --host codex` | CLI 버전과 루트·companion Skill 연결을 읽기 전용 검사 |
 | 프로젝트 Convention 초안 | `maestro convention draft` | preview/apply 뒤에도 활성화되지 않는 정형 draft 생성 |
+| 검증된 Convention 활성화·수정 | `maestro convention activate/update` | 승인 근거·검증 artifact·checkout·문서 지도를 한 plan으로 적용 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
 | 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
+| 새 지식의 올바른 구성요소 분류 | `$maestro-govern` | 사용 횟수가 아니라 evidence·failure·execution 경계로 하나의 surface와 handoff 선택 |
 | 작업 흐름·비용·Expertise 확인 | `$maestro 대시보드 열어줘` | 명령 입력 없이 localhost 페이지를 열어 현재 metadata를 조회 |
 | 검증 명령 후보 승인 | 뷰어에서 `승인 검토 → 승인` 또는 `$maestro 이 검증 명령을 승인해줘` | 명령을 실행하지 않고 정확한 후보만 프로젝트 권위에 추가 |
 | 반복되는 전문성 공백을 후보로 만들기 | `$maestro-expertise-builder` | RED baseline·frozen case를 거친 프로젝트 로컬 후보만 생성 |
+| Lens·Executor·Adapter 등 후보 만들기 | `$maestro-registry-builder` | active Registry를 바꾸지 않는 격리 후보와 frozen case만 생성 |
+| 비-Expertise 후보 묶음 검사 | `maestro component validate-candidate` | 분류·digest·독립 경계·positive/non-trigger/regression case를 읽기 전용 검증 |
+| Expertise 후보 묶음 검사 | `maestro expertise validate-candidate` | 출처·Guide·평가 결과 artifact 연결을 쓰기 없이 검증 |
 | 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 새 후보를 추적되는 project pilot으로 preview/apply 활성화 |
 | 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
 | 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
@@ -161,7 +167,7 @@ done
 기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
 **restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
 
-연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 여덟 Skill이 같은
+연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 아홉 Skill이 같은
 `release_id`인지 함께 확인합니다.
 
 ```bash
@@ -270,9 +276,13 @@ Maestro workflow는 다음 순서로 진행합니다.
    test·lint·schema·diff 같은 실제 artifact로 검증합니다.
 12. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
    성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
-13. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
+13. 구성요소 개선이 필요하면 checker, Convention, Guide, Pack, Lens, Skill,
+   Executor, Department, Adapter, Research Lane, Specialist Contract, Packet 중
+   가장 작은 surface를 먼저 분류합니다. 비-Expertise Registry 후보는 명시적으로
+   요청된 경우에만 격리 bundle로 만들고 active Registry에는 연결하지 않습니다.
+14. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
     compact RunReceipt 한 건으로 연결합니다.
-14. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
+15. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
 
 ## 무엇을 해결하나요?
 
@@ -348,10 +358,11 @@ $maestro 이 프로젝트의 대시보드 열어줘.
 ```
 
 Maestro가 `127.0.0.1`의 임시 서버와 브라우저를 열고 종료까지 맡습니다. 매 작업마다
-HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·시간·token·계획/실제
-모델·Expertise 출처·검토 후보를 다시 읽습니다. 값은 Host가 안정적인 공개
-인터페이스로 제공할 때만 기록하고, 없으면 추정하지 않고 `측정되지 않음`으로
-표시합니다.
+HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·시간·token·메인 요청 모델·
+실제 적용 모델·Route 권고 모델·Expertise 출처·검토 후보를 다시 읽습니다.
+Route 권고는 실측값으로 대체 표시하지 않습니다. 요청·적용값은 Host가 안정적인
+공개 인터페이스와 완전한 model event 구간으로 제공할 때만 기록하고, 없으면
+추정하지 않고 `미측정`으로 표시합니다.
 
 뷰어에서 할 수 있는 변경은 탐지된 검증 명령을 정확히 확인한 뒤 승인하는 것 하나다.
 `승인 검토`는 아무것도 쓰지 않고, 두 번째 `승인`이

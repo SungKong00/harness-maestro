@@ -5,6 +5,7 @@ import re
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .errors import MaestroError
 from .expertise import (
@@ -35,6 +36,23 @@ APPROVAL_PATTERN = re.compile(
 )
 MAX_CANDIDATES = 100
 MAX_ACTIVATION_FILE_BYTES = 2_000_000
+EXPERTISE_AUTHORITY_BLOCK = """<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
+This Pack never grants repository or external write authority. In a read-only
+Assignment it returns advisory criteria only. When a validated Maestro plan already
+grants mutation authority to the owning Executor, that Executor may apply the
+selected Guide criteria while implementing within its Assignment boundaries.
+The Pack does not expand those boundaries or authorize another writer.
+<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->"""
+GUIDE_REQUIRED_SECTIONS = (
+    "purpose",
+    "use when",
+    "inputs",
+    "decision checks",
+    "required evidence",
+    "reject or stop when",
+    "verification",
+    "counterexamples",
+)
 CANDIDATE_REQUIRED_FIELDS = {
     "schema_version",
     "candidate_id",
@@ -203,6 +221,415 @@ def _read_text_file(root: Path, relative_path: str) -> str:
         ) from exc
 
 
+def _candidate_issue(
+    code: str,
+    path: str,
+    message: str,
+) -> dict[str, str]:
+    return {"code": code, "path": path, "message": message}
+
+
+def _safe_candidate_reference(root: Path, value: Any) -> Path | None:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value.startswith(("/", "."))
+        or "\\" in value
+        or ".." in Path(value).parts
+    ):
+        return None
+    try:
+        return safe_target(root, value)
+    except MaestroError:
+        return None
+
+
+def validate_expertise_candidate(
+    repo_path: str | Path,
+    candidate_id: str,
+) -> dict[str, Any]:
+    """Validate one complete candidate bundle without changing the repository."""
+
+    repo = ensure_repo(repo_path)
+    issues: list[dict[str, str]] = []
+    try:
+        root, candidate = _read_candidate(repo, candidate_id)
+    except MaestroError as exc:
+        return {
+            "schema_version": "maestro_expertise_candidate_validation_v1",
+            "status": "FAIL",
+            "candidate_id": candidate_id,
+            "issues": [
+                _candidate_issue(exc.code, "candidate.json", exc.message)
+            ],
+            "writes_performed": False,
+        }
+
+    try:
+        pack = read_json(safe_target(root, f"draft/{PROJECT_PACK_FILENAME}"))
+        _validate_activation_pack(candidate, pack)
+    except MaestroError as exc:
+        issues.append(
+            _candidate_issue(
+                exc.code,
+                f"draft/{PROJECT_PACK_FILENAME}",
+                exc.message,
+            )
+        )
+        pack = None
+
+    try:
+        skill = _read_text_file(root, "draft/SKILL.md")
+        if EXPERTISE_AUTHORITY_BLOCK not in skill:
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_AUTHORITY_CONTRACT_MISSING",
+                    "draft/SKILL.md",
+                    "Candidate Skill must contain the exact Maestro expertise authority block.",
+                )
+            )
+    except MaestroError as exc:
+        issues.append(_candidate_issue(exc.code, "draft/SKILL.md", exc.message))
+
+    guide_ids = {
+        guide["guide_id"]
+        for guide in pack.get("guides", [])
+    } if isinstance(pack, dict) else {
+        guide["guide_id"] for guide in candidate["proposed_guides"]
+    }
+    guide_freshness = {
+        guide["guide_id"]: guide["freshness"]
+        for guide in pack.get("guides", [])
+    } if isinstance(pack, dict) else {
+        guide["guide_id"]: guide["freshness"]
+        for guide in candidate["proposed_guides"]
+    }
+    for guide_id in sorted(guide_ids):
+        path = f"draft/references/{guide_id}.md"
+        try:
+            body = _read_text_file(root, path)
+        except MaestroError as exc:
+            issues.append(_candidate_issue(exc.code, path, exc.message))
+            continue
+        headings = {
+            re.sub(r"[-_]+", " ", match.group(1).strip().lower())
+            for match in re.finditer(r"(?m)^#{1,6}\s+(.+?)\s*$", body)
+        }
+        missing = [
+            section for section in GUIDE_REQUIRED_SECTIONS
+            if section not in headings
+        ]
+        if missing:
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_GUIDE_SECTIONS_MISSING",
+                    path,
+                    f"Guide is missing required sections: {', '.join(missing)}.",
+                )
+            )
+
+    sources_path = "evidence/sources.json"
+    covered_guides: set[str] = set()
+    try:
+        sources = read_json(safe_target(root, sources_path))
+        if (
+            set(sources) != {
+                "schema_version",
+                "expertise_pack_id",
+                "verified_on",
+                "sources",
+            }
+            or sources.get("schema_version") != "maestro_expertise_sources_v1"
+            or not isinstance(sources.get("sources"), list)
+            or not sources["sources"]
+            or sources.get("expertise_pack_id")
+            != candidate["expertise_pack_id"]
+        ):
+            raise MaestroError(
+                "EXPERTISE_SOURCES_INVALID",
+                "sources.json does not satisfy maestro_expertise_sources_v1.",
+            )
+        date.fromisoformat(sources["verified_on"])
+        source_ids: set[str] = set()
+        for index, source in enumerate(sources["sources"]):
+            path = f"{sources_path}.sources[{index}]"
+            allowed = {
+                "source_id",
+                "tier",
+                "authority",
+                "url",
+                "artifact_ref",
+                "supports",
+                "used_by",
+                "freshness",
+            }
+            if (
+                not isinstance(source, dict)
+                or not set(source).issubset(allowed)
+                or not {
+                    "source_id",
+                    "tier",
+                    "authority",
+                    "supports",
+                    "used_by",
+                    "freshness",
+                }.issubset(source)
+                or not _valid_source_id(source.get("source_id"))
+                or source["source_id"] in source_ids
+                or source.get("tier") not in {1, 2, 3}
+                or not isinstance(source.get("authority"), str)
+                or not source["authority"].strip()
+                or not _nonempty_unique_strings(source.get("supports"))
+                or not _nonempty_unique_strings(source.get("used_by"))
+                or not set(source["used_by"]).issubset(guide_ids)
+                or source.get("freshness")
+                not in {"stable", "versioned", "volatile"}
+                or (
+                    not isinstance(source.get("url"), str)
+                    and not isinstance(source.get("artifact_ref"), str)
+                )
+                or (
+                    isinstance(source.get("url"), str)
+                    and (
+                        not source["url"].strip()
+                        or urlparse(source["url"]).scheme
+                        not in {"http", "https"}
+                        or not urlparse(source["url"]).netloc
+                    )
+                )
+                or (
+                    isinstance(source.get("artifact_ref"), str)
+                    and not source["artifact_ref"].strip()
+                )
+            ):
+                issues.append(
+                    _candidate_issue(
+                        "EXPERTISE_SOURCE_INVALID",
+                        path,
+                        "Source fields, authority tier, evidence location, or Guide links are invalid.",
+                    )
+                )
+                continue
+            source_ids.add(source["source_id"])
+            covered_guides.update(source["used_by"])
+            artifact_ref = source.get("artifact_ref")
+            if artifact_ref is not None:
+                artifact = _safe_candidate_reference(root, artifact_ref)
+                if artifact is None or artifact.is_symlink() or not artifact.is_file():
+                    issues.append(
+                        _candidate_issue(
+                            "EXPERTISE_SOURCE_ARTIFACT_MISSING",
+                            path,
+                            f"Source artifact is missing or unsafe: {artifact_ref}.",
+                        )
+                    )
+    except (MaestroError, TypeError, ValueError) as exc:
+        message = exc.message if isinstance(exc, MaestroError) else str(exc)
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_SOURCES_INVALID",
+                sources_path,
+                message,
+            )
+        )
+    uncovered = sorted(
+        guide_id
+        for guide_id in guide_ids - covered_guides
+        if guide_freshness.get(guide_id) != "volatile"
+    )
+    if uncovered:
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_GUIDE_EVIDENCE_MISSING",
+                sources_path,
+                f"Non-volatile Guides lack source linkage: {', '.join(uncovered)}.",
+            )
+        )
+
+    cases_path = "evals/cases.json"
+    try:
+        suite = read_json(safe_target(root, cases_path))
+        cases = suite.get("cases")
+        artifact = suite.get("evaluation_artifact")
+        if (
+            set(suite) != {
+                "schema_version",
+                "expertise_pack_id",
+                "evaluated_on",
+                "evaluation_artifact",
+                "cases",
+            }
+            or suite.get("schema_version") != "maestro_expertise_eval_v2"
+            or suite.get("expertise_pack_id")
+            != candidate["expertise_pack_id"]
+            or not isinstance(cases, list)
+            or not 3 <= len(cases) <= 12
+            or not isinstance(artifact, dict)
+            or set(artifact) != {"path", "sha256"}
+            or artifact.get("path") != "evals/results.json"
+        ):
+            raise MaestroError(
+                "EXPERTISE_EVALUATION_INVALID",
+                "cases.json does not satisfy maestro_expertise_eval_v2.",
+            )
+        date.fromisoformat(suite["evaluated_on"])
+        case_ids: set[str] = set()
+        strata: set[str] = set()
+        expected_by_case: dict[str, dict[str, Any]] = {}
+        for index, case in enumerate(cases):
+            case_path = f"{cases_path}.cases[{index}]"
+            if (
+                not isinstance(case, dict)
+                or set(case) != {
+                    "case_id",
+                    "stratum",
+                    "goal",
+                    "expected_pack_id",
+                    "expected_mode",
+                    "expected_guides",
+                    "observable_criteria",
+                    "forbidden_behaviors",
+                }
+                or not _valid_source_id(case.get("case_id"))
+                or case["case_id"] in case_ids
+                or case.get("stratum")
+                not in {"normal", "edge", "non-trigger", "overlap"}
+                or not isinstance(case.get("goal"), str)
+                or not case["goal"].strip()
+                or (
+                    case.get("expected_pack_id") is not None
+                    and case["expected_pack_id"] != candidate["expertise_pack_id"]
+                )
+                or case.get("expected_mode")
+                not in {"reuse", "contextualize", "refresh", "discover"}
+                or not isinstance(case.get("expected_guides"), list)
+                or not set(case["expected_guides"]).issubset(guide_ids)
+                or not _nonempty_unique_strings(
+                    case.get("observable_criteria")
+                )
+                or not _nonempty_unique_strings(
+                    case.get("forbidden_behaviors")
+                )
+            ):
+                issues.append(
+                    _candidate_issue(
+                        "EXPERTISE_EVALUATION_CASE_INVALID",
+                        case_path,
+                        "Evaluation case fields, strata, expectations, or observable criteria are invalid.",
+                    )
+                )
+                continue
+            case_ids.add(case["case_id"])
+            strata.add(case["stratum"])
+            expected_by_case[case["case_id"]] = case
+        missing_strata = {"normal", "edge", "non-trigger"} - strata
+        if missing_strata:
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_EVALUATION_COVERAGE_MISSING",
+                    cases_path,
+                    f"Evaluation lacks required strata: {', '.join(sorted(missing_strata))}.",
+                )
+            )
+        artifact_path = _safe_candidate_reference(root, artifact.get("path"))
+        if (
+            artifact_path is None
+            or artifact_path.is_symlink()
+            or not artifact_path.is_file()
+            or file_sha256(artifact_path) != artifact.get("sha256")
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_EVALUATION_ARTIFACT_INVALID",
+                    cases_path,
+                    "Evaluation artifact is missing, unsafe, or has a different digest.",
+                )
+            )
+        else:
+            results = read_json(artifact_path)
+            result_rows = results.get("results")
+            if (
+                results.get("schema_version")
+                != "maestro_expertise_eval_results_v1"
+                or results.get("expertise_pack_id")
+                != candidate["expertise_pack_id"]
+                or not isinstance(result_rows, list)
+                or {
+                    row.get("case_id")
+                    for row in result_rows
+                    if isinstance(row, dict)
+                }
+                != set(expected_by_case)
+                or any(
+                    not isinstance(row, dict)
+                    or set(row)
+                    != {
+                        "case_id",
+                        "observed_pack_id",
+                        "observed_mode",
+                        "observed_guides",
+                        "verdict",
+                    }
+                    or row.get("verdict") != "pass"
+                    or row.get("observed_pack_id")
+                    != expected_by_case.get(row.get("case_id"), {}).get(
+                        "expected_pack_id"
+                    )
+                    or row.get("observed_mode")
+                    != expected_by_case.get(row.get("case_id"), {}).get(
+                        "expected_mode"
+                    )
+                    or not set(
+                        expected_by_case.get(row.get("case_id"), {}).get(
+                            "expected_guides",
+                            [],
+                        )
+                    ).issubset(set(row.get("observed_guides", [])))
+                    for row in result_rows
+                )
+            ):
+                issues.append(
+                    _candidate_issue(
+                        "EXPERTISE_EVALUATION_RESULTS_INVALID",
+                        artifact["path"],
+                        "Evaluation results do not bind every case to passing observed outcomes.",
+                    )
+                )
+    except (MaestroError, TypeError, ValueError) as exc:
+        message = exc.message if isinstance(exc, MaestroError) else str(exc)
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_EVALUATION_INVALID",
+                cases_path,
+                message,
+            )
+        )
+
+    return {
+        "schema_version": "maestro_expertise_candidate_validation_v1",
+        "status": "PASS" if not issues else "FAIL",
+        "candidate_id": candidate_id,
+        "issues": issues,
+        "writes_performed": False,
+    }
+
+
+def _valid_source_id(value: Any) -> bool:
+    return isinstance(value, str) and ID_PATTERN.fullmatch(value) is not None
+
+
+def _validate_candidate_bundle_or_raise(
+    repo: Path,
+    candidate_id: str,
+) -> None:
+    report = validate_expertise_candidate(repo, candidate_id)
+    if report["status"] != "PASS":
+        summary = "; ".join(
+            f"{item['code']}: {item['message']}" for item in report["issues"]
+        )
+        raise MaestroError("EXPERTISE_CANDIDATE_BUNDLE_INVALID", summary)
+
+
 def _validate_activation_pack(
     candidate: dict[str, Any],
     pack: dict[str, Any],
@@ -284,6 +711,7 @@ def _fresh_candidate_pack(
     candidate_id: str,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     candidate_root, candidate = _read_candidate(repo, candidate_id)
+    _validate_candidate_bundle_or_raise(repo, candidate_id)
     if date.fromisoformat(candidate["review_after"]) < date.today():
         raise MaestroError(
             "EXPERTISE_CANDIDATE_EXPIRED",
@@ -339,6 +767,12 @@ def _candidate_publication_contents(
         ),
         "evals/cases.json": f"{destination_root}/evals/cases.json",
     }
+    suite = read_json(safe_target(candidate_root, "evals/cases.json"))
+    evaluation_artifact = suite.get("evaluation_artifact", {}).get("path")
+    if isinstance(evaluation_artifact, str):
+        source_to_destination[evaluation_artifact] = (
+            f"{destination_root}/{evaluation_artifact}"
+        )
     for guide in pack["guides"]:
         guide_id = guide["guide_id"]
         source_to_destination[
@@ -550,6 +984,7 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                 continue
             try:
                 _, candidate = _read_candidate(repo, path.name)
+                validation = validate_expertise_candidate(repo, path.name)
                 candidates.append(
                     {
                         "candidate_id": candidate["candidate_id"],
@@ -557,10 +992,16 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                         "owner": candidate["owner"],
                         "review_after": candidate["review_after"],
                         "ready_for_activation_review": (
-                            path / "draft" / PROJECT_PACK_FILENAME
-                        ).is_file()
-                        and date.fromisoformat(candidate["review_after"])
-                        >= date.today(),
+                            validation["status"] == "PASS"
+                            and date.fromisoformat(
+                                candidate["review_after"]
+                            )
+                            >= date.today()
+                        ),
+                        "validation_status": validation["status"],
+                        "validation_issue_codes": [
+                            issue["code"] for issue in validation["issues"]
+                        ],
                     }
                 )
             except MaestroError as exc:

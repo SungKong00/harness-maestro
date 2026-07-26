@@ -40,3 +40,9 @@ Pass only when the candidate:
 Keep measurements honest: unknown values remain unknown. Promotion needs
 evidence from a later run or distinct task shape, not the same run that authored
 the candidate.
+
+Record one result row per frozen case in `evals/results.json`, including the
+observed Pack, mode, Guides, and pass/fail verdict. Bind that file by path and
+SHA-256 from `evals/cases.json`; never rewrite the results after preview without
+creating a new candidate. The receipt proves which evaluated result was
+reviewed, not that the model or source was inherently correct.

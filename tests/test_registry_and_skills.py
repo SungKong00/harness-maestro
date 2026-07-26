@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from maestro.registry import (
     route_goal,
     validate_registry,
 )
+from maestro.util import file_sha256
 
 
 class RegistryContractTests(unittest.TestCase):
@@ -722,6 +724,7 @@ class SkillPackageTests(unittest.TestCase):
         "maestro",
         "maestro-adapter-builder",
         "maestro-govern",
+        "maestro-registry-builder",
     )
 
     def test_each_skill_has_matching_metadata_and_resolvable_references(self) -> None:
@@ -761,6 +764,71 @@ class SkillPackageTests(unittest.TestCase):
                     yaml_text,
                     rf"(?m)^  allow_implicit_invocation: {expected}$",
                 )
+
+    def test_expertise_packs_share_authority_and_evaluation_contracts(
+        self,
+    ) -> None:
+        authority_begin = "<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->"
+        authority_end = "<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->"
+        pack_by_skill = {
+            pack["skill_id"]: pack
+            for pack in load_registry()["expertise_packs"]
+        }
+        for skill_id in (
+            "maestro-product-design",
+            "maestro-marketing",
+            "maestro-software-qa",
+        ):
+            with self.subTest(skill=skill_id):
+                root = ROOT / "skills" / skill_id
+                skill = (root / "SKILL.md").read_text(encoding="utf-8")
+                self.assertEqual(1, skill.count(authority_begin))
+                self.assertEqual(1, skill.count(authority_end))
+                suite = json.loads(
+                    (root / "evals/cases.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    "maestro_expertise_eval_v2",
+                    suite["schema_version"],
+                )
+                self.assertTrue(
+                    {"normal", "edge", "non-trigger"}.issubset(
+                        {case["stratum"] for case in suite["cases"]}
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        case["observable_criteria"]
+                        and case["forbidden_behaviors"]
+                        for case in suite["cases"]
+                    )
+                )
+                artifact = suite["evaluation_artifact"]
+                self.assertEqual("evals/results.json", artifact["path"])
+                self.assertEqual(
+                    artifact["sha256"],
+                    file_sha256(root / artifact["path"]),
+                )
+                sources = json.loads(
+                    (root / "evidence/sources.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(
+                    "maestro_expertise_sources_v1",
+                    sources["schema_version"],
+                )
+                covered = {
+                    guide_id
+                    for source in sources["sources"]
+                    for guide_id in source["used_by"]
+                }
+                required = {
+                    guide["guide_id"]
+                    for guide in pack_by_skill[skill_id]["guides"]
+                    if guide["freshness"] != "volatile"
+                }
+                self.assertEqual(set(), required - covered)
 
     def test_generic_runtime_and_skills_have_no_project_or_home_path_leakage(
         self,

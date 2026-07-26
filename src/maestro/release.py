@@ -15,6 +15,7 @@ CODEX_SKILLS = (
     "maestro",
     "maestro-adapter-builder",
     "maestro-govern",
+    "maestro-registry-builder",
     "maestro-product-design",
     "maestro-expertise-builder",
     "maestro-reference-research",

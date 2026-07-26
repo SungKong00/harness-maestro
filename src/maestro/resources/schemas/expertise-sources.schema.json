@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-sources.schema.json",
+  "title": "Harness Maestro Expertise Sources",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expertise_pack_id",
+    "verified_on",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_sources_v1"
+    },
+    "expertise_pack_id": {
+      "$ref": "#/$defs/id"
+    },
+    "verified_on": {
+      "type": "string",
+      "format": "date"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "tier",
+          "authority",
+          "supports",
+          "used_by",
+          "freshness"
+        ],
+        "properties": {
+          "source_id": {
+            "$ref": "#/$defs/id"
+          },
+          "tier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "authority": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "artifact_ref": {
+            "type": "string",
+            "pattern": "^(?!/)(?!\\.)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+          },
+          "supports": {
+            "$ref": "#/$defs/nonEmptyStrings"
+          },
+          "used_by": {
+            "$ref": "#/$defs/ids"
+          },
+          "freshness": {
+            "enum": [
+              "stable",
+              "versioned",
+              "volatile"
+            ]
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "url"
+            ]
+          },
+          {
+            "required": [
+              "artifact_ref"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    }
+  }
+}

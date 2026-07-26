@@ -330,6 +330,16 @@
       }
     },
     "hostObservation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/legacyHostObservation"
+        },
+        {
+          "$ref": "#/$defs/hostObservationV2"
+        }
+      ]
+    },
+    "legacyHostObservation": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -398,6 +408,179 @@
           "properties": {
             "tokens": {
               "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "hostObservationV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "source",
+        "quality",
+        "correlation_id",
+        "requested_model",
+        "applied_model",
+        "model_event_evidence",
+        "reroutes",
+        "tokens",
+        "observed_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_host_observation_v2"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "quality": {
+          "enum": [
+            "host_reported",
+            "host_delta"
+          ]
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "requested_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "applied_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "model_event_evidence": {
+          "enum": [
+            "unavailable",
+            "complete"
+          ]
+        },
+        "reroutes": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from_model",
+              "to_model",
+              "reason"
+            ],
+            "properties": {
+              "from_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "to_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240,
+                "pattern": "^[^\\r\\n\\u0000]+$"
+              }
+            }
+          }
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokenSummary"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "requested_model"
+          ],
+          "properties": {
+            "requested_model": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "required": [
+            "applied_model"
+          ],
+          "properties": {
+            "applied_model": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "required": [
+            "tokens"
+          ],
+          "properties": {
+            "tokens": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "model_event_evidence": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "applied_model": {
+                "type": "null"
+              },
+              "reroutes": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "model_event_evidence": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_model": {
+                "type": "string"
+              },
+              "applied_model": {
+                "type": "string"
+              }
             }
           }
         }
@@ -626,6 +809,12 @@
           "minLength": 1,
           "maxLength": 128
         },
+        "model_evidence": {
+          "enum": [
+            "unavailable",
+            "complete"
+          ]
+        },
         "duration_ms": {
           "type": [
             "number",
@@ -644,7 +833,47 @@
             "minLength": 1
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "model_evidence"
+            ],
+            "properties": {
+              "model_evidence": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actual_model": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "model_evidence"
+            ],
+            "properties": {
+              "model_evidence": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actual_model": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     },
     "expertiseObservation": {
       "type": "object",

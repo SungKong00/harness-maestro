@@ -57,6 +57,19 @@
         "channel-platform-rules"
       ],
       "freshness": "volatile"
+    },
+    {
+      "source_id": "google-ads-experiments",
+      "tier": 1,
+      "authority": "advertising platform owner experiment guidance",
+      "url": "https://support.google.com/google-ads/answer/7281575?hl=en",
+      "supports": [
+        "clear campaign hypotheses, controlled experiment changes, monitoring, and action from results"
+      ],
+      "used_by": [
+        "measurement-experiment"
+      ],
+      "freshness": "volatile"
     }
   ]
 }

@@ -20,6 +20,21 @@ Standalone packs omit `extends`. Project specializations add:
 Local triggers and guides are additive. A local guide ID must not collide with
 an inherited guide.
 
+Every candidate `draft/SKILL.md` must contain this exact authority block:
+
+```text
+<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
+This Pack never grants repository or external write authority. In a read-only
+Assignment it returns advisory criteria only. When a validated Maestro plan already
+grants mutation authority to the owning Executor, that Executor may apply the
+selected Guide criteria while implementing within its Assignment boundaries.
+The Pack does not expand those boundaries or authorize another writer.
+<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->
+```
+
+The Pack remains a criteria module in both cases. It does not become the
+mutation owner, widen allowed paths, or turn a reviewer into a writer.
+
 For a new Pack, `candidate_id`, `expertise_pack_id`, and `skill_id` may use the
 same project slug. For a revision, give the working candidate a new ID such as
 `project-design-v2`, preserve the active Pack and Skill IDs, increment
@@ -27,17 +42,17 @@ same project slug. For a revision, give the working candidate a new ID such as
 The CLI copies `candidate.json` into `evidence/candidate.json` on publication;
 do not hand-edit that snapshot.
 
-Each Decision Guide should contain:
+Each Decision Guide must contain these Markdown sections:
 
 ```text
-purpose:
-use_when:
-inputs:
-decision_checks:
-required_evidence:
-reject_or_stop_when:
-verification:
-counterexamples:
+## Purpose
+## Use when
+## Inputs
+## Decision checks
+## Required evidence
+## Reject or stop when
+## Verification
+## Counterexamples
 ```
 
 Keep the guide independently loadable and scoped to one decision family. Put
@@ -55,3 +70,11 @@ Assign freshness:
 Normal routes load only selected guides. Source manifests and evaluations load
 only during refresh, audit, or promotion. Raw transcripts and copied web pages
 do not belong in the candidate.
+
+`evidence/sources.json` follows `maestro_expertise_sources_v1`. Every
+non-volatile Guide must be named by at least one source `used_by` entry.
+`evals/cases.json` follows `maestro_expertise_eval_v2`: include normal, edge,
+non-trigger and, where adjacent Packs exist, overlap strata; every case needs
+observable criteria and forbidden behavior. Store the evaluated outcomes in
+`evals/results.json`, bind its SHA-256 from `cases.json`, and keep unknown
+measurements unknown.

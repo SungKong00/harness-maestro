@@ -34,14 +34,37 @@ def _unique_strings(values: list[Any]) -> list[str]:
     )
 
 
+def _host_model_provenance(
+    host_observation: Any,
+) -> dict[str, Any]:
+    result = {
+        "requested": None,
+        "applied": None,
+        "evidence": "unavailable",
+        "reroutes": [],
+        "legacy_reported": None,
+    }
+    if not isinstance(host_observation, dict):
+        return result
+    if host_observation.get("schema_version") == "maestro_host_observation_v2":
+        result["requested"] = host_observation.get("requested_model")
+        result["evidence"] = host_observation.get(
+            "model_event_evidence",
+            "unavailable",
+        )
+        result["reroutes"] = list(host_observation.get("reroutes", []))
+        if result["evidence"] == "complete":
+            result["applied"] = host_observation.get("applied_model")
+        return result
+    if host_observation.get("schema_version") == "maestro_host_observation_v1":
+        result["legacy_reported"] = host_observation.get("actual_model")
+    return result
+
+
 def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     plan = event.get("plan_summary")
     host_observation = event.get("host_observation")
-    host_model = (
-        host_observation.get("actual_model")
-        if isinstance(host_observation, dict)
-        else None
-    )
+    host_models = _host_model_provenance(host_observation)
     stage_results = {
         item["assignment_id"]: item
         for item in event.get("stage_results", [])
@@ -56,8 +79,11 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                     "executor_id": event.get("primary_executor_id"),
                     "depends_on": [],
                     "planned_model": None,
+                    "route_recommended_model": None,
                     "reasoning_effort": None,
-                    "actual_model": host_model,
+                    "actual_model": host_models["applied"],
+                    "applied_model": host_models["applied"],
+                    "model_evidence": host_models["evidence"],
                     "status": event.get("outcome"),
                     "duration_ms": event.get("duration_ms"),
                     "tokens": event.get("tokens"),
@@ -76,6 +102,12 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     stages: list[dict[str, Any]] = []
     for assignment in plan.get("assignments", []):
         result = stage_results.get(assignment.get("assignment_id"), {})
+        model_evidence = result.get("model_evidence", "unavailable")
+        applied_model = (
+            result.get("actual_model")
+            if model_evidence == "complete"
+            else None
+        )
         stages.append(
             {
                 "assignment_id": assignment.get("assignment_id"),
@@ -83,8 +115,11 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                 "executor_id": assignment.get("executor_id"),
                 "depends_on": list(assignment.get("depends_on", [])),
                 "planned_model": assignment.get("planned_model"),
+                "route_recommended_model": assignment.get("planned_model"),
                 "reasoning_effort": assignment.get("reasoning_effort"),
-                "actual_model": result.get("actual_model"),
+                "actual_model": applied_model,
+                "applied_model": applied_model,
+                "model_evidence": model_evidence,
                 "status": result.get("status", "not_observed"),
                 "duration_ms": result.get("duration_ms"),
                 "tokens": result.get("tokens"),
@@ -103,10 +138,15 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
 def _run_card(event: dict[str, Any]) -> dict[str, Any]:
     flow, flow_evidence = _run_flow(event)
     host_observation = event.get("host_observation")
-    host_model = (
-        host_observation.get("actual_model")
-        if isinstance(host_observation, dict)
-        else None
+    host_models = _host_model_provenance(host_observation)
+    route_recommended = _unique_strings(
+        [stage.get("route_recommended_model") for stage in flow]
+    )
+    applied = _unique_strings(
+        [
+            host_models["applied"],
+            *[stage.get("applied_model") for stage in flow],
+        ]
     )
     return {
         "run_id": event["run_id"],
@@ -122,15 +162,16 @@ def _run_card(event: dict[str, Any]) -> dict[str, Any]:
         "correction_count": event.get("correction_count", 0),
         "correction_summary": list(event.get("correction_summary", [])),
         "models": {
-            "planned": _unique_strings(
-                [stage.get("planned_model") for stage in flow]
+            "requested": _unique_strings([host_models["requested"]]),
+            "applied": applied,
+            "route_recommended": route_recommended,
+            "model_event_evidence": host_models["evidence"],
+            "reroutes": host_models["reroutes"],
+            "legacy_reported": _unique_strings(
+                [host_models["legacy_reported"]]
             ),
-            "actual": _unique_strings(
-                [
-                    host_model,
-                    *[stage.get("actual_model") for stage in flow],
-                ]
-            ),
+            "planned": route_recommended,
+            "actual": applied,
             "estimated": False,
         },
         "host_observation": host_observation,
@@ -172,7 +213,10 @@ def _measurement_coverage(runs: list[dict[str, Any]]) -> dict[str, Any]:
             lambda run: run.get("flow_evidence") == "assignment_observation"
         ),
         "actual_model": measured(
-            lambda run: bool(run.get("models", {}).get("actual"))
+            lambda run: bool(run.get("models", {}).get("applied"))
+        ),
+        "requested_model": measured(
+            lambda run: bool(run.get("models", {}).get("requested"))
         ),
         "interpretation": (
             "Unmeasured values are kept null and are never estimated."

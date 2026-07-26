@@ -1,24 +1,23 @@
-# Surface and Agent boundary
+# Expertise surface and handoff boundary
 
-Put knowledge on the narrowest surface that can enforce it:
+`$maestro-govern` owns the complete component decision and
+`maestro govern classify` is its deterministic handoff. This Builder accepts
+only `decision-guide` and `expertise-pack`.
 
-| Need | Surface |
-|---|---|
-| Machine-checkable invariant | checker or schema |
-| Repeated rule for one project | Convention |
-| Decision criteria within an existing domain | Decision Guide |
-| Reusable domain workflow with several related guides | Expertise Pack |
-| Different tools, permissions, sandbox, model, approval, or isolated context | custom Agent proposal |
+Choose a Guide when an active Pack owns the same decision family, evidence
+style, and evaluation method. If the trigger and procedure are also the same,
+revise the existing Guide instead of adding another ID.
 
-A custom Agent is not a richer persona. Propose one only when at least one
-execution boundary is necessary and cannot be expressed by Maestro's existing
-Executor routing. State the boundary, extra cost, fallback, and why a Skill or
-Pack is insufficient. Never create or globally install an Agent automatically.
+Choose a Pack only when all are true:
 
-Check overlap before adding a surface:
+- no active Pack owns the domain;
+- at least two Guides are independently selectable rather than sections of one
+  checklist;
+- the Pack has a shared source and evaluation policy;
+- the Pack has a distinct trigger and result artifact boundary.
 
-- same trigger and same decision family: extend the existing guide;
-- same task but different dominant decision: keep separate and add coexistence
-  cases;
-- project-specific constraint: use a Convention, not global expertise;
-- one-off answer: keep it in the run, not the library.
+Everything else is a handoff. In particular, a cross-task rejection boundary is
+a Lens candidate, execution authority is an Executor candidate, and
+project-specific policy is a Convention. Return `not admitted as expertise`
+with the proposed surface and builder from the classification. Persona wording
+and domain knowledge alone never justify an Agent.

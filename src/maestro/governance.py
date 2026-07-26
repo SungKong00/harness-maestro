@@ -399,17 +399,23 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
     )
     seen: set[str] = set()
     for result in value:
-        if not isinstance(result, dict) or set(result) != {
+        required_fields = {
             "assignment_id",
             "status",
             "actual_model",
             "duration_ms",
             "tokens",
             "evidence_refs",
-        }:
+        }
+        if (
+            not isinstance(result, dict)
+            or not required_fields.issubset(result)
+            or set(result) - (required_fields | {"model_evidence"})
+        ):
             return False
         assignment_id = result.get("assignment_id")
         actual_model = result.get("actual_model")
+        model_evidence = result.get("model_evidence")
         duration = result.get("duration_ms")
         evidence_refs = result.get("evidence_refs")
         if (
@@ -427,6 +433,15 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
                     or len(actual_model) > 128
                     or any(character in actual_model for character in "\r\n\x00")
                 )
+            )
+            or model_evidence not in {None, "unavailable", "complete"}
+            or (
+                model_evidence == "unavailable"
+                and actual_model is not None
+            )
+            or (
+                model_evidence == "complete"
+                and actual_model is None
             )
             or (
                 duration is not None

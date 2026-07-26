@@ -569,6 +569,14 @@
         "triggers": {
           "$ref": "#/$defs/nonEmptyStrings"
         },
+        "dominance_triggers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "skill_id": {
           "$ref": "#/$defs/id"
         },

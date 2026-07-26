@@ -1,18 +1,18 @@
 {
   "framework_version": "0.3.0",
   "registry": {
-    "sha256": "7956735da275d0009a69f09ee2d6effee200bfc9a9224b9e96187ffa339cb684"
+    "sha256": "e082ea18a619a7bd2ddd7d423e0b32a985a08f7aa5131d27a36a4c684ad46546"
   },
-  "release_id": "39990e373fb43cd90dd8b760b5552135ab7127347ab6de764db7fa9d5e5bccc3",
+  "release_id": "1e71074c9e2fd38aee12854ca960d404eeae4268ebb54b1bac397de996f45659",
   "runtime": {
-    "file_count": 70,
-    "sha256": "74261b3f683b7586f30797582911b63139ed5c740a760ed26cf115df84d277a7"
+    "file_count": 77,
+    "sha256": "bde4be47b4109df8dbeeeb774a96f371fb0f7e25a678134cecc0796705a1529d"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 7,
-      "sha256": "38c50e61a35b93fd5f76d501f20d4177f879a22e6fc8efc4ac6bfe7f20b15127"
+      "sha256": "ca9f8bed7d6479cbfd82c0072c675f3a2886f9e9a9dc2beebdc4c43b13372831"
     },
     "maestro-adapter-builder": {
       "file_count": 4,
@@ -20,27 +20,31 @@
     },
     "maestro-expertise-builder": {
       "file_count": 6,
-      "sha256": "5a5652d800aeb29de548d0d77b5bd86d1bbefb347fe2007e028c32a5238f9a9a"
+      "sha256": "ad7e4fd4eee43d807d3bff6001658fc46563292eb0988d7c4bbea963455901a3"
     },
     "maestro-govern": {
-      "file_count": 4,
-      "sha256": "29fbe46362a5a40bbe104c1b7336cd921e8a2eaa7776d8c1503b4ba61b0c439a"
+      "file_count": 5,
+      "sha256": "bcb8f11384142a2bdc3cc53420bd7cb10af1bbbdda350393b2023404bf232787"
     },
     "maestro-marketing": {
-      "file_count": 11,
-      "sha256": "85a640fd924f32382fd5954cfa63e329d3b1d26264991ec8fa9b37c211476488"
+      "file_count": 12,
+      "sha256": "7f342cf9d510113c61ddb59e3e0dd0c881c08e21075bdae0e11c9744e17c5569"
     },
     "maestro-product-design": {
-      "file_count": 9,
-      "sha256": "8e50802abcfed2a78f5dde45b3141672143b1085805f889b976942f69935d86e"
+      "file_count": 10,
+      "sha256": "a7e9ab87ec4b0e03f72faae423e995eefaf483253ebd1ec1e91240a18d611e14"
     },
     "maestro-reference-research": {
       "file_count": 5,
       "sha256": "8c74d90e515343d94c69006e2f52cd9e28468a452819b4a605acf07897e0f001"
     },
+    "maestro-registry-builder": {
+      "file_count": 3,
+      "sha256": "480b5c8900a293fced84d519c3622ec7814cf57b612d8b45a291c1776c6c8a7c"
+    },
     "maestro-software-qa": {
-      "file_count": 10,
-      "sha256": "459da6ec9cc2fbacab3e81c404077cca5eaa41193ee073b5ad3305ba56732ff7"
+      "file_count": 11,
+      "sha256": "5617ed97692cc28ebf8d085ce6aa5e3c1433fa3a666fac21f1eb591d164b97a8"
     }
   }
 }

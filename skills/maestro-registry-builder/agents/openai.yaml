@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Registry Builder"
+  short_description: "Compile reviewed non-Expertise component candidates"
+  default_prompt: "Use $maestro-registry-builder to compile this classified non-Expertise gap into an isolated project-local candidate without changing the active Registry."
+policy:
+  allow_implicit_invocation: false

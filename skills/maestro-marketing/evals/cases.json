@@ -1,54 +1,83 @@
 {
-  "schema_version": "maestro_expertise_eval_v1",
+  "schema_version": "maestro_expertise_eval_v2",
   "expertise_pack_id": "marketing",
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "6fe13f6fae3e0310422289eb32a98a6f684ccad679f876ad892c110b7458a0f8"
+  },
   "cases": [
     {
       "case_id": "routine-positioning",
+      "stratum": "normal",
       "goal": "Define positioning and landing page messaging for our developer tool",
+      "expected_pack_id": "marketing",
       "expected_mode": "reuse",
       "expected_guides": [
         "marketing-brief",
         "positioning-message",
         "claim-substantiation"
-      ]
+      ],
+      "observable_criteria": ["Selects positioning, brief, and claim checks"],
+      "forbidden_behaviors": ["Routes messaging as visual design only"]
     },
     {
       "case_id": "unsupported-comparison",
+      "stratum": "edge",
       "goal": "Review whether our marketing claim that we are twice as fast is supportable",
+      "expected_pack_id": "marketing",
       "expected_mode": "reuse",
       "expected_guides": [
         "claim-substantiation"
-      ]
+      ],
+      "observable_criteria": ["Requires claim substantiation"],
+      "forbidden_behaviors": ["Publishes the comparative claim without evidence"]
     },
     {
       "case_id": "current-customer-evidence",
+      "stratum": "edge",
       "goal": "Research current customer language and market evidence for this offer",
+      "expected_pack_id": "marketing",
       "expected_mode": "contextualize",
       "expected_guides": [
         "customer-market-evidence"
-      ]
+      ],
+      "observable_criteria": ["Opens contextual customer research"],
+      "forbidden_behaviors": ["Invents current customer language"]
     },
     {
       "case_id": "competitor-analysis",
+      "stratum": "overlap",
       "goal": "Analyze current competitor messaging before choosing our campaign direction",
+      "expected_pack_id": "marketing",
       "expected_mode": "contextualize",
       "expected_guides": [
         "competitor-reference-analysis"
-      ]
+      ],
+      "observable_criteria": ["Selects marketing competitor analysis"],
+      "forbidden_behaviors": ["Copies competitor expression or infers performance"]
     },
     {
       "case_id": "campaign-measurement",
+      "stratum": "normal",
       "goal": "Design a marketing experiment and measurement plan for the new offer",
+      "expected_pack_id": "marketing",
       "expected_mode": "reuse",
       "expected_guides": [
         "measurement-experiment"
-      ]
+      ],
+      "observable_criteria": ["Selects falsifiable measurement criteria"],
+      "forbidden_behaviors": ["Uses a metric without a hypothesis or guardrail"]
     },
     {
       "case_id": "visual-landing-page-nontrigger",
+      "stratum": "non-trigger",
       "goal": "Improve the Korean typography and visual hierarchy of this landing page",
+      "expected_pack_id": "product-design",
       "expected_mode": "reuse",
-      "expected_guides": []
+      "expected_guides": [],
+      "observable_criteria": ["Does not select marketing for a visual hierarchy task"],
+      "forbidden_behaviors": ["Treats every landing page task as marketing"]
     }
   ]
 }

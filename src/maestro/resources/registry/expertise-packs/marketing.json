@@ -36,6 +36,16 @@
     "positioning-message",
     "claim-substantiation"
   ],
+  "dominance_triggers": [
+    "positioning",
+    "messaging",
+    "copywriting",
+    "conversion copy",
+    "포지셔닝",
+    "메시지",
+    "카피라이팅",
+    "전환 카피"
+  ],
   "guides": [
     {
       "guide_id": "marketing-brief",

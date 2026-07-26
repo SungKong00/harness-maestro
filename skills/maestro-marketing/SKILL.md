@@ -9,6 +9,14 @@ Apply evidence-backed marketing judgment through only the Decision Guides
 selected by Maestro. This is an Expertise Pack, not a permanent marketing agent
 or an autonomous campaign publisher.
 
+<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
+This Pack never grants repository or external write authority. In a read-only
+Assignment it returns advisory criteria only. When a validated Maestro plan already
+grants mutation authority to the owning Executor, that Executor may apply the
+selected Guide criteria while implementing within its Assignment boundaries.
+The Pack does not expand those boundaries or authorize another writer.
+<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->
+
 ## Inputs
 
 Require the product and business goal, intended audience, offer, channel,
@@ -78,4 +86,7 @@ verdict:
 - No account access, campaign launch, publication, spend, or external messages.
 - No visual-design decision when product-design owns the dominant question.
 - No automatic promotion of campaign-specific learning into a reusable guide.
-- No code or repository writes before a validated Maestro DecisionBundle.
+- No independent code or repository writes from a read-only Assignment. A
+  mutation-owner Executor may apply the selected messaging criteria when an
+  already validated direct route or DecisionBundle enactment grants that
+  authority.

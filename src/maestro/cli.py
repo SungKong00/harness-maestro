@@ -11,6 +11,7 @@ from .assignment_contracts import (
     project_assignment_input,
     validate_assignment_packet,
 )
+from .component_candidates import validate_component_candidate
 from .decisions import (
     build_decision_plan,
     build_execution_plan,
@@ -19,7 +20,10 @@ from .decisions import (
 )
 from .conventions import (
     apply_convention_draft_plan,
+    apply_convention_lifecycle_plan,
+    build_convention_activation_plan,
     build_convention_draft_plan,
+    build_convention_update_plan,
 )
 from .doctor import doctor_report
 from .dashboard import serve_dashboard
@@ -33,6 +37,7 @@ from .expertise_lifecycle import (
     build_expertise_deactivation_plan,
     build_expertise_update_plan,
     expertise_inventory,
+    validate_expertise_candidate,
 )
 from .governance import govern_report, record_run
 from .observations import record_host_observation, start_run_observation
@@ -47,6 +52,7 @@ from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
 from .snapshot import snapshot_report
+from .surface_classification import classify_surface_file
 from .util import read_json
 from .verification import (
     apply_verification_approval_plan,
@@ -131,6 +137,25 @@ def _host_token_summary(args: argparse.Namespace) -> dict[str, int] | None:
     return supplied or None
 
 
+def _host_model_reroutes(args: argparse.Namespace) -> list[dict[str, str]]:
+    reroutes: list[dict[str, str]] = []
+    for raw in args.reroute_event:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise MaestroError(
+                "HOST_OBSERVATION_INVALID",
+                "Each --reroute-event must be one JSON object.",
+            ) from exc
+        if not isinstance(value, dict):
+            raise MaestroError(
+                "HOST_OBSERVATION_INVALID",
+                "Each --reroute-event must be one JSON object.",
+            )
+        reroutes.append(value)
+    return reroutes
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="maestro")
     root.add_argument(
@@ -204,6 +229,65 @@ def parser() -> argparse.ArgumentParser:
     draft.add_argument("--exception", action="append", default=[])
     draft.add_argument("--apply-plan")
     draft.add_argument("--json", action="store_true")
+    convention_activate = convention_commands.add_parser(
+        "activate",
+        help="Preview or apply one evidence-bound draft activation",
+    )
+    convention_activate.add_argument("--repo", default=".")
+    convention_activate.add_argument("--topic")
+    convention_activate.add_argument(
+        "--basis",
+        choices=["owner_decision", "held_out_evaluation"],
+    )
+    convention_activate.add_argument("--approval-ref")
+    convention_activate.add_argument("--verification-artifact")
+    convention_activate.add_argument("--decision-summary")
+    convention_activate.add_argument("--apply-plan")
+    convention_activate.add_argument("--json", action="store_true")
+    convention_update = convention_commands.add_parser(
+        "update",
+        help="Preview or apply one evidence-bound active Convention revision",
+    )
+    convention_update.add_argument("--repo", default=".")
+    convention_update.add_argument("--topic")
+    convention_update.add_argument("--summary")
+    convention_update.add_argument("--scope", action="append", default=[])
+    convention_update.add_argument("--owner")
+    convention_update.add_argument("--rule")
+    convention_update.add_argument(
+        "--applies-when",
+        action="append",
+        default=[],
+    )
+    convention_update.add_argument(
+        "--does-not-apply",
+        action="append",
+        default=[],
+    )
+    convention_update.add_argument("--evidence", action="append", default=[])
+    convention_update.add_argument(
+        "--verification",
+        action="append",
+        default=[],
+    )
+    convention_update.add_argument(
+        "--exception",
+        action="append",
+        default=[],
+    )
+    convention_update.add_argument(
+        "--basis",
+        choices=["owner_decision", "held_out_evaluation"],
+    )
+    convention_update.add_argument("--approval-ref")
+    convention_update.add_argument("--verification-artifact")
+    convention_update.add_argument("--decision-summary")
+    convention_update.add_argument(
+        "--allow-scope-expansion",
+        action="store_true",
+    )
+    convention_update.add_argument("--apply-plan")
+    convention_update.add_argument("--json", action="store_true")
 
     expertise = commands.add_parser(
         "expertise",
@@ -219,6 +303,13 @@ def parser() -> argparse.ArgumentParser:
     )
     expertise_list.add_argument("--repo", default=".")
     expertise_list.add_argument("--json", action="store_true")
+    expertise_validate = expertise_commands.add_parser(
+        "validate-candidate",
+        help="Validate one complete candidate bundle without writing files",
+    )
+    expertise_validate.add_argument("--repo", default=".")
+    expertise_validate.add_argument("--candidate", required=True)
+    expertise_validate.add_argument("--json", action="store_true")
     expertise_activate = expertise_commands.add_parser(
         "activate",
         help="Preview or apply candidate publication as a tracked project pilot",
@@ -245,6 +336,22 @@ def parser() -> argparse.ArgumentParser:
     expertise_deactivate.add_argument("--pack")
     expertise_deactivate.add_argument("--apply-plan")
     expertise_deactivate.add_argument("--json", action="store_true")
+
+    component = commands.add_parser(
+        "component",
+        help="Validate isolated non-Expertise component candidates",
+    )
+    component_commands = component.add_subparsers(
+        dest="component_command",
+        required=True,
+    )
+    component_validate = component_commands.add_parser(
+        "validate-candidate",
+        help="Validate one project-local component candidate without promotion",
+    )
+    component_validate.add_argument("--repo", default=".")
+    component_validate.add_argument("--candidate", required=True)
+    component_validate.add_argument("--json", action="store_true")
 
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
     route.add_argument(
@@ -446,7 +553,28 @@ def parser() -> argparse.ArgumentParser:
         required=True,
     )
     observe_host.add_argument("--correlation-id", required=True)
-    observe_host.add_argument("--actual-model")
+    observe_host.add_argument("--requested-model")
+    applied_model = observe_host.add_mutually_exclusive_group()
+    applied_model.add_argument("--applied-model")
+    applied_model.add_argument("--actual-model", help=argparse.SUPPRESS)
+    observe_host.add_argument(
+        "--model-event-evidence",
+        choices=["unavailable", "complete"],
+        default="unavailable",
+        help=(
+            "Use complete only when the Host observed turn completion and the "
+            "full model/reroute event stream."
+        ),
+    )
+    observe_host.add_argument(
+        "--reroute-event",
+        action="append",
+        default=[],
+        help=(
+            "Bounded Host event JSON with from_model, to_model, and reason; "
+            "repeat in observed order."
+        ),
+    )
     observe_host.add_argument("--input-tokens", type=int)
     observe_host.add_argument("--output-tokens", type=int)
     observe_host.add_argument("--cached-tokens", type=int)
@@ -525,6 +653,12 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("--window", type=int, default=20)
     report.add_argument("--threshold", type=int, default=3)
     report.add_argument("--json", action="store_true")
+    classify = govern_commands.add_parser(
+        "classify",
+        help="Classify structured evidence into the narrowest durable surface",
+    )
+    classify.add_argument("--input", required=True)
+    classify.add_argument("--json", action="store_true")
     return root
 
 
@@ -592,10 +726,72 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "convention"
+            and args.convention_command == "activate"
+        ):
+            result = (
+                apply_convention_lifecycle_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+                if args.apply_plan
+                else build_convention_activation_plan(
+                    args.repo,
+                    topic=args.topic,
+                    basis=args.basis,
+                    approval_ref=args.approval_ref,
+                    verification_artifact=args.verification_artifact,
+                    decision_summary=args.decision_summary,
+                )
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "convention"
+            and args.convention_command == "update"
+        ):
+            result = (
+                apply_convention_lifecycle_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+                if args.apply_plan
+                else build_convention_update_plan(
+                    args.repo,
+                    topic=args.topic,
+                    summary=args.summary,
+                    scopes=args.scope,
+                    owner=args.owner,
+                    rule=args.rule,
+                    applies_when=args.applies_when,
+                    does_not_apply=args.does_not_apply,
+                    evidence=args.evidence,
+                    verification=args.verification,
+                    exceptions=args.exception,
+                    basis=args.basis,
+                    approval_ref=args.approval_ref,
+                    verification_artifact=args.verification_artifact,
+                    decision_summary=args.decision_summary,
+                    allow_scope_expansion=args.allow_scope_expansion,
+                )
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "expertise" and args.expertise_command == "list":
             result = expertise_inventory(args.repo)
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "validate-candidate"
+        ):
+            result = validate_expertise_candidate(
+                args.repo,
+                args.candidate,
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "expertise" and args.expertise_command == "activate":
             if args.apply_plan:
                 result = apply_expertise_activation_plan(
@@ -655,6 +851,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "component"
+            and args.component_command == "validate-candidate"
+        ):
+            result = validate_component_candidate(
+                args.repo,
+                args.candidate,
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "route":
             research_evidence_digest = _research_evidence_digest(
                 args.research_evidence,
@@ -804,6 +1010,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source=args.source,
                 quality=args.quality,
                 correlation_id=args.correlation_id,
+                requested_model=args.requested_model,
+                applied_model=args.applied_model,
+                model_event_evidence=args.model_event_evidence,
+                reroutes=_host_model_reroutes(args),
                 actual_model=args.actual_model,
                 tokens=_host_token_summary(args),
             )
@@ -861,6 +1071,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = govern_report(args.repo, window=args.window, threshold=args.threshold)
             _emit(result, args.json)
             return 0
+        if args.command == "govern" and args.govern_command == "classify":
+            result = classify_surface_file(args.input)
+            _emit(result, args.json)
+            return 0 if result["status"] == "classified" else 2
     except MaestroError as exc:
         error = {
             "schema_version": "maestro_error_v1",

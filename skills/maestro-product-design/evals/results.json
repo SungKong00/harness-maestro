@@ -1,0 +1,61 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "product-design",
+  "results": [
+    {
+      "case_id": "routine-dashboard",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "design-brief",
+        "visual-hierarchy-layout",
+        "interaction-responsive-accessibility"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "korean-type",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "typography-korean",
+        "visual-hierarchy-layout"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "current-references",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "reference-selection"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "responsive-accessibility",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "interaction-responsive-accessibility"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "refresh-pack",
+      "observed_pack_id": "product-design",
+      "observed_mode": "refresh",
+      "observed_guides": [
+        "design-brief"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "unknown-expertise",
+      "observed_pack_id": null,
+      "observed_mode": "discover",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

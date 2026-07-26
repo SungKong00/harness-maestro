@@ -36,6 +36,18 @@
     "visual-hierarchy-layout",
     "interaction-responsive-accessibility"
   ],
+  "dominance_triggers": [
+    "product design",
+    "ui design",
+    "ux design",
+    "typography",
+    "visual hierarchy",
+    "제품 디자인",
+    "화면 디자인",
+    "타이포그래피",
+    "글자 위계",
+    "시선 흐름"
+  ],
   "guides": [
     {
       "guide_id": "design-brief",

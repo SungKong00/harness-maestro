@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Lens, Executor, Expertise Pack, Decision Guide, Skill, Adapter와 Convention을 증거 기반으로 개선하는 생명주기.
 scope: [skills, src/maestro/resources/registry, docs/conventions, .maestro/state]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -17,7 +17,7 @@ sensitivity: internal
 ## 대상
 
 이 절차는 Lens, Executor, Expertise Pack, Decision Guide, Department routing,
-Skill, Adapter, Convention과
+Skill, Adapter, Research Lane, Specialist Contract, Packet contract, Convention과
 specialist 사용 규칙에 적용한다. 실행 중인 하네스를 스스로 바로 수정하는 절차가
 아니라, 운영 신호를 격리된 후보로 바꾸고 검증한 뒤 사람이 승격하는 절차다.
 
@@ -89,21 +89,41 @@ severity, evidence, command artifact를 함께 기록해야 한다. 동일 `run_
 checker로 해결 가능한지를 판단한다. 규칙 문서나 linter로 충분한 경우 별도 agent를
 추가하지 않는다.
 
+### 통합 surface 분류
+
+후보 Builder보다 먼저 `$maestro-govern`이 하나의 분류 계약을 적용한다.
+`maestro govern classify --input <signals.json>`은 자연어 keyword가 아니라 증거에서
+정리한 닫힌 신호를 받아 다음 중 가장 작은 표면을 반환한다.
+
+```text
+none | checker-schema-test | convention | decision-guide | expertise-pack
+| lens | standalone-skill | executor-agent | department | adapter
+| research-lane | specialist-contract | packet-contract
+```
+
+결과는 선택 표면뿐 아니라 기각한 표면과 이유, 기존 확장 대상, 독립 경계, 필요한
+증거, Builder, 승격 경계와 blocker를 함께 반환한다. Guide와 trigger·판단 family가
+같으면 새 Pack이 아니라 기존 Guide revision이다. 새 Pack은 active Pack이 소유하지
+않는 독립 domain, 두 개 이상의 독립 선택 Guide, 공통 source·evaluation 정책이
+모두 있을 때만 후보가 된다. Lens는 여러 작업에 교차 적용되는 독립 failure/evidence
+경계가 verdict를 바꿀 때만, Executor는 기존 실행자로 표현할 수 없는 tool·permission·
+model·sandbox·context·approval 경계가 있을 때만 후보가 된다.
+
 ### Expertise 후보
 
-전문성 공백은 다음 순서로 가장 작은 표면에 둔다.
-
-1. deterministic checker·schema
-2. 현재 프로젝트 Convention
-3. 기존 Expertise Pack의 Decision Guide 하나
-4. 새 Expertise Pack
-5. 고유 도구·권한·격리가 필요한 specialist Executor
+`$maestro-expertise-builder`는 통합 분류 결과가 `decision-guide` 또는
+`expertise-pack`인 경우만 받는다. 다른 표면을 Pack으로 바꾸지 않고
+`not admitted as expertise`와 올바른 handoff를 반환한다.
 
 `$maestro-expertise-builder`는 승인된 경우
 `.maestro/state/candidates/expertise/<candidate-id>/`에만 draft, source manifest와
 frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외되며, candidate
 생성은 active Registry 변경이 아니다. `review_after`가 지난 후보는 다시 검증하거나
 기각·제거하기 전까지 평가 입력으로 사용하지 않는다.
+publication 검토 전 `maestro expertise validate-candidate`가 공통 권한 블록,
+필수 Guide 절, source-to-Guide 연결, normal·edge·non-trigger case와 digest-bound
+평가 결과를 통과해야 한다. 이는 구조와 provenance를 검사하는 gate이며 출처의
+진실성이나 domain 산출물 품질을 자동 승인하지 않는다.
 
 owner 결정 또는 accepted held-out evaluation을 받은 후보는
 `maestro expertise activate`의 preview/apply 경계로
@@ -119,6 +139,29 @@ Pack에 속하는 판단은 base ID·version·digest를 고정한 한 단계 `ex
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은
 권위가 있으면 `global`이다. 사용 횟수만으로 범위를 넓히지 않는다.
+
+### 비-Expertise 구성요소 후보
+
+분류 결과가 Lens, Executor/Agent, Department, Adapter, Research Lane, Specialist
+Contract 또는 Packet contract이면 `$maestro-registry-builder`가 다음 격리 bundle만
+만든다.
+
+```text
+.maestro/state/candidates/components/<candidate-id>/
+├── candidate.json
+├── signals.json
+├── classification.json
+├── draft/component.json
+├── evidence/manifest.json
+└── evals/cases.json
+```
+
+`maestro component validate-candidate`는 classification과 component kind, 모든
+artifact digest, owner·cost·rollback, positive·non-trigger·regression frozen case,
+kind별 독립 경계를 검사한다. PASS는 후보 구조가 검토 가능하다는 뜻일 뿐이며 active
+Registry 변경이나 domain 품질을 승인하지 않는다. 현재 CLI에는 이 후보를 activate
+또는 promote하는 명령이 없다. 실제 Registry 변경은 별도 저장소 변경, held-out
+평가와 owner 승인을 요구한다.
 
 ## Pilot 계약
 

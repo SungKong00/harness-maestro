@@ -41,23 +41,40 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 
 - 프로젝트 readiness, Doctor 결과와 현재 검토 대기 항목
 - 최근 작업의 짧은 이름, 결과, 시간, token, 수정 횟수와 검증 결과
-- route가 계획한 Assignment 순서, Executor, 모델과 Expertise
-- Host가 제공한 경우에만 실제 모델, 단계별 시간·token과 근거 참조
+- route가 계획한 Assignment 순서, Executor, **권고 모델**과 Expertise
+- Host가 제공한 경우에만 메인 요청 모델, 실제 적용 모델, reroute, 단계별
+  시간·token과 근거 참조
 - 진행 중이거나 24시간을 넘긴 관측
 - bundled·project Expertise Pack, Guide, source manifest와 project 후보
 - compact receipt에서 확인된 Guide별 선택 횟수, 마지막 선택 시각, 최근 Run ID와
   검증 실패·수정이 같은 Run에 함께 나타난 횟수
 - 반복된 governance finding과 reusable Expertise gap
 
-계획 모델과 실제 모델은 별도 필드다. Host가 실제 값을 주지 않으면 `null`이며
-계획값으로 채우거나 추정하지 않는다. route v2 계획이 없던 과거 실행은 순서를
-발명하지 않고 `summary_only` 한 단계로 표시한다.
+`메인 요청 모델`, `실제 적용 모델`, `Route 권고 모델`은 서로 다른 필드다. Route가
+선택한 Terra 같은 값은 실행 사실이 아니라 권고이므로 실제 적용 모델의 fallback으로
+사용하지 않는다. Host가 값을 주지 않으면 `null`이며, route v2 계획이 없던 과거
+실행은 순서를 발명하지 않고 `summary_only` 한 단계로 표시한다.
 
-Host observation은 `source`, `quality`, `correlation_id`, 실제 모델과 token
-summary만 가진다. `host_reported`는 Host가 실행 단위 값을 직접 제공했음을,
-`host_delta`는 동일 Host의 두 누적 관측 사이 차이를 뜻한다. Maestro는 Codex
-Desktop의 비공개 session JSONL을 읽지 않는다. 현재 Host가 안정적인 공개 값을
-주지 않으면 미측정 상태를 정직하게 유지한다.
+Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
+`applied_model`, `model_event_evidence`, 최대 네 번의 `reroutes`와 token summary만
+가진다. `applied_model`은 Host가 턴 완료까지 model event stream을 관측한
+`model_event_evidence=complete`일 때만 허용한다. reroute가 없으면 요청 모델과 적용
+모델이 같아야 하고, reroute가 있으면 event chain의 마지막 `to_model`이 적용
+모델이어야 한다. 요청 모델만 알거나 이벤트 구간이 불완전하면 적용 모델은
+`null`이다.
+
+이전 v1 Host observation의 `actual_model`과 stage result의 출처 없는
+`actual_model`은 기록 호환성을 위해 읽지만, Viewer에서는 “이전 형식 보고·적용
+미확정”으로만 다룬다. `host_reported`는 Host가 실행 단위 값을 직접 제공했음을,
+`host_delta`는 동일 Host의 두 누적 token 관측 사이 차이를 뜻한다.
+
+[Codex App Server](https://developers.openai.com/codex/app-server/)는 `turn/start`의
+요청 모델, `model/rerouted`, `thread/tokenUsage/updated`와 `turn/completed`
+이벤트를 제공한다. Maestro가 App Server 실행과 전체 이벤트 구간을 직접 소유하는
+Host adapter에서는 이 값들을 `thread_id`·`turn_id`로 연결할 수 있다. 이미 열린
+Codex Desktop 채팅을 Skill로 실행하는 경로에서는 사용자가 선택한 모델과 이벤트
+완전성을 공개 API로 읽을 수 없으므로 미측정으로 유지한다. 비공개 session JSONL은
+읽지 않는다.
 
 Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
 수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
@@ -109,7 +126,10 @@ maestro observe start --repo /path/to/project \
 maestro observe host --repo /path/to/project \
   --observation <observation-id> --run-id run-20260726-01 \
   --source codex-app-server --quality host_reported \
-  --correlation-id <turn-id> --actual-model <model-id> \
+  --correlation-id <thread-id:turn-id> \
+  --requested-model <requested-model-id> \
+  --applied-model <applied-model-id> \
+  --model-event-evidence complete \
   --total-tokens <host-reported-total> --json
 
 maestro record --repo /path/to/project \
@@ -119,6 +139,12 @@ maestro record --repo /path/to/project \
 maestro snapshot --repo /path/to/project --window 20 --json
 maestro dashboard --repo /path/to/project
 ```
+
+위 예시는 Host가 턴 완료와 전체 reroute 구간을 직접 관측한 경우다. 기존 Desktop
+채팅이나 불완전한 구간에서는 `--model-event-evidence unavailable`로 요청 모델만
+기록하고 `--applied-model`을 전달하지 않는다. reroute가 발생했다면 Host adapter가
+관측 순서대로 `--reroute-event` JSON을 추가한다. 일반 사용자가 이 명령을 직접
+작성하지 않는다.
 
 `dashboard`는 빈 local port를 선택해 기본 브라우저를 연다. 터미널에서 `Ctrl-C`를
 누르면 종료된다. `--no-open`, `--port`, `--window`로 동작을 좁힐 수 있다.

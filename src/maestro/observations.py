@@ -18,11 +18,13 @@ from .util import (
 )
 
 OBSERVATION_VERSION = "maestro_run_observation_v1"
-HOST_OBSERVATION_VERSION = "maestro_host_observation_v1"
+LEGACY_HOST_OBSERVATION_VERSION = "maestro_host_observation_v1"
+HOST_OBSERVATION_VERSION = "maestro_host_observation_v2"
 MAX_TASK_LABEL_LENGTH = 160
 MAX_PLAN_ASSIGNMENTS = 5
 MAX_INFLIGHT_OBSERVATIONS = 100
 MAX_OBSERVATION_FILE_BYTES = 128_000
+MAX_MODEL_REROUTES = 4
 
 
 def _utc_now() -> datetime:
@@ -99,10 +101,20 @@ def _valid_token_summary(value: Any) -> bool:
     )
 
 
-def _valid_host_observation(value: Any) -> bool:
-    if value is None:
-        return True
-    if not isinstance(value, dict) or set(value) != {
+def _valid_model(value: Any) -> bool:
+    return (
+        value is None
+        or (
+            isinstance(value, str)
+            and bool(value.strip())
+            and len(value) <= 128
+            and not any(character in value for character in "\r\n\x00")
+        )
+    )
+
+
+def _valid_legacy_host_observation(value: dict[str, Any]) -> bool:
+    if set(value) != {
         "schema_version",
         "source",
         "quality",
@@ -115,8 +127,18 @@ def _valid_host_observation(value: Any) -> bool:
     actual_model = value.get("actual_model")
     tokens = value.get("tokens")
     return (
-        value.get("schema_version") == HOST_OBSERVATION_VERSION
-        and isinstance(value.get("source"), str)
+        value.get("schema_version") == LEGACY_HOST_OBSERVATION_VERSION
+        and _valid_host_observation_identity(value)
+        and _valid_model(actual_model)
+        and _valid_token_summary(tokens)
+        and (actual_model is not None or tokens is not None)
+        and _parse_timestamp(value.get("observed_at")) is not None
+    )
+
+
+def _valid_host_observation_identity(value: dict[str, Any]) -> bool:
+    return (
+        isinstance(value.get("source"), str)
         and bool(value["source"].strip())
         and len(value["source"]) <= 80
         and not any(character in value["source"] for character in "\r\n\x00")
@@ -128,21 +150,86 @@ def _valid_host_observation(value: Any) -> bool:
             character in value["correlation_id"]
             for character in "\r\n\x00"
         )
-        and (
-            actual_model is None
-            or (
-                isinstance(actual_model, str)
-                and bool(actual_model.strip())
-                and len(actual_model) <= 128
-                and not any(
-                    character in actual_model
-                    for character in "\r\n\x00"
-                )
-            )
-        )
+    )
+
+
+def _valid_model_reroutes(
+    value: Any,
+    *,
+    requested_model: str | None,
+    applied_model: str | None,
+) -> bool:
+    if (
+        not isinstance(value, list)
+        or len(value) > MAX_MODEL_REROUTES
+    ):
+        return False
+    previous = requested_model
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"from_model", "to_model", "reason"}
+            or not _valid_model(item.get("from_model"))
+            or not _valid_model(item.get("to_model"))
+            or item.get("from_model") is None
+            or item.get("to_model") is None
+            or not isinstance(item.get("reason"), str)
+            or not item["reason"].strip()
+            or len(item["reason"]) > 240
+            or any(character in item["reason"] for character in "\r\n\x00")
+            or item["from_model"] != previous
+        ):
+            return False
+        previous = item["to_model"]
+    return previous == applied_model
+
+
+def _valid_host_observation(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, dict):
+        return False
+    if value.get("schema_version") == LEGACY_HOST_OBSERVATION_VERSION:
+        return _valid_legacy_host_observation(value)
+    if set(value) != {
+        "schema_version",
+        "source",
+        "quality",
+        "correlation_id",
+        "requested_model",
+        "applied_model",
+        "model_event_evidence",
+        "reroutes",
+        "tokens",
+        "observed_at",
+    }:
+        return False
+    requested_model = value.get("requested_model")
+    applied_model = value.get("applied_model")
+    model_event_evidence = value.get("model_event_evidence")
+    reroutes = value.get("reroutes")
+    tokens = value.get("tokens")
+    if not (
+        value.get("schema_version") == HOST_OBSERVATION_VERSION
+        and _valid_host_observation_identity(value)
+        and _valid_model(requested_model)
+        and _valid_model(applied_model)
+        and model_event_evidence in {"unavailable", "complete"}
         and _valid_token_summary(tokens)
-        and (actual_model is not None or tokens is not None)
+        and (requested_model is not None or applied_model is not None or tokens is not None)
         and _parse_timestamp(value.get("observed_at")) is not None
+    ):
+        return False
+    if model_event_evidence == "unavailable":
+        return applied_model is None and reroutes == []
+    return (
+        requested_model is not None
+        and applied_model is not None
+        and _valid_model_reroutes(
+            reroutes,
+            requested_model=requested_model,
+            applied_model=applied_model,
+        )
     )
 
 
@@ -401,6 +488,10 @@ def record_host_observation(
     source: str,
     quality: str,
     correlation_id: str,
+    requested_model: str | None = None,
+    applied_model: str | None = None,
+    model_event_evidence: str = "unavailable",
+    reroutes: list[dict[str, str]] | None = None,
     actual_model: str | None = None,
     tokens: dict[str, int | None] | None = None,
 ) -> dict[str, Any]:
@@ -432,6 +523,13 @@ def record_host_observation(
             "HOST_OBSERVATION_CONFLICT",
             "Host telemetry must match an unfinished in-flight observation.",
         )
+    if actual_model is not None:
+        if applied_model is not None and applied_model != actual_model:
+            raise MaestroError(
+                "HOST_OBSERVATION_INVALID",
+                "actual-model and applied-model cannot disagree.",
+            )
+        applied_model = actual_model
     host_observation = {
         "schema_version": HOST_OBSERVATION_VERSION,
         "source": _bounded_line(source, field="source", maximum=80),
@@ -441,23 +539,34 @@ def record_host_observation(
             field="correlation-id",
             maximum=160,
         ),
-        "actual_model": (
+        "requested_model": (
             _bounded_line(
-                actual_model,
-                field="actual-model",
+                requested_model,
+                field="requested-model",
                 maximum=128,
             )
-            if actual_model is not None
+            if requested_model is not None
             else None
         ),
+        "applied_model": (
+            _bounded_line(
+                applied_model,
+                field="applied-model",
+                maximum=128,
+            )
+            if applied_model is not None
+            else None
+        ),
+        "model_event_evidence": model_event_evidence,
+        "reroutes": list(reroutes or []),
         "tokens": tokens,
         "observed_at": _timestamp(_utc_now()),
     }
     if not _valid_host_observation(host_observation):
         raise MaestroError(
             "HOST_OBSERVATION_INVALID",
-            "Host telemetry requires a supported quality and at least one "
-            "host-reported model or token summary with total.",
+            "Applied model telemetry requires a complete Host model event "
+            "stream. Requested-only or token-only telemetry remains unmeasured.",
         )
     existing = value.get("host_observation")
     if existing is not None:

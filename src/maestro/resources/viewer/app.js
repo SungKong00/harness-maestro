@@ -47,6 +47,21 @@ function formatDate(value) {
   });
 }
 
+function formatModels(values) {
+  return Array.isArray(values) && values.length
+    ? values.join(", ")
+    : "미측정";
+}
+
+function appendModelLine(target, label, values, className = "") {
+  const line = element("span", {
+    className: `model-line ${className}`.trim(),
+  });
+  line.append(element("small", { text: label }));
+  line.append(element("strong", { text: formatModels(values) }));
+  target.append(line);
+}
+
 function outcomeClass(value) {
   if (["completed", "passed", "ready", "PASS"].includes(value)) return "good";
   if (["failed", "blocked", "FAIL"].includes(value)) return "bad";
@@ -91,7 +106,8 @@ function renderMetrics(snapshot) {
     duration: "시간",
     tokens: "토큰",
     plan: "계획",
-    actual_model: "실제 모델",
+    requested_model: "요청 모델",
+    actual_model: "실제 적용 모델",
   };
   Object.entries(snapshot.measurement_coverage).forEach(([key, value]) => {
     if (!labels[key] || !value || typeof value !== "object") return;
@@ -318,10 +334,16 @@ function renderRuns(snapshot) {
     row.append(result);
     row.append(element("td", { text: formatDuration(run.duration_ms) }));
     row.append(element("td", { text: formatTokens(run.tokens) }));
-    row.append(element("td", {
-      text: run.models.actual[0] || run.models.planned[0] || "측정되지 않음",
-      title: run.models.actual.length ? "실제 사용 모델" : "계획 모델",
-    }));
+    const models = element("td", { className: "model-summary" });
+    appendModelLine(models, "요청", run.models.requested);
+    appendModelLine(models, "적용", run.models.applied);
+    appendModelLine(
+      models,
+      "Route 권고",
+      run.models.route_recommended,
+      "model-line-recommended",
+    );
+    row.append(models);
     row.append(element("td", {
       text: run.expertise.packs.join(", ") || "사용 없음",
     }));
@@ -376,6 +398,21 @@ function buildRunDetail(run) {
   addMeta(meta, `리서치 ${run.expertise.research_mode}/${run.expertise.research_gate}`);
   addMeta(meta, `수정 ${run.correction_count}회`);
   addMeta(meta, `검증 ${run.verifier_result}`);
+  addMeta(meta, `메인 요청 모델 ${formatModels(run.models.requested)}`);
+  addMeta(meta, `실제 적용 모델 ${formatModels(run.models.applied)}`);
+  addMeta(
+    meta,
+    `Route 권고 모델 ${formatModels(run.models.route_recommended)}`,
+  );
+  if (run.models.reroutes.length) {
+    addMeta(meta, `Host reroute ${run.models.reroutes.length}회`);
+  }
+  if (run.models.legacy_reported.length) {
+    addMeta(
+      meta,
+      `이전 형식 보고 ${formatModels(run.models.legacy_reported)} · 적용 미확정`,
+    );
+  }
   if (run.host_observation) {
     addMeta(
       meta,
@@ -405,9 +442,13 @@ function buildRunDetail(run) {
     status.append(pill(stage.status));
     row.append(status);
     const model = element("div");
-    model.append(element("small", { text: "모델 (실제 / 계획)" }));
+    model.append(element("small", { text: "실제 적용 모델" }));
     model.append(element("span", {
-      text: `${stage.actual_model || "미측정"} / ${stage.planned_model || "미기록"}`,
+      text: stage.applied_model || "미측정",
+    }));
+    model.append(element("small", { text: "Route 권고 모델" }));
+    model.append(element("span", {
+      text: stage.route_recommended_model || "미기록",
     }));
     row.append(model);
     const cost = element("div");

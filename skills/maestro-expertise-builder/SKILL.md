@@ -28,15 +28,19 @@ Otherwise return `not admitted` and the smaller existing surface to use.
 
 ## Choose the surface
 
-Read `references/surface-and-agent-boundary.md`. Prefer, in order:
+Read `references/surface-and-agent-boundary.md`. Require the classification
+owned by `$maestro-govern`. Continue only for `decision-guide` or
+`expertise-pack`.
 
-1. deterministic checker or schema;
-2. project Convention;
-3. one guide in an existing Expertise Pack;
-4. a new Expertise Pack;
-5. a custom Agent proposal only for a distinct execution boundary.
+If the result is Lens, standalone Skill, Executor/Agent, Department, Adapter,
+Research Lane, Specialist Contract, Packet contract, checker, Convention, or
+none, return `not admitted as expertise`, the exact proposed surface, and the
+classification's handoff. Never force it into a Pack.
 
-Persona wording and domain knowledge alone do not justify an Agent.
+Prefer an existing Guide revision for the same trigger and decision family.
+Prefer a new Guide in an existing Pack when its source and evaluation family
+match. Create a Pack only for an independent domain with at least two
+selectable Guides and its own trigger, source, evaluation, and result boundary.
 
 ## Establish evidence
 
@@ -58,7 +62,8 @@ Read `references/compilation-format.md`, then create only:
 ├── draft/references/<guide-id>.md
 ├── draft/agents/openai.yaml
 ├── evidence/sources.json
-└── evals/cases.json
+├── evals/cases.json
+└── evals/results.json
 ```
 
 `candidate.json` must follow
@@ -102,16 +107,26 @@ response preference, or “looks expert” as the pass condition.
 Test trigger precision and coexistence with nearby Skills. A candidate that
 improves its target task but hijacks adjacent work fails.
 
+Before requesting publication, run
+`maestro expertise validate-candidate --repo . --candidate <id> --json`.
+Treat any failure as a publication blocker. This command validates the bounded
+bundle, cross-file references, authority block, source-to-Guide coverage, and
+evaluation artifact digest; it does not claim that a source is true or that a
+domain artifact is good.
+
 ## Output
 
 ```text
 admission:
+surface_classification:
+handoff:
 candidate_path:
 failure_pattern:
 proposed_guides:
 portability:
 source_coverage:
 frozen_evaluation:
+candidate_validation:
 promotion_blockers:
 recommended_disposition:
 ```

@@ -9,6 +9,14 @@ Apply risk-based QA judgment through only the Decision Guides selected by
 Maestro. This is an advisory Expertise Pack, not a permanent QA agent, test
 runner, or final verifier.
 
+<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
+This Pack never grants repository or external write authority. In a read-only
+Assignment it returns advisory criteria only. When a validated Maestro plan already
+grants mutation authority to the owning Executor, that Executor may apply the
+selected Guide criteria while implementing within its Assignment boundaries.
+The Pack does not expand those boundaries or authorize another writer.
+<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->
+
 ## Inputs
 
 Require the intended behavior, affected users and assets, change boundary,
@@ -78,7 +86,10 @@ verdict:
 ## Boundaries
 
 - No claim that an unrun test passed or that absence of a defect proves quality.
-- No code fix, test edit, deployment, or release authorization.
+- No independent code fix, test edit, deployment, or release authorization
+  from a read-only Assignment. A mutation-owner Executor may implement tests or
+  fixes using the selected criteria when the validated Maestro plan already
+  grants that authority; release authorization remains separate.
 - No universal checklist disconnected from the change and risk.
 - No security or accessibility certification; route specialized criteria when
   the claim requires them.

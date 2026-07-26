@@ -152,6 +152,61 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
         digest = payload.pop("projection_digest")
         self.assertEqual(sha256_text(canonical_json(payload)), digest)
 
+    def test_expertise_projection_binds_resources_without_claiming_host_load(
+        self,
+    ) -> None:
+        review_plan = route_goal_v2(
+            "Review the Korean typography and visual hierarchy",
+            "medium",
+            intent="review",
+            repo_path=ROOT,
+        )
+        review = project_assignment_input(
+            ROOT,
+            review_plan,
+            review_plan["assignments"][0]["assignment_id"],
+            baseline_for(review_plan),
+        )
+
+        self.assertEqual("PASS", review["status"])
+        load = review["input"]["expertise_load"]
+        self.assertEqual("advisory-only", load["application_mode"])
+        self.assertEqual("unavailable", load["host_attestation"]["status"])
+        self.assertEqual([], load["host_attestation"]["loaded_skill_digests"])
+        self.assertEqual(["product-design"], [
+            item["expertise_pack_id"] for item in load["packs"]
+        ])
+        self.assertRegex(
+            load["packs"][0]["skill_definition_digest"],
+            r"^[a-f0-9]{64}$",
+        )
+        guide_refs = {
+            item["guide_id"]: item["resource_path"]
+            for item in load["packs"][0]["guides"]
+        }
+        self.assertEqual(
+            "references/typography-korean.md",
+            guide_refs["typography-korean"],
+        )
+
+        implementation_plan = route_goal_v2(
+            "Implement the approved Korean typography and visual hierarchy",
+            "medium",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+        implementation = project_assignment_input(
+            ROOT,
+            implementation_plan,
+            "implementation",
+            baseline_for(implementation_plan),
+        )
+        self.assertEqual("PASS", implementation["status"])
+        self.assertEqual(
+            "authorized-executor-may-apply",
+            implementation["input"]["expertise_load"]["application_mode"],
+        )
+
     def test_baseline_gap_allows_review_but_blocks_mutation(self) -> None:
         plan = route_goal_v2(
             "Implement README contract behavior and verification",

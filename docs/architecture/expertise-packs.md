@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 반복 가능한 전문가 판단을 선택형 Expertise Pack으로 재사용하고 최신 맥락 조사와 후보 승격을 bounded gate로 분리하는 계약.
 scope: [expertise, registry, route-v2, skills, governance]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -51,12 +51,23 @@ sensitivity: internal
 - guide ID, summary, trigger와 freshness
 - 기본 `reuse`, 조건부 `contextualize`·`refresh` research policy
 - source manifest와 frozen evaluation 위치
-- bundled/project origin, definition digest와 선택된 Skill 경로
+- bundled/project origin, Pack manifest digest, Skill tree digest와 선택된 Skill 경로
 - project extension이면 고정된 base와 guide별 원본 Skill
 
 route v2의 `expertise`는 optional additive extension이다. 기존 v2 계획은 이 필드가
 없어도 유효하고, 팩이나 discovery gate가 없는 일반 작업에는 이 필드를 출력하지
-않는다. 새 계획은 Registry에서 재구성한 선택과 일치해야 한다.
+않는다. 새 계획은 Registry에서 재구성한 선택과 일치해야 한다. Assignment projection은
+Guide ID 외에도 Skill ID, Guide resource path와 Skill tree digest를
+`expertise_load`에 넣는다. 읽기 Assignment는 `advisory-only`, 이미 mutation owner인
+Assignment만 `authorized-executor-may-apply`다. Pack 자체는 어느 경우에도 쓰기 권한을
+만들지 않는다. Host가 실제로 해당 digest를 로드했다는 공개 증거가 없으면
+`host_attestation.status=unavailable`이며, 선택 기록을 load proof로 간주하지 않는다.
+
+라우팅은 프로젝트에 명시적으로 활성화한 Pack을 먼저 보고, 그 안에서는
+`dominance_triggers`와 일반 trigger 점수로 top-1을 고른다. 같은 우선순위·근거가
+동점이면 `EXPERTISE_SELECTION_AMBIGUOUS`를 남긴다. 이 최소 신호는 landing page처럼
+시각 디자인과 마케팅 문구가 겹치는 요청을 분리하기 위한 것이며, 모든 Pack 쌍의
+negative trigger ontology를 미리 만들지는 않는다.
 
 ### 2. Research gate
 
@@ -121,8 +132,11 @@ RunReceipt에는 다음 선택 정보만 optional로 기록한다.
 `maestro govern report`는 팩 사용과 research mode만 집계한다.
 
 `$maestro-expertise-builder`는 admission gate가 통과할 때만 다음 project-local
-candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide → 새 Pack
-순으로 더 작은 표면을 검토한다. 현재 외부 근거가 필요하면 내부
+candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
+`decision-guide` 또는 `expertise-pack`을 반환해야 한다. 동일 trigger·판단 family는
+기존 Guide revision, 같은 Pack의 source·evaluation family를 공유하면 새 Guide,
+독립 domain과 두 개 이상의 선택 Guide가 있을 때만 새 Pack이다. 다른 결과는
+`not admitted as expertise`와 올바른 Builder handoff로 종료한다. 현재 외부 근거가 필요하면 내부
 `$maestro-reference-research`의 validated bundle만 입력으로 받는다.
 
 ```text
@@ -133,7 +147,8 @@ candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide �
 ├── draft/references/
 ├── draft/agents/openai.yaml
 ├── evidence/sources.json
-└── evals/cases.json
+├── evals/cases.json
+└── evals/results.json
 ```
 
 이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 승격이 아니다.
@@ -151,6 +166,7 @@ candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide �
 ├── evidence/candidate.json
 ├── evidence/sources.json
 ├── evals/cases.json
+├── evals/results.json
 └── activation.json
 ```
 
@@ -163,6 +179,8 @@ Maestro route가 선택한 Skill과 guide만 연다.
 
 ```bash
 maestro expertise list --repo /path/to/project --json
+maestro expertise validate-candidate --repo /path/to/project \
+  --candidate project-design --json
 maestro expertise activate --repo /path/to/project \
   --candidate project-design \
   --approval-ref held_out_evaluation:eval-7 \
@@ -212,7 +230,12 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 - research artifact digest 뒤 같은 Assignment 구조로 READY
 - pack·guide 변조는 validator 실패
 
-각 팩은 normal·edge·non-trigger·overlap case를 갖는다. 특히 landing page의
+각 팩은 `maestro_expertise_eval_v2`의 normal·edge·non-trigger·overlap case,
+관찰 가능한 판정 기준과 금지 행동을 갖는다. `evals/results.json`은 모든 case의
+관찰 결과와 verdict를 보존하고 `cases.json`이 그 digest를 고정한다. Candidate
+validator는 이 구조와 교차 참조를 검사하지만, 모델 출력의 실제 전문성이나 출처의
+진실성을 자동 판정한다고 주장하지 않는다. 실제 route test와 domain artifact
+검토가 별도로 필요하다. 특히 landing page의
 시각 위계는 product-design, positioning과 copy는 marketing이 우선되어야 하며,
 단순 unit test 실행은 software-qa 팩을 불필요하게 열지 않아야 한다. 실제 품질
 A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로 사용한다.
@@ -246,6 +269,7 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | 내부 ResearchPacket·ResearchBundle validator | 현재 구현 | source-tier·reference·follow-up·artifact binding tests |
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
 | 후보 활성화 CLI | 현재 구현 | owner/held-out 근거 + reviewed preview/apply + strict Doctor |
+| 후보 bundle validator | 현재 구현 | source·Guide·평가 artifact 교차 참조 + read-only CLI |
 | 후보 생성 CLI | 보류 | Skill 기반 후보 생성이 반복되고 정형 입력 요구가 측정됨 |
 | 자동 candidate 제안 | 보류 | 반복 fingerprint가 전문성 공백과 안정적으로 연결됨 |
 | active 전역 승격 자동화 | 제외 | owner 승인과 versioned repository change 유지 |

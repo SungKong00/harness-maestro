@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,10 +9,14 @@ from unittest.mock import patch
 
 from tests.support import ROOT, apply_fresh_init, check_by_id, write_json
 
+from maestro import conventions as conventions_module
 from maestro import __version__
 from maestro.conventions import (
     apply_convention_draft_plan,
+    apply_convention_lifecycle_plan,
+    build_convention_activation_plan,
     build_convention_draft_plan,
+    build_convention_update_plan,
 )
 from maestro.doctor import doctor_report
 from maestro.errors import MaestroError
@@ -158,6 +163,244 @@ class ConventionDraftTests(unittest.TestCase):
                     verification=["pytest"],
                 )
             self.assertEqual("CONVENTION_SCOPE_INVALID", scope.exception.code)
+
+    def test_activation_and_update_are_evidence_bound_transactions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft = self._plan(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, draft)
+            apply_convention_draft_plan(draft_path, repo)
+            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            write_json(evidence, {"status": "pass", "held_out": True})
+
+            activation = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="held_out_evaluation",
+                approval_ref="held_out_evaluation:api-contract-v1",
+                verification_artifact=(
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            result = apply_convention_lifecycle_plan(
+                activation_path,
+                repo,
+            )
+
+            target = repo / "docs/conventions/api-error-contract.md"
+            self.assertEqual("convention-activate", result["command"])
+            self.assertIn("status: active", target.read_text(encoding="utf-8"))
+            self.assertIn(
+                "(conventions/api-error-contract.md)",
+                (repo / "docs/README.md").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                ["docs/conventions/api-error-contract.md"],
+                select_documents(
+                    repo,
+                    "Change the API error contract",
+                    [],
+                )["selected_conventions"],
+            )
+
+            update = build_convention_update_plan(
+                repo,
+                topic="api-error-contract",
+                summary="API errors use the versioned stable envelope.",
+                scopes=["src/api"],
+                owner="backend",
+                rule="API handlers MUST return the versioned error envelope.",
+                applies_when=["Changing an HTTP API handler."],
+                does_not_apply=["Internal batch jobs."],
+                evidence=["OpenAPI and held-out contract results."],
+                verification=["python -m unittest tests.test_api_contract"],
+                exceptions=["Owner-approved compatibility migrations."],
+                basis="owner_decision",
+                approval_ref="owner_decision:issue-42",
+                verification_artifact=(
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+                decision_summary="Adopt the versioned envelope for HTTP APIs.",
+            )
+            update_path = Path(temporary) / "update.json"
+            write_json(update_path, update)
+            updated = apply_convention_lifecycle_plan(update_path, repo)
+            self.assertEqual("convention-update", updated["command"])
+            self.assertIn(
+                "versioned error envelope",
+                target.read_text(encoding="utf-8"),
+            )
+
+    def test_update_rejects_unapproved_scope_expansion_and_stale_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft = self._plan(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, draft)
+            apply_convention_draft_plan(draft_path, repo)
+            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            write_json(evidence, {"status": "pass"})
+            activation = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="owner_decision",
+                approval_ref="owner_decision:issue-1",
+                verification_artifact=(
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+                decision_summary="Activate the reviewed API rule.",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_convention_lifecycle_plan(activation_path, repo)
+
+            arguments = {
+                "topic": "api-error-contract",
+                "summary": "API error contract.",
+                "scopes": ["src/api", "src/jobs"],
+                "owner": "backend",
+                "rule": "Use the stable envelope.",
+                "applies_when": ["Changing APIs."],
+                "does_not_apply": ["Unrelated UI."],
+                "evidence": ["Contract evidence."],
+                "verification": ["Run contract tests."],
+                "exceptions": [],
+                "basis": "owner_decision",
+                "approval_ref": "owner_decision:issue-2",
+                "verification_artifact": (
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+                "decision_summary": "Expand the rule after explicit review.",
+            }
+            with self.assertRaises(MaestroError) as expansion:
+                build_convention_update_plan(repo, **arguments)
+            self.assertEqual(
+                "CONVENTION_SCOPE_EXPANSION_REQUIRES_APPROVAL",
+                expansion.exception.code,
+            )
+
+            update = build_convention_update_plan(
+                repo,
+                **arguments,
+                allow_scope_expansion=True,
+            )
+            update_path = Path(temporary) / "update.json"
+            write_json(update_path, update)
+            write_json(evidence, {"status": "changed"})
+            with self.assertRaises(MaestroError) as stale:
+                apply_convention_lifecycle_plan(update_path, repo)
+            self.assertEqual("PLAN_STALE", stale.exception.code)
+
+    def test_activation_rejects_a_changed_git_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft = self._plan(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, draft)
+            apply_convention_draft_plan(draft_path, repo)
+            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            write_json(evidence, {"status": "pass"})
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "."],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "-c",
+                    "user.name=Maestro Test",
+                    "-c",
+                    "user.email=maestro@example.invalid",
+                    "commit",
+                    "-qm",
+                    "baseline",
+                ],
+                check=True,
+            )
+            activation = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="owner_decision",
+                approval_ref="owner_decision:issue-3",
+                verification_artifact=(
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+                decision_summary="Activate the reviewed API rule.",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            readme = repo / "docs/project.md"
+            readme.write_text(
+                readme.read_text(encoding="utf-8") + "\nChanged.\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(MaestroError) as stale:
+                apply_convention_lifecycle_plan(activation_path, repo)
+            self.assertEqual("PLAN_STALE", stale.exception.code)
+
+    def test_activation_rolls_back_both_files_after_partial_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft = self._plan(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, draft)
+            apply_convention_draft_plan(draft_path, repo)
+            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            write_json(evidence, {"status": "pass"})
+            activation = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="owner_decision",
+                approval_ref="owner_decision:issue-4",
+                verification_artifact=(
+                    ".maestro/state/evidence/api-contract.json"
+                ),
+                decision_summary="Activate the reviewed API rule.",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            target = repo / "docs/conventions/api-error-contract.md"
+            entrypoint = repo / "docs/README.md"
+            before_target = target.read_bytes()
+            before_entrypoint = entrypoint.read_bytes()
+            real_atomic_write = conventions_module.atomic_write
+            calls = 0
+
+            def fail_second_write(path: Path, content: bytes) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("simulated second write failure")
+                real_atomic_write(path, content)
+
+            with (
+                patch(
+                    "maestro.conventions.atomic_write",
+                    side_effect=fail_second_write,
+                ),
+                self.assertRaises(OSError),
+            ):
+                apply_convention_lifecycle_plan(activation_path, repo)
+
+            self.assertEqual(before_target, target.read_bytes())
+            self.assertEqual(before_entrypoint, entrypoint.read_bytes())
 
     def test_doctor_warns_on_legacy_metadata_and_fails_duplicate_topics(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

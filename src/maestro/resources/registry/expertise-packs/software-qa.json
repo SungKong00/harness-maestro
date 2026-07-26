@@ -34,6 +34,16 @@
     "qa-test-design",
     "qa-regression-release"
   ],
+  "dominance_triggers": [
+    "test strategy",
+    "test plan",
+    "quality risk",
+    "defect report",
+    "테스트 전략",
+    "테스트 계획",
+    "품질 위험",
+    "결함 보고서"
+  ],
   "guides": [
     {
       "guide_id": "qa-risk-traceability",

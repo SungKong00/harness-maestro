@@ -1525,6 +1525,46 @@ def project_assignment_input(
         item["executor_id"]: item for item in load_registry()["executors"]
     }
     context = executors[assignment["executor_id"]]["context_policy"]
+    assignment_guide_ids = copy.deepcopy(
+        assignment.get("decision_guide_ids", [])
+    )
+    expertise = plan.get("expertise")
+    expertise_load_packs: list[dict[str, Any]] = []
+    if isinstance(expertise, dict) and assignment_guide_ids:
+        selected_guides = set(assignment_guide_ids)
+        for pack in expertise.get("pack_cards", []):
+            guides = [
+                {
+                    "guide_id": guide["guide_id"],
+                    "skill_id": guide["skill_id"],
+                    "resource_path": guide["resource_path"],
+                    "skill_definition_digest": guide[
+                        "skill_definition_digest"
+                    ],
+                }
+                for guide in pack.get("guides", [])
+                if guide.get("guide_id") in selected_guides
+            ]
+            if guides:
+                expertise_load_packs.append(
+                    {
+                        "expertise_pack_id": pack["expertise_pack_id"],
+                        "skill_id": pack["skill_id"],
+                        "skill_path": pack["skill_path"],
+                        "definition_digest": pack["definition_digest"],
+                        "skill_definition_digest": pack[
+                            "skill_definition_digest"
+                        ],
+                        "guides": guides,
+                    }
+                )
+    if assignment["mutation_owner"]:
+        expertise_application_mode = "authorized-executor-may-apply"
+    elif expertise_load_packs:
+        expertise_application_mode = "advisory-only"
+    else:
+        expertise_application_mode = "not-applicable"
+
     projected = {
         "schema_version": ASSIGNMENT_INPUT_VERSION,
         "projection_digest": "",
@@ -1539,9 +1579,16 @@ def project_assignment_input(
         "surface_map": copy.deepcopy(baseline["surface_map"]),
         "engineering_baseline": copy.deepcopy(baseline["checks"]),
         "selected_lens_cards": lens_cards,
-        "decision_guide_ids": copy.deepcopy(
-            assignment.get("decision_guide_ids", [])
-        ),
+        "decision_guide_ids": assignment_guide_ids,
+        "expertise_load": {
+            "application_mode": expertise_application_mode,
+            "packs": expertise_load_packs,
+            "host_attestation": {
+                "status": "unavailable",
+                "loaded_skill_digests": [],
+                "loaded_guide_refs": [],
+            },
+        },
         "document_refs": documents,
         "artifact_refs": artifacts,
         "dependency_packets": [

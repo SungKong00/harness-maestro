@@ -7,8 +7,14 @@ description: Use when a Maestro route selects the product-design Expertise Pack 
 
 Apply selected design criteria as a compact professional rubric. This Skill is
 an Expertise Pack, not a separate permanent agent and not a visual style preset.
-It supplies advisory criteria only. It never authorizes or performs repository
-writes.
+
+<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
+This Pack never grants repository or external write authority. In a read-only
+Assignment it returns advisory criteria only. When a validated Maestro plan already
+grants mutation authority to the owning Executor, that Executor may apply the
+selected Guide criteria while implementing within its Assignment boundaries.
+The Pack does not expand those boundaries or authorize another writer.
+<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->
 
 ## Inputs
 
@@ -58,9 +64,11 @@ snippet, or the same model's unsupported preference.
 3. Inspect current artifacts and project tokens before proposing a new system.
 4. Make explicit choices for typography, scale, spacing, emphasis, states, and
    responsive behavior that are relevant to the task.
-5. Return evidence-backed recommendations inside the assigned Specialist
-   contract. Send technical, UX, or other out-of-scope questions through typed
-   escalations instead of deciding them.
+5. In a read-only Assignment, return evidence-backed recommendations inside the
+   assigned Specialist contract. In the mutation-owner Assignment, apply the
+   same criteria only within its authorized implementation boundary. Send
+   technical, UX, or other out-of-scope questions through typed escalations
+   instead of deciding them.
 6. Evaluate an existing rendered result at representative widths and interaction
    states when one is supplied. Do not create code or claim an unrendered
    proposal was visually verified.
@@ -94,5 +102,7 @@ verdict:
   product role and content constraints.
 - Do not promote one task-specific observation into this Skill. Send reusable
   candidates through the expertise candidate lifecycle.
-- Do not emit code, file edits, tool calls, or implementation commands. The
-  Maestro execution plan owns those only after a valid DecisionBundle.
+- Do not independently emit code, file edits, tool calls, or implementation
+  commands from a read-only Assignment. A mutation-owner Executor may implement
+  selected Guide criteria only when the validated Maestro plan already grants
+  that authority.

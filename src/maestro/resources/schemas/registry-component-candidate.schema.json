@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/registry-component-candidate.schema.json",
+  "title": "Harness Maestro isolated Registry component candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "component_kind",
+    "status",
+    "owner",
+    "portability",
+    "failure_pattern",
+    "existing_coverage",
+    "signals_ref",
+    "classification_ref",
+    "definition_ref",
+    "evidence_ref",
+    "evaluation_ref",
+    "cost",
+    "rollback",
+    "review_after",
+    "approval_requirement"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_registry_component_candidate_v1"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "component_kind": {
+      "enum": [
+        "lens",
+        "executor-agent",
+        "department",
+        "adapter",
+        "research-lane",
+        "specialist-contract",
+        "packet-contract"
+      ]
+    },
+    "status": {
+      "const": "candidate"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "portability": {
+      "enum": [
+        "project",
+        "profile",
+        "global"
+      ]
+    },
+    "failure_pattern": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "existing_coverage": {
+      "$ref": "#/$defs/nonemptyStrings"
+    },
+    "signals_ref": {
+      "$ref": "#/$defs/signalsRef"
+    },
+    "classification_ref": {
+      "$ref": "#/$defs/classificationRef"
+    },
+    "definition_ref": {
+      "$ref": "#/$defs/definitionRef"
+    },
+    "evidence_ref": {
+      "$ref": "#/$defs/evidenceRef"
+    },
+    "evaluation_ref": {
+      "$ref": "#/$defs/evaluationRef"
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "additional_model_calls",
+        "context_cost",
+        "maintenance_owner"
+      ],
+      "properties": {
+        "additional_model_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "context_cost": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "maintenance_owner": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "active_registry_unchanged"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "active_registry_unchanged": {
+          "const": true
+        }
+      }
+    },
+    "review_after": {
+      "type": "string",
+      "format": "date"
+    },
+    "approval_requirement": {
+      "const": "owner_decision"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonemptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "classificationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "classification.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "signalsRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "signals.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "definitionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "draft/component.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "evidence/manifest.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "evaluationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "evals/cases.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

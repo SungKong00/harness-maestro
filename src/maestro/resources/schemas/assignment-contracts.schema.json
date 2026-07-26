@@ -317,6 +317,7 @@
         "engineering_baseline",
         "selected_lens_cards",
         "decision_guide_ids",
+        "expertise_load",
         "document_refs",
         "artifact_refs",
         "dependency_packets",
@@ -368,6 +369,112 @@
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/id"
+          }
+        },
+        "expertise_load": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "application_mode",
+            "packs",
+            "host_attestation"
+          ],
+          "properties": {
+            "application_mode": {
+              "enum": [
+                "advisory-only",
+                "authorized-executor-may-apply",
+                "not-applicable"
+              ]
+            },
+            "packs": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expertise_pack_id",
+                  "skill_id",
+                  "skill_path",
+                  "definition_digest",
+                  "skill_definition_digest",
+                  "guides"
+                ],
+                "properties": {
+                  "expertise_pack_id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "skill_id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "skill_path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "definition_digest": {
+                    "$ref": "#/$defs/digest"
+                  },
+                  "skill_definition_digest": {
+                    "$ref": "#/$defs/digest"
+                  },
+                  "guides": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "guide_id",
+                        "skill_id",
+                        "resource_path",
+                        "skill_definition_digest"
+                      ],
+                      "properties": {
+                        "guide_id": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "skill_id": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "resource_path": {
+                          "type": "string",
+                          "pattern": "^references/[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"
+                        },
+                        "skill_definition_digest": {
+                          "$ref": "#/$defs/digest"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "host_attestation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "loaded_skill_digests",
+                "loaded_guide_refs"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unavailable"
+                },
+                "loaded_skill_digests": {
+                  "type": "array",
+                  "maxItems": 1
+                },
+                "loaded_guide_refs": {
+                  "type": "array",
+                  "maxItems": 4
+                }
+              }
+            }
           }
         },
         "document_refs": {

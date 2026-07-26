@@ -10,6 +10,7 @@ from pathlib import Path
 
 from maestro.dashboard import create_dashboard_server
 from maestro.documents import select_documents
+from maestro.errors import MaestroError
 from maestro.governance import (
     expertise_management_signals,
     record_run,
@@ -138,7 +139,10 @@ class OperationsViewerTests(unittest.TestCase):
                 snapshot["runs"][0]["flow_evidence"],
             )
             self.assertEqual(100, snapshot["runs"][0]["tokens"]["total"])
-            self.assertTrue(snapshot["runs"][0]["models"]["actual"])
+            self.assertEqual([], snapshot["runs"][0]["models"]["applied"])
+            self.assertTrue(
+                snapshot["runs"][0]["models"]["route_recommended"]
+            )
             self.assertEqual([], snapshot["inflight"])
             self.assertEqual(1, smallest_snapshot["window"])
             self.assertEqual(3, smallest_snapshot["governance"]["window"])
@@ -147,7 +151,7 @@ class OperationsViewerTests(unittest.TestCase):
                 snapshot["governance"],
             )
 
-    def test_host_observation_supplies_actual_model_and_tokens_without_estimation(
+    def test_host_observation_supplies_applied_model_and_tokens_without_estimation(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -174,7 +178,9 @@ class OperationsViewerTests(unittest.TestCase):
                 source="codex-app-server",
                 quality="host_reported",
                 correlation_id="thread-1:turn-2",
-                actual_model="gpt-host-observed",
+                requested_model="gpt-host-observed",
+                applied_model="gpt-host-observed",
+                model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
             )
             repeated = record_host_observation(
@@ -184,7 +190,9 @@ class OperationsViewerTests(unittest.TestCase):
                 source="codex-app-server",
                 quality="host_reported",
                 correlation_id="thread-1:turn-2",
-                actual_model="gpt-host-observed",
+                requested_model="gpt-host-observed",
+                applied_model="gpt-host-observed",
+                model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
             )
             receipt = _receipt_from_plan(plan)
@@ -207,7 +215,11 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual(100, snapshot["runs"][0]["tokens"]["total"])
             self.assertEqual(
                 ["gpt-host-observed"],
-                snapshot["runs"][0]["models"]["actual"],
+                snapshot["runs"][0]["models"]["requested"],
+            )
+            self.assertEqual(
+                ["gpt-host-observed"],
+                snapshot["runs"][0]["models"]["applied"],
             )
             self.assertEqual(
                 "host_reported",
@@ -230,6 +242,158 @@ class OperationsViewerTests(unittest.TestCase):
                 viewer_source,
             )
             self.assertIn("usage.corrected_run_count", viewer_source)
+
+    def test_requested_and_route_models_never_fill_unmeasured_applied_model(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            plan = route_goal_v2(
+                "일반 기능을 구현한다",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            plan_path = root / "plan.json"
+            write_json(plan_path, plan)
+            started = start_run_observation(
+                repo,
+                run_id="requested-only-run",
+                task_label="요청 모델만 관측",
+                plan_path=plan_path,
+            )
+            record_host_observation(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="requested-only-run",
+                source="codex-app-server",
+                quality="host_reported",
+                correlation_id="thread-1:turn-3",
+                requested_model="gpt-5.6-sol",
+            )
+            receipt = _receipt_from_plan(plan)
+            receipt["run_id"] = "requested-only-run"
+            receipt["tokens"] = None
+            receipt_path = root / "receipt.json"
+            write_json(receipt_path, receipt)
+            record_run(
+                repo,
+                receipt_path,
+                observation_id=started["observation_id"],
+            )
+
+            run = snapshot_report(repo)["runs"][0]
+            self.assertEqual(["gpt-5.6-sol"], run["models"]["requested"])
+            self.assertEqual([], run["models"]["applied"])
+            self.assertEqual(
+                [
+                    assignment["model_route"]["selected_model"]
+                    for assignment in plan["assignments"]
+                ][:1],
+                run["models"]["route_recommended"],
+            )
+            self.assertEqual(
+                "unavailable",
+                run["models"]["model_event_evidence"],
+            )
+
+            viewer_source = (
+                ROOT / "src/maestro/resources/viewer/app.js"
+            ).read_text(encoding="utf-8")
+            self.assertIn('"Route 권고"', viewer_source)
+            self.assertIn("run.models.requested", viewer_source)
+            self.assertIn("run.models.applied", viewer_source)
+            self.assertNotIn(
+                "run.models.actual[0] || run.models.planned[0]",
+                viewer_source,
+            )
+
+    def test_legacy_reported_model_is_not_treated_as_applied(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            plan = route_goal_v2(
+                "기존 운영 기록을 읽는다",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            receipt = _receipt_from_plan(plan)
+            receipt["run_id"] = "legacy-host-run"
+            receipt["host_observation"] = {
+                "schema_version": "maestro_host_observation_v1",
+                "source": "legacy-host",
+                "quality": "host_reported",
+                "correlation_id": "legacy-thread:legacy-turn",
+                "actual_model": "gpt-legacy-reported",
+                "tokens": {"total": 100},
+                "observed_at": "2026-07-27T00:00:00Z",
+            }
+            receipt_path = root / "receipt.json"
+            write_json(receipt_path, receipt)
+            record_run(repo, receipt_path)
+
+            run = snapshot_report(repo)["runs"][0]
+            self.assertEqual([], run["models"]["requested"])
+            self.assertEqual([], run["models"]["applied"])
+            self.assertEqual(
+                ["gpt-legacy-reported"],
+                run["models"]["legacy_reported"],
+            )
+            self.assertEqual(
+                "unavailable",
+                run["models"]["model_event_evidence"],
+            )
+
+    def test_applied_model_requires_complete_host_event_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            started = start_run_observation(
+                repo,
+                run_id="model-evidence-run",
+                task_label="모델 이벤트 근거 검사",
+            )
+            with self.assertRaises(MaestroError) as rejected:
+                record_host_observation(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="model-evidence-run",
+                    source="codex-app-server",
+                    quality="host_reported",
+                    correlation_id="thread-2:turn-1",
+                    requested_model="gpt-5.6-sol",
+                    applied_model="gpt-5.6-terra",
+                )
+            self.assertEqual(
+                "HOST_OBSERVATION_INVALID",
+                rejected.exception.code,
+            )
+
+            recorded = record_host_observation(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="model-evidence-run",
+                source="codex-app-server",
+                quality="host_reported",
+                correlation_id="thread-2:turn-1",
+                requested_model="gpt-5.6-sol",
+                applied_model="gpt-5.6-terra",
+                model_event_evidence="complete",
+                reroutes=[
+                    {
+                        "from_model": "gpt-5.6-sol",
+                        "to_model": "gpt-5.6-terra",
+                        "reason": "service reroute",
+                    }
+                ],
+            )
+            self.assertEqual(
+                "gpt-5.6-terra",
+                recorded["telemetry"]["applied_model"],
+            )
+            self.assertEqual(1, len(recorded["telemetry"]["reroutes"]))
 
     def test_run_details_use_one_inline_accessible_disclosure(self) -> None:
         viewer_root = ROOT / "src/maestro/resources/viewer"

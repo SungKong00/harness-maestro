@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro v0의 작은 커널, 읽기·쓰기 경계와 프로젝트 적용 흐름.
 scope: [src/maestro, skills, docs]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -57,13 +57,20 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro docs --repo <path> --task "<goal>" --json` | 필수 활성 문서와 조건부 research·plan 후보의 경로와 digest 선택 | 없음 |
 | `maestro convention draft ... --json` | 새 Convention의 비활성 draft 생성 plan 미리보기 | 없음 |
 | `maestro convention draft --apply-plan <plan> --json` | 검토한 동일 plan으로 draft 한 건 생성 | `docs/conventions/`의 새 draft 한 건 |
+| `maestro convention activate ... --json` | 승인 근거·검증 artifact·checkout에 결합된 활성화 plan 미리보기 | 없음 |
+| `maestro convention activate --apply-plan <plan> --json` | 동일 draft와 문서 지도를 하나의 검토된 plan으로 활성화 | Convention 한 건과 문서 지도 |
+| `maestro convention update ... --json` | 활성 topic 한 건의 다음 내용과 scope 변경 미리보기 | 없음 |
+| `maestro convention update --apply-plan <plan> --json` | 동일 active Convention과 문서 지도를 evidence-bound plan으로 갱신 | Convention 한 건과 문서 지도 |
 | `maestro expertise list --repo <path> --json` | bundled·활성 project Pack과 격리 후보 inventory 조회 | 없음 |
+| `maestro expertise validate-candidate --repo <path> --candidate <id> --json` | 후보의 출처·Guide·평가 artifact 연결을 읽기 전용 검증 | 없음 |
 | `maestro expertise activate ... --json` | 새 project pilot 게시 plan 미리보기 | 없음 |
 | `maestro expertise activate --apply-plan <plan> --json` | 검토한 후보와 동일한 plan만 게시 | project manifest와 `.agents/skills/<id>/` |
 | `maestro expertise update ... --json` | 활성 project pilot의 다음 한 버전 갱신 plan 미리보기 | 없음 |
 | `maestro expertise update --apply-plan <plan> --json` | 검토한 다음 버전과 감사 스냅샷 게시 | 기존 `.agents/skills/<id>/` |
 | `maestro expertise deactivate ... --json` | Pack 사용 중지 plan 미리보기 | 없음 |
 | `maestro expertise deactivate --apply-plan <plan> --json` | allowlist만 제거하고 Skill 파일 보존 | project manifest |
+| `maestro govern classify --input <signals.json> --json` | 증거에서 만든 닫힌 신호를 가장 작은 durable component surface로 분류 | 없음 |
+| `maestro component validate-candidate --repo <path> --candidate <id> --json` | 격리된 비-Expertise 구성요소 후보의 분류·digest·경계·frozen case 검증 | 없음 |
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 optional Expertise Pack·research gate를 검증 | 없음 |
 | `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
@@ -74,7 +81,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
 | `maestro enact --repo <path> --plan <plan> --bundle <bundle> --packet <packet>... --authorization-source <source> --json` | 결정·근거·checkout을 재검사하고 digest-bound ExecutionPlan 생성 | 없음 |
 | `maestro observe start --repo <path> --run-id <id> --task-label "<label>" [--plan <route-v2>] --json` | prompt 없이 작업명·시작 시각·compact 계획 관측 시작 | `.maestro/state/inflight/` 한 건 |
-| `maestro observe host ... --json` | 공개 Host가 제공한 실제 모델·token과 출처·상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
+| `maestro observe host ... --json` | 공개 Host가 제공한 요청 모델·완전한 model event 근거·적용 모델·token과 상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
 | `maestro record --repo <path> --receipt <file> [--observation <id>] --json` | 작업 종료 시 compact RunReceipt 한 건 기록하고 반복 개선 신호 확인 | `.maestro/state/events/`에 append |
 | `maestro snapshot --repo <path> --json` | 상태·작업·Expertise·거버넌스를 하나의 read-only JSON으로 합성 | 없음 |
 | `maestro verification approve ...` | 탐지된 정확한 검증 명령 승인 plan 미리보기·적용 | apply 때만 project state |
@@ -128,14 +135,20 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 12. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
    기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
    `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
-13. 구현을 시작할 때 prompt 없이 작업명과 compact 계획만 관측하고, 실행 비용과
+13. 전역 구성요소 공백은 `govern classify`로 checker, Convention, Guide, Pack,
+   Lens, Skill, Executor, Department, Adapter, Research Lane, Specialist Contract,
+   Packet contract 중 가장 작은 표면을 먼저 고른다. Expertise가 아닌 Registry 계열
+   후보는 명시적으로 요청된 경우에만 project-local 격리 bundle로 컴파일하며 active
+   Registry를 바꾸지 않는다.
+14. 구현을 시작할 때 prompt 없이 작업명과 compact 계획만 관측하고, 실행 비용과
    finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt 한 건으로 runtime
    JSONL에 남기되
    checkpoint와 장문 대화를 복제하지 않는다.
 
-Route v2는 scheduler가 아니라 실행 전 계약이다. 실제 Assignment 시작·종료, model
-call, token과 duration은 Host가 측정 출처와 함께 반환하기 전까지 `actual` evidence로
-간주하지 않는다. 계획·실측 분리와 localhost 조회 경계는
+Route v2는 scheduler가 아니라 실행 전 계약이다. Route model은 권고값이며 실제
+Assignment 시작·종료, 요청·적용 model, token과 duration은 Host가 측정 출처와
+완전한 event 근거를 함께 반환하기 전까지 `actual` evidence로 간주하지 않는다.
+계획·실측 분리와 localhost 조회 경계는
 [통합 운영 뷰어](operations-viewer.md)를 따른다.
 Expertise Pack과 조건부 research는
 [Expertise Pack](expertise-packs.md)을 따른다.
@@ -158,7 +171,8 @@ Lens 개수는 agent 개수가 아니다. 작업을 분해해도 공유 쓰기 �
 - 추적 상태는 framework version, registry digest와 project ID를 가진다. checkout ID는
   추적 파일에 저장하지 않고 현재 저장소 realpath에서 실행 시 파생한다.
 - 실행 이벤트는 project와 checkout을 모두 기록해야 한다.
-- token 수를 제공받지 못하면 추정하지 않고 `null`로 둔다.
+- 요청 모델, 실제 적용 모델과 token 수를 제공받지 못하면 추정하지 않고 `null`로
+  둔다. Route 권고 모델은 별도 필드로만 유지한다.
 - 다른 프로젝트의 로그, schema 없는 legacy 기록, definition hash가 없는 기록은
   승격 근거로 합산하지 않는다.
 

@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro를 설치하고 프로젝트를 초기화해 일반 작업과 선택적 관리 흐름을 실행하는 운용 절차.
 scope: [setup, cli, skills, adapter, governance, expertise]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -82,7 +82,7 @@ contextualize, refresh gate가 열릴 때만 Maestro가 호출한다.
 않는다. 연결 뒤에는 agent client를 재시작해 Skill 목록을 다시 읽게 한다.
 `--host codex`는 전역 파일을 수정하지 않고 CLI 발견 경로, 설치 metadata 버전,
 runtime·Registry digest, 각 Skill의 실제 symlink target과 digest, 동일 이름의
-중복 설치를 검사한다. 여덟 Skill은 서로 다른 경로에 있어도 동일한 content-addressed
+중복 설치를 검사한다. 아홉 Skill은 서로 다른 경로에 있어도 동일한 content-addressed
 `release_id`여야 하며, 하나라도 릴리스 이후 수정됐다면 strict Doctor는 실패한다.
 Codex가 이미 catalog를 다시 읽었는지는 CLI가 증명할 수 없으므로 연결 변경 뒤
 재시작은 여전히 필요하다.
@@ -224,10 +224,11 @@ fresh context를 만들었는지는 증명하지 않으므로 release 전 Host c
 
 `$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
 검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
-필요는 없다. Host가 공개 API/event로 실제 모델·token을 제공하면 Maestro가
-출처·quality·correlation ID와 함께 자동 연결한다. 비공개 Codex session 파일은
-읽지 않고, 지원되는 값이 없으면 `null`을 유지한다. 다른 Host나 자동화가 같은
-계약을 구현할 때만 다음 저수준 명령을 호출한다.
+필요는 없다. Host가 공개 API/event로 요청 모델, 완전한 reroute 구간, 실제 적용
+모델과 token을 제공하면 Maestro가 출처·quality·correlation ID와 함께 자동
+연결한다. Route 권고 모델은 실측값을 대신하지 않는다. 비공개 Codex session
+파일은 읽지 않고, 지원되는 값이 없으면 `null`을 유지한다. 다른 Host나 자동화가
+같은 계약을 구현할 때만 다음 저수준 명령을 호출한다.
 
 ```bash
 maestro observe start --repo /path/to/project \
@@ -238,7 +239,10 @@ maestro observe start --repo /path/to/project \
 maestro observe host --repo /path/to/project \
   --observation <observation-id> --run-id run-20260726-01 \
   --source <public-host-source> --quality host_reported \
-  --correlation-id <host-run-id> --actual-model <actual-model> \
+  --correlation-id <host-run-id> \
+  --requested-model <requested-model> \
+  --applied-model <applied-model> \
+  --model-event-evidence complete \
   --total-tokens <actual-total> --json
 
 maestro record --repo /path/to/project \
@@ -361,6 +365,8 @@ govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하�
 
 ```bash
 maestro expertise list --repo /path/to/project --json
+maestro expertise validate-candidate --repo /path/to/project \
+  --candidate project-design --json
 maestro_expertise_plan="$(mktemp -t maestro-expertise.XXXXXX.json)"
 maestro expertise activate --repo /path/to/project \
   --candidate project-design \
@@ -436,8 +442,27 @@ maestro convention draft --repo /path/to/project \
 rm -- "$maestro_plan"
 ```
 
-적용 결과는 `draft`이며 active 문서 선택에 들어가지 않는다. 기존 topic 권위의 수정,
-owner 결정 또는 held-out 평가를 통한 활성화는 별도 검토 작업이다.
+적용 결과는 `draft`이며 active 문서 선택에 들어가지 않는다. 별도 검토 작업에서
+승인 근거와 검증 artifact가 준비되면 활성화 plan을 만든다.
+
+```bash
+maestro_activate="$(mktemp -t maestro-convention-activate.XXXXXX.json)"
+maestro convention activate --repo /path/to/project \
+  --topic api-error-contract \
+  --basis held_out_evaluation \
+  --approval-ref held_out_evaluation:api-contract-v1 \
+  --verification-artifact .maestro/state/evidence/api-contract-v1.json \
+  --json > "$maestro_activate"
+maestro convention activate --repo /path/to/project \
+  --apply-plan "$maestro_activate" --json
+rm -- "$maestro_activate"
+```
+
+이 apply는 Convention을 active로 바꾸고 문서 지도에 연결한다. 현재 checkout,
+Convention 또는 검증 artifact가 preview 뒤 바뀌면 다시 preview해야 한다. 활성
+규칙을 고칠 때는 `maestro convention update`로 모든 authoring 필드를 다시 제시한다.
+scope 확대는 `--allow-scope-expansion`, owner 결정은
+`--decision-summary`가 추가로 필요하다.
 
 ## 쓰기 경계 요약
 
@@ -445,14 +470,15 @@ owner 결정 또는 held-out 평가를 통한 활성화는 별도 검토 작업�
   `validate-decision`, `enact`,
   `expertise list`, `snapshot`, `govern report`는 읽기 전용이다.
 - `init`, `upgrade`는 `--apply-plan`이 없으면 미리보기만 한다.
-- `convention draft`도 `--apply-plan`이 없으면 미리보기만 하며 적용해도
-  비활성 draft 한 건만 생성한다.
+- `convention draft`, `activate`, `update`는 모두 `--apply-plan` 전에는
+  미리보기만 한다. draft는 비활성 문서 한 건만 만들고, activate/update는
+  승인 근거·검증 artifact·checkout과 문서 지도에 결합된 동일 plan만 적용한다.
 - `expertise activate`, `update`, `deactivate`도 `--apply-plan` 전에는
   미리보기만 한다. activate/update는 검토된 tracked project pilot만 게시하고,
   deactivate는 allowlist만 제거한다.
 - `observe start`는 prompt 없이 작업명·시각·compact 계획 marker 한 건만 쓴다.
 - `observe host`는 지원되는 Host 실측값이 있을 때 같은 marker에 bounded telemetry만
-  추가한다.
+  추가한다. 실제 적용 모델은 `model_event_evidence=complete`일 때만 허용한다.
 - `record`는 검증된 project-scoped JSONL receipt 한 건만 append하고 완료된
   observation을 고정한다.
 - `verification approve`와 dashboard는 미리보기만으로 쓰지 않는다. 명시적으로
