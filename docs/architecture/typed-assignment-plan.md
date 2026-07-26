@@ -1,22 +1,22 @@
 ---
 maestro_doc: 1
-id: HM-PLAN-003
-type: plan
+id: HM-ARCH-003
+type: architecture
 status: active
 authority: repository
 owner: harness-maestro
-summary: Route v1 호환성을 유지하며 Typed Assignment Plan과 실행 전 의미 검증을 도입하고 관측·HTML·재개 기능은 근거가 생길 때까지 분리하는 v0.3 계획.
+summary: Route v1 호환 Typed Assignment Plan, 실행 전 의미 검증과 관측·HTML·재개 기능의 도입 경계.
 scope: [src/maestro/planning.py, src/maestro/cli.py, route-v2, validation, inspector]
 last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
 
-# v0.3 Typed Plan & Validation
+# Typed Assignment Plan과 검증
 
 ## 결정 요약
 
-v0.3은 Harness Maestro를 scheduler나 장기 실행 runtime으로 바꾸지 않는다. 기존
+Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 `maestro_route_v1`을 호환 입력으로 유지하면서, Host가 실행 전에 확인할 수 있는
 작고 고정된 Assignment DAG로 정규화한다.
 
@@ -30,7 +30,7 @@ v0.3은 Harness Maestro를 scheduler나 장기 실행 runtime으로 바꾸지 �
 5. 20개의 고정 route 사례로 v1 선택과 v2 계획의 회귀를 검사한다.
 
 실제 agent 생성, 실행 순서 제어, retry, checkpoint, resume, per-call trace와 HTML
-Inspector는 이 계획의 현재 구현 범위가 아니다.
+Inspector는 현재 구현 범위가 아니다.
 
 ## 사용자에게 보이는 흐름
 
@@ -219,7 +219,7 @@ Maestro가 소유하고 message text와 분리한다.
 
 ## 범위 제한
 
-이번 계획은 다음 상한을 유지한다.
+현재 계약은 다음 상한을 유지한다.
 
 - 신규 runtime module 1개
 - 신규 schema 1개
@@ -250,5 +250,5 @@ framework를 새로 만드는 것보다 한 모듈의 명시적 계약이 더 �
 `docs/runbooks/codex-host-conformance.md`에 따라 확인하고, 관찰하지 않은 PASS
 artifact를 미리 만들지 않는다.
 
-이 문서는 구현 계획과 현재 계약의 권위다. 개별 작업 transcript나 per-run 보고서를
+이 문서는 현재 계약의 권위다. 개별 작업 transcript나 per-run 보고서를
 추가하지 않는다.

@@ -1,0 +1,42 @@
+{
+  "entries": [
+    {
+      "ownership": "managed_block",
+      "path": ".gitignore",
+      "preserve_on_drift": true,
+      "sha256": "c36a0f213f96f4eec7ca83536276d33e7b5124241e0a552bc7cd054d817b26d4"
+    },
+    {
+      "ownership": "managed_block",
+      "path": "AGENTS.md",
+      "preserve_on_drift": true,
+      "sha256": "873b772b6be7cb5a6b431135a28f857b89d73bedf0ca0f9545e9bcf2e22174fc"
+    },
+    {
+      "ownership": "seeded",
+      "path": "docs/README.md",
+      "preserve_on_drift": true,
+      "sha256": "d57e08dc5bc153b9e183c237eca4373ca09d5ae68889a4eb75de39090aa49cc7"
+    },
+    {
+      "ownership": "seeded",
+      "path": "docs/architecture.md",
+      "preserve_on_drift": true,
+      "sha256": "0adff6e25cb67b4c836df0fd10e66544cc3b62fe5846f273f0659f65a8cd28d4"
+    },
+    {
+      "ownership": "seeded",
+      "path": "docs/governance/document-lifecycle.md",
+      "preserve_on_drift": true,
+      "sha256": "5c8842ec0fa3564c91783ab189df6ec46415778975c33d69ef816e278621d749"
+    },
+    {
+      "ownership": "seeded",
+      "path": "docs/project.md",
+      "preserve_on_drift": true,
+      "sha256": "4c91b575d38c2beb9efd0b84694ee8048b4109c54711a2ec339c2a3198c075a7"
+    }
+  ],
+  "kind": "managed",
+  "schema_version": "maestro_managed_v1"
+}

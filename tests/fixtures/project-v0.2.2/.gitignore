@@ -1,0 +1,4 @@
+# MAESTRO:BEGIN
+.maestro/state/
+.maestro/backups/
+# MAESTRO:END

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.support import apply_fresh_init, check_by_id, write_json
+from tests.support import ROOT, apply_fresh_init, check_by_id, write_json
 
 from maestro import __version__
 from maestro.conventions import (
@@ -21,23 +21,16 @@ from maestro.documents import select_documents
 
 class HostInstallationTests(unittest.TestCase):
     def test_codex_host_checks_cli_version_and_skill_wiring(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            skill_root = Path(temporary) / "skills"
-            for skill_id in CODEX_SKILLS:
-                skill_file = skill_root / skill_id / "SKILL.md"
-                skill_file.parent.mkdir(parents=True)
-                skill_file.write_text(f"---\nname: {skill_id}\n---\n", encoding="utf-8")
+        with (
+            patch("maestro.host.shutil.which", return_value="/tools/maestro"),
+            patch("maestro.host.metadata.version", return_value=__version__),
+        ):
+            checks = host_installation_checks(
+                "codex",
+                skill_root=ROOT / "skills",
+            )
 
-            with (
-                patch("maestro.host.shutil.which", return_value="/tools/maestro"),
-                patch("maestro.host.metadata.version", return_value=__version__),
-            ):
-                checks = host_installation_checks(
-                    "codex",
-                    skill_root=skill_root,
-                )
-
-            self.assertTrue(all(item["status"] == "PASS" for item in checks))
+        self.assertTrue(all(item["status"] == "PASS" for item in checks))
 
     def test_codex_host_reports_missing_companions_and_version_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -59,6 +52,7 @@ class HostInstallationTests(unittest.TestCase):
             self.assertEqual("WARN", by_id["HOST_CLI_VERSION"]["status"])
             self.assertEqual("PASS", by_id["HOST_ROOT_SKILL"]["status"])
             self.assertEqual("WARN", by_id["HOST_COMPANION_SKILLS"]["status"])
+            self.assertEqual("FAIL", by_id["HOST_SKILL_RELEASE_BINDING"]["status"])
             self.assertIn("maestro-product-design", by_id["HOST_COMPANION_SKILLS"]["evidence"])
 
 

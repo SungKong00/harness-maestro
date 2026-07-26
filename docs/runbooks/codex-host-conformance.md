@@ -57,7 +57,7 @@ route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판�
 ```json
 {
   "schema_version": "maestro_host_conformance_v1",
-  "framework_version": "0.2.2",
+  "framework_version": "0.3.0",
   "host": "codex",
   "checked_at": "2026-07-26",
   "scenarios": {

@@ -70,7 +70,8 @@ class PackageContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("uv tool install --editable", readme)
-        self.assertIn("checkout --detach v0.2.2", readme)
+        self.assertIn("checkout --detach <published-tag>", readme)
+        self.assertIn("scripts/release_manifest.py", readme)
         self.assertIn("uv tool install /path/to/harness-maestro", readme)
         self.assertIn("command -v maestro", readme)
         self.assertIn("maestro --version", readme)
@@ -94,7 +95,11 @@ class PackageContractTests(unittest.TestCase):
             if item["name"] == "harness-maestro"
         )
 
-        self.assertEqual("0.2.2", pyproject["project"]["version"])
+        self.assertEqual("0.3.0", pyproject["project"]["version"])
+        self.assertEqual(
+            ">=3.11,<3.14",
+            pyproject["project"]["requires-python"],
+        )
         self.assertEqual(pyproject["project"]["version"], __version__)
         self.assertEqual(__version__, package["version"])
         workflow = ROOT / ".github/workflows/ci.yml"
@@ -103,7 +108,16 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("python -m unittest discover -s tests -v", workflow_text)
         self.assertIn("python scripts/validate_skills.py", workflow_text)
         self.assertIn("scripts/verify_wheel.py", workflow_text)
+        self.assertIn("scripts/release_manifest.py --check", workflow_text)
+        self.assertIn('python-version: ["3.11", "3.12", "3.13"]', workflow_text)
+        self.assertIn("python -m build", workflow_text)
+        self.assertIn("harness_maestro-*.tar.gz", workflow_text)
         self.assertIn("doctor --repo", workflow_text)
+        release_workflow = ROOT / ".github/workflows/release.yml"
+        self.assertTrue(release_workflow.is_file())
+        release_text = release_workflow.read_text(encoding="utf-8")
+        self.assertIn('--tag-ref "$GITHUB_REF_NAME"', release_text)
+        self.assertIn("SHA256SUMS", release_text)
 
 
 if __name__ == "__main__":

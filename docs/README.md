@@ -25,13 +25,14 @@ sensitivity: internal
 3. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
 4. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
    분리하는 이유
-5. [v0.2 활성 계획](plans/active/v0.md) — 현재 기준선의 릴리스 범위와 완료 조건
-6. [v0.3 Typed Plan 계획](plans/active/v0.3-typed-plan.md) — route v1 호환
+5. [Typed Assignment Plan](architecture/typed-assignment-plan.md) — route v1 호환
    Assignment DAG, 실행 전 검증과 HTML·resume의 단계적 도입 조건
-7. [v0.4 Expertise Pack 계획](plans/active/v0.4-expertise-packs.md) — 선택형
-   전문가 기준, 조건부 reference research와 project-local 후보 수명주기
-8. [v0.5 Decision Workflow 계획](plans/active/v0.5-decision-workflow.md) —
-   판단과 구현 분리, Specialist 역할 경계, DecisionBundle과 실행 승인
+6. [Expertise Pack](architecture/expertise-packs.md) — 선택형 전문가 기준,
+   조건부 reference research와 project-local 후보 수명주기
+7. [Decision Workflow](architecture/decision-workflow.md) — 판단과 구현 분리,
+   Specialist 역할 경계, DecisionBundle과 실행 승인
+8. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+   릴리스·실사용 Pilot TODO만 관리
 
 ## 거버넌스
 
@@ -64,6 +65,7 @@ sensitivity: internal
 - [ADR-0005: 프로젝트 로컬 개선과 사용자 문서 Adapter 경계](decisions/0005-project-local-extension-boundary.md)
 - [ADR-0006: 증거를 선택형 전문성 팩으로 컴파일](decisions/0006-evidence-compiled-expertise.md)
 - [ADR-0007: 판단과 실행 승인을 분리](decisions/0007-separate-decision-and-execution.md)
+- [ADR-0008: CLI·Registry·Skill의 콘텐츠 기반 릴리스 결합](decisions/0008-content-addressed-release.md)
 
 ## 역사 자료
 

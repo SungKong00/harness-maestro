@@ -321,7 +321,7 @@ exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않�
 될 때에만 persistence나 전용 runtime을 다시 평가한다.
 
 구현 범위와 HTML Inspector의 도입 게이트는
-[v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)에 고정한다.
+[Typed Assignment Plan](../architecture/typed-assignment-plan.md)에 고정한다.
 
 ## 8. 전문가 역할은 persona가 아니라 선택형 판단 기준으로 만든다
 
@@ -366,7 +366,7 @@ workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 
 불필요한 호출과 project-specific preference를 만들 수 있다.
 
 첫 파일럿과 research gate 계약은
-[v0.4 Expertise Pack 계획](../plans/active/v0.4-expertise-packs.md),
+[Expertise Pack](../architecture/expertise-packs.md),
 저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)에 있다.
 
 ## 9. 판단과 실행 권한은 다른 artifact로 연결한다
@@ -422,7 +422,7 @@ Host Adapter나 runtime 확장을 검토한다.
 
 구현 권위는
 [ADR-0007](../decisions/0007-separate-decision-and-execution.md)과
-[v0.5 Decision Workflow 계획](../plans/active/v0.5-decision-workflow.md)에 있다.
+[Decision Workflow](../architecture/decision-workflow.md)에 있다.
 
 ## 세부 동작과 근거 연결표
 
@@ -437,7 +437,7 @@ Host Adapter나 runtime 확장을 검토한다.
 | Markdown 기본 권위와 주제별 단일 원본 | ADR, repository system of record, Diátaxis의 목적 분리 | [ADR-0004](../decisions/0004-single-document-authority.md) |
 | custom Adapter는 handoff만 하고 임의 명령은 실행하지 않음 | 최소 커널과 프로젝트 권한 경계 | [ADR-0005](../decisions/0005-project-local-extension-boundary.md) |
 | 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
-| v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md) |
+| v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
 | 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
 | read-only DecisionPlan, 역할 제한 packet, digest-bound enactment | OpenAI orchestration·guardrails, OWASP least privilege, LangGraph HITL, gstack·Superpowers 단계 분리 | [ADR-0007](../decisions/0007-separate-decision-and-execution.md) |
 

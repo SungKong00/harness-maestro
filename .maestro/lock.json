@@ -7,11 +7,11 @@
   ],
   "framework": {
     "name": "harness-maestro",
-    "version": "0.2.2"
+    "version": "0.3.0"
   },
   "kind": "lock",
   "managed": {
-    "sha256": "f037f3159c8883d531cbc34a9c8808d61a82412ef28d81c2f0a01fb665a5238e"
+    "sha256": "bebb2004da0cf2f8e94e924b8e944cb331f6a19ad7dbd4403583bc8c5711f203"
   },
   "registry": {
     "sha256": "beed3ad2a2a93d41815f621afb901e5f38df2e49d52814b52d5a305c9965c3d0",

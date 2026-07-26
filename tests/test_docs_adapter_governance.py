@@ -1246,6 +1246,41 @@ class GovernanceReportTests(unittest.TestCase):
             self.assertEqual(0, report["events_considered"])
             self.assertEqual(1, report["excluded_definition_records"])
 
+    def test_prior_release_event_is_reused_when_selected_definitions_match(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(encoding="utf-8")
+            )
+            events_dir = repo / project["state_root"] / "events"
+            events_dir.mkdir(parents=True)
+            record = event(
+                project["project_id"],
+                checkout_id(repo),
+                "prior-release-run",
+                "compatible-gap",
+            )
+            record["framework_version"] = "0.2.2"
+            record["registry_digest"] = "f" * 64
+            (events_dir / "events.jsonl").write_text(
+                json.dumps(record, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            report = govern_report(repo, window=20, threshold=2)
+
+            self.assertEqual(1, report["events_considered"])
+            self.assertEqual(1, report["included_compatible_records"])
+            self.assertEqual(0, report["excluded_version_records"])
+            self.assertEqual(
+                [{"fingerprint": "compatible-gap", "occurrences": 1}],
+                report["observations"],
+            )
+
     def test_nonfinite_duration_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

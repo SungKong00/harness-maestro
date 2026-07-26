@@ -1,0 +1,31 @@
+{
+  "adapters": [
+    "generic-repo"
+  ],
+  "approval_required_for": [
+    "external_write",
+    "authority_change",
+    "adapter_change",
+    "harness_promotion"
+  ],
+  "commands": [],
+  "documentation": {
+    "core_documents": {
+      "architecture": "docs/architecture.md",
+      "project": "docs/project.md"
+    },
+    "entrypoint": "docs/README.md",
+    "external_topics": {},
+    "provider": "markdown"
+  },
+  "kind": "project",
+  "profiles": [],
+  "project_id": "legacy-project",
+  "schema_version": "maestro_project_v1",
+  "self_improvement": {
+    "max_updates_per_run": 1,
+    "mode": "verified-project-conventions"
+  },
+  "state_root": ".maestro/state",
+  "verification_commands": []
+}

@@ -7,6 +7,7 @@ from . import __version__
 from .documents import core_document_status
 from .doctor import doctor_report
 from .errors import MaestroError
+from .governance import govern_report
 from .project import build_upgrade_plan
 from .util import ensure_repo, read_json, safe_target
 
@@ -68,6 +69,38 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
         else 0
     )
 
+    governance: dict[str, Any] = {
+        "status": "not_available",
+        "review_due": False,
+        "candidate_count": 0,
+        "evidence_status": "uninitialized",
+    }
+    if initialized:
+        try:
+            governance_report = govern_report(repo)
+            governance = {
+                "status": "available",
+                "review_due": governance_report["governance_review_due"],
+                "candidate_count": len(
+                    governance_report["candidates_for_review"]
+                ),
+                "evidence_status": governance_report["evidence_status"],
+                "included_compatible_records": governance_report[
+                    "included_compatible_records"
+                ],
+                "retention_review_due": governance_report["retention"][
+                    "review_due"
+                ],
+            }
+        except MaestroError as exc:
+            governance = {
+                "status": "unavailable",
+                "review_due": False,
+                "candidate_count": 0,
+                "evidence_status": "unavailable",
+                "error": {"code": exc.code, "message": exc.message},
+            }
+
     next_actions: list[dict[str, Any]] = []
     if not initialized:
         next_actions.append(
@@ -115,6 +148,17 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
                 ),
             }
         )
+    if governance["review_due"]:
+        next_actions.append(
+            {
+                "id": "review_governance_candidates",
+                "command": f"maestro govern report --repo {repo} --json",
+                "reason": (
+                    f"{governance['candidate_count']} repeated, verified "
+                    "improvement candidate(s) need owner review."
+                ),
+            }
+        )
 
     documentation = project.get("documentation") if project else None
     self_improvement = project.get("self_improvement") if project else None
@@ -146,6 +190,7 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
             },
         },
         "self_improvement": self_improvement,
+        "governance": governance,
         "pending_managed_operations": [
             {
                 "op": item["op"],

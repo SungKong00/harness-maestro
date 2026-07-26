@@ -1,18 +1,18 @@
 ---
 maestro_doc: 1
-id: HM-PLAN-004
-type: plan
+id: HM-ARCH-004
+type: architecture
 status: active
 authority: repository
 owner: harness-maestro
-summary: 반복 가능한 전문가 판단을 선택형 Expertise Pack으로 재사용하고 최신 맥락 조사와 후보 승격을 bounded gate로 분리하는 v0.4 계획.
+summary: 반복 가능한 전문가 판단을 선택형 Expertise Pack으로 재사용하고 최신 맥락 조사와 후보 승격을 bounded gate로 분리하는 계약.
 scope: [expertise, registry, route-v2, skills, governance]
 last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
 
-# v0.4 Expertise Pack
+# Expertise Pack
 
 ## 목표
 

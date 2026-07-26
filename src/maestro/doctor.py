@@ -895,7 +895,7 @@ def doctor_report(
         )
 
     if host_id is not None:
-        checks.extend(host_installation_checks(host_id))
+        checks.extend(host_installation_checks(host_id, project_root=repo))
 
     failures = [item for item in checks if item["status"] == "FAIL"]
     warnings = [item for item in checks if item["status"] == "WARN"]

@@ -586,16 +586,37 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             report = govern_report(repo, window=20, threshold=3)
 
+            self.assertEqual(1, len(report["candidates_for_review"]))
+            candidate = report["candidates_for_review"][0]
             self.assertEqual(
-                [
-                    {
-                        "fingerprint": "repeated-verification-gap",
-                        "occurrences": 3,
-                        "status": "candidate_for_review",
-                        "automatic_change_allowed": False,
-                    }
-                ],
-                report["candidates_for_review"],
+                {
+                    "fingerprint": "repeated-verification-gap",
+                    "occurrences": 3,
+                    "severity": "high",
+                    "status": "candidate_for_review",
+                    "automatic_change_allowed": False,
+                },
+                {
+                    key: candidate[key]
+                    for key in (
+                        "fingerprint",
+                        "occurrences",
+                        "severity",
+                        "status",
+                        "automatic_change_allowed",
+                    )
+                },
+            )
+            self.assertEqual(3, len(candidate["evidence_refs"]))
+            self.assertEqual(3, len(candidate["command_artifact_refs"]))
+            self.assertIn("Classify the gap", candidate["next_step"])
+            self.assertTrue(report["governance_review_due"])
+
+            status = status_report(repo)
+            self.assertTrue(status["governance"]["review_due"])
+            self.assertEqual(
+                "review_governance_candidates",
+                status["next_actions"][-1]["id"],
             )
 
 

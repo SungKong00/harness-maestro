@@ -11,8 +11,8 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [전체 사용 흐름](#전체-사용-흐름) · [빠른 시작](#빠른-시작) ·
 [언제 무엇을 쓰나요?](#언제-무엇을-쓰나요) ·
 [문서 지도](docs/README.md) ·
-[전문성 팩 계획](docs/plans/active/v0.4-expertise-packs.md) ·
-[판단 우선 계획](docs/plans/active/v0.5-decision-workflow.md) ·
+[전문성 팩 구조](docs/architecture/expertise-packs.md) ·
+[판단 우선 구조](docs/architecture/decision-workflow.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
 
 ## 먼저 이것만 알면 됩니다
@@ -79,7 +79,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 
 ## 빠른 시작
 
-요구 사항은 Python 3.11 이상과 [`uv`](https://docs.astral.sh/uv/)입니다.
+요구 사항은 Python 3.11~3.13과 [`uv`](https://docs.astral.sh/uv/)입니다.
 
 ### 1. 컴퓨터에서 한 번: 프레임워크 설치
 
@@ -95,11 +95,17 @@ maestro --version
 검토된 tag가 발행된 뒤 재현 가능한 버전을 고정할 때:
 
 ```bash
-git -C /path/to/harness-maestro checkout --detach v0.2.2
+git -C /path/to/harness-maestro fetch --tags
+git -C /path/to/harness-maestro checkout --detach <published-tag>
+python3 /path/to/harness-maestro/scripts/release_manifest.py \
+  --check --tag-ref <published-tag>
 uv tool install /path/to/harness-maestro
 ```
 
-`v0.2.2`는 저장소에 실제 tag가 발행된 경우에만 두 번째 예시에 사용하세요.
+`<published-tag>`에는 원격에 실제 존재하는 태그만 사용합니다. release workflow는
+태그, 패키지 버전과 content-addressed release manifest가 다르면 artifact를 만들지
+않습니다. 저장소 관리자는 GitHub ruleset으로 `v*` 태그의 수정·삭제를 막아 이미
+발행한 release identity가 다른 commit으로 이동하지 않게 해야 합니다.
 
 ### 2. 컴퓨터에서 한 번: `$maestro` Skill 연결
 
@@ -116,10 +122,11 @@ done
 기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
 **restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
 
-연결 상태와 editable 설치 버전을 함께 확인할 수 있습니다.
+연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 다섯 Skill이 같은
+`release_id`인지 함께 확인합니다.
 
 ```bash
-maestro doctor --repo /path/to/harness-maestro --host codex --json
+maestro doctor --repo /path/to/harness-maestro --host codex --strict --json
 ```
 
 ### 3. 프로젝트마다 한 번: 초기화
@@ -265,9 +272,10 @@ project/
 |---|---|
 | 설치, 초기화, 일반 운용 | [시작 및 운용 가이드](docs/runbooks/getting-started.md) |
 | 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
-| v0.3 Assignment Plan·검증·HTML 후속 계획 | [v0.3 Typed Plan 계획](docs/plans/active/v0.3-typed-plan.md) |
-| 전문가 기준 재사용·조건부 조사·후보 관리 | [v0.4 Expertise Pack 계획](docs/plans/active/v0.4-expertise-packs.md) |
-| 판단·역할 검토·결정 번들·실행 승인 | [v0.5 Decision Workflow 계획](docs/plans/active/v0.5-decision-workflow.md) |
+| 현재 릴리스 TODO | [v0.3 릴리스 계획](docs/plans/active/v0.3-release.md) |
+| Assignment Plan·검증·HTML 도입 경계 | [Typed Assignment Plan](docs/architecture/typed-assignment-plan.md) |
+| 전문가 기준 재사용·조건부 조사·후보 관리 | [Expertise Pack](docs/architecture/expertise-packs.md) |
+| 판단·역할 검토·결정 번들·실행 승인 | [Decision Workflow](docs/architecture/decision-workflow.md) |
 | Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
 | 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
 | 개선 후보가 Convention이 되는 조건 | [구성요소 생명주기](docs/governance/component-lifecycle.md) |

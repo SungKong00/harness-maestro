@@ -1,0 +1,34 @@
+{
+  "framework_version": "0.3.0",
+  "registry": {
+    "sha256": "beed3ad2a2a93d41815f621afb901e5f38df2e49d52814b52d5a305c9965c3d0"
+  },
+  "release_id": "bbe56275e9ca7086f39eeebabda2655c3a9aeb9966561e4fe8c07c74b295d146",
+  "runtime": {
+    "file_count": 53,
+    "sha256": "90dd277fe44c30e27a891986d284ea5c0924cbdc6c2d4342fcbd840afaed2bac"
+  },
+  "schema_version": "maestro_release_manifest_v1",
+  "skills": {
+    "maestro": {
+      "file_count": 7,
+      "sha256": "e531c11d220bb5a85c0cad82a5c2fa3c7b29dc2a1dd465e0432099917f2b73f0"
+    },
+    "maestro-adapter-builder": {
+      "file_count": 4,
+      "sha256": "873f1cd67821746433abd1a30bc3dd87da5f91435663286b4ec78741bcbb34c5"
+    },
+    "maestro-expertise-builder": {
+      "file_count": 4,
+      "sha256": "bf8d66b96b5cdb360fc9c50b779b9d4a3f9fe72f66bfbe8870b2699eb0613997"
+    },
+    "maestro-govern": {
+      "file_count": 4,
+      "sha256": "29fbe46362a5a40bbe104c1b7336cd921e8a2eaa7776d8c1503b4ba61b0c439a"
+    },
+    "maestro-product-design": {
+      "file_count": 9,
+      "sha256": "b09c853b59f1843fe5f33388dc14745a7025215c5fe23bda70dbf26744e2914a"
+    }
+  }
+}

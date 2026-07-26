@@ -114,12 +114,12 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 
 Route v2는 scheduler가 아니라 실행 전 계약이다. 실제 Assignment 시작·종료, model
 call, token과 duration은 Host가 측정 출처와 함께 반환하기 전까지 `actual` evidence로
-간주하지 않는다. 상세 범위와 후속 HTML 조회 계획은
-[v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)을 따른다.
+간주하지 않는다. 상세 범위와 후속 HTML 조회 조건은
+[Typed Assignment Plan](typed-assignment-plan.md)을 따른다.
 Expertise Pack과 조건부 research는
-[v0.4 Expertise Pack 계획](../plans/active/v0.4-expertise-packs.md)을 따른다.
+[Expertise Pack](expertise-packs.md)을 따른다.
 판단·역할 격리·실행 승인은
-[v0.5 Decision Workflow 계획](../plans/active/v0.5-decision-workflow.md)을 따른다.
+[Decision Workflow](decision-workflow.md)을 따른다.
 
 ## 작업 강도
 

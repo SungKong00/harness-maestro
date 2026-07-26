@@ -64,6 +64,17 @@ observed → candidate → pilot → active → deprecated → retired
 기록한다. `maestro govern report`는 그 범위에 속한 최근 JSONL만 읽고 반복
 fingerprint를 보여 준다. 보고서는 다음 행동을 자동 수행하지 않는다.
 
+과거 기록은 전체 Registry digest가 달라졌다는 이유만으로 버리지 않는다. 현재 event
+schema로 검증되고, 해당 실행이 실제로 사용한 Lens·Executor·Expertise Pack의
+definition digest가 모두 현재 정의와 같을 때만 `compatible` 근거로 포함한다.
+선택 컴포넌트 하나라도 달라진 기록은 계속 제외한다. report는 포함한 compatible
+record 수를 별도로 보여 주며 서로 다른 definition을 같은 Pilot arm으로 합치지 않는다.
+
+반복 임계치를 넘은 후보는 fingerprint와 횟수만 보여 주지 않는다. 심각도, 마지막
+run, 최신 evidence와 command artifact를 각각 최대 세 개만 노출한다. `maestro status`
+는 이런 후보가 있으면 `review_governance_candidates`를 다음 행동으로 추가하지만
+어떤 파일도 자동 수정하지 않는다.
+
 일반 완료는 `run_summary`로 기록한다. 반복 개선 근거로 사용할
 `review_finding`, `verification_failure`, `correction`은 안정적인 fingerprint,
 severity, evidence, command artifact를 함께 기록해야 한다. 동일 `run_id`와 동일

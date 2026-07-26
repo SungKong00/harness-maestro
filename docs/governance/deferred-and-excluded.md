@@ -68,6 +68,29 @@ sensitivity: internal
 | 전체 Packet 의미·참조 validator와 계약 catalog | deferred | route v2는 Assignment의 명시적 Packet ID와 Executor accepts·returns만 검사하며, Finding·Review·Research 내부 의미와 source ref·tier 규칙 전체는 아직 비강제 계약임 | source ref, tier 채택 규칙과 모든 Packet conformance test |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
 
+## 큰 자동화 기능의 재평가
+
+| 기능 | 구현 난이도 | 현재 적합성 | 실제 도입에 필요한 최소 경계 |
+|---|---|---|---|
+| 백그라운드 자동 업데이트 데몬 | 높음 | 낮음 | 서명·rollback 공격 방지 metadata, update lock, 프로세스 수명주기, 네트워크 실패·부분 설치 복구, 사용자 채널·snooze 정책 |
+| 벡터 지식 database | 중간~높음 | 낮음 | 정적 문서 선택이 실패하는 측정 사례, embedding provider·version pin, re-index·삭제·권한·민감 정보 정책, exact/FTS baseline 대비 retrieval eval |
+| 자동 Convention 승격 | 중간 | 낮음 | deterministic 또는 held-out evaluator, counterexample, shadow 기간, 사람 승인과 한 단계 rollback; 단순 반복 횟수는 불충분 |
+| 자동 Skill 승격 | 매우 높음 | 매우 낮음 | trigger recall/precision, 결과 품질과 인접 회귀 eval, source freshness, 권한·tool 경계, clean-session activation, 사람 승인과 버전 배포 |
+
+자동 updater는 단순한 주기적 `git pull`이 아니다. package manager가 소유한 격리
+환경과 immutable tag를 우회하면 현재 release identity 보장을 다시 깨뜨린다.
+현재는 사용자가 `uv tool install <pinned checkout>`을 실행하고 strict Doctor로
+검증하는 경계가 더 작고 복구 가능하다.
+
+벡터 저장소를 쓰기 전에 현재 metadata/keyword selector와 필요하면 SQLite FTS 같은
+로컬 exact-text baseline을 측정한다. 문서와 guide가 수백~수천 개가 되어 같은 의미의
+표현 차이 때문에 실제 누락이 반복될 때만 embedding retrieval Pilot을 연다.
+
+Convention과 Skill의 자동화는 “후보 생성과 평가 실행”까지만 허용할 수 있다.
+active 권위로의 승격은 프로젝트 owner 또는 별도 release owner의 승인 없이는
+수행하지 않는다. 특히 Skill은 여러 프로젝트에 영향을 주므로 Convention보다 더
+강한 eval과 릴리스 결합이 필요하다.
+
 ## 의도적으로 유지한 제한
 
 - 반박은 중요한 충돌에만 한 번 허용하고, 새 외부 증거가 없으면 끝낸다.

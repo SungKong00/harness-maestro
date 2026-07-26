@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/release-manifest.schema.json",
+  "title": "Harness Maestro Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "framework_version",
+    "release_id",
+    "runtime",
+    "registry",
+    "skills"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_release_manifest_v1"
+    },
+    "framework_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "runtime": {
+      "$ref": "#/$defs/tree"
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maestro",
+        "maestro-adapter-builder",
+        "maestro-govern",
+        "maestro-product-design",
+        "maestro-expertise-builder"
+      ],
+      "properties": {
+        "maestro": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-adapter-builder": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-govern": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-product-design": {
+          "$ref": "#/$defs/tree"
+        },
+        "maestro-expertise-builder": {
+          "$ref": "#/$defs/tree"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "file_count"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

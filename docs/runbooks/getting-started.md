@@ -20,7 +20,7 @@ sensitivity: internal
 
 ## 1. 설치 방식 선택
 
-요구 사항은 Python 3.11 이상과 [`uv`](https://docs.astral.sh/uv/)다.
+요구 사항은 Python 3.11~3.13과 [`uv`](https://docs.astral.sh/uv/)다.
 
 현재 checkout을 수정하면서 바로 시험할 때:
 
@@ -32,11 +32,17 @@ uv tool install --editable /path/to/harness-maestro
 발행된 tag를 재현 가능한 버전으로 사용할 때:
 
 ```bash
-git -C /path/to/harness-maestro checkout --detach v0.2.2
+git -C /path/to/harness-maestro fetch --tags
+git -C /path/to/harness-maestro checkout --detach <published-tag>
+python3 /path/to/harness-maestro/scripts/release_manifest.py \
+  --check --tag-ref <published-tag>
 uv tool install /path/to/harness-maestro
 ```
 
-예시 tag가 원격 저장소에 실제로 발행되지 않았다면 editable checkout을 사용한다.
+태그가 원격 저장소에 실제로 발행되지 않았다면 editable checkout을 사용한다.
+release install은 태그, `pyproject.toml`, package version과
+`release-manifest.json`의 version이 일치해야 한다. 저장소 관리자는 GitHub
+ruleset으로 `v*` 태그의 수정·삭제를 막아 발행된 태그를 불변 경계로 유지한다.
 
 ```bash
 command -v maestro
@@ -72,9 +78,22 @@ maestro doctor --repo /path/to/harness-maestro --host codex --json
 기존 경로가 있으면 먼저 실제 target을 확인한다. `ln`은 기존 경로를 덮어쓰지
 않는다. 연결 뒤에는 agent client를 재시작해 Skill 목록을 다시 읽게 한다.
 `--host codex`는 전역 파일을 수정하지 않고 CLI 발견 경로, 설치 metadata 버전,
-루트 Skill과 bundled companion Skill의 filesystem 배선만 검사한다. Codex가 이미
-catalog를 다시 읽었는지는 CLI가 증명할 수 없으므로 연결 변경 뒤 재시작은 여전히
-필요하다.
+runtime·Registry digest, 각 Skill의 실제 symlink target과 digest, 동일 이름의
+중복 설치를 검사한다. 다섯 Skill은 서로 다른 경로에 있어도 동일한 content-addressed
+`release_id`여야 하며, 하나라도 릴리스 이후 수정됐다면 strict Doctor는 실패한다.
+Codex가 이미 catalog를 다시 읽었는지는 CLI가 증명할 수 없으므로 연결 변경 뒤
+재시작은 여전히 필요하다.
+
+개발 중 runtime이나 Skill을 의도적으로 수정했다면 전체 검증이 끝난 뒤 파생 manifest를
+갱신하고 다시 확인한다.
+
+```bash
+python3 scripts/release_manifest.py --write
+python3 scripts/release_manifest.py --check
+```
+
+manifest 갱신은 변경을 승인하거나 태그를 만드는 행위가 아니다. CI와 release
+workflow가 source 내용과 manifest가 정확히 일치하는지만 확인한다.
 
 ## 3. 프로젝트 초기화
 

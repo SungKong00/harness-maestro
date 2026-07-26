@@ -1213,14 +1213,15 @@ def _classify_event(
         return "foreign", None
     if not _valid_event(event):
         return "invalid", None
+    if not _definition_digests_match(event, expected_definition_digests):
+        return "definition", None
+    timestamp = _parse_timestamp(event["timestamp"])
     if (
         event["framework_version"] != framework_version
         or event["registry_digest"] != current_registry_digest
     ):
-        return "version", None
-    if not _definition_digests_match(event, expected_definition_digests):
-        return "definition", None
-    return "eligible", _parse_timestamp(event["timestamp"])
+        return "compatible", timestamp
+    return "eligible", timestamp
 
 
 def govern_report(
@@ -1310,6 +1311,7 @@ def govern_report(
     invalid_records = 0
     excluded_version_records = 0
     excluded_definition_records = 0
+    included_compatible_records = 0
     duplicate_event_records = 0
     truncated_records = 0
     skipped_event_files = 0
@@ -1407,6 +1409,8 @@ def govern_report(
                             if status == "definition":
                                 excluded_definition_records += 1
                                 continue
+                            if status == "compatible":
+                                included_compatible_records += 1
                             if timestamp is None:
                                 invalid_records += 1
                                 continue
@@ -1482,7 +1486,10 @@ def govern_report(
                                 current_registry_digest=current_registry_digest,
                                 expected_definition_digests=expected_definitions,
                             )
-                            if status != "eligible" or timestamp is None:
+                            if (
+                                status not in {"eligible", "compatible"}
+                                or timestamp is None
+                            ):
                                 continue
                             inserted = connection.execute(
                                 "INSERT OR IGNORE INTO event_ids(event_id) VALUES (?)",
@@ -1530,22 +1537,74 @@ def govern_report(
         for fingerprint, run_ids in fingerprint_runs.items()
     }
     eligible_fingerprint_runs: dict[str, set[str]] = {}
+    eligible_fingerprint_events: dict[str, list[dict[str, Any]]] = {}
     for event in considered:
         if _has_candidate_evidence(event):
             eligible_fingerprint_runs.setdefault(
                 event["fingerprint"],
                 set(),
             ).add(event["run_id"])
-    candidates = [
-        {
-            "fingerprint": fingerprint,
-            "occurrences": len(run_ids),
-            "status": "candidate_for_review",
-            "automatic_change_allowed": False,
-        }
-        for fingerprint, run_ids in sorted(eligible_fingerprint_runs.items())
-        if len(run_ids) >= threshold
-    ]
+            eligible_fingerprint_events.setdefault(
+                event["fingerprint"],
+                [],
+            ).append(event)
+
+    severity_order = {"medium": 1, "high": 2, "critical": 3}
+    candidates: list[dict[str, Any]] = []
+    for fingerprint, run_ids in sorted(eligible_fingerprint_runs.items()):
+        if len(run_ids) < threshold:
+            continue
+        events = sorted(
+            eligible_fingerprint_events[fingerprint],
+            key=lambda item: (
+                _parse_timestamp(item["timestamp"])
+                or datetime.min.replace(tzinfo=timezone.utc),
+                item["run_id"],
+            ),
+            reverse=True,
+        )
+        evidence_refs: list[str] = []
+        command_artifact_refs: list[str] = []
+        for event in events:
+            for evidence_ref in event["evidence_refs"]:
+                if (
+                    evidence_ref not in evidence_refs
+                    and len(evidence_refs) < 3
+                ):
+                    evidence_refs.append(evidence_ref)
+            artifact_ref = event.get("command_artifact_ref")
+            if (
+                isinstance(artifact_ref, str)
+                and artifact_ref not in command_artifact_refs
+                and len(command_artifact_refs) < 3
+            ):
+                command_artifact_refs.append(artifact_ref)
+        severity = max(
+            (
+                event["finding_severity"]
+                for event in events
+                if event["finding_severity"] in severity_order
+            ),
+            key=lambda item: severity_order[item],
+        )
+        latest = events[0]
+        candidates.append(
+            {
+                "fingerprint": fingerprint,
+                "occurrences": len(run_ids),
+                "severity": severity,
+                "latest_run_id": latest["run_id"],
+                "latest_timestamp": latest["timestamp"],
+                "evidence_refs": evidence_refs,
+                "command_artifact_refs": command_artifact_refs,
+                "status": "candidate_for_review",
+                "automatic_change_allowed": False,
+                "next_step": (
+                    "Classify the gap as a deterministic check, project "
+                    "Convention, Expertise Pack, or global Harness candidate."
+                ),
+            }
+        )
     unique_runs = [
         record["latest"]
         for record in selected_run_records
@@ -1600,6 +1659,7 @@ def govern_report(
         "invalid_records": invalid_records,
         "excluded_version_records": excluded_version_records,
         "excluded_definition_records": excluded_definition_records,
+        "included_compatible_records": included_compatible_records,
         "truncated_records": truncated_records,
         "skipped_event_files": skipped_event_files,
         "scan_truncated": scan_truncated,
@@ -1653,6 +1713,13 @@ def govern_report(
         ),
         "writes_performed": False,
         "promotion_supported": False,
+        "governance_review_due": bool(candidates),
+        "retention": {
+            "format": "daily-jsonl",
+            "raw_messages_stored": False,
+            "automatic_deletion_supported": False,
+            "review_due": skipped_event_files > 0 or directory_scan_truncated,
+        },
         "scan_limits": {
             "max_window": MAX_GOVERN_WINDOW,
             "max_fingerprints_per_run": MAX_FINGERPRINTS_PER_RUN,

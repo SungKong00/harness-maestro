@@ -1,18 +1,18 @@
 ---
 maestro_doc: 1
-id: HM-PLAN-005
-type: plan
+id: HM-ARCH-005
+type: architecture
 status: active
 authority: repository
 owner: harness-maestro
-summary: 구현 전 전문 판단이 필요한 요청을 read-only DecisionPlan, 역할 제한 packet, DecisionBundle과 digest-bound enactment로 처리하는 v0.5 계획.
+summary: 구현 전 전문 판단이 필요한 요청을 read-only DecisionPlan, 역할 제한 packet, DecisionBundle과 digest-bound enactment로 처리하는 계약.
 scope: [src/maestro/decisions.py, src/maestro/cli.py, skills/maestro, decision-workflow]
 last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
 
-# v0.5 Decision Workflow
+# Decision Workflow
 
 ## 해결할 문제
 
@@ -119,7 +119,7 @@ allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는
 
 unit test는 계약을 증명하지만 실제 Host가 read-only tools와 fresh context를
 강제했다는 증거는 아니다. 릴리스 후보에서는
-[Codex host conformance](../../runbooks/codex-host-conformance.md)의 decision-first
+[Codex host conformance](../runbooks/codex-host-conformance.md)의 decision-first
 시나리오를 별도로 실행한다.
 
 ## 이후 후보
