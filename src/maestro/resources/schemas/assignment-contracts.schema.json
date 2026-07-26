@@ -477,6 +477,9 @@
             }
           }
         },
+        "convention_selection": {
+          "$ref": "#/$defs/conventionSelection"
+        },
         "document_refs": {
           "type": "array",
           "maxItems": 8,
@@ -784,6 +787,158 @@
         },
         "retryable": {
           "type": "boolean"
+        },
+        "convention_dispositions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/conventionDisposition"
+          }
+        }
+      }
+    },
+    "conventionSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "selection_digest",
+        "selector_version",
+        "goal_digest",
+        "target_paths",
+        "evidence_status",
+        "documents",
+        "selected_conventions",
+        "missing_evidence"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_convention_selection_v1"
+        },
+        "selection_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "selector_version": {
+          "const": "maestro_docs_selection_v1"
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "target_paths": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "evidence_status": {
+          "enum": [
+            "sufficient",
+            "insufficient"
+          ]
+        },
+        "documents": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256",
+              "reason",
+              "document_type"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/repositoryPath"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "reason": {
+                "$ref": "#/$defs/line"
+              },
+              "document_type": {
+                "$ref": "#/$defs/line"
+              }
+            }
+          }
+        },
+        "selected_conventions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "reason": {
+                "$ref": "#/$defs/line"
+              }
+            }
+          }
+        },
+        "missing_evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "conventionDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "disposition",
+        "reason",
+        "approval_ref"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "disposition": {
+          "enum": [
+            "applied",
+            "not_applicable",
+            "waived",
+            "conflict"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/line"
+        },
+        "approval_ref": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^owner_decision:\\S.+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     }

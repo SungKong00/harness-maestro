@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,12 @@ from .util import (
 
 CONVENTION_DRAFT_PLAN_VERSION = "maestro_convention_draft_plan_v1"
 CONVENTION_LIFECYCLE_PLAN_VERSION = "maestro_convention_lifecycle_plan_v1"
+CONVENTION_HELD_OUT_EVALUATION_VERSION = (
+    "maestro_convention_held_out_evaluation_v1"
+)
+CONVENTION_EVALUATION_REQUEST_VERSION = (
+    "maestro_convention_evaluation_request_v1"
+)
 CONVENTION_INDEX_BEGIN = "<!-- MAESTRO:CONVENTIONS:BEGIN -->"
 CONVENTION_INDEX_END = "<!-- MAESTRO:CONVENTIONS:END -->"
 APPROVAL_REF_PATTERN = re.compile(
@@ -35,6 +41,7 @@ REQUIRED_BODY_SECTIONS = (
     "Verification",
     "Exceptions",
 )
+HELD_OUT_CATEGORIES = {"positive", "negative_scope", "regression"}
 
 
 def _required_text(value: str | None, field: str) -> str:
@@ -497,6 +504,7 @@ def _approval_evidence(
     approval_ref: str | None,
     verification_artifact: str | None,
     decision_summary: str | None,
+    candidate_sha256: str,
 ) -> dict[str, Any]:
     if basis not in {"owner_decision", "held_out_evaluation"}:
         raise MaestroError(
@@ -529,6 +537,18 @@ def _approval_evidence(
         verification_artifact,
         "verification-artifact",
     )
+    normalized_artifact_path = Path(artifact_path.replace("\\", "/"))
+    if (
+        normalized_artifact_path.is_absolute()
+        or ".." in normalized_artifact_path.parts
+        or artifact_path.startswith("./")
+        or artifact_path.startswith(".git/")
+        or artifact_path.startswith(".maestro/state/")
+    ):
+        raise MaestroError(
+            "CONVENTION_VERIFICATION_ARTIFACT_INVALID",
+            "verification-artifact must be a durable repository-local file outside .git and .maestro/state.",
+        )
     artifact = safe_target(repo, artifact_path)
     digest = file_sha256(artifact)
     if artifact.is_symlink() or digest is None:
@@ -536,14 +556,199 @@ def _approval_evidence(
             "CONVENTION_VERIFICATION_ARTIFACT_INVALID",
             "verification-artifact must be a regular repository-local file.",
         )
+    approval_strength = (
+        "owner_attested"
+        if basis == "owner_decision"
+        else "held_out_verified"
+    )
+    if basis == "held_out_evaluation":
+        validate_held_out_evaluation(
+            repo,
+            artifact,
+            candidate_sha256=candidate_sha256,
+        )
     return {
         "basis": basis,
+        "approval_strength": approval_strength,
         "approval_ref": approval_ref,
         "decision_summary": summary,
         "verification_artifact": {
             "path": artifact_path,
             "sha256": digest,
         },
+    }
+
+
+def _bounded_line(value: Any, *, limit: int = 500) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and len(value) <= limit
+        and not any(character in value for character in "\r\n\x00")
+    )
+
+
+def _valid_evaluation_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def validate_held_out_evaluation(
+    repo: Path,
+    artifact: Path,
+    *,
+    candidate_sha256: str,
+) -> dict[str, Any]:
+    """Validate semantic evidence before it can activate a Convention."""
+
+    value = read_json(artifact)
+    expected_fields = {
+        "schema_version",
+        "candidate_sha256",
+        "suite_sha256",
+        "source_revision",
+        "held_out",
+        "cases",
+        "critical_regressions",
+        "verifier",
+        "conditions",
+    }
+    if set(value) != expected_fields:
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out evaluation fields do not match the v1 contract.",
+        )
+    if (
+        value.get("schema_version")
+        != CONVENTION_HELD_OUT_EVALUATION_VERSION
+        or value.get("candidate_sha256") != candidate_sha256
+        or value.get("held_out") is not True
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out evaluation must bind the exact candidate and declare held_out=true.",
+        )
+    revision = repository_revision(repo)
+    expected_source_revision = (
+        revision.get("head")
+        if revision.get("kind") == "git"
+        else "unavailable"
+    )
+    if value.get("source_revision") != expected_source_revision:
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out evaluation source_revision does not match the current checkout HEAD.",
+        )
+    cases = value.get("cases")
+    if (
+        not isinstance(cases, list)
+        or len(cases) < 3
+        or len(cases) > 60
+        or value.get("suite_sha256")
+        != sha256_text(canonical_json(cases))
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out evaluation needs a content-addressed bounded case suite.",
+        )
+    categories: set[str] = set()
+    case_ids: set[str] = set()
+    failed_cases: list[str] = []
+    critical_failures = 0
+    case_fields = {
+        "case_id",
+        "category",
+        "assertion",
+        "result",
+        "critical",
+        "evidence_ref",
+    }
+    for item in cases:
+        if not isinstance(item, dict) or set(item) != case_fields:
+            raise MaestroError(
+                "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+                "Every held-out case must use the closed v1 case contract.",
+            )
+        case_id = item.get("case_id")
+        category = item.get("category")
+        if (
+            not isinstance(case_id, str)
+            or TOPIC_PATTERN.fullmatch(case_id) is None
+            or case_id in case_ids
+            or category not in HELD_OUT_CATEGORIES
+            or not _bounded_line(item.get("assertion"))
+            or item.get("result") not in {"passed", "failed"}
+            or not isinstance(item.get("critical"), bool)
+            or not _bounded_line(item.get("evidence_ref"))
+        ):
+            raise MaestroError(
+                "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+                "Held-out cases need unique IDs, valid categories, assertions, results, and evidence.",
+            )
+        case_ids.add(case_id)
+        categories.add(category)
+        if item["result"] == "failed":
+            failed_cases.append(case_id)
+            if item["critical"]:
+                critical_failures += 1
+    if categories != HELD_OUT_CATEGORIES:
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out evaluation requires positive, negative_scope, and regression cases.",
+        )
+    if (
+        not isinstance(value.get("critical_regressions"), int)
+        or isinstance(value.get("critical_regressions"), bool)
+        or value["critical_regressions"] != critical_failures
+        or failed_cases
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_FAILED",
+            f"Held-out evaluation did not pass every case: {failed_cases}.",
+        )
+    verifier = value.get("verifier")
+    if (
+        not isinstance(verifier, dict)
+        or set(verifier) != {
+            "command",
+            "exit_code",
+            "executed_at",
+        }
+        or not _bounded_line(verifier.get("command"))
+        or verifier.get("exit_code") != 0
+        or not _valid_evaluation_timestamp(verifier.get("executed_at"))
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out verifier must record a successful command and timezone-aware execution time.",
+        )
+    conditions = value.get("conditions")
+    if (
+        not isinstance(conditions, dict)
+        or set(conditions) != {"tool", "model", "budget"}
+        or not _bounded_line(conditions.get("tool"))
+        or any(
+            item is not None and not _bounded_line(item)
+            for item in (
+                conditions.get("model"),
+                conditions.get("budget"),
+            )
+        )
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+            "Held-out conditions must state the tool and explicitly record model and budget or null.",
+        )
+    return {
+        "case_count": len(cases),
+        "categories": sorted(categories),
+        "source_revision": expected_source_revision,
     }
 
 
@@ -566,6 +771,35 @@ def _finalize_lifecycle_plan(base: dict[str, Any]) -> dict[str, Any]:
     base["plan_id"] = digest[:20]
     base["plan_digest"] = digest
     return base
+
+
+def _held_out_evaluation_request(
+    repo: Path,
+    *,
+    command: str,
+    topic: str,
+    candidate_sha256: str,
+) -> dict[str, Any]:
+    revision = repository_revision(repo)
+    return {
+        "schema_version": CONVENTION_EVALUATION_REQUEST_VERSION,
+        "command": command,
+        "status": "evaluation_required",
+        "repo_root": str(repo),
+        "topic": topic,
+        "candidate_sha256": candidate_sha256,
+        "source_revision": (
+            revision["head"]
+            if revision["kind"] == "git"
+            else "unavailable"
+        ),
+        "artifact_schema": (
+            "schemas/convention-held-out-evaluation.schema.json"
+        ),
+        "required_categories": sorted(HELD_OUT_CATEGORIES),
+        "suite_digest_rule": "sha256(canonical_json(cases))",
+        "writes_performed": False,
+    }
 
 
 def build_convention_activation_plan(
@@ -604,6 +838,13 @@ def build_convention_activation_plan(
         )
     active = _render_active_from_draft(draft)
     _validate_active_content(target_path, active)
+    if basis == "held_out_evaluation" and verification_artifact is None:
+        return _held_out_evaluation_request(
+            repo,
+            command="convention-activate",
+            topic=normalized_topic,
+            candidate_sha256=sha256_text(active),
+        )
     entrypoint_path, entrypoint = _markdown_entrypoint(repo)
     active_paths = [*_all_active_paths(repo), target_path]
     indexed = _convention_index_content(entrypoint, active_paths)
@@ -613,6 +854,7 @@ def build_convention_activation_plan(
         approval_ref=approval_ref,
         verification_artifact=verification_artifact,
         decision_summary=decision_summary,
+        candidate_sha256=sha256_text(active),
     )
     return _finalize_lifecycle_plan(
         {
@@ -714,6 +956,13 @@ def build_convention_update_plan(
         )
     )
     _validate_active_content(target_path, updated)
+    if basis == "held_out_evaluation" and verification_artifact is None:
+        return _held_out_evaluation_request(
+            repo,
+            command="convention-update",
+            topic=normalized_topic,
+            candidate_sha256=sha256_text(updated),
+        )
     entrypoint_path, entrypoint = _markdown_entrypoint(repo)
     indexed = _convention_index_content(
         entrypoint,
@@ -725,6 +974,7 @@ def build_convention_update_plan(
         approval_ref=approval_ref,
         verification_artifact=verification_artifact,
         decision_summary=decision_summary,
+        candidate_sha256=sha256_text(updated),
     )
     return _finalize_lifecycle_plan(
         {
@@ -759,6 +1009,7 @@ def apply_convention_lifecycle_plan(
         "base_revision",
         "topic",
         "basis",
+        "approval_strength",
         "approval_ref",
         "decision_summary",
         "verification_artifact",
@@ -838,10 +1089,17 @@ def apply_convention_lifecycle_plan(
             exit_code=3,
         )
     basis = plan.get("basis")
+    approval_strength = plan.get("approval_strength")
     approval_ref = plan.get("approval_ref")
     decision_summary = plan.get("decision_summary")
     if (
         basis not in {"owner_decision", "held_out_evaluation"}
+        or approval_strength
+        != (
+            "owner_attested"
+            if basis == "owner_decision"
+            else "held_out_verified"
+        )
         or not isinstance(approval_ref, str)
         or APPROVAL_REF_PATTERN.fullmatch(approval_ref) is None
         or not approval_ref.startswith(f"{basis}:")
@@ -960,6 +1218,17 @@ def apply_convention_lifecycle_plan(
                 "Convention document index marker is missing.",
                 exit_code=3,
             )
+    if basis == "held_out_evaluation":
+        target_operation = next(
+            operation
+            for operation in operations
+            if operation["path"] == target_path
+        )
+        validate_held_out_evaluation(
+            repo,
+            safe_target(repo, artifact["path"]),
+            candidate_sha256=target_operation["after_sha256"],
+        )
     changed: list[str] = []
     try:
         for operation in operations:
@@ -979,6 +1248,7 @@ def apply_convention_lifecycle_plan(
         "plan_id": plan["plan_id"],
         "topic": topic,
         "basis": plan["basis"],
+        "approval_strength": plan["approval_strength"],
         "verification_artifact": plan["verification_artifact"],
         "changed_paths": changed,
         "writes_performed": True,

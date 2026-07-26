@@ -163,7 +163,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Use a bounded host wait. After one no-progress wake, request compact completion once; after the next no-progress wake, cancel that lane and mark its evidence unavailable.
    - As soon as every expected Lens has returned a packet or terminal failure, synthesis is the parent's next action. Do not inspect more files, rerun routing, launch another lane, or wait again unless a material conflict names the new evidence required.
 15. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
-16. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Apply selected conventions and run deterministic verification plus an independent completion check proportional to risk.
+16. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Let `assignment project` recompute and bind the document selection; do not hand-pick away a selected Convention. For each selected Convention, report `applied`, `not_applicable`, `waived`, or `conflict` in the writer terminal Packet. A waiver needs an `owner_decision` ref and an open conflict blocks completion. Run deterministic verification plus an independent completion check proportional to risk.
 17. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
@@ -201,7 +201,8 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
     - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.
     - When route v2 contains `expertise`, copy only its selected pack IDs, guide IDs, research mode, and final gate into the matching optional RunReceipt fields. Never copy guide bodies or research content.
-    - For `created` or `updated`, include `project_convention_evidence`: the active Convention SHA-256, a basis-matching kind, and one repository-local verification artifact path and SHA-256. `owner_decision` also needs a bounded summary of the explicit user decision. The `command_artifact_ref` must name that artifact.
+    - For `created` or `updated`, include `project_convention_evidence`: the active Convention SHA-256, a basis-matching kind and assurance (`owner_attested` or `held_out_verified`), and one durable repository-local verification artifact path and SHA-256. `owner_decision` also needs a bounded summary of the explicit user decision. For held-out work, first call the same activate/update preview without `--verification-artifact`; use the returned evaluation request's candidate digest and source revision. The final artifact must satisfy `maestro_convention_held_out_evaluation_v1`; never use `.maestro/state/` or an opaque pass file. The `command_artifact_ref` must name that artifact.
+    - For a mutation Assignment with Convention selection, copy its `selection_digest` and the validated terminal dispositions into bounded `convention_usage`. This records considered versus actually applied rules without copying document bodies.
     - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
     - Do not write checkpoints or one event per agent exchange.
     - If a reusable Expertise failure occurred, add at most three

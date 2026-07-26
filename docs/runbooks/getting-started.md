@@ -451,7 +451,7 @@ maestro convention activate --repo /path/to/project \
   --topic api-error-contract \
   --basis held_out_evaluation \
   --approval-ref held_out_evaluation:api-contract-v1 \
-  --verification-artifact .maestro/state/evidence/api-contract-v1.json \
+  --verification-artifact docs/evidence/api-contract-v1.json \
   --json > "$maestro_activate"
 maestro convention activate --repo /path/to/project \
   --apply-plan "$maestro_activate" --json

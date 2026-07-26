@@ -75,7 +75,7 @@ maestro validate-plan --plan route-v2.json --json
 ```bash
 maestro assignment project --repo . \
   --plan route-v2.json --assignment review-contract \
-  --baseline baseline.json --document docs/architecture.md --json \
+  --baseline baseline.json --json \
   > assignment-input.json
 
 maestro validate-packet --repo . \
@@ -83,8 +83,12 @@ maestro validate-packet --repo . \
   --projection assignment-input.json --packet finding.json --json
 ```
 
-`assignment project`는 파일 내용을 복사하지 않고 repository-relative path와
-SHA-256만 반환한다. reviewer의 validated FindingPacket은 compact payload 그대로
+`assignment project`는 plan 목표와 Surface Map 경로로 `maestro docs` 선택을
+내부에서 다시 계산한다. 호출자가 넘긴 자유로운 문서 목록만 신뢰하지 않으며,
+선택기 버전·목표·대상 경로·문서와 Convention digest·근거 상태를
+`maestro_convention_selection_v1`으로 결합한다. mutation Assignment는 선택 근거가
+`insufficient`이면 시작하지 않는다. 파일 내용을 복사하지 않고
+repository-relative path와 SHA-256만 반환한다. reviewer의 validated FindingPacket은 compact payload 그대로
 다음 Assignment에 포함할 수 있지만, transcript나 원본 파일 본문은 포함할 수 없다.
 
 ## 작은 Surface Map과 Engineering Baseline
@@ -117,6 +121,7 @@ handoff에서만 정형 projection을 사용한다.
 - 해당 Assignment의 LensCard와 Decision Guide ID
 - bounded Surface Map과 Engineering Baseline
 - 선택한 문서·artifact의 path, digest, logical reference
+- 자동 문서 선택 digest와 선택된 Convention의 path·digest·선택 이유
 - 직접 dependency의 **검증된** compact Packet
 - fresh context와 금지 context에 대한 Host 요청
 
@@ -137,6 +142,13 @@ finding은 중간 이상 심각도와 비어 있지 않은 evidence reference를
 부모 대화를 상속하지 않았음을 증명하지는 못한다. invalid Packet을 downstream에
 전달하지 않는 것은 관리 Skill과 Host adapter가 validator를 필수 edge로 사용할 때만
 성립한다.
+
+Convention이 선택됐다는 사실은 적용됐다는 증거가 아니다. 완료한 mutation
+Assignment의 terminal Packet은 선택된 Convention마다 `applied`,
+`not_applicable`, `waived`, `conflict` 중 하나를 반환한다. waiver는
+`owner_decision` ref를 요구하고 열린 conflict는 `completed`와 양립할 수 없다.
+최종 RunReceipt는 같은 selection digest와 bounded disposition을
+`convention_usage`로 보존한다.
 
 ## Route v2 계약
 

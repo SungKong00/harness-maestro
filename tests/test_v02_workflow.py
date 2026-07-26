@@ -11,7 +11,8 @@ from maestro.errors import MaestroError
 from maestro.project import apply_plan, build_init_plan, build_upgrade_plan
 from maestro.registry import load_host_profile, route_goal
 from maestro.status import status_report
-from maestro.util import file_sha256
+from maestro.decisions import repository_revision
+from maestro.util import canonical_json, file_sha256, sha256_text
 from tests.support import apply_fresh_init, canonical_document, write_json
 
 
@@ -270,6 +271,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                     "project_convention_path": "docs/conventions/run-receipts.md",
                     "project_convention_evidence": {
                         "kind": "owner_decision",
+                        "assurance": "owner_attested",
                         "decision_summary": (
                             "The project owner approved one final run receipt."
                         ),
@@ -363,9 +365,63 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 canonical_document("provenance"),
                 encoding="utf-8",
             )
-            artifact = repo / "docs/decisions/provenance-verification.txt"
+            artifact = repo / "docs/decisions/provenance-verification.json"
             artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text("verification: PASS\n", encoding="utf-8")
+            cases = [
+                {
+                    "case_id": "positive-provenance",
+                    "category": "positive",
+                    "assertion": "The Convention applies to provenance changes.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:positive-provenance",
+                },
+                {
+                    "case_id": "negative-unrelated",
+                    "category": "negative_scope",
+                    "assertion": "The Convention does not apply to unrelated work.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:negative-unrelated",
+                },
+                {
+                    "case_id": "regression-digest",
+                    "category": "regression",
+                    "assertion": "Convention provenance remains content addressed.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:regression-digest",
+                },
+            ]
+            revision = repository_revision(repo)
+            write_json(
+                artifact,
+                {
+                    "schema_version": (
+                        "maestro_convention_held_out_evaluation_v1"
+                    ),
+                    "candidate_sha256": file_sha256(convention),
+                    "suite_sha256": sha256_text(canonical_json(cases)),
+                    "source_revision": (
+                        revision["head"]
+                        if revision["kind"] == "git"
+                        else "unavailable"
+                    ),
+                    "held_out": True,
+                    "cases": cases,
+                    "critical_regressions": 0,
+                    "verifier": {
+                        "command": "python -m unittest tests.test_provenance",
+                        "exit_code": 0,
+                        "executed_at": "2026-07-27T00:00:00Z",
+                    },
+                    "conditions": {
+                        "tool": "unittest",
+                        "model": None,
+                        "budget": None,
+                    },
+                },
+            )
             receipt_path = Path(temporary) / "receipt.json"
             receipt = {
                 "run_id": "run-active-provenance",
@@ -383,7 +439,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 "agent_calls": 2,
                 "verifier_result": "passed",
                 "command_artifact_ref": (
-                    "docs/decisions/provenance-verification.txt"
+                    "docs/decisions/provenance-verification.json"
                 ),
                 "project_convention_action": "created",
                 "project_convention_basis": "held_out_evaluation",
@@ -397,9 +453,10 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             receipt["project_convention_evidence"] = {
                 "kind": "held_out_evaluation",
+                "assurance": "held_out_verified",
                 "convention_sha256": file_sha256(convention),
                 "artifact": {
-                    "path": "docs/decisions/provenance-verification.txt",
+                    "path": "docs/decisions/provenance-verification.json",
                     "sha256": "0" * 64,
                 },
             }
@@ -410,6 +467,30 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             receipt["project_convention_evidence"]["artifact"]["sha256"] = (
                 file_sha256(artifact)
+            )
+            receipt["convention_usage"] = {
+                "schema_version": "maestro_convention_usage_v1",
+                "selection_digest": "1" * 64,
+                "items": [
+                    {
+                        "path": "docs/conventions/provenance.md",
+                        "sha256": file_sha256(convention),
+                        "disposition": "conflict",
+                        "reason": "The selected rule still conflicts with the requested change.",
+                        "approval_ref": None,
+                    }
+                ],
+            }
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as conflict:
+                record_run(repo, receipt_path)
+            self.assertEqual("RUN_RECEIPT_INVALID", conflict.exception.code)
+
+            receipt["convention_usage"]["items"][0].update(
+                {
+                    "disposition": "applied",
+                    "reason": "The implementation followed the selected rule.",
+                }
             )
             write_json(receipt_path, receipt)
             result = record_run(repo, receipt_path)

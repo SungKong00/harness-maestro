@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from .documents import select_documents
 from .errors import MaestroError
 from .planning import validate_route_v2
 from .registry import load_registry
@@ -21,6 +22,7 @@ ASSIGNMENT_INPUT_VERSION = "maestro_assignment_input_v1"
 FINDING_PACKET_VERSION = "maestro_finding_packet_v2"
 TERMINAL_PACKET_VERSION = "maestro_terminal_packet_v1"
 VALIDATION_VERSION = "maestro_assignment_contract_validation_v1"
+CONVENTION_SELECTION_VERSION = "maestro_convention_selection_v1"
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
@@ -112,6 +114,175 @@ def _validation(
         "packet_digest": _digest(value),
         "writes_performed": False,
     }
+
+
+def _project_document_selection(
+    repo: Path,
+    plan: dict[str, Any],
+    assignment: dict[str, Any],
+    target_paths: list[str],
+) -> tuple[dict[str, Any], list[str]]:
+    selection = select_documents(
+        repo,
+        plan["goal"],
+        assignment["lens_ids"],
+        target_paths,
+    )
+    selected_documents = selection.get("required_documents")
+    if not isinstance(selected_documents, list):
+        selected_documents = selection.get("documents", [])
+    compact_documents: list[dict[str, Any]] = []
+    by_path: dict[str, dict[str, Any]] = {}
+    for item in selected_documents:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("path"), str)
+            or not isinstance(item.get("sha256"), str)
+            or _DIGEST.fullmatch(item["sha256"]) is None
+        ):
+            continue
+        compact = {
+            "path": item["path"],
+            "sha256": item["sha256"],
+            "reason": (
+                item.get("reason")
+                if _line(item.get("reason"), 500)
+                else "selected by maestro docs"
+            ),
+            "document_type": (
+                item.get("document_type")
+                if isinstance(item.get("document_type"), str)
+                else "map"
+            ),
+        }
+        compact_documents.append(compact)
+        by_path[item["path"]] = compact
+    convention_paths = selection.get("selected_conventions", [])
+    compact_conventions = [
+        {
+            "path": path,
+            "sha256": by_path[path]["sha256"],
+            "reason": by_path[path]["reason"],
+        }
+        for path in convention_paths
+        if isinstance(path, str) and path in by_path
+    ]
+    payload = {
+        "schema_version": CONVENTION_SELECTION_VERSION,
+        "selector_version": selection.get("schema_version"),
+        "goal_digest": sha256_text(plan["goal"]),
+        "target_paths": target_paths,
+        "evidence_status": selection.get("evidence_status"),
+        "documents": compact_documents,
+        "selected_conventions": compact_conventions,
+        "missing_evidence": [
+            item
+            for item in selection.get("missing_evidence", [])
+            if _line(item, 500)
+        ][:8],
+    }
+    projected = {
+        **payload,
+        "selection_digest": sha256_text(canonical_json(payload)),
+    }
+    return projected, [item["path"] for item in compact_documents]
+
+
+def _valid_convention_selection(
+    value: Any,
+    *,
+    goal: Any,
+) -> bool:
+    fields = {
+        "schema_version",
+        "selection_digest",
+        "selector_version",
+        "goal_digest",
+        "target_paths",
+        "evidence_status",
+        "documents",
+        "selected_conventions",
+        "missing_evidence",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != fields
+        or value.get("schema_version") != CONVENTION_SELECTION_VERSION
+        or value.get("selector_version") != "maestro_docs_selection_v1"
+        or not isinstance(goal, str)
+        or value.get("goal_digest") != sha256_text(goal)
+        or value.get("evidence_status")
+        not in {"sufficient", "insufficient"}
+    ):
+        return False
+    payload = copy.deepcopy(value)
+    selection_digest = payload.pop("selection_digest")
+    if (
+        not isinstance(selection_digest, str)
+        or _DIGEST.fullmatch(selection_digest) is None
+        or selection_digest != sha256_text(canonical_json(payload))
+    ):
+        return False
+    target_paths = value.get("target_paths")
+    if (
+        not isinstance(target_paths, list)
+        or len(target_paths) > 10
+        or len(set(target_paths)) != len(target_paths)
+        or not all(_relative_path(path) for path in target_paths)
+    ):
+        return False
+    documents = value.get("documents")
+    if not isinstance(documents, list) or len(documents) > 8:
+        return False
+    document_refs: set[tuple[str, str]] = set()
+    for item in documents:
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {"path", "sha256", "reason", "document_type"}
+            or not _relative_path(item.get("path"))
+            or not isinstance(item.get("sha256"), str)
+            or _DIGEST.fullmatch(item["sha256"]) is None
+            or not _line(item.get("reason"), 500)
+            or not _line(item.get("document_type"), 100)
+        ):
+            return False
+        reference = (item["path"], item["sha256"])
+        if reference in document_refs:
+            return False
+        document_refs.add(reference)
+    conventions = value.get("selected_conventions")
+    if not isinstance(conventions, list) or len(conventions) > 8:
+        return False
+    convention_refs: set[tuple[str, str]] = set()
+    for item in conventions:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "sha256", "reason"}
+            or not isinstance(item.get("path"), str)
+            or not item["path"].startswith("docs/conventions/")
+            or not item["path"].endswith(".md")
+            or not _relative_path(item["path"])
+            or not isinstance(item.get("sha256"), str)
+            or _DIGEST.fullmatch(item["sha256"]) is None
+            or not _line(item.get("reason"), 500)
+            or (item["path"], item["sha256"]) not in document_refs
+        ):
+            return False
+        reference = (item["path"], item["sha256"])
+        if reference in convention_refs:
+            return False
+        convention_refs.add(reference)
+    missing = value.get("missing_evidence")
+    if (
+        not isinstance(missing, list)
+        or len(missing) > 8
+        or len(set(missing)) != len(missing)
+        or not all(_line(item, 500) for item in missing)
+        or (value["evidence_status"] == "sufficient" and missing)
+    ):
+        return False
+    return True
 
 
 def _exact(
@@ -1162,6 +1333,8 @@ def validate_terminal_packet(
         "evidence_refs",
         "retryable",
     }
+    if isinstance(packet, dict) and "convention_dispositions" in packet:
+        fields.add("convention_dispositions")
     if not _exact(packet, fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != TERMINAL_PACKET_VERSION:
@@ -1190,6 +1363,19 @@ def validate_terminal_packet(
                 "PACKET_TYPE_MISMATCH",
                 "packet_type",
                 "Packet type does not match the Assignment output.",
+            )
+        )
+    if (
+        packet.get("status") == "completed"
+        and assignment is not None
+        and assignment["mutation_owner"]
+        and projection is None
+    ):
+        issues.append(
+            _issue(
+                "PACKET_PROJECTION_REQUIRED",
+                "projection",
+                "A completed mutation Packet requires its bound Assignment projection.",
             )
         )
     if projection is not None:
@@ -1263,6 +1449,148 @@ def validate_terminal_packet(
                 "Completed Assignments require evidence.",
             )
         )
+    projected_value = _projection_value(projection)
+    selection = (
+        projected_value.get("convention_selection")
+        if isinstance(projected_value, dict)
+        else None
+    )
+    selection_valid = _valid_convention_selection(
+        selection,
+        goal=plan_value.get("goal"),
+    )
+    if (
+        projection is not None
+        and assignment is not None
+        and assignment["mutation_owner"]
+        and not selection_valid
+    ):
+        issues.append(
+            _issue(
+                "PACKET_CONVENTION_SELECTION_INVALID",
+                "projection.convention_selection",
+                "A mutation result requires the intact document and Convention selection produced for this goal.",
+            )
+        )
+    selected_conventions = (
+        selection.get("selected_conventions", [])
+        if selection_valid
+        else []
+    )
+    dispositions = packet.get("convention_dispositions")
+    if (
+        packet["status"] == "completed"
+        and assignment is not None
+        and assignment["mutation_owner"]
+        and selected_conventions
+        and dispositions is None
+    ):
+        issues.append(
+            _issue(
+                "PACKET_CONVENTION_DISPOSITIONS_REQUIRED",
+                "convention_dispositions",
+                "A completed writer must report one disposition for every selected Convention.",
+            )
+        )
+    if dispositions is not None:
+        if (
+            not isinstance(dispositions, list)
+            or len(dispositions) > 8
+            or len(dispositions) != len(selected_conventions)
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_CONVENTION_DISPOSITIONS_INVALID",
+                    "convention_dispositions",
+                    "Convention dispositions must match the bounded selected Convention set.",
+                )
+            )
+        else:
+            expected = {
+                (item.get("path"), item.get("sha256"))
+                for item in selected_conventions
+                if isinstance(item, dict)
+            }
+            seen: set[tuple[Any, Any]] = set()
+            has_conflict = False
+            for index, item in enumerate(dispositions):
+                path = f"convention_dispositions[{index}]"
+                if (
+                    not isinstance(item, dict)
+                    or set(item)
+                    != {
+                        "path",
+                        "sha256",
+                        "disposition",
+                        "reason",
+                        "approval_ref",
+                    }
+                    or not _line(item.get("reason"), 500)
+                    or item.get("disposition")
+                    not in {
+                        "applied",
+                        "not_applicable",
+                        "waived",
+                        "conflict",
+                    }
+                ):
+                    issues.append(
+                        _issue(
+                            "PACKET_CONVENTION_DISPOSITION_INVALID",
+                            path,
+                            "Convention disposition does not satisfy the closed execution-report contract.",
+                        )
+                    )
+                    continue
+                key = (item.get("path"), item.get("sha256"))
+                approval_ref = item.get("approval_ref")
+                if key not in expected or key in seen:
+                    issues.append(
+                        _issue(
+                            "PACKET_CONVENTION_DISPOSITION_MISMATCH",
+                            path,
+                            "Convention disposition is duplicated or outside the selected digest set.",
+                        )
+                    )
+                seen.add(key)
+                if item["disposition"] == "waived":
+                    if (
+                        not isinstance(approval_ref, str)
+                        or not approval_ref.startswith("owner_decision:")
+                        or not _line(approval_ref, 500)
+                    ):
+                        issues.append(
+                            _issue(
+                                "PACKET_CONVENTION_WAIVER_INVALID",
+                                f"{path}.approval_ref",
+                                "A waiver requires one bounded owner_decision reference.",
+                            )
+                        )
+                elif approval_ref is not None:
+                    issues.append(
+                        _issue(
+                            "PACKET_CONVENTION_APPROVAL_UNEXPECTED",
+                            f"{path}.approval_ref",
+                            "Only waived Conventions may carry an approval reference.",
+                        )
+                    )
+                has_conflict = has_conflict or item["disposition"] == "conflict"
+            if seen != expected:
+                issues.append(
+                    _issue(
+                        "PACKET_CONVENTION_DISPOSITION_SET_MISMATCH",
+                        "convention_dispositions",
+                        "Convention dispositions do not cover the exact selected path and digest set.",
+                    )
+                )
+            if packet["status"] == "completed" and has_conflict:
+                issues.append(
+                    _issue(
+                        "PACKET_CONVENTION_CONFLICT_UNRESOLVED",
+                        "convention_dispositions",
+                        "A writer cannot complete while a selected Convention conflict remains open.",
+                    )
+                )
     return _validation(packet, issues)
 
 
@@ -1333,9 +1661,45 @@ def project_assignment_input(
     )
     issues.extend(baseline_result["issues"])
 
+    surface_artifacts = (
+        baseline.get("surface_map", {}).get("artifacts", [])
+        if isinstance(baseline, dict)
+        and isinstance(baseline.get("surface_map"), dict)
+        else []
+    )
+    target_paths = list(
+        dict.fromkeys(
+            item["path"]
+            for item in surface_artifacts
+            if isinstance(item, dict)
+            and isinstance(item.get("path"), str)
+        )
+    )
+    convention_selection: dict[str, Any] | None = None
+    selected_document_paths: list[str] = []
+    document_selection_blocked = False
+    if assignment is not None and isinstance(plan_value.get("goal"), str):
+        convention_selection, selected_document_paths = (
+            _project_document_selection(
+                repo,
+                plan_value,
+                assignment,
+                target_paths,
+            )
+        )
+        if (
+            assignment["mutation_owner"]
+            and convention_selection["evidence_status"] != "sufficient"
+        ):
+            document_selection_blocked = True
+
     documents: list[dict[str, str]] = []
     seen_document_paths: set[str] = set()
-    for index, relative_path in enumerate(document_paths):
+    all_document_paths = [
+        *selected_document_paths,
+        *list(document_paths),
+    ]
+    for index, relative_path in enumerate(all_document_paths):
         if len(documents) >= 8:
             issues.append(
                 _issue(
@@ -1345,10 +1709,9 @@ def project_assignment_input(
                 )
             )
             break
-        if (
-            not _relative_path(relative_path)
-            or relative_path in seen_document_paths
-        ):
+        if relative_path in seen_document_paths:
+            continue
+        if not _relative_path(relative_path):
             issues.append(
                 _issue(
                     "PROJECTION_DOCUMENT_INVALID",
@@ -1499,6 +1862,21 @@ def project_assignment_input(
             "input": None,
             "writes_performed": False,
         }
+    if assignment["mutation_owner"] and document_selection_blocked:
+        return {
+            "schema_version": "maestro_assignment_projection_result_v1",
+            "status": "BLOCKED",
+            "execution_status": "DOCUMENT_EVIDENCE_INSUFFICIENT",
+            "issues": [
+                _issue(
+                    "PROJECTION_DOCUMENT_SELECTION_INSUFFICIENT",
+                    "convention_selection.evidence_status",
+                    "Mutation requires a sufficient maestro docs selection; narrow the task or target paths and resolve its missing evidence.",
+                )
+            ],
+            "input": None,
+            "writes_performed": False,
+        }
 
     lens_ids = set(assignment["lens_ids"])
     lens_cards = [
@@ -1589,6 +1967,7 @@ def project_assignment_input(
                 "loaded_guide_refs": [],
             },
         },
+        "convention_selection": convention_selection,
         "document_refs": documents,
         "artifact_refs": artifacts,
         "dependency_packets": [

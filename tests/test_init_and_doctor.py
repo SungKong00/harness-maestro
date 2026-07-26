@@ -354,11 +354,17 @@ class InitSafetyTests(unittest.TestCase):
             lifecycle = repo / "docs/governance/document-lifecycle.md"
             lifecycle.parent.mkdir(parents=True)
             docs_index.write_text(
-                canonical_document("existing-docs-index"),
+                canonical_document("existing-docs-index").replace(
+                    "type: convention",
+                    "type: map",
+                ),
                 encoding="utf-8",
             )
             lifecycle.write_text(
-                canonical_document("existing-document-lifecycle"),
+                canonical_document("existing-document-lifecycle").replace(
+                    "type: convention",
+                    "type: governance",
+                ),
                 encoding="utf-8",
             )
             apply_fresh_init(repo)

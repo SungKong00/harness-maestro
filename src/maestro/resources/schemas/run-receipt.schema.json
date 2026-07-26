@@ -256,6 +256,7 @@
       "required": [
         "convention_sha256",
         "kind",
+        "assurance",
         "artifact"
       ],
       "properties": {
@@ -267,6 +268,12 @@
           "enum": [
             "owner_decision",
             "held_out_evaluation"
+          ]
+        },
+        "assurance": {
+          "enum": [
+            "owner_attested",
+            "held_out_verified"
           ]
         },
         "decision_summary": {
@@ -298,6 +305,9 @@
           "properties": {
             "kind": {
               "const": "owner_decision"
+            },
+            "assurance": {
+              "const": "owner_attested"
             }
           },
           "required": [
@@ -308,6 +318,9 @@
           "properties": {
             "kind": {
               "const": "held_out_evaluation"
+            },
+            "assurance": {
+              "const": "held_out_verified"
             }
           },
           "not": {
@@ -317,9 +330,83 @@
           }
         }
       ]
+    },
+    "convention_usage": {
+      "$ref": "#/$defs/conventionUsage"
     }
   },
   "$defs": {
+    "conventionUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "selection_digest",
+        "items"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_convention_usage_v1"
+        },
+        "selection_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/conventionUsageItem"
+          }
+        }
+      }
+    },
+    "conventionUsageItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "disposition",
+        "reason",
+        "approval_ref"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^docs/conventions/(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.md$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "disposition": {
+          "enum": [
+            "applied",
+            "not_applicable",
+            "waived",
+            "conflict"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "approval_ref": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^owner_decision:\\S.+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "stringList": {
       "type": "array",
       "maxItems": 5,

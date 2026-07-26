@@ -19,9 +19,11 @@ from maestro.conventions import (
     build_convention_update_plan,
 )
 from maestro.doctor import doctor_report
+from maestro.decisions import repository_revision
 from maestro.errors import MaestroError
 from maestro.host import CODEX_SKILLS, host_installation_checks
 from maestro.documents import select_documents
+from maestro.util import canonical_json, sha256_text
 
 
 class HostInstallationTests(unittest.TestCase):
@@ -75,6 +77,71 @@ class ConventionDraftTests(unittest.TestCase):
             evidence=["Existing contract tests and the public OpenAPI schema."],
             verification=["python -m unittest tests.test_api_contract"],
             exceptions=["Owner-approved compatibility migrations."],
+        )
+
+    def _held_out_evidence(
+        self,
+        repo: Path,
+        convention: Path,
+        evidence: Path,
+    ) -> None:
+        candidate = conventions_module._render_active_from_draft(
+            convention.read_text(encoding="utf-8")
+        )
+        cases = [
+            {
+                "case_id": "positive-api",
+                "category": "positive",
+                "assertion": "API changes select the Convention.",
+                "result": "passed",
+                "critical": True,
+                "evidence_ref": "case:positive-api",
+            },
+            {
+                "case_id": "negative-batch",
+                "category": "negative_scope",
+                "assertion": "Batch-only changes do not apply the Convention.",
+                "result": "passed",
+                "critical": True,
+                "evidence_ref": "case:negative-batch",
+            },
+            {
+                "case_id": "regression-envelope",
+                "category": "regression",
+                "assertion": "The stable API envelope remains verifiable.",
+                "result": "passed",
+                "critical": True,
+                "evidence_ref": "case:regression-envelope",
+            },
+        ]
+        revision = repository_revision(repo)
+        write_json(
+            evidence,
+            {
+                "schema_version": (
+                    "maestro_convention_held_out_evaluation_v1"
+                ),
+                "candidate_sha256": sha256_text(candidate),
+                "suite_sha256": sha256_text(canonical_json(cases)),
+                "source_revision": (
+                    revision["head"]
+                    if revision["kind"] == "git"
+                    else "unavailable"
+                ),
+                "held_out": True,
+                "cases": cases,
+                "critical_regressions": 0,
+                "verifier": {
+                    "command": "python -m unittest tests.test_api_contract",
+                    "exit_code": 0,
+                    "executed_at": "2026-07-27T00:00:00Z",
+                },
+                "conditions": {
+                    "tool": "unittest",
+                    "model": None,
+                    "budget": None,
+                },
+            },
         )
 
     def test_preview_then_apply_creates_only_an_inactive_draft(self) -> None:
@@ -173,8 +240,12 @@ class ConventionDraftTests(unittest.TestCase):
             draft_path = Path(temporary) / "draft.json"
             write_json(draft_path, draft)
             apply_convention_draft_plan(draft_path, repo)
-            evidence = repo / ".maestro/state/evidence/api-contract.json"
-            write_json(evidence, {"status": "pass", "held_out": True})
+            evidence = repo / "docs/evidence/api-contract.json"
+            self._held_out_evidence(
+                repo,
+                repo / "docs/conventions/api-error-contract.md",
+                evidence,
+            )
 
             activation = build_convention_activation_plan(
                 repo,
@@ -182,7 +253,7 @@ class ConventionDraftTests(unittest.TestCase):
                 basis="held_out_evaluation",
                 approval_ref="held_out_evaluation:api-contract-v1",
                 verification_artifact=(
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
             )
             activation_path = Path(temporary) / "activation.json"
@@ -223,7 +294,7 @@ class ConventionDraftTests(unittest.TestCase):
                 basis="owner_decision",
                 approval_ref="owner_decision:issue-42",
                 verification_artifact=(
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
                 decision_summary="Adopt the versioned envelope for HTTP APIs.",
             )
@@ -234,6 +305,44 @@ class ConventionDraftTests(unittest.TestCase):
             self.assertIn(
                 "versioned error envelope",
                 target.read_text(encoding="utf-8"),
+            )
+
+    def test_held_out_activation_rejects_an_opaque_pass_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, self._plan(repo))
+            apply_convention_draft_plan(draft_path, repo)
+            request = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="held_out_evaluation",
+                approval_ref=None,
+                verification_artifact=None,
+            )
+            self.assertEqual(
+                "maestro_convention_evaluation_request_v1",
+                request["schema_version"],
+            )
+            self.assertEqual("evaluation_required", request["status"])
+            self.assertRegex(request["candidate_sha256"], r"^[a-f0-9]{64}$")
+            self.assertFalse(request["writes_performed"])
+            evidence = repo / "docs/evidence/opaque.json"
+            write_json(evidence, {"status": "pass", "held_out": True})
+
+            with self.assertRaises(MaestroError) as invalid:
+                build_convention_activation_plan(
+                    repo,
+                    topic="api-error-contract",
+                    basis="held_out_evaluation",
+                    approval_ref="held_out_evaluation:opaque",
+                    verification_artifact="docs/evidence/opaque.json",
+                )
+            self.assertEqual(
+                "CONVENTION_HELD_OUT_EVALUATION_INVALID",
+                invalid.exception.code,
             )
 
     def test_update_rejects_unapproved_scope_expansion_and_stale_evidence(
@@ -247,7 +356,7 @@ class ConventionDraftTests(unittest.TestCase):
             draft_path = Path(temporary) / "draft.json"
             write_json(draft_path, draft)
             apply_convention_draft_plan(draft_path, repo)
-            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            evidence = repo / "docs/evidence/api-contract.json"
             write_json(evidence, {"status": "pass"})
             activation = build_convention_activation_plan(
                 repo,
@@ -255,7 +364,7 @@ class ConventionDraftTests(unittest.TestCase):
                 basis="owner_decision",
                 approval_ref="owner_decision:issue-1",
                 verification_artifact=(
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
                 decision_summary="Activate the reviewed API rule.",
             )
@@ -277,7 +386,7 @@ class ConventionDraftTests(unittest.TestCase):
                 "basis": "owner_decision",
                 "approval_ref": "owner_decision:issue-2",
                 "verification_artifact": (
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
                 "decision_summary": "Expand the rule after explicit review.",
             }
@@ -309,7 +418,7 @@ class ConventionDraftTests(unittest.TestCase):
             draft_path = Path(temporary) / "draft.json"
             write_json(draft_path, draft)
             apply_convention_draft_plan(draft_path, repo)
-            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            evidence = repo / "docs/evidence/api-contract.json"
             write_json(evidence, {"status": "pass"})
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             subprocess.run(
@@ -337,7 +446,7 @@ class ConventionDraftTests(unittest.TestCase):
                 basis="owner_decision",
                 approval_ref="owner_decision:issue-3",
                 verification_artifact=(
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
                 decision_summary="Activate the reviewed API rule.",
             )
@@ -362,7 +471,7 @@ class ConventionDraftTests(unittest.TestCase):
             draft_path = Path(temporary) / "draft.json"
             write_json(draft_path, draft)
             apply_convention_draft_plan(draft_path, repo)
-            evidence = repo / ".maestro/state/evidence/api-contract.json"
+            evidence = repo / "docs/evidence/api-contract.json"
             write_json(evidence, {"status": "pass"})
             activation = build_convention_activation_plan(
                 repo,
@@ -370,7 +479,7 @@ class ConventionDraftTests(unittest.TestCase):
                 basis="owner_decision",
                 approval_ref="owner_decision:issue-4",
                 verification_artifact=(
-                    ".maestro/state/evidence/api-contract.json"
+                    "docs/evidence/api-contract.json"
                 ),
                 decision_summary="Activate the reviewed API rule.",
             )
@@ -491,6 +600,55 @@ class ConventionDraftTests(unittest.TestCase):
                 "FAIL",
                 check_by_id(report, "CONVENTION_SUPERSESSION")["status"],
             )
+
+    def test_doctor_warns_on_empty_future_or_unindexed_active_convention(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/incomplete.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                "---\n"
+                "maestro_doc: 1\n"
+                "id: convention-incomplete\n"
+                "type: convention\n"
+                "status: active\n"
+                "authority: repository\n"
+                "owner: test\n"
+                "summary: Incomplete active rule.\n"
+                "topic: incomplete\n"
+                "scope: [src]\n"
+                "last_verified: 2999-01-01\n"
+                "supersedes: []\n"
+                "sensitivity: internal\n"
+                "---\n\n"
+                "# Convention: incomplete\n\n"
+                "## Rule\n\n"
+                "Use the rule.\n\n"
+                "## Applies when\n\n"
+                "- Source changes.\n\n"
+                "## Does not apply\n\n"
+                "- Documentation only.\n\n"
+                "## Evidence\n\n"
+                "- Current tests.\n\n"
+                "## Verification\n\n"
+                "\n"
+                "## Exceptions\n\n"
+                "- None.\n",
+                encoding="utf-8",
+            )
+
+            check = check_by_id(
+                doctor_report(repo),
+                "CONVENTION_METADATA",
+            )
+            self.assertEqual("WARN", check["status"])
+            self.assertIn("future", check["evidence"])
+            self.assertIn("Verification", check["evidence"])
+            self.assertIn("not reachable", check["evidence"])
 
 
 if __name__ == "__main__":

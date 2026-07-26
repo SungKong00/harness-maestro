@@ -43,6 +43,24 @@ from .util import (
     sha256_text,
 )
 
+CONVENTION_BODY_SECTIONS = (
+    "Rule",
+    "Applies when",
+    "Does not apply",
+    "Evidence",
+    "Verification",
+    "Exceptions",
+)
+
+
+def _nonempty_markdown_section(content: str, heading: str) -> bool:
+    match = re.search(
+        rf"^## {re.escape(heading)}[ \t]*\n(.*?)(?=^## |\Z)",
+        content,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    return match is not None and bool(match.group(1).strip())
+
 
 def _check(
     check_id: str,
@@ -702,15 +720,17 @@ def doctor_report(
         )
     )
     indexed_metadata: list[tuple[str, dict[str, str]]] = []
+    document_contents: dict[str, str] = {}
     for path in document_paths:
         if "archive" in path.relative_to(docs_root).parts:
             continue
+        relative_path = path.relative_to(repo).as_posix()
+        content = path.read_text(encoding="utf-8", errors="replace")
+        document_contents[relative_path] = content
         indexed_metadata.append(
             (
-                path.relative_to(repo).as_posix(),
-                frontmatter_fields(
-                    path.read_text(encoding="utf-8", errors="replace")
-                ),
+                relative_path,
+                frontmatter_fields(content),
             )
         )
     metadata_failures = {
@@ -799,6 +819,19 @@ def doctor_report(
         "supersedes",
         "sensitivity",
     }
+    entrypoint_content: str | None = None
+    documentation = project.get("documentation") if isinstance(project, dict) else None
+    if (
+        isinstance(documentation, dict)
+        and documentation.get("provider") == "markdown"
+        and isinstance(documentation.get("entrypoint"), str)
+    ):
+        entrypoint = safe_target(repo, documentation["entrypoint"])
+        if not entrypoint.is_symlink() and entrypoint.is_file():
+            entrypoint_content = entrypoint.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
     for path, metadata in indexed_metadata:
         if metadata.get("type") != "convention":
             continue
@@ -829,9 +862,31 @@ def doctor_report(
             try:
                 if last_verified is None:
                     raise ValueError
-                date.fromisoformat(last_verified)
+                verified_date = date.fromisoformat(last_verified)
+                if verified_date > date.today():
+                    issues.append("active last_verified cannot be in the future")
             except ValueError:
                 issues.append("active last_verified must use YYYY-MM-DD")
+            content = document_contents.get(path, "")
+            missing_sections = [
+                section
+                for section in CONVENTION_BODY_SECTIONS
+                if not _nonempty_markdown_section(content, section)
+            ]
+            if missing_sections:
+                issues.append(
+                    f"empty or missing body sections={missing_sections}"
+                )
+            if entrypoint_content is not None:
+                relative_link = (
+                    Path(path).relative_to("docs").as_posix()
+                    if path.startswith("docs/")
+                    else path
+                )
+                if f"({relative_link})" not in entrypoint_content:
+                    issues.append(
+                        "active Convention is not reachable from the documentation entrypoint"
+                    )
         elif last_verified not in {None, "null"}:
             try:
                 date.fromisoformat(last_verified)

@@ -156,13 +156,19 @@ rm -- "$maestro_plan"
 별도 작업에서 owner 결정 또는 held-out 평가와 repository-local 검증 artifact가
 준비되면 활성화도 같은 preview/apply 경계를 사용한다.
 
+held-out을 만들 때는 같은 명령에서 `--verification-artifact`를 생략하면 쓰기 없는
+`maestro_convention_evaluation_request_v1`이 반환된다. Host는 여기에 나온 정확한
+`candidate_sha256`, `source_revision`, 필수 사례 종류와 schema 경로로 평가 artifact를
+만든 뒤 아래처럼 다시 preview한다. 따라서 Skill이나 Adapter가 후보 본문 렌더링
+규칙을 재구현할 필요가 없다.
+
 ```bash
 maestro_activate="$(mktemp -t maestro-convention-activate.XXXXXX.json)"
 maestro convention activate --repo . \
   --topic api-error-contract \
   --basis held_out_evaluation \
   --approval-ref held_out_evaluation:api-contract-v1 \
-  --verification-artifact .maestro/state/evidence/api-contract-v1.json \
+  --verification-artifact docs/evidence/api-contract-v1.json \
   --json > "$maestro_activate"
 maestro convention activate --repo . \
   --apply-plan "$maestro_activate" --json
@@ -172,6 +178,18 @@ rm -- "$maestro_activate"
 활성화 plan은 draft 본문, 검증 artifact의 경로·digest, 현재 Git 작업상태와 문서
 entrypoint 변경을 함께 고정한다. `owner_decision`을 쓰면
 `--decision-summary`가 필수다. 적용 전 어느 하나라도 바뀌면 stale로 거부한다.
+`.maestro/state/`는 정리 가능한 runtime 상태이므로 활성 권위의 검증 artifact로
+사용하지 않는다. JSON artifact는 문서 검색 대상이 아닌 `docs/evidence/` 같은
+durable repository 경로에 둔다.
+
+`held_out_evaluation`은
+`maestro_convention_held_out_evaluation_v1` 계약을 만족해야 한다. 정확한 후보
+SHA-256, 현재 source revision, case suite SHA-256, `held_out: true`, 비어 있지 않은
+positive·negative_scope·regression 사례, 사례별 assertion·결과·evidence,
+critical regression 수, 성공한 verifier command·시각, tool·model·budget 조건을
+기록한다. 모든 사례가 통과하지 않거나 후보·suite digest가 다르면 preview와 apply가
+모두 실패한다. `owner_decision`은 이 평가를 흉내 내지 않으며
+`owner_attested`, 통과한 held-out 근거는 `held_out_verified`로 구분한다.
 
 활성 topic 수정은 `maestro convention update`에서 현재 authoring 필드를 모두 다시
 제시하고 같은 승인·검증 경계를 거친다. 한 명령은 한 topic만 바꾸며, 기존 scope에
@@ -199,8 +217,11 @@ supersession을 추론하지 않는다. 새 topic으로 권위를 교체하거�
 positive·negative-scope·regression 사례의 `held_out_evaluation`이 승인된 뒤에만 기존
 권위를 갱신하거나 `docs/conventions/<topic>.md` 하나를 만든다.
 활성 Convention을 기록하는 RunReceipt는 Convention 파일과 repository-local 검증
-산출물의 SHA-256을 함께 저장한다. `owner_decision`은 사용자가 명시한 결정을 짧게
-요약하고, `held_out_evaluation`은 제안 사례와 분리된 평가 산출물을 가리킨다.
+산출물의 SHA-256 및 assurance를 함께 저장한다. `owner_decision`은 사용자가 명시한
+결정을 짧게 요약하고, `held_out_evaluation`은 위 의미 검증을 다시 통과한 평가
+산출물을 가리킨다. 구현 RunReceipt의 선택 digest와 `convention_usage`는 각
+Convention을 `applied`, `not_applicable`, `waived`, `conflict`로 분리해 기록한다.
+`waived`는 owner 결정 ref가 필요하고 열린 `conflict`가 있으면 완료로 기록할 수 없다.
 
 정적 detector가 재현 가능하게 찾은 기술 profile, 고정 상태 필드, manifest command
 후보는 `init`·`upgrade` 계획으로 동기화할 수 있다. 이 경로에는 LLM이 작성한 규칙,

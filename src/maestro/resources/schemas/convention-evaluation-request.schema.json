@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/convention-evaluation-request.schema.json",
+  "title": "Harness Maestro Convention Evaluation Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "status",
+    "repo_root",
+    "topic",
+    "candidate_sha256",
+    "source_revision",
+    "artifact_schema",
+    "required_categories",
+    "suite_digest_rule",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_convention_evaluation_request_v1"
+    },
+    "command": {
+      "enum": [
+        "convention-activate",
+        "convention-update"
+      ]
+    },
+    "status": {
+      "const": "evaluation_required"
+    },
+    "repo_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "candidate_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_schema": {
+      "const": "schemas/convention-held-out-evaluation.schema.json"
+    },
+    "required_categories": {
+      "const": [
+        "negative_scope",
+        "positive",
+        "regression"
+      ]
+    },
+    "suite_digest_rule": {
+      "const": "sha256(canonical_json(cases))"
+    },
+    "writes_performed": {
+      "const": false
+    }
+  }
+}

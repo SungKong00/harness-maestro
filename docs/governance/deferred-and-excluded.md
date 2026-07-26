@@ -64,6 +64,8 @@ sensitivity: internal
 | 자동 expertise candidate 생성·Pilot·promote | deferred | 수동 project-local scaffold는 가능하지만 관찰을 자동 정책 변경과 합치면 자기강화 오류가 생김 | 전문성 공백 fingerprint, offline evaluator, 승인자 분리, signed/versioned promotion |
 | 비-Expertise component candidate의 activate·promote | deferred | 분류·격리 후보·frozen case 검증은 가능하지만 Lens·Executor·Packet 등은 route와 Host 계약을 바꾸므로 공통 승격 명령이 과도한 권한 표면이 됨 | kind별 held-out route 평가, migration·rollback, release owner 승인과 clean-host conformance |
 | 별도 Convention candidate queue와 자동 병합 | deferred | 현재 compact RunReceipt signal, typed draft·activate·update로 수명주기가 닫히며 또 하나의 장기 저장소는 중복과 정리 비용을 만든다 | 서로 다른 실행에서 rule·scope·예외·owner를 보존하지 못해 draft 품질이 반복 저하되는 측정 사례 |
+| Convention deactivate·archive·rollback 전용 CLI | deferred | activate/update plan이 before/after digest와 Git revision을 보존하고 현재 권위는 Git으로 복구 가능해, 별도 상태 기계를 먼저 만들 이득이 작음 | 두 프로젝트 이상에서 수동 supersede·복구 실수 또는 반복 운영 비용이 관찰됨 |
+| self-improvement run별 update 횟수의 runtime ledger 강제 | deferred | 현재 CLI는 scheduler가 아니며 자동 실행의 신뢰 가능한 run identity를 소유하지 않아, 로컬 counter만 추가하면 우회 가능한 가짜 안전장치가 됨 | Host adapter가 run identity와 lifecycle apply를 함께 소유하고 crash-safe ledger를 검증 |
 | architecture/implementation 순서 자동 최적화 | deferred | 비교 가능한 실제 baseline이 없음 | task stratum별 bounded Pilot과 critical regression 0 |
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |

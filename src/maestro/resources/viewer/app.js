@@ -396,6 +396,18 @@ function buildRunDetail(run) {
   addMeta(meta, `Expertise ${run.expertise.packs.join(", ") || "없음"}`);
   addMeta(meta, `가이드 ${run.expertise.guides.join(", ") || "없음"}`);
   addMeta(meta, `리서치 ${run.expertise.research_mode}/${run.expertise.research_gate}`);
+  if (run.conventions) {
+    const applied = run.conventions.items.filter(
+      (item) => item.disposition === "applied",
+    ).length;
+    const exceptions = run.conventions.items.length - applied;
+    addMeta(
+      meta,
+      `Convention 적용 ${applied} · 예외/비적용/충돌 ${exceptions}`,
+    );
+  } else {
+    addMeta(meta, "Convention 적용 근거 미기록");
+  }
   addMeta(meta, `수정 ${run.correction_count}회`);
   addMeta(meta, `검증 ${run.verifier_result}`);
   addMeta(meta, `메인 요청 모델 ${formatModels(run.models.requested)}`);

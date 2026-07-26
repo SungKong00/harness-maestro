@@ -8,8 +8,9 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from tests.support import ROOT, write_json
+from tests.support import ROOT, apply_fresh_init, write_json
 
 from maestro.assignment_contracts import (
     ASSIGNMENT_INPUT_VERSION,
@@ -22,7 +23,7 @@ from maestro.assignment_contracts import (
 )
 from maestro.cli import main
 from maestro.planning import route_goal_v2
-from maestro.util import canonical_json, sha256_text
+from maestro.util import canonical_json, file_sha256, sha256_text
 
 
 CHECK_IDS = (
@@ -133,9 +134,23 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
         self.assertEqual(["contract"], [
             card["lens_id"] for card in projected["selected_lens_cards"]
         ])
-        self.assertEqual(["README.md"], [
+        projected_document_paths = [
             item["path"] for item in projected["document_refs"]
-        ])
+        ]
+        self.assertIn("README.md", projected_document_paths)
+        self.assertIn("docs/README.md", projected_document_paths)
+        self.assertEqual(
+            "maestro_convention_selection_v1",
+            projected["convention_selection"]["schema_version"],
+        )
+        self.assertIn(
+            projected["convention_selection"]["evidence_status"],
+            {"sufficient", "insufficient"},
+        )
+        self.assertRegex(
+            projected["convention_selection"]["selection_digest"],
+            r"^[a-f0-9]{64}$",
+        )
         self.assertNotIn("content", canonical_json(projected))
         self.assertEqual(
             {
@@ -206,6 +221,143 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
             "authorized-executor-may-apply",
             implementation["input"]["expertise_load"]["application_mode"],
         )
+
+    def test_writer_must_report_every_bound_convention_disposition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            (repo / "README.md").write_text(
+                "# Test\n",
+                encoding="utf-8",
+            )
+            apply_fresh_init(repo)
+            convention = repo / "docs/conventions/readme-style.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                "# Active Convention\n",
+                encoding="utf-8",
+            )
+            plan = route_goal_v2(
+                "Implement the approved README wording",
+                "low",
+                intent="implementation",
+                repo_path=repo,
+            )
+            baseline = baseline_for(plan)
+            selected = {
+                "schema_version": "maestro_docs_selection_v1",
+                "required_documents": [
+                    {
+                        "path": "docs/README.md",
+                        "sha256": file_sha256(repo / "docs/README.md"),
+                        "reason": "project documentation index",
+                    },
+                    {
+                        "path": "docs/conventions/readme-style.md",
+                        "sha256": file_sha256(convention),
+                        "reason": "path scope: README.md",
+                        "document_type": "convention",
+                    },
+                ],
+                "selected_conventions": [
+                    "docs/conventions/readme-style.md"
+                ],
+                "evidence_status": "sufficient",
+                "missing_evidence": [],
+            }
+            with patch(
+                "maestro.assignment_contracts.select_documents",
+                return_value=selected,
+            ):
+                projection = project_assignment_input(
+                    repo,
+                    plan,
+                    "implementation",
+                    baseline,
+                )
+
+            self.assertEqual("PASS", projection["status"])
+            projected = projection["input"]
+            self.assertEqual(
+                ["docs/conventions/readme-style.md"],
+                [
+                    item["path"]
+                    for item in projected["convention_selection"][
+                        "selected_conventions"
+                    ]
+                ],
+            )
+            packet = {
+                "schema_version": TERMINAL_PACKET_VERSION,
+                "plan_id": plan["plan_id"],
+                "assignment_id": "implementation",
+                "packet_type": next(
+                    item["output_packet"]
+                    for item in plan["assignments"]
+                    if item["assignment_id"] == "implementation"
+                ),
+                "status": "completed",
+                "summary": "Updated the approved README wording.",
+                "evidence_refs": ["readme"],
+                "retryable": False,
+            }
+            missing = validate_assignment_packet(
+                packet,
+                plan,
+                "implementation",
+                projection,
+                repo_path=repo,
+            )
+            self.assertEqual("FAIL", missing["status"])
+            self.assertIn(
+                "PACKET_CONVENTION_DISPOSITIONS_REQUIRED",
+                {item["code"] for item in missing["issues"]},
+            )
+
+            selected_convention = projected["convention_selection"][
+                "selected_conventions"
+            ][0]
+            packet["convention_dispositions"] = [
+                {
+                    "path": selected_convention["path"],
+                    "sha256": selected_convention["sha256"],
+                    "disposition": "applied",
+                    "reason": "The implementation followed the selected rule.",
+                    "approval_ref": None,
+                }
+            ]
+            accepted = validate_assignment_packet(
+                packet,
+                plan,
+                "implementation",
+                projection,
+                repo_path=repo,
+            )
+            self.assertEqual("PASS", accepted["status"])
+
+            tampered = copy.deepcopy(projection)
+            tampered_input = tampered["input"]
+            tampered_input["convention_selection"]["selection_digest"] = (
+                "0" * 64
+            )
+            projection_payload = copy.deepcopy(tampered_input)
+            projection_payload.pop("projection_digest")
+            tampered_input["projection_digest"] = sha256_text(
+                canonical_json(projection_payload)
+            )
+            rejected = validate_assignment_packet(
+                packet,
+                plan,
+                "implementation",
+                tampered,
+                repo_path=repo,
+            )
+            self.assertIn(
+                "PACKET_CONVENTION_SELECTION_INVALID",
+                {item["code"] for item in rejected["issues"]},
+            )
 
     def test_baseline_gap_allows_review_but_blocks_mutation(self) -> None:
         plan = route_goal_v2(

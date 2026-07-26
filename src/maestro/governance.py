@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .conventions import validate_held_out_evaluation
 from .errors import MaestroError
 from .expertise import expertise_definition_map, load_expertise_catalog
 from .observations import (
@@ -72,12 +73,86 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "project_convention_basis",
     "project_convention_path",
     "project_convention_evidence",
+    "convention_usage",
     "task_label",
     "plan_summary",
     "stage_results",
     "expertise_observations",
     "host_observation",
 }
+
+
+def _valid_convention_usage(
+    repo: Path | None,
+    value: Any,
+    *,
+    outcome: Any,
+) -> bool:
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value) != {
+            "schema_version",
+            "selection_digest",
+            "items",
+        }
+        or value.get("schema_version") != "maestro_convention_usage_v1"
+        or not isinstance(value.get("selection_digest"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", value["selection_digest"]) is None
+        or not isinstance(value.get("items"), list)
+        or len(value["items"]) > 8
+    ):
+        return False
+    seen: set[str] = set()
+    for item in value["items"]:
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "path",
+                "sha256",
+                "disposition",
+                "reason",
+                "approval_ref",
+            }
+            or not isinstance(item.get("path"), str)
+            or not item["path"].startswith("docs/conventions/")
+            or Path(item["path"]).is_absolute()
+            or ".." in Path(item["path"]).parts
+            or item["path"] in seen
+            or not isinstance(item.get("sha256"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", item["sha256"]) is None
+            or item.get("disposition")
+            not in {"applied", "not_applicable", "waived", "conflict"}
+            or not isinstance(item.get("reason"), str)
+            or not item["reason"].strip()
+            or len(item["reason"]) > 500
+            or any(character in item["reason"] for character in "\r\n\x00")
+        ):
+            return False
+        if repo is not None:
+            target = safe_target(repo, item["path"])
+            if (
+                target.is_symlink()
+                or file_sha256(target) != item["sha256"]
+            ):
+                return False
+        seen.add(item["path"])
+        approval_ref = item.get("approval_ref")
+        if item["disposition"] == "waived":
+            if (
+                not isinstance(approval_ref, str)
+                or not approval_ref.startswith("owner_decision:")
+                or len(approval_ref) > 500
+                or any(character in approval_ref for character in "\r\n\x00")
+            ):
+                return False
+        elif approval_ref is not None:
+            return False
+        if item["disposition"] == "conflict" and outcome == "completed":
+            return False
+    return True
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -753,6 +828,15 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "expertise_observations are invalid or lack matching evidence.",
         )
+    if not _valid_convention_usage(
+        repo,
+        receipt.get("convention_usage"),
+        outcome=receipt.get("outcome"),
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "convention_usage is invalid, stale, or contains an unresolved completed conflict.",
+        )
     if expertise_research_mode not in {
         "reuse",
         "contextualize",
@@ -829,6 +913,7 @@ def record_run(
         expected_keys = {
             "convention_sha256",
             "kind",
+            "assurance",
             "artifact",
         }
         if convention_basis == "owner_decision":
@@ -842,6 +927,16 @@ def record_run(
             raise MaestroError(
                 "RUN_RECEIPT_INVALID",
                 "Convention evidence kind must match project_convention_basis.",
+            )
+        expected_assurance = (
+            "owner_attested"
+            if convention_basis == "owner_decision"
+            else "held_out_verified"
+        )
+        if convention_evidence.get("assurance") != expected_assurance:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence assurance must distinguish owner attestation from held-out verification.",
             )
         convention_sha256 = convention_evidence.get("convention_sha256")
         if (
@@ -894,6 +989,12 @@ def record_run(
             raise MaestroError(
                 "RUN_RECEIPT_INVALID",
                 "Convention evidence artifact is missing, unsafe, or has a digest mismatch.",
+            )
+        if convention_basis == "held_out_evaluation":
+            validate_held_out_evaluation(
+                repo,
+                artifact_target,
+                candidate_sha256=convention_sha256,
             )
         if receipt.get("command_artifact_ref") != artifact_path:
             raise MaestroError(
@@ -987,6 +1088,7 @@ def record_run(
         "stage_results",
         "expertise_observations",
         "host_observation",
+        "convention_usage",
     ):
         if receipt.get(field) is not None:
             event[field] = receipt[field]
@@ -1126,6 +1228,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "stage_results",
         "expertise_observations",
         "host_observation",
+        "convention_usage",
     }
     if set(event) - allowed_fields:
         return False
@@ -1306,6 +1409,12 @@ def _valid_event(event: dict[str, Any]) -> bool:
         catalog=None,
     ):
         return False
+    if not _valid_convention_usage(
+        repo=None,
+        value=event.get("convention_usage"),
+        outcome=event.get("outcome"),
+    ):
+        return False
     duration = event.get("duration_ms")
     if duration is not None and (
         not isinstance(duration, (int, float))
@@ -1424,12 +1533,23 @@ def _valid_event(event: dict[str, Any]) -> bool:
     if project_convention_evidence is not None:
         if not isinstance(project_convention_evidence, dict):
             return False
-        expected_keys = {"convention_sha256", "kind", "artifact"}
+        expected_keys = {
+            "convention_sha256",
+            "kind",
+            "assurance",
+            "artifact",
+        }
         if convention_basis == "owner_decision":
             expected_keys.add("decision_summary")
         if (
             set(project_convention_evidence) != expected_keys
             or project_convention_evidence.get("kind") != convention_basis
+            or project_convention_evidence.get("assurance")
+            != (
+                "owner_attested"
+                if convention_basis == "owner_decision"
+                else "held_out_verified"
+            )
         ):
             return False
         digest = project_convention_evidence.get("convention_sha256")

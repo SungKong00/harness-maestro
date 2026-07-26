@@ -423,7 +423,15 @@ def parser() -> argparse.ArgumentParser:
     assignment_project.add_argument("--plan", required=True)
     assignment_project.add_argument("--assignment", required=True)
     assignment_project.add_argument("--baseline", required=True)
-    assignment_project.add_argument("--document", action="append", default=[])
+    assignment_project.add_argument(
+        "--document",
+        action="append",
+        default=[],
+        help=(
+            "Additional repository document; cannot replace the automatic "
+            "maestro docs selection"
+        ),
+    )
     assignment_project.add_argument(
         "--dependency-packet",
         action="append",

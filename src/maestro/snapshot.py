@@ -188,6 +188,7 @@ def _run_card(event: dict[str, Any]) -> dict[str, Any]:
             ),
             "observations": list(event.get("expertise_observations", [])),
         },
+        "conventions": event.get("convention_usage"),
         "evidence_refs": list(event.get("evidence_refs", []))[:8],
     }
 

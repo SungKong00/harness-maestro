@@ -11,6 +11,7 @@
     "base_revision",
     "topic",
     "basis",
+    "approval_strength",
     "approval_ref",
     "decision_summary",
     "verification_artifact",
@@ -44,6 +45,12 @@
       "enum": [
         "owner_decision",
         "held_out_evaluation"
+      ]
+    },
+    "approval_strength": {
+      "enum": [
+        "owner_attested",
+        "held_out_verified"
       ]
     },
     "approval_ref": {
@@ -135,6 +142,34 @@
       "$ref": "#/$defs/digest"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "owner_decision"
+          }
+        },
+        "required": [
+          "basis"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approval_strength": {
+            "const": "owner_attested"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "approval_strength": {
+            "const": "held_out_verified"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",
