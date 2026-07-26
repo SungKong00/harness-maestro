@@ -184,11 +184,88 @@ def expertise_component_health(
                 "guides": guide_health,
             }
         )
+    candidates: list[dict[str, Any]] = []
+    for candidate in inventory.get("candidates", []):
+        pack_id = candidate.get("expertise_pack_id")
+        digest = candidate.get("definition_digest")
+        candidate_id = candidate.get("candidate_id")
+        if (
+            not isinstance(pack_id, str)
+            or not isinstance(digest, str)
+            or not isinstance(candidate_id, str)
+        ):
+            continue
+        selected = [
+            event
+            for event in events
+            if pack_id in event.get("selected_expertise_packs", [])
+            and event.get(
+                "expertise_pack_definition_digests",
+                {},
+            ).get(pack_id)
+            == digest
+        ]
+        usage_count = len(
+            {
+                event.get("run_id")
+                for event in selected
+                if isinstance(event.get("run_id"), str)
+            }
+        )
+        recent_runs = [
+            {
+                "run_id": event["run_id"],
+                "task_label": event.get("task_label") or event["run_id"],
+                "timestamp": event.get("timestamp"),
+                "outcome": event.get("outcome"),
+            }
+            for event in sorted(
+                selected,
+                key=lambda item: item.get("timestamp", ""),
+                reverse=True,
+            )[:3]
+            if isinstance(event.get("run_id"), str)
+        ]
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "pack_id": pack_id,
+                "runtime_status": candidate.get("runtime_status"),
+                "immediate_use_allowed": candidate.get(
+                    "immediate_use_allowed",
+                    False,
+                ),
+                "usage_count": usage_count,
+                "recent_runs": recent_runs,
+                "last_used_timestamp": max(
+                    (
+                        event.get("timestamp")
+                        for event in selected
+                        if isinstance(event.get("timestamp"), str)
+                    ),
+                    default=None,
+                ),
+                "failed_verification_run_count": sum(
+                    event.get("verifier_result") == "failed"
+                    for event in selected
+                ),
+                "corrected_run_count": sum(
+                    isinstance(event.get("correction_count"), int)
+                    and not isinstance(
+                        event.get("correction_count"),
+                        bool,
+                    )
+                    and event.get("correction_count", 0) > 0
+                    for event in selected
+                ),
+            }
+        )
     return {
         "schema_version": "maestro_expertise_component_health_v1",
         "review_use_interval": REVIEW_USE_INTERVAL,
         "negative_signal_threshold": NEGATIVE_SIGNAL_THRESHOLD,
         "packs": packs,
+        "candidates": candidates,
         "review_items": review_items,
         "interpretation": (
             "Selection, correction, and verifier co-occurrence are local "

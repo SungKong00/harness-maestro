@@ -233,7 +233,8 @@ projection을 함께 전달한다. Downstream 단계가 축약 projection을 새
 `$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
 검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
 필요는 없다. Codex Desktop이 현재 요청의 공개 메타데이터로 모델·추론 강도와
-thread·turn ID를 제공하면 Maestro가 요청 정보만 자동 연결한다. Host가 완전한
+thread·turn ID를 제공하면 Maestro가 `observe desktop` 한 번으로 관측 시작과 요청
+정보 연결을 함께 처리한다. Host가 완전한
 공개 API/event 구간까지 제공하면 reroute, 실제 적용 모델과 token도 출처·quality·
 correlation ID와 함께 연결한다. Route 권고 모델은 실측값을 대신하지 않는다.
 비공개 Codex session 파일은 읽지 않고, 지원되는 값이 없으면 `null`을 유지한다.
@@ -241,7 +242,11 @@ correlation ID와 함께 연결한다. Route 권고 모델은 실측값을 대�
 새 Codex 실행을 Maestro가 직접 시작할 수 있으면 `host codex`가 권장 경로다.
 현재 열려 있는 Desktop 대화를 뒤늦게 읽는 기능이 아니라, 새 App Server turn을
 Maestro가 소유해 공식 이벤트를 처음부터 끝까지 받는 방식이다. 사용자가 명령을
-입력하는 흐름은 아니며 `$maestro` Host가 내부에서 호출한다.
+입력하는 흐름은 아니며 `$maestro` Host가 내부에서 호출한다. 저장소 내부 도구만
+필요하고 interactive approval·network·별도 app connector가 필요 없는 비단순
+Assignment라면 이 경로를 기본으로 사용한다. 기록된 token은 이 App Server
+Executor turn의 사용량이며, 상위 Desktop 오케스트레이터의 사용량까지 합친 전체
+비용은 아니다.
 
 ```bash
 maestro host codex --repo /path/to/project \
@@ -271,13 +276,24 @@ exit 4, 계약·프로토콜·timeout 실패는 exit 2다. token event가 없는
 호출한다.
 
 ```bash
-maestro observe start --repo /path/to/project \
+# Codex Desktop의 공개 요청 설정만 있는 fallback. 실제로는 $maestro가
+# x-codex-turn-metadata의 네 허용 필드를 읽어 한 번에 호출한다.
+maestro observe desktop --repo /path/to/project \
   --run-id run-20260726-01 \
+  --task-label "결제 webhook 재시도 변경" \
+  --thread-id <desktop-thread-id> --turn-id <desktop-turn-id> \
+  --requested-model <requested-model> \
+  --requested-reasoning-effort <requested-effort> --json
+
+# 위 Desktop fallback과 동시에 쓰지 않는다. 완전한 event stream을 직접 가진
+# 다른 Host라면 별도 run ID로 아래 저수준 경로를 사용한다.
+maestro observe start --repo /path/to/project \
+  --run-id run-20260726-02 \
   --task-label "결제 webhook 재시도 변경" \
   --plan "$maestro_route" --json
 
 maestro observe host --repo /path/to/project \
-  --observation <observation-id> --run-id run-20260726-01 \
+  --observation <observation-id> --run-id run-20260726-02 \
   --source <public-host-source> --quality host_reported \
   --correlation-id <host-run-id> \
   --requested-model <requested-model> \
@@ -289,7 +305,7 @@ maestro observe host --repo /path/to/project \
 # 이미 별도로 App Server stream을 소유한 Host는 위 필드를 손으로 옮기지 않고
 # 완전한 JSON-RPC event stream을 같은 observation에 가져온다.
 maestro observe import-codex --repo /path/to/project \
-  --observation <observation-id> --run-id run-20260726-01 \
+  --observation <observation-id> --run-id run-20260726-02 \
   --trace <complete-app-server-jsonl> --json
 
 maestro record --repo /path/to/project \
@@ -375,14 +391,15 @@ event는 수정하지 않는다.
 Expertise 영역은 Pack과 Guide별 선택 횟수, source, 검증 실패·수정 동반 신호를
 보여 준다. 서로 다른 Run에서 Guide를 5회 선택하거나 반복 문제 신호가 3회 쌓이면
 검토 항목으로 올리지만 자동으로 고치거나 지우지 않는다. validator를 통과한 후보는
-`프로젝트 Pilot 추가`, `다음 Pack 버전 적용`, `기여 Bundle 추출`을 미리본 뒤
+`프로젝트용으로 고정`, `프로젝트용 다음 버전으로 고정`, `공유 검토 묶음 추출`을
+미리본 뒤
 확인할 수 있다. 활성 project Pack의 `비활성화`는 allowlist만 바꾸고 파일을
 보존한다. Guide 하나의 변경도 완전한 다음 Pack 후보로 처리한다.
 
-Expertise 카탈로그는 사용 이력이 없는 항목을 `사용 근거 수집 전`, 사용 중인
-항목을 `근거 수집 중`으로 구분한다. 다섯 번 선택하거나 같은 부정 신호가 세 번
+Expertise 카탈로그는 사용 이력이 없는 항목을 `사용 기록 없음`, 사용 중인
+항목을 `사용 결과 수집 중`으로 구분한다. 다섯 번 선택하거나 같은 부정 신호가 세 번
 반복되면 검토를 권하지만 자동 변경하지 않는다. 검증된 project 후보의
-추가·갱신·비활성화·기여 Bundle 추출도 뷰어에서 먼저 변경 경로를 보고 두 번째로
+추가·갱신·비활성화·공유 검토 묶음 추출도 뷰어에서 먼저 변경 경로를 보고 두 번째로
 확인한다. 이 동작은 명령 실행, 전역 설치, 커밋과 push를 하지 않는다.
 
 `upgrade`도 `init`과 같이 미리보기 후 같은 plan을 적용한다.
@@ -428,7 +445,14 @@ govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하�
 `$maestro-expertise-builder`가 `.maestro/state/candidates/expertise/` 아래에
 격리된 draft와 frozen eval을 만든다.
 
-후보를 실제 프로젝트에서 계속 사용할 가치가 검증되면 inventory와 diff를 검토한다.
+`validate-candidate`를 통과한 비만료·비충돌 최신 후보는 별도 명령 없이 다음
+Maestro 작업부터 즉시 선택될 수 있다. 후보가 선택돼도 읽기 요청은 계속 읽기
+전용이며, 구현을 요청한 작업의 기존 mutation owner만 기준을 적용한다. 뷰어의
+`전문 지식 → 이 프로젝트에서 만든 후보`에서 즉시 적용 여부, 선택 횟수와 최근
+사용을 확인한다.
+
+후보를 clone·협업 가능한 프로젝트 권위로 계속 유지할 가치가 검증되면 inventory와
+diff를 검토해 게시한다.
 
 ```bash
 maestro expertise list --repo /path/to/project --json
@@ -448,7 +472,7 @@ git -C /path/to/project commit -m "chore: activate project expertise"
 rm -- "$maestro_expertise_plan"
 ```
 
-활성 결과는 `.agents/skills/<skill-id>/`의 추적 가능한 project `pilot`이다.
+게시 결과는 `.agents/skills/<skill-id>/`의 추적 가능한 project `pilot`이다.
 후보와 `evidence/candidate.json` snapshot은 삭제하지 않으며, 범용 Registry·원격
 저장소·전역 Agent는 바뀌지 않는다. Doctor의 Git tracking PASS는 파일이 index에
 있다는 뜻일 뿐 commit·push 완료를 대신하지 않는다.

@@ -28,8 +28,12 @@ writing a new Pack.
    `validate-candidate`.
 6. Repair validator failures at most twice. If blockers remain, keep the
    incomplete candidate isolated and report them.
-7. Stop before activation or update unless the user separately requested that
-   reviewed lifecycle action.
+7. Once validation passes, report that the candidate is immediately eligible
+   for Maestro routing in this project. If the same request already authorized
+   implementation, return control to Maestro to reroute and execute through
+   the existing mutation owner.
+8. Stop before activation or update unless the user separately requested that
+   reviewed publication action.
 
 ## Admission gate
 
@@ -165,9 +169,14 @@ Return `ready_for_review` only when:
 - no publication blocker remains.
 
 Otherwise return `candidate_incomplete` or `not_admitted`. Candidate creation
-never implies activation.
+never implies publication. A `PASS` candidate is immediately routable only
+inside the producing project while it is non-expired, unambiguous, and newer
+than the active Pack version. It stays visibly `candidate` until publication.
+The candidate never grants mutation authority: a read-only Assignment remains
+advisory-only, while an already-authorized mutation Executor may apply the
+selected Guides within its existing path and verification bounds.
 
-After a project pilot is selected in real work, let the ordinary RunReceipt
+After a candidate or project pilot is selected in real work, let the ordinary RunReceipt
 record only Pack and Guide IDs plus bounded observations. The Viewer reports a
 Guide after five measured selections, or earlier when critical/repeated
 negative signals exist. Selection, correction and verifier co-occurrence open
@@ -186,13 +195,14 @@ portability:
 source_coverage:
 frozen_evaluation:
 candidate_validation:
+runtime_eligibility:
 promotion_blockers:
 recommended_disposition:
 ```
 
 ## Promotion boundary
 
-Candidate creation is not promotion. `maestro-govern` and the owner must review
+Candidate use is not publication. `maestro-govern` and the owner must review
 the evidence, evaluation, overlap, portability, rollback, and versioned diff.
 After an owner decision or accepted held-out evaluation, preview
 `maestro expertise activate --repo . --candidate <id>

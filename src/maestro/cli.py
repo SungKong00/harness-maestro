@@ -50,6 +50,7 @@ from .governance import govern_report, record_run
 from .observations import (
     import_codex_app_server_trace,
     record_host_observation,
+    start_desktop_request_observation,
     start_run_observation,
 )
 from .project import (
@@ -581,6 +582,25 @@ def parser() -> argparse.ArgumentParser:
         help="Optional validated route v2 plan whose compact assignments are recorded",
     )
     observe_start.add_argument("--json", action="store_true")
+    observe_desktop = observe_commands.add_parser(
+        "desktop",
+        help=(
+            "Start a run and attach allowlisted Codex Desktop request "
+            "settings; applied model and tokens remain unmeasured"
+        ),
+    )
+    observe_desktop.add_argument("--repo", default=".")
+    observe_desktop.add_argument("--run-id", required=True)
+    observe_desktop.add_argument("--task-label", required=True)
+    observe_desktop.add_argument("--thread-id", required=True)
+    observe_desktop.add_argument("--turn-id", required=True)
+    observe_desktop.add_argument("--requested-model", required=True)
+    observe_desktop.add_argument("--requested-reasoning-effort")
+    observe_desktop.add_argument(
+        "--plan",
+        help="Optional validated route v2 plan whose compact assignments are recorded",
+    )
+    observe_desktop.add_argument("--json", action="store_true")
     observe_host = observe_commands.add_parser(
         "host",
         help="Attach explicit Host-reported model and token telemetry",
@@ -1156,6 +1176,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.repo,
                 run_id=args.run_id,
                 task_label=args.task_label,
+                plan_path=args.plan,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "desktop":
+            result = start_desktop_request_observation(
+                args.repo,
+                run_id=args.run_id,
+                task_label=args.task_label,
+                thread_id=args.thread_id,
+                turn_id=args.turn_id,
+                requested_model=args.requested_model,
+                requested_reasoning_effort=(
+                    args.requested_reasoning_effort
+                ),
                 plan_path=args.plan,
             )
             _emit(result, args.json)

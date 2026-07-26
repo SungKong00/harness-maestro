@@ -15,7 +15,9 @@ from tests.support import apply_fresh_init, check_by_id, write_json
 from maestro.doctor import doctor_report
 from maestro.cli import main
 from maestro.dashboard import create_dashboard_server
+from maestro.decisions import build_decision_plan, validate_decision_plan
 from maestro.expertise import expertise_manifest_digest
+from maestro.expertise_health import expertise_component_health
 from maestro.expertise_lifecycle import (
     EXPERTISE_AUTHORITY_BLOCK,
     apply_expertise_activation_plan,
@@ -30,7 +32,7 @@ from maestro.expertise_lifecycle import (
     validate_expertise_contribution,
     validate_expertise_candidate,
 )
-from maestro.governance import govern_report, record_run
+from maestro.governance import govern_report, recent_run_events, record_run
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry
 from maestro.util import canonical_json, file_sha256, sha256_text
@@ -634,7 +636,9 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 {item["code"] for item in report["issues"]},
             )
 
-    def test_candidate_is_not_routed_until_reviewed_activation(self) -> None:
+    def test_valid_candidate_is_immediately_routed_before_publication(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "project"
             repo.mkdir()
@@ -647,9 +651,76 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 intent="review",
                 repo_path=repo,
             )
-            self.assertNotIn(
+            self.assertEqual(
+                ["project-design"],
+                before["expertise"]["selected_pack_ids"],
+            )
+            candidate_card = before["expertise"]["pack_cards"][0]
+            self.assertEqual("candidate", candidate_card["origin"])
+            self.assertEqual(
+                "candidate",
+                candidate_card["lifecycle_state"],
+            )
+            self.assertEqual(
                 "project-design",
-                before.get("expertise", {}).get("selected_pack_ids", []),
+                candidate_card["candidate_id"],
+            )
+            self.assertIn(
+                "EXPERTISE_CANDIDATE_IN_USE",
+                {
+                    warning["code"]
+                    for warning in before["expertise"]["warnings"]
+                },
+            )
+            self.assertEqual(
+                "PASS",
+                validate_route_v2(before, repo_path=repo)["status"],
+            )
+            implementation = route_goal_v2(
+                "Implement our project typography in the product design",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            writer = next(
+                assignment
+                for assignment in implementation["assignments"]
+                if assignment["mutation_owner"]
+            )
+            self.assertIn(
+                "project-type-rules",
+                writer["decision_guide_ids"],
+            )
+            self.assertEqual(
+                "PASS",
+                validate_route_v2(
+                    implementation,
+                    repo_path=repo,
+                )["status"],
+            )
+            decision = build_decision_plan(
+                repo,
+                "Choose our project typography for the product design",
+                "medium",
+            )
+            candidate_loads = [
+                pack
+                for specialist in decision["specialist_contracts"]
+                for pack in specialist["expertise_load"]["packs"]
+                if pack["expertise_pack_id"] == "project-design"
+            ]
+            self.assertEqual("PASS", validate_decision_plan(decision)["status"])
+            self.assertTrue(candidate_loads)
+            self.assertTrue(
+                candidate_loads[0]["skill_path"].startswith(
+                    ".maestro/state/candidates/expertise/"
+                )
+            )
+            self.assertTrue(
+                all(
+                    assignment["read_only"]
+                    for assignment in decision["assignments"]
+                )
             )
 
             activation = build_expertise_activation_plan(
@@ -718,6 +789,101 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                     for pack in inventory["packs"]
                     if pack["origin"] == "project"
                 },
+            )
+
+    def test_invalid_or_expired_candidate_is_not_immediately_routed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            quality_path = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+                / "evals/quality.json"
+            )
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            quality["cases"][0]["criterion_results"] = []
+            write_json(quality_path, quality)
+
+            invalid_route = route_goal_v2(
+                "Apply our project typography to the product design",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+
+            self.assertNotIn(
+                "project-design",
+                invalid_route["expertise"]["selected_pack_ids"],
+            )
+            invalid_candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual("invalid", invalid_candidate["runtime_status"])
+            self.assertFalse(
+                invalid_candidate["immediate_use_allowed"]
+            )
+
+            _candidate(
+                repo,
+                candidate_id="expired-project-design",
+                pack_id="expired-project-design",
+                standalone=True,
+            )
+            expired_path = (
+                repo
+                / ".maestro/state/candidates/expertise/"
+                "expired-project-design/candidate.json"
+            )
+            expired = json.loads(expired_path.read_text(encoding="utf-8"))
+            expired["review_after"] = "2020-01-01"
+            write_json(expired_path, expired)
+
+            statuses = {
+                item["candidate_id"]: item
+                for item in expertise_inventory(repo)["candidates"]
+            }
+            self.assertEqual(
+                "expired",
+                statuses["expired-project-design"]["runtime_status"],
+            )
+            self.assertFalse(
+                statuses["expired-project-design"][
+                    "immediate_use_allowed"
+                ]
+            )
+
+    def test_same_version_candidate_conflict_blocks_immediate_use(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="project-design-a",
+            )
+            _candidate(
+                repo,
+                candidate_id="project-design-b",
+            )
+
+            inventory = expertise_inventory(repo)
+            conflicting = [
+                candidate
+                for candidate in inventory["candidates"]
+                if candidate["expertise_pack_id"] == "project-design"
+            ]
+
+            self.assertEqual(2, len(conflicting))
+            self.assertTrue(
+                all(
+                    candidate["runtime_status"] == "conflict"
+                    and not candidate["immediate_use_allowed"]
+                    for candidate in conflicting
+                )
             )
 
     def test_activation_rejects_stale_base_pin(self) -> None:
@@ -896,6 +1062,71 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             self.assertEqual(
                 {"project-design": 1},
                 report["expertise_pack_usage"],
+            )
+
+    def test_candidate_usage_is_recorded_separately_for_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            receipt_path = Path(temporary) / "candidate-receipt.json"
+            write_json(
+                receipt_path,
+                {
+                    "run_id": "candidate-project-design-run",
+                    "task_label": "프로젝트 타이포그래피 구현",
+                    "risk": "low",
+                    "route_depth": "fast",
+                    "selected_lenses": [],
+                    "selected_expertise_packs": ["project-design"],
+                    "selected_decision_guides": ["project-type-rules"],
+                    "expertise_research_mode": "reuse",
+                    "expertise_research_gate": "not-required",
+                    "executor_runs": 1,
+                    "primary_executor_id": "implementation-engineer",
+                    "executor_ids": ["implementation-engineer"],
+                    "outcome": "completed",
+                    "evidence_refs": ["artifact:screen"],
+                    "duration_ms": 100,
+                    "tokens": None,
+                    "correction_count": 0,
+                    "agent_calls": 1,
+                    "verifier_result": "not_run",
+                    "command_artifact_ref": None,
+                },
+            )
+
+            recorded = record_run(repo, receipt_path)
+            event = json.loads(
+                (repo / recorded["event_path"])
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            inventory = expertise_inventory(repo)
+            health = expertise_component_health(
+                inventory,
+                recent_run_events(repo, window=20)["runs"],
+            )
+            candidate = inventory["candidates"][0]
+            candidate_health = health["candidates"][0]
+
+            self.assertTrue(candidate["immediate_use_allowed"])
+            self.assertEqual("available", candidate["runtime_status"])
+            self.assertEqual(
+                candidate["definition_digest"],
+                event["expertise_pack_definition_digests"][
+                    "project-design"
+                ],
+            )
+            self.assertEqual(
+                candidate["candidate_id"],
+                candidate_health["candidate_id"],
+            )
+            self.assertEqual(1, candidate_health["usage_count"])
+            self.assertEqual(
+                "프로젝트 타이포그래피 구현",
+                candidate_health["recent_runs"][0]["task_label"],
             )
 
     def test_stale_activation_plan_writes_nothing(self) -> None:

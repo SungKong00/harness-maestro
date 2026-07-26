@@ -43,7 +43,13 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      evaluation and `validate-candidate`, and report the isolated candidate.
      Attempt at most two bounded repairs for validator failures. Unless the
      user separately requests activation or update, stop at the candidate and
-     never modify active Expertise.
+     never modify active Expertise. A non-expired, unambiguous candidate that
+     passes validation is immediately eligible for Maestro routing in this
+     project. If the same request already authorized implementation, reroute
+     the implementation goal so the existing mutation owner can apply its
+     Guides; if the request was authoring-only, do not start implementation.
+     Candidate selection never creates a writer, widens allowed paths, or
+     bypasses the ordinary Assignment and verification contract.
 5. Do not preemptively research every task. Let the route first select reusable
    expertise and classify any research need. Only explicit current-fact or
    external-evidence requests may start research before routing.
@@ -98,16 +104,20 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
    - For an authorized non-trivial implementation in an initialized project,
      save the validated route v2 JSON in a temporary file. When an Assignment
-     will run through the repository's Codex App Server Host adapter, use
-     `maestro host codex` for that Assignment instead of pre-starting an
-     observation: the Host command derives read-only versus the one bounded
-     writer, model, and reasoning effort from the plan and starts its own
-     observation. Do not reuse that run ID or attach the parent Desktop request
-     metadata to it. If the current Host executes the work itself and cannot
-     delegate the turn through the adapter, use `maestro observe start` as the
-     honest request-only fallback. Neither path stores a prompt, message, guide
-     body, or file content in Maestro state. Do not start an observation for a
-     read-only request merely to obtain telemetry.
+     can run with repository-local tools and no interactive approval, network,
+     app connector, or unavailable capability, default its actual Executor
+     turn to `maestro host codex`. The Host command derives read-only versus
+     the one bounded writer, model, and reasoning effort from the plan and
+     starts its own observation. This is the only built-in path that can record
+     that Executor turn's official applied-model, reroute, duration, and token
+     events. Do not reuse that run ID or attach the parent Desktop request
+     metadata to it. If `maestro doctor --host codex` fails, or the Assignment
+     needs a capability the adapter cannot provide, execute in the current Host
+     and use `maestro observe desktop` as the honest request-only fallback.
+     That fallback records the parent Desktop request setting, not worker
+     tokens. Neither path stores a prompt, message, guide body, or file content
+     in Maestro state. Do not start an observation for a read-only request
+     merely to obtain telemetry.
    - Write `task-label` as a concise human title in the user's current
      language. For a Korean request, prefer a Korean label even when code
      identifiers are English. Do not reuse the raw prompt or an internal
@@ -201,7 +211,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. Before building any durable component, let `$maestro-govern` classify a closed evidence signal with `maestro govern classify`; usage count or persona wording is not a boundary.
-    - A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only for a classified Decision Guide or Expertise Pack. A classified Lens, Executor/Agent, Department, Adapter, Research Lane, Specialist Contract, or Packet contract may be compiled under `.maestro/state/candidates/components/` with `$maestro-registry-builder` only after explicit candidate work is requested. Neither path changes the active Registry in the producing run.
+    - A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only for a classified Decision Guide or Expertise Pack. A classified Lens, Executor/Agent, Department, Adapter, Research Lane, Specialist Contract, or Packet contract may be compiled under `.maestro/state/candidates/components/` with `$maestro-registry-builder` only after explicit candidate work is requested. Neither path changes the active Registry in the producing run. A validated Expertise candidate may be selected by later or already-authorized project work while it stays visibly `candidate`; it still cannot grant mutation authority.
     - Never edit an active project Expertise Skill as same-run self-improvement. A later owner decision or accepted held-out evaluation may publish a new candidate with `maestro expertise update`; keep Pack/Skill identity, increment one version, and use the preview/apply boundary. Use `deactivate` to remove only the allowlist entry when the Pack should stop routing.
     - Treat a Guide addition, revision, deprecation, trigger adjustment, source refresh, or evaluation extension as a `component_change` on one complete next Pack candidate. Let the Viewer report component review conditions from bounded use signals, but never infer causality or mutate on counts alone. Export a portable candidate only as a review bundle; Harness inclusion still requires a separate repository review and release.
 18. For a non-trivial initialized run, write one compact RunReceipt after the
@@ -220,12 +230,14 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       Codex session files.
     - In Codex Desktop, when the current public tool runtime exposes
       `nodeRepl.requestMeta["x-codex-turn-metadata"]`, allowlist only `model`,
-      `reasoning_effort`, `thread_id`, and `turn_id`. Attach them immediately
-      after `observe start` with source `codex-desktop-request-meta`, quality
-      `host_reported`, correlation `<thread_id>:<turn_id>`, and
-      `model_event_evidence=unavailable`. Pass `reasoning_effort` as
-      `--requested-reasoning-effort`; it is a requested setting, not actual
-      reasoning-token consumption. Never persist the raw metadata object.
+      `reasoning_effort`, `thread_id`, and `turn_id`. For a current-Host
+      fallback, pass those four values to `maestro observe desktop` so starting
+      the observation and attaching the request setting cannot be forgotten as
+      separate workflow steps. The command fixes source
+      `codex-desktop-request-meta`, quality `host_reported`, correlation
+      `<thread_id>:<turn_id>`, and `model_event_evidence=unavailable`. The
+      `reasoning_effort` is a requested setting, not actual reasoning-token
+      consumption. Never persist the raw metadata object.
     - Record actual duration and token values only when available; use `null` otherwise.
     - `stage_results` is optional and bounded to the plan's five Assignments.
       Record its applied model, duration, tokens, status, and up to three
@@ -268,6 +280,10 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       `failed` or `interrupted` result exits 4; a protocol, timeout, sandbox, or
       contract failure exits 2 and must never be converted into an applied
       model claim. Do not ask the user to invoke this command.
+    - Token totals from `maestro host codex` cover only the App Server turn
+      owned by that command. The parent Desktop Maestro/orchestrator turn is
+      outside that event stream and remains explicitly unmeasured; never label
+      a worker-only total as whole-workflow cost.
     - A request to approve a detected verification command uses
       `maestro verification approve` or the dashboard's exact candidate
       `preview → apply` flow. Treat approval as a project-authority change:

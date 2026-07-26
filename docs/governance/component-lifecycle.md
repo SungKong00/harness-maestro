@@ -19,7 +19,8 @@ sensitivity: internal
 이 절차는 Lens, Executor, Expertise Pack, Decision Guide, Department routing,
 Skill, Adapter, Research Lane, Specialist Contract, Packet contract, Convention과
 specialist 사용 규칙에 적용한다. 실행 중인 하네스를 스스로 바로 수정하는 절차가
-아니라, 운영 신호를 격리된 후보로 바꾸고 검증한 뒤 사람이 승격하는 절차다.
+아니라, 운영 신호를 격리된 후보로 바꾸고 검증한 뒤 사용 결과를 관찰하며 사람이
+게시·승격하는 절차다.
 
 여기서 Convention은 전역 Harness 규칙과 여러 프로젝트에 배포되는 규칙을 뜻한다.
 현재 프로젝트 안에서만 소유하고 반복 사용할 Convention은 project manifest가
@@ -34,13 +35,31 @@ observed → candidate → pilot → active → deprecated → retired
                       ↘ rejected
 ```
 
-- `observed`: namespace가 있는 raw event. 아직 개선 주장이 아니다.
-- `candidate`: 해결할 실패 모드, 변경안, 성공 지표와 rollback을 명시한다.
-- `pilot`: 고정된 version과 비교 조건으로 격리 평가한다.
-- `active`: 검증 결과와 owner 승인으로 Registry 또는 문서 권위에 반영한다.
-- `deprecated`: 대체 항목과 지원 기간을 알린다.
-- `retired`: 기본 routing에서 제거하되 역사와 migration 기록은 보존한다.
-- `rejected`: 실패 이유와 재개에 필요한 새 증거를 남긴다.
+| 내부 값 | 문서·화면 표기 | 의미 | 다음 단계 |
+| --- | --- | --- | --- |
+| `observed` | 원시 신호 | 이름 공간이 있는 사건일 뿐, 아직 개선 주장이 아님 | 반복 여부와 재현 근거 확인 |
+| `candidate` | 검토 후보 | 실패 모드, 변경안, 성공 지표, 되돌리기 방법을 갖춘 제안 | 평가하거나 기각 |
+| `pilot` | 격리 시험 | 고정 버전과 비교 조건으로 제한된 범위에서 평가 중 | 승인, 재시험 또는 기각 |
+| `active` | 활성 권위 | 검증 결과와 소유자 승인으로 현재 규칙에 반영됨 | 사용 결과 관찰 |
+| `deprecated` | 교체 예정 | 대체 항목과 지원 종료 시점이 정해짐 | 이전 완료 뒤 사용 종료 |
+| `retired` | 사용 종료 | 기본 선택에서 빠졌지만 이력과 이전 기록은 보존됨 | 필요할 때 역사 자료로만 조회 |
+| `rejected` | 기각 | 현재 근거로 채택하지 않으며 재개 조건을 기록함 | 새로운 근거가 생길 때만 재검토 |
+
+### 서로 다른 상태 축을 섞지 않는다
+
+`candidate`라는 단어가 보인다고 모두 같은 상태는 아니다.
+
+| 상태 축 | 값 | 답하는 질문 |
+| --- | --- | --- |
+| 구성요소 개선 수명주기 | `observed/candidate/pilot/active/deprecated/retired/rejected` | 이 변경 제안은 채택 과정의 어디에 있는가 |
+| Expertise 후보 실행 자격 | `available/published/expired/superseded/conflict/invalid` | 이 프로젝트 라우팅이 지금 이 후보를 선택해도 되는가 |
+| Expertise Pack 사용 단계 | `candidate/pilot/active/deprecated/retired` | 배포된 전문 지식 묶음은 어느 사용 단계인가 |
+| Decision Guide 최신성 | `stable/versioned/volatile` | 이 판단 근거를 언제 다시 확인해야 하는가 |
+| 프로젝트 사용 검토 | `awaiting_usage/evidence_gathering/review_due/review_required` | 이 프로젝트의 사용 기록으로 지금 무엇을 해야 하는가 |
+
+사용자 화면의 한국어 표기와 색상 규칙은
+[운영 뷰어의 표시 언어 계약](../architecture/operations-viewer.md#표시-언어-계약)을
+단일 기준으로 사용한다. `미측정`과 `기록 없음`은 실패 상태가 아니다.
 
 ## 관찰 기록
 
@@ -118,8 +137,10 @@ model·sandbox·context·approval 경계가 있을 때만 후보가 된다.
 `$maestro-expertise-builder`는 승인된 경우
 `.maestro/state/candidates/expertise/<candidate-id>/`에만 draft, source manifest와
 frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외되며, candidate
-생성은 active Registry 변경이 아니다. `review_after`가 지난 후보는 다시 검증하거나
-기각·제거하기 전까지 평가 입력으로 사용하지 않는다.
+생성은 active Registry 변경이나 mutation 권한 부여가 아니다. 전체 validator를
+통과한 비만료·비충돌 최신 후보 하나는 후보 상태를 유지한 채 해당 프로젝트
+라우팅에 즉시 참여한다. `review_after`가 지난 후보는 다시 검증하거나 기각·제거하기
+전까지 평가·작업 입력으로 사용하지 않는다.
 publication 검토 전 `maestro expertise validate-candidate`가 공통 권한 블록,
 필수 Guide 절, source-to-Guide 연결, normal·edge·non-trigger case와 digest-bound
 route 결과뿐 아니라 독립 authoring/evaluation run reference, 모든 observable
@@ -135,7 +156,9 @@ manifest·source·평가·rollback의 배포 단위를 하나로 유지한다.
 owner 결정 또는 accepted held-out evaluation을 받은 후보는
 `maestro expertise activate`의 preview/apply 경계로
 `.agents/skills/<skill-id>/`의 project `pilot`이 될 수 있다. project manifest
-allowlist에 든 Pack만 라우팅하며 candidate와 게시 시점 snapshot은 보존한다.
+allowlist는 게시된 Pack을 관리하고 candidate와 게시 시점 snapshot은 보존한다.
+후보 사용과 게시는 별개다. 후보는 읽기 Assignment에서 advisory-only이고, 이미
+mutation owner인 Executor만 기존 경계 안에서 적용한다.
 다음 revision도 새 candidate와 held-out/owner 근거를 요구하며
 `maestro expertise update`로 같은 ID의 version을 정확히 하나 올린다. 사용 중지는
 `maestro expertise deactivate`로 allowlist만 제거하고 파일을 보존한다. 기존 범용

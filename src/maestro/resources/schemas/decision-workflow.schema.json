@@ -231,7 +231,7 @@
           "oneOf": [
             {
               "type": "string",
-              "pattern": "^(?:skills|\\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\\.md$"
+              "pattern": "^(?:(?:skills|\\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*|\\.maestro/state/candidates/expertise/[a-z0-9]+(?:-[a-z0-9]+)*/draft)/SKILL\\.md$"
             },
             {
               "type": "null"

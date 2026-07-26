@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from .errors import MaestroError
 from .expertise import (
     PROJECT_PACK_FILENAME,
+    candidate_expertise_statuses,
     expertise_manifest_digest,
     load_expertise_catalog,
 )
@@ -1725,6 +1726,7 @@ def validate_expertise_contribution(
 def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     catalog = load_expertise_catalog(repo)
+    runtime_statuses = candidate_expertise_statuses(repo)
     entries: list[dict[str, Any]] = []
     for pack in catalog:
         metadata = pack["_maestro"]
@@ -1907,6 +1909,22 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                         "validation_issue_codes": [
                             issue["code"] for issue in validation["issues"]
                         ],
+                        "runtime_status": runtime_statuses.get(
+                            candidate["candidate_id"],
+                            {},
+                        ).get("runtime_status", "invalid"),
+                        "immediate_use_allowed": runtime_statuses.get(
+                            candidate["candidate_id"],
+                            {},
+                        ).get("immediate_use_allowed", False),
+                        "definition_digest": runtime_statuses.get(
+                            candidate["candidate_id"],
+                            {},
+                        ).get("definition_digest"),
+                        "proposed_guide_ids": [
+                            guide["guide_id"]
+                            for guide in candidate["proposed_guides"]
+                        ],
                         "component_change": _candidate_component_change(
                             candidate,
                             candidate_pack,
@@ -1924,6 +1942,9 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                         "candidate_id": path.name,
                         "error": f"{exc.code}: {exc.message}",
                         "ready_for_activation_review": False,
+                        "runtime_status": "invalid",
+                        "immediate_use_allowed": False,
+                        "definition_digest": None,
                     }
                 )
     return {

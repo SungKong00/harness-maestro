@@ -17,7 +17,7 @@
           <p id="repo-path" class="muted">프로젝트 정보를 불러오는 중입니다.</p>
         </div>
         <div class="header-actions">
-          <span id="connection-state" class="pill neutral">연결 중</span>
+          <span id="connection-state" class="pill neutral">로컬 데이터 연결 중</span>
           <span id="updated-at" class="muted">—</span>
           <button id="refresh" type="button">새로고침</button>
         </div>
@@ -47,35 +47,39 @@
         <section aria-labelledby="overview-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">AT A GLANCE</p>
+              <p class="eyebrow">한눈에 보기</p>
               <h2 id="overview-title">지금 먼저 볼 것</h2>
             </div>
-            <span id="doctor-state" class="pill neutral">Doctor 확인 중</span>
+            <span id="doctor-state" class="pill neutral">시스템 점검 중</span>
           </div>
           <div id="metrics" class="metric-grid"></div>
           <div class="overview-grid">
             <article class="panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">OBSERVABILITY</p>
-                  <h3>관측 데이터 범위</h3>
+                  <p class="eyebrow">기록 범위</p>
+                  <h3>실행 정보가 기록된 작업 비율</h3>
                 </div>
                 <span class="muted">최근 작업 기준</span>
               </div>
               <div id="coverage" class="coverage-list"></div>
               <p class="panel-note">
-                측정되지 않은 값은 추정하지 않습니다. 요청값·실제 실행값·Route 권고값을 분리합니다.
+                예: 3/20은 최근 20개 중 3개 작업에만 해당 정보가 기록됐다는 뜻입니다.
+                0%는 작업 실패가 아니라 실행 환경에서 받은 기록이 없다는 뜻입니다.
               </p>
             </article>
-            <details class="meaning-guide">
-              <summary>이 화면의 상태가 뜻하는 것</summary>
+            <details class="meaning-guide" open>
+              <summary>상태와 용어를 읽는 법</summary>
               <div class="meaning-grid">
-                <span><b>계획</b> Maestro가 실행 전에 정한 경로</span>
-                <span><b>실측</b> Host 완료 이벤트로 확인한 사실</span>
-                <span><b>선택</b> Pack·Guide가 Assignment 후보에 연결됨</span>
-                <span><b>적용</b> Host load와 산출물 근거가 있어야 확인 가능</span>
-                <span><b>배포 단계</b> Candidate · Pilot · Stable</span>
-                <span><b>지식 최신성</b> 저변동 · 버전 확인 · 최신 조사 필요</span>
+                <span><b>완료됨</b> 작업이 끝나고 최종 기록이 저장됨</span>
+                <span><b>진행 불가</b> 근거·승인·선행 조건이 없어 멈춤</span>
+                <span><b>모델·토큰 기록 없음</b> 실행 기록 수집에 연결되지 않음. 작업 실패라는 뜻은 아님</span>
+                <span><b>채팅에서 선택한 설정만 기록됨</b> 선택한 모델·추론 강도만 알며 실제 실행값은 모름</span>
+                <span><b>실제 실행 모델 기록됨</b> 작업 완료 이벤트에서 실제 실행 모델을 확인함</span>
+                <span><b>토큰 사용량 기록 없음</b> 0토큰이 아니라 토큰 수를 전달받지 못함</span>
+                <span><b>선택 / 불러옴 / 반영</b> 전문 지식 사용을 증명하는 서로 다른 단계</span>
+                <span><b>후보 / 시험 사용 / 정식 사용 / 교체 예정 / 사용 종료</b> 전문 지식 묶음의 사용 단계</span>
+                <span><b>변경이 드문 기준 / 버전별 확인 / 최신 자료 확인</b> 판단 가이드의 최신성</span>
               </div>
             </details>
           </div>
@@ -84,7 +88,7 @@
         <section aria-labelledby="attention-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">ACTION QUEUE</p>
+              <p class="eyebrow">확인 대기</p>
               <h2 id="attention-title">확인이 필요한 항목</h2>
             </div>
             <p class="muted">문제가 아니라 사용자 판단이나 승인이 필요한 순서입니다.</p>
@@ -95,10 +99,10 @@
         <section aria-labelledby="inflight-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">IN FLIGHT</p>
-              <h2 id="inflight-title">진행 중인 관측</h2>
+              <p class="eyebrow">완료 전 작업</p>
+              <h2 id="inflight-title">아직 완료 기록이 없는 작업</h2>
             </div>
-            <p class="muted">완료 기록과 아직 닫히지 않은 Host 관측을 구분합니다.</p>
+            <p class="muted">실제로 실행 중이거나 종료 기록이 남지 않은 작업입니다.</p>
           </div>
           <div id="inflight" class="stack compact"></div>
         </section>
@@ -108,24 +112,24 @@
         <section aria-labelledby="runs-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">WORK TRACE</p>
+              <p class="eyebrow">작업 기록</p>
               <h2 id="runs-title">작업과 실행 흐름</h2>
             </div>
-            <p class="muted">제목을 누르면 계획·관측 단계를 보고, 전문 지식 증거도 같은 위치에서 확인합니다.</p>
+            <p class="muted">제목을 누르면 작업 기준, 결과, 모델·토큰 기록과 실행 단계를 나눠 볼 수 있습니다.</p>
           </div>
           <div class="run-toolbar">
             <label class="search-field">
               <span class="sr-only">작업 검색</span>
-              <input id="run-search" type="search" placeholder="작업명 또는 Run ID 검색">
+              <input id="run-search" type="search" placeholder="작업명 또는 작업 ID 검색">
             </label>
             <label>
               <span class="sr-only">결과 필터</span>
               <select id="run-outcome-filter">
                 <option value="">모든 결과</option>
-                <option value="completed">완료</option>
+                <option value="completed">완료됨</option>
                 <option value="corrected">수정 후 완료</option>
-                <option value="failed">실패</option>
-                <option value="blocked">중단</option>
+                <option value="failed">실패함</option>
+                <option value="blocked">진행 불가</option>
                 <option value="no_change">변경 없음</option>
               </select>
             </label>
@@ -160,8 +164,8 @@
                   <th class="check-column"><span class="sr-only">선택</span></th>
                   <th>작업</th>
                   <th>결과</th>
-                  <th>경과 시간</th>
-                  <th>실행 관측</th>
+                  <th>걸린 시간</th>
+                  <th>모델·토큰 기록</th>
                   <th>전문 지식</th>
                 </tr>
               </thead>
@@ -173,10 +177,10 @@
         <section aria-labelledby="history-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">COMPLETED HISTORY</p>
-              <h2 id="history-title">작업 묶음</h2>
+              <p class="eyebrow">완료한 작업</p>
+              <h2 id="history-title">정리된 작업 묶음</h2>
             </div>
-            <p class="muted">완료한 목표 단위로 최근 목록을 접습니다. 원본 RunReceipt는 보존합니다.</p>
+            <p class="muted">완료한 목표 단위로 최근 목록을 정리합니다. 원본 작업 기록은 그대로 보존합니다.</p>
           </div>
           <div id="history-bundles" class="stack"></div>
         </section>
@@ -186,31 +190,31 @@
         <section aria-labelledby="expertise-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">EXPERTISE INVENTORY</p>
+              <p class="eyebrow">전문 지식 목록</p>
               <h2 id="expertise-title">전문 지식 카탈로그</h2>
             </div>
-            <p class="muted">배포 단계·지식 최신성·프로젝트 선택 기록·실제 적용 증거를 따로 봅니다.</p>
+            <p class="muted">어디에서 제공되는지, 얼마나 검토됐는지, 작업에서 실제로 사용됐는지를 따로 봅니다.</p>
           </div>
           <aside class="semantics-strip" aria-label="전문 지식 표시 기준">
-            <span><b>기본 포함 / 프로젝트 로컬</b> 어디에서 제공되는가</span>
-            <span><b>Pilot / Stable</b> Pack의 배포 단계</span>
-            <span><b>저변동 / 버전 확인 / 최신 조사</b> Guide 내용의 최신성</span>
-            <span><b>선택 / 로드 / 적용</b> 실제 작업에서 확인된 증거 단계</span>
+            <span><b>Maestro 기본 제공 / 이 프로젝트 전용</b> 제공 범위</span>
+            <span><b>후보 / 시험 사용 / 정식 사용 / 교체 예정 / 사용 종료</b> 전문 지식 묶음의 사용 단계</span>
+            <span><b>변경이 드문 기준 / 버전별 확인 / 최신 자료 확인</b> 판단 가이드의 최신성</span>
+            <span><b>선택 / 연결 / 불러옴 / 반영</b> 실제 작업에서 확인된 사용 근거</span>
           </aside>
           <div class="expertise-layout">
             <div>
               <div class="panel-heading compact-heading">
-                <h3>Pack</h3>
+                <h3>전문 지식 묶음 (Pack)</h3>
                 <span id="expertise-pack-count" class="muted"></span>
               </div>
               <label class="search-field pack-search">
-                <span class="sr-only">Pack과 Guide 검색</span>
-                <input id="expertise-search" type="search" placeholder="Pack 또는 Guide 검색">
+                <span class="sr-only">전문 지식 묶음과 판단 가이드 검색</span>
+                <input id="expertise-search" type="search" placeholder="전문 지식 또는 판단 가이드 검색">
               </label>
               <div id="expertise" class="pack-list" role="list"></div>
             </div>
             <div id="expertise-detail" class="expertise-detail panel">
-              <div class="empty-state">Pack을 선택하면 Guide와 근거를 보여줍니다.</div>
+              <div class="empty-state">전문 지식 묶음을 선택하면 판단 가이드와 근거를 보여줍니다.</div>
             </div>
           </div>
           <div id="expertise-preview" class="detail-panel empty">
@@ -221,10 +225,10 @@
         <section aria-labelledby="expertise-candidate-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">ISOLATED CANDIDATES</p>
-              <h2 id="expertise-candidate-title">프로젝트 후보</h2>
+              <p class="eyebrow">프로젝트 임시 후보</p>
+              <h2 id="expertise-candidate-title">이 프로젝트에서 만든 후보</h2>
             </div>
-            <p class="muted">후보는 격리되어 있으며 검증과 사용자 확인 전에는 Pack에 반영되지 않습니다.</p>
+            <p class="muted">검증된 최신 후보는 게시 전에도 관련 작업에 즉시 사용됩니다. 후보 상태와 사용 기록을 여기서 눈에 띄게 확인한 뒤 프로젝트용 전문 지식 묶음으로 고정할 수 있습니다.</p>
           </div>
           <div id="expertise-candidates" class="stack"></div>
         </section>
@@ -234,7 +238,7 @@
         <section aria-labelledby="verification-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">VERIFICATION AUTHORITY</p>
+              <p class="eyebrow">실행 검증 권한</p>
               <h2 id="verification-title">검증 명령 승인</h2>
             </div>
             <p class="muted">탐지된 명령을 프로젝트 권위로 등록합니다. 이 화면에서는 명령을 실행하지 않습니다.</p>
@@ -248,13 +252,13 @@
         <section aria-labelledby="governance-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">GOVERNANCE</p>
+              <p class="eyebrow">자가개선 관리</p>
               <h2 id="governance-title">자가개선 검토 신호</h2>
             </div>
             <span class="pill neutral">자동 변경 없음</span>
           </div>
           <p class="section-intro">
-            반복 신호를 검토 후보로만 올립니다. Convention·Skill·Pack을 자동 승격하거나 삭제하지 않습니다.
+            반복 신호를 검토 후보로만 올립니다. 개발 규칙(Convention)·Skill·전문 지식 묶음을 자동 승격하거나 삭제하지 않습니다.
           </p>
           <div id="governance" class="governance-grid"></div>
         </section>
@@ -263,7 +267,7 @@
 
     <footer>
       이 페이지는 프로젝트 로컬 메타데이터를 읽습니다. 사용자가 확인한 검증 명령,
-      작업 묶음, 표시 이름과 검토된 프로젝트 Expertise 계획만 반영합니다.
+      작업 묶음, 표시 이름과 검토된 프로젝트 전문 지식 계획만 반영합니다.
       명령 실행, 자동 커밋·푸시, 프롬프트 본문과 원문 대화 저장은 하지 않습니다.
     </footer>
     <div id="error" class="error-banner" role="alert" hidden></div>

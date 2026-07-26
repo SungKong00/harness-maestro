@@ -5,9 +5,9 @@ type: decision
 status: active
 authority: repository
 owner: harness-maestro
-summary: 검토된 Expertise 후보를 추적되는 프로젝트 Skill로 활성화·갱신하고, 비활성화는 파일을 보존한 allowlist 변경으로 처리한다.
+summary: 검증된 Expertise 후보는 프로젝트에서 즉시 사용하되 후보 상태를 유지하고, 게시·갱신은 추적되는 프로젝트 Skill과 allowlist로 관리한다.
 scope: [.agents/skills, .maestro/project.json, expertise, route-v2]
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -19,13 +19,22 @@ sensitivity: internal
 프로젝트에서 계속 쓸 Expertise의 원본은
 `.agents/skills/<skill-id>/`에 Git 추적 가능한 자기완결 Skill로 저장한다.
 `maestro-pack.json`이 판단 기준과 guide metadata를 정의하고,
-`.maestro/project.json`의 `expertise.active_pack_paths`에 명시된 Pack만 Maestro
-라우팅에 참여한다.
+`.maestro/project.json`의 `expertise.active_pack_paths`는 추적 가능한 프로젝트
+배포본만 명시한다.
 
-후보는 기존처럼 `.maestro/state/candidates/expertise/`에 격리해 자동 호출하지
-않는다. owner 결정 또는 accepted held-out evaluation이 있으면
-`maestro expertise activate`의 preview/apply 경계로 `pilot`을 원자적으로
-게시한다. 게시된 Skill에는 candidate의 compact snapshot을 복사해 clone 뒤에도
+후보는 `.maestro/state/candidates/expertise/`에 격리하지만, 완전한 bundle 검증을
+통과하고 `review_after`가 지나지 않았으며 같은 Pack·version 충돌이 없으면 그
+프로젝트의 Maestro 라우팅에 즉시 참여한다. 같은 Pack의 후보가 여럿이면 가장 높은
+version 하나만 사용할 수 있고, 같은 최고 version이 둘 이상이면 모두 차단한다.
+활성 프로젝트 Pack보다 낮거나 같은 version, 만료·검증 실패 후보도 차단한다.
+후보는 Pack 기준을 제공할 뿐 쓰기 권한을 만들지 않는다. 읽기 Assignment에서는
+advisory-only이고, 이미 mutation 권한을 받은 Executor만 기존 allowed path와 검증
+경계 안에서 기준을 구현할 수 있다.
+
+owner 결정 또는 accepted held-out evaluation이 있으면
+`maestro expertise activate`의 preview/apply 경계로 후보를 추적 가능한 `pilot`으로
+게시한다. 게시는 첫 사용을 허가하는 절차가 아니라 clone·협업·복구 가능한 프로젝트
+권위로 고정하는 절차다. 게시된 Skill에는 candidate의 compact snapshot을 복사해
 승인 당시 문제·범위·평가 계약을 확인할 수 있게 한다. Git에서 제외된 후보 원본도
 rollback과 재평가용으로 남긴다.
 
@@ -81,8 +90,9 @@ digest를 고정하고 local trigger·guide·research trigger만 더한다. 상�
 
 ## 거부한 대안
 
-- `.maestro/state` 후보를 그대로 호출: Git에서 제외되어 clone·협업·복구가 안 되고
-  후보가 활성 권위로 오염된다.
+- 검증 전 후보까지 호출: 불완전한 기준이 구현에 들어가고 후보 간 충돌을 숨긴다.
+- 후보를 사용하려면 먼저 게시하도록 강제: 사용 결과를 관찰하기 전에 프로젝트
+  권위로 고정해 후보와 배포본의 목적을 뒤섞는다.
 - `.maestro/expertise`와 `.agents/skills`에 같은 본문 복제: 두 원본의 drift와
   Host별 설치 복잡도가 생긴다.
 - project > global first-wins shadowing: 선택 출처가 숨고 Host별 우선순위 차이가

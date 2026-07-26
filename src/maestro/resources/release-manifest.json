@@ -3,16 +3,16 @@
   "registry": {
     "sha256": "ac787410084c22e24a046938b88abae68edea3287ca30197d98eea81e33434f4"
   },
-  "release_id": "126311f0c5ed6894ffd7ba69bcf42a528731f7ec6d1db0e194d5be0460143287",
+  "release_id": "96946fe3bbfef55fbe4239f9c6ca2fa4acff6f46c82f311aa24a4ca14bac5cec",
   "runtime": {
     "file_count": 84,
-    "sha256": "1e8bf4d34171fadc5855e6a154df999afc47e1ebf431b6e0fed7d788e911cc58"
+    "sha256": "14a22ca6b1935e200f03c53ad239d4ffa029bca27842e4f692671c310ae266ee"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 7,
-      "sha256": "ba51abe2eabe55911aa1c60d6b3c0de75d74ea6be2e1d5f42e840bff33046f34"
+      "sha256": "a50f7df5a15ef86756c05515851db0137cb1a56c314cbf13bf562827802e3268"
     },
     "maestro-adapter-builder": {
       "file_count": 4,
@@ -20,7 +20,7 @@
     },
     "maestro-expertise-builder": {
       "file_count": 6,
-      "sha256": "2a75f54b40f1c8486cf2a238bbf984406677950990060faba906dee709a52142"
+      "sha256": "474aaee94d216ca58c4e1223f715fe08c9dbf171b4cdea64e3436d9e71230bb6"
     },
     "maestro-govern": {
       "file_count": 5,

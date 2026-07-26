@@ -679,44 +679,6 @@ td {
   margin-top: 2px;
 }
 
-.model-line {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  gap: 7px;
-  align-items: baseline;
-  padding: 2px 0;
-}
-
-.model-line.has-effort {
-  grid-template-columns: 70px minmax(0, 1fr) auto;
-}
-
-.model-line small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.model-effort {
-  padding: 2px 6px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  background: #f7f6f1;
-  font-size: 9px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.model-line strong {
-  overflow-wrap: anywhere;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.model-line-recommended strong {
-  color: var(--accent);
-}
-
 .run-row {
   cursor: pointer;
 }
@@ -816,6 +778,88 @@ tbody tr:last-child td {
   flex-wrap: wrap;
   gap: 7px;
   margin: 12px 0 20px;
+}
+
+.detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-summary-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfaf6;
+}
+
+.detail-summary-card.telemetry-card {
+  grid-column: 1 / -1;
+}
+
+.detail-summary-card h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.detail-summary-description {
+  margin: 5px 0 13px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.summary-fact-list {
+  display: grid;
+  margin: 0;
+}
+
+.summary-fact {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.36fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.summary-fact dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.summary-fact dd {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.summary-fact dd strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.summary-fact dd small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.technical-details {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.technical-details > summary {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.technical-details .detail-meta {
+  margin-bottom: 0;
 }
 
 .detail-heading {
@@ -1278,8 +1322,13 @@ footer {
   }
 
   .overview-grid,
-  .expertise-layout {
+  .expertise-layout,
+  .detail-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-summary-card.telemetry-card {
+    grid-column: auto;
   }
 
   .semantics-strip {
@@ -1332,5 +1381,10 @@ footer {
 
   .guide-badges {
     justify-content: flex-start;
+  }
+
+  .summary-fact {
+    grid-template-columns: 1fr;
+    gap: 5px;
   }
 }

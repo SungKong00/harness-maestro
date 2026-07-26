@@ -30,7 +30,9 @@ MAX_DECISION_ASSIGNMENTS = 5
 DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SKILL_PATH_PATTERN = re.compile(
-    r"^(?:skills|\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\.md$"
+    r"^(?:(?:skills|\.agents/skills)/[a-z0-9]+(?:-[a-z0-9]+)*"
+    r"|\.maestro/state/candidates/expertise/[a-z0-9]+(?:-[a-z0-9]+)*/draft)"
+    r"/SKILL\.md$"
 )
 IMPLEMENTATION_COMMAND_PATTERNS = (
     r"^\s*(?:implement|edit|change|modify|add|remove|write|create)\b",

@@ -36,7 +36,8 @@ sensitivity: internal
   → 실제 결과 검증
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
   → 반복된 재사용 공백만 project-local candidate 검토
-  → owner 결정/held-out 평가가 있으면 tracked project pilot으로 활성화
+  → 검증 통과 후보는 후보 표기를 유지한 채 이 프로젝트에서 즉시 사용
+  → owner 결정/held-out 평가가 있으면 tracked project pilot으로 게시
   → 선택 횟수·명시적 문제 신호가 임계치에 닿으면 Guide 단위 검토
   → 다음 버전은 새 후보로 검증해 update, 불필요하면 파일을 보존한 채 deactivate
   → 범용성이 검증된 후보만 기여 Bundle로 추출해 Harness 릴리스 검토
@@ -65,7 +66,8 @@ Assignment만 `authorized-executor-may-apply`다. Pack 자체는 어느 경우�
 만들지 않는다. Host가 실제로 해당 digest를 로드했다는 공개 증거가 없으면
 `host_attestation.status=unavailable`이며, 선택 기록을 load proof로 간주하지 않는다.
 
-라우팅은 프로젝트에 명시적으로 활성화한 Pack을 먼저 보고, 그 안에서는
+라우팅은 검증된 최신 프로젝트 후보, 명시적으로 게시한 프로젝트 Pack, bundled
+Pack 순으로 보고, 그 안에서는
 `dominance_triggers`와 일반 trigger 점수로 top-1을 고른다. 같은 우선순위·근거가
 동점이면 `EXPERTISE_SELECTION_AMBIGUOUS`를 남긴다. 이 최소 신호는 landing page처럼
 시각 디자인과 마케팅 문구가 겹치는 요청을 분리하기 위한 것이며, 모든 Pack 쌍의
@@ -161,11 +163,18 @@ candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
 └── evals/artifacts/<case-id>.json
 ```
 
-이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 승격이 아니다.
+이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 게시가 아니다.
 각 candidate는 `review_after`를 가지며, 만료 뒤에는 재검증·기각·삭제 중 하나를
 선택하기 전까지 재사용하지 않는다.
 
-검토된 후보는 다음 preview/apply로 프로젝트 pilot이 된다.
+`validate-candidate`를 통과한 후보는 같은 프로젝트에서 즉시 라우팅된다. 단, 같은
+Pack의 가장 높은 version이 하나일 때만 가능하고 검증 실패·만료·동일 최고 version
+충돌·활성 Pack 이하 version은 제외한다. 후보는 mutation 권한을 만들지 않는다.
+기존 읽기 Assignment는 advisory-only이고, 이미 쓰기가 승인된 Executor만 Guide를
+기존 작업 범위 안에서 구현한다. RunReceipt는 후보의 definition digest를 기록하므로
+뷰어가 후보별 선택 횟수와 최근 사용을 분리해 보여 줄 수 있다.
+
+계속 사용할 후보는 다음 preview/apply로 추적 가능한 프로젝트 pilot이 된다.
 
 ```text
 .agents/skills/<skill-id>/
@@ -182,12 +191,12 @@ candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
 └── activation.json
 ```
 
-`.maestro/project.json`에 명시된 `active_pack_paths`만 라우팅한다. Pack 파일이
-우연히 존재하거나 candidate가 쌓였다는 이유로 활성화하지 않는다. 기본 구성은
-bundled Pack 하나를 ID·version·digest로 고정하는 단일 `extends`이고, 새로운 판단
-분야에만 standalone Pack을 쓴다. 동일 ID shadowing, inherited guide 재정의,
-local-to-local·재귀 상속은 실패한다. project Pack은 implicit invocation을 끄고,
-Maestro route가 선택한 Skill과 guide만 연다.
+`.maestro/project.json`의 `active_pack_paths`는 게시된 프로젝트 Pack만 관리한다.
+후보가 존재한다는 사실만으로는 부족하며 전체 validator의 `PASS`가 즉시 사용
+조건이다. 기본 구성은 bundled Pack 하나를 ID·version·digest로 고정하는 단일
+`extends`이고, 새로운 판단 분야에만 standalone Pack을 쓴다. 동일 ID shadowing,
+inherited guide 재정의, local-to-local·재귀 상속은 실패한다. candidate와 project
+Pack은 implicit invocation을 끄고, Maestro route가 선택한 Skill과 guide만 연다.
 
 `results.json`은 Pack·Guide·research-mode의 결정론적 replay를 기록한다.
 `quality.json`은 별도 fresh-context 또는 human evaluator가 모든 frozen case의
@@ -228,7 +237,7 @@ maestro expertise validate-contribution \
 maestro doctor --repo /path/to/project --strict --json
 ```
 
-활성화는 candidate의 compact snapshot까지 project Skill에 복사한다. update는
+게시(activate)는 candidate의 compact snapshot까지 project Skill에 복사한다. update는
 Pack·Skill ID를 유지하고 version을 정확히 하나 올리며, 현재 bundled base digest로
 다시 합성한 후보만 받는다. deactivate는 allowlist만 바꾸고 Skill 파일을 삭제하지
 않으므로 Maestro 라우팅만 멈춘다. 보존된 Skill은 Host에 명시 호출 대상으로 계속
@@ -241,7 +250,7 @@ Git index에 없는 경우 경고하지만 stage·commit·push는 하지 않는�
 Run 선택 5회이며, 반복 음성 신호 3회 또는 critical 신호는 즉시 검토를 연다.
 이는 효용 점수나 원인 증명이 아니다. Host의 Guide load attestation이 없으면
 `host_attestation_unavailable`을 그대로 표시한다. 사용자는 뷰어에서 검토 가능한
-후보의 activate/update/export 또는 project Pack deactivate plan을 미리보고 두 번째
+후보의 publish/update/export 또는 project Pack deactivate plan을 미리보고 두 번째
 확인으로 적용할 수 있다. live Guide를 행 단위로 즉시 삭제하는 기능은 없다.
 
 `export`는 `.maestro/exports/expertise/`에 content-addressed contribution bundle을
@@ -315,6 +324,7 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | transaction-concurrency 팩 | 후속 | 기존 Lens와 중복되지 않는 작업 절차·평가 정의 |
 | 후보 활성화 CLI | 현재 구현 | owner/held-out 근거 + reviewed preview/apply + strict Doctor |
 | 후보 bundle validator | 현재 구현 | source·Guide·평가 artifact 교차 참조 + read-only CLI |
+| 검증 후보 즉시 사용 | 현재 구현 | 유효 기간·최고 version 단일성·definition digest 결합 + 기존 Executor 권한 유지 |
 | 후보 생성 CLI | 보류 | Builder Skill이 후보를 만들고 validator가 자동 검사하는 현재 경계로 충분; 반복된 정형 입력 병목이 측정되면 재검토 |
 | 자동 candidate 제안 | 보류 | 반복 fingerprint가 전문성 공백과 안정적으로 연결됨 |
 | active 전역 승격 자동화 | 제외 | owner 승인과 versioned repository change 유지 |

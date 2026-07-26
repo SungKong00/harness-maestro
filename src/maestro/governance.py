@@ -777,7 +777,7 @@ def record_run(
     unknown_packs = sorted(
         set(selected_expertise_packs) - set(definitions["expertise_packs"])
     )
-    catalog = load_expertise_catalog(repo)
+    catalog = load_expertise_catalog(repo, include_candidates=True)
     guide_ids = {
         guide["guide_id"]
         for pack in catalog

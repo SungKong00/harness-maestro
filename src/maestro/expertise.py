@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ PROJECT_PACK_FILENAME = "maestro-pack.json"
 PROJECT_PACK_ROOT = (".agents", "skills")
 MAX_PROJECT_PACK_FILES = 64
 MAX_PROJECT_PACK_FILE_BYTES = 2_000_000
+MAX_RUNTIME_CANDIDATES = 100
 
 
 def expertise_manifest_digest(pack: dict[str, Any]) -> str:
@@ -148,38 +150,42 @@ def _required_pack_file(skill_root: Path, relative_path: str) -> Path:
     return target
 
 
-def _load_project_packs(
+def _resolve_local_packs(
     repo: Path,
     bundled_registry: dict[str, list[dict[str, Any]]],
+    raw_packs: list[
+        tuple[
+            dict[str, Any],
+            str,
+            Path,
+            str,
+            str | None,
+            Path,
+        ]
+    ],
 ) -> list[dict[str, Any]]:
     bundled_by_id = {
         pack["expertise_pack_id"]: pack
         for pack in bundled_registry["expertise_packs"]
     }
-    raw_packs: list[tuple[dict[str, Any], str, Path]] = []
-    for relative_path in _project_pack_paths(repo):
-        target, skill_id = _project_pack_target(repo, relative_path)
-        if target.is_symlink() or not target.is_file():
-            raise MaestroError(
-                "PROJECT_EXPERTISE_FILE_MISSING",
-                f"Enabled project Expertise Pack is missing: {relative_path}",
-            )
-        pack = read_json(target)
-        if pack.get("skill_id") != skill_id:
-            raise MaestroError(
-                "PROJECT_EXPERTISE_SKILL_MISMATCH",
-                f"{relative_path} skill_id must match its directory name.",
-            )
-        raw_packs.append((pack, relative_path, target.parent))
 
     combined = copy.deepcopy(bundled_registry)
-    combined["expertise_packs"].extend(pack for pack, _, _ in raw_packs)
+    combined["expertise_packs"].extend(
+        pack for pack, *_ in raw_packs
+    )
     errors = validate_registry(combined)
     if errors:
         raise MaestroError("PROJECT_EXPERTISE_INVALID", "; ".join(errors))
 
     result: list[dict[str, Any]] = []
-    for pack, relative_path, skill_root in raw_packs:
+    for (
+        pack,
+        relative_path,
+        skill_root,
+        origin,
+        candidate_id,
+        definition_root,
+    ) in raw_packs:
         pack_id = pack["expertise_pack_id"]
         if pack["portability"] != "project":
             raise MaestroError(
@@ -193,8 +199,11 @@ def _load_project_packs(
             )
         _required_pack_file(skill_root, "SKILL.md")
         _required_pack_file(skill_root, "agents/openai.yaml")
-        _required_pack_file(skill_root, pack["source_manifest"])
-        _required_pack_file(skill_root, pack["evaluation_suite"])
+        evidence_root = (
+            definition_root if origin == "candidate" else skill_root
+        )
+        _required_pack_file(evidence_root, pack["source_manifest"])
+        _required_pack_file(evidence_root, pack["evaluation_suite"])
         candidate_snapshot = safe_target(
             skill_root,
             "evidence/candidate.json",
@@ -226,7 +235,7 @@ def _load_project_packs(
         resolved = copy.deepcopy(pack)
         guide_origins = {
             guide["guide_id"]: {
-                "origin": "project",
+                "origin": origin,
                 "skill_id": pack["skill_id"],
             }
             for guide in pack["guides"]
@@ -316,13 +325,18 @@ def _load_project_packs(
             }
 
         local_skill_digest = _skill_tree_digest(skill_root)
+        snapshot_path = (
+            safe_target(definition_root, "candidate.json")
+            if origin == "candidate"
+            else candidate_snapshot
+        )
         resolved["_maestro"] = {
-            "origin": "project",
+            "origin": origin,
             "pack_path": relative_path,
             "skill_path": (
                 skill_root.relative_to(repo) / "SKILL.md"
             ).as_posix(),
-            "definition_digest": local_skill_digest,
+            "definition_digest": _skill_tree_digest(definition_root),
             "skill_definition_digests": {
                 pack["skill_id"]: local_skill_digest,
                 **(
@@ -337,9 +351,13 @@ def _load_project_packs(
             },
             "guide_origins": guide_origins,
             "base": base_card,
+            "candidate_id": candidate_id,
+            "runtime_state": (
+                "candidate" if origin == "candidate" else "published"
+            ),
             "candidate_snapshot_path": (
-                candidate_snapshot.relative_to(repo).as_posix()
-                if candidate_snapshot.is_file()
+                snapshot_path.relative_to(repo).as_posix()
+                if snapshot_path.is_file()
                 else None
             ),
         }
@@ -347,8 +365,247 @@ def _load_project_packs(
     return result
 
 
+def _load_project_packs(
+    repo: Path,
+    bundled_registry: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    raw_packs: list[
+        tuple[
+            dict[str, Any],
+            str,
+            Path,
+            str,
+            str | None,
+            Path,
+        ]
+    ] = []
+    for relative_path in _project_pack_paths(repo):
+        target, skill_id = _project_pack_target(repo, relative_path)
+        if target.is_symlink() or not target.is_file():
+            raise MaestroError(
+                "PROJECT_EXPERTISE_FILE_MISSING",
+                f"Enabled project Expertise Pack is missing: {relative_path}",
+            )
+        pack = read_json(target)
+        if pack.get("skill_id") != skill_id:
+            raise MaestroError(
+                "PROJECT_EXPERTISE_SKILL_MISMATCH",
+                f"{relative_path} skill_id must match its directory name.",
+            )
+        raw_packs.append(
+            (
+                pack,
+                relative_path,
+                target.parent,
+                "project",
+                None,
+                target.parent,
+            )
+        )
+    return _resolve_local_packs(repo, bundled_registry, raw_packs)
+
+
+def candidate_expertise_statuses(
+    repo_path: str | Path,
+) -> dict[str, dict[str, Any]]:
+    """Classify candidate runtime eligibility without mutating project state."""
+
+    repo = ensure_repo(repo_path)
+    root = safe_target(repo, ".maestro/state/candidates/expertise")
+    if root.is_symlink() or not root.is_dir():
+        return {}
+
+    from .expertise_lifecycle import validate_expertise_candidate
+
+    published_candidate_ids: set[str] = set()
+    active_versions: dict[str, int] = {}
+    for relative_path in _project_pack_paths(repo):
+        target, _ = _project_pack_target(repo, relative_path)
+        if not target.is_file() or target.is_symlink():
+            continue
+        try:
+            active_pack = read_json(target)
+            pack_id = active_pack["expertise_pack_id"]
+            version = active_pack["version"]
+            active_versions[pack_id] = max(
+                active_versions.get(pack_id, 0),
+                version,
+            )
+            publication_path = safe_target(
+                target.parent,
+                "activation.json",
+            )
+            if publication_path.is_file() and not publication_path.is_symlink():
+                publication = read_json(publication_path)
+                candidate_id = publication.get("candidate_id")
+                if isinstance(candidate_id, str):
+                    published_candidate_ids.add(candidate_id)
+        except (KeyError, MaestroError, TypeError):
+            continue
+    published_root = safe_target(repo, ".agents/skills")
+    if published_root.is_dir() and not published_root.is_symlink():
+        for skill_root in sorted(published_root.iterdir())[
+            :MAX_PROJECT_PACK_FILES
+        ]:
+            if skill_root.is_symlink() or not skill_root.is_dir():
+                continue
+            publication_path = safe_target(
+                skill_root,
+                "activation.json",
+            )
+            if (
+                not publication_path.is_file()
+                or publication_path.is_symlink()
+            ):
+                continue
+            try:
+                publication = read_json(publication_path)
+                candidate_id = publication.get("candidate_id")
+                if isinstance(candidate_id, str):
+                    published_candidate_ids.add(candidate_id)
+            except MaestroError:
+                continue
+
+    statuses: dict[str, dict[str, Any]] = {}
+    eligible_by_pack: dict[str, list[dict[str, Any]]] = {}
+    paths = [
+        path
+        for path in sorted(root.iterdir())
+        if not path.is_symlink()
+        and path.is_dir()
+        and re.fullmatch(
+            r"[a-z0-9]+(?:-[a-z0-9]+)*",
+            path.name,
+        )
+    ][:MAX_RUNTIME_CANDIDATES]
+    for path in paths:
+        candidate_id = path.name
+        try:
+            report = validate_expertise_candidate(repo, candidate_id)
+        except (MaestroError, TypeError, ValueError) as exc:
+            code = (
+                exc.code
+                if isinstance(exc, MaestroError)
+                else "EXPERTISE_CANDIDATE_VALIDATION_ERROR"
+            )
+            statuses[candidate_id] = {
+                "candidate_id": candidate_id,
+                "validation_status": "FAIL",
+                "validation_issue_codes": [code],
+                "runtime_status": "invalid",
+                "immediate_use_allowed": False,
+            }
+            continue
+        status: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "validation_status": report["status"],
+            "validation_issue_codes": [
+                issue["code"] for issue in report["issues"]
+            ],
+            "runtime_status": "invalid",
+            "immediate_use_allowed": False,
+        }
+        statuses[candidate_id] = status
+        if report["status"] != "PASS":
+            continue
+        try:
+            candidate = read_json(safe_target(path, "candidate.json"))
+            pack = read_json(
+                safe_target(path, f"draft/{PROJECT_PACK_FILENAME}")
+            )
+            review_after = date.fromisoformat(candidate["review_after"])
+            status.update(
+                {
+                    "expertise_pack_id": pack["expertise_pack_id"],
+                    "skill_id": pack["skill_id"],
+                    "version": pack["version"],
+                    "review_after": candidate["review_after"],
+                    "candidate_path": path.relative_to(repo).as_posix(),
+                    "skill_path": (
+                        path.relative_to(repo) / "draft/SKILL.md"
+                    ).as_posix(),
+                    "definition_digest": _skill_tree_digest(path),
+                }
+            )
+        except (KeyError, MaestroError, TypeError, ValueError):
+            status["runtime_status"] = "invalid"
+            continue
+        if candidate_id in published_candidate_ids:
+            status["runtime_status"] = "published"
+            continue
+        if review_after < date.today():
+            status["runtime_status"] = "expired"
+            continue
+        if pack["version"] <= active_versions.get(
+            pack["expertise_pack_id"],
+            0,
+        ):
+            status["runtime_status"] = "superseded"
+            continue
+        eligible_by_pack.setdefault(
+            pack["expertise_pack_id"],
+            [],
+        ).append(status)
+
+    for entries in eligible_by_pack.values():
+        highest_version = max(entry["version"] for entry in entries)
+        latest = [
+            entry
+            for entry in entries
+            if entry["version"] == highest_version
+        ]
+        for entry in entries:
+            if entry["version"] < highest_version:
+                entry["runtime_status"] = "superseded"
+        if len(latest) != 1:
+            for entry in latest:
+                entry["runtime_status"] = "conflict"
+            continue
+        latest[0]["runtime_status"] = "available"
+        latest[0]["immediate_use_allowed"] = True
+    return statuses
+
+
+def _load_candidate_packs(
+    repo: Path,
+    bundled_registry: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    raw_packs: list[
+        tuple[
+            dict[str, Any],
+            str,
+            Path,
+            str,
+            str | None,
+            Path,
+        ]
+    ] = []
+    for candidate_id, status in candidate_expertise_statuses(repo).items():
+        if not status["immediate_use_allowed"]:
+            continue
+        candidate_root = safe_target(repo, status["candidate_path"])
+        skill_root = safe_target(candidate_root, "draft")
+        pack_path = safe_target(
+            skill_root,
+            PROJECT_PACK_FILENAME,
+        )
+        raw_packs.append(
+            (
+                read_json(pack_path),
+                pack_path.relative_to(repo).as_posix(),
+                skill_root,
+                "candidate",
+                candidate_id,
+                candidate_root,
+            )
+        )
+    return _resolve_local_packs(repo, bundled_registry, raw_packs)
+
+
 def load_expertise_catalog(
     repo_path: str | Path | None = None,
+    *,
+    include_candidates: bool = False,
 ) -> list[dict[str, Any]]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -376,13 +633,29 @@ def load_expertise_catalog(
                 for guide in pack["guides"]
             },
             "base": None,
+            "candidate_id": None,
+            "runtime_state": "bundled",
             "candidate_snapshot_path": None,
         }
         bundled.append(item)
     if repo_path is None:
         return bundled
     repo = ensure_repo(repo_path)
-    return [*bundled, *_load_project_packs(repo, registry)]
+    published = [*bundled, *_load_project_packs(repo, registry)]
+    if not include_candidates:
+        return published
+    candidates = _load_candidate_packs(repo, registry)
+    candidate_pack_ids = {
+        pack["expertise_pack_id"] for pack in candidates
+    }
+    return [
+        *(
+            pack
+            for pack in published
+            if pack["expertise_pack_id"] not in candidate_pack_ids
+        ),
+        *candidates,
+    ]
 
 
 def expertise_definition_map(
@@ -390,7 +663,10 @@ def expertise_definition_map(
 ) -> dict[str, str]:
     return {
         pack["expertise_pack_id"]: pack["_maestro"]["definition_digest"]
-        for pack in load_expertise_catalog(repo_path)
+        for pack in load_expertise_catalog(
+            repo_path,
+            include_candidates=repo_path is not None,
+        )
     }
 
 
@@ -411,6 +687,8 @@ def _minimal_pack_card(
         "version": pack["version"],
         "skill_id": pack["skill_id"],
         "origin": metadata["origin"],
+        "lifecycle_state": metadata["runtime_state"],
+        "candidate_id": metadata["candidate_id"],
         "pack_path": metadata["pack_path"],
         "skill_path": metadata["skill_path"],
         "definition_digest": metadata["definition_digest"],
@@ -454,10 +732,13 @@ def select_expertise(
             "Research evidence digest must be a canonical SHA-256 digest.",
         )
 
-    catalog = load_expertise_catalog(repo_path)
+    catalog = load_expertise_catalog(
+        repo_path,
+        include_candidates=repo_path is not None,
+    )
 
     goal_terms = searchable_terms(goal)
-    ranked: list[tuple[int, int, bool, str, dict[str, Any]]] = []
+    ranked: list[tuple[int, int, int, str, dict[str, Any]]] = []
     eligible_packs = [
         pack
         for pack in catalog
@@ -487,18 +768,22 @@ def select_expertise(
                 for trigger in pack.get("dominance_triggers", [])
                 if _matches(goal_terms, trigger)
             )
-            project_priority = pack["_maestro"]["origin"] == "project"
+            local_priority = {
+                "candidate": 2,
+                "project": 1,
+                "bundled": 0,
+            }.get(pack["_maestro"]["origin"], 0)
             ranked.append(
                 (
                     dominance_score,
                     score,
-                    project_priority,
+                    local_priority,
                     pack["expertise_pack_id"],
                     pack,
                 )
             )
     ranked.sort(
-        key=lambda item: (-int(item[2]), -item[0], -item[1], item[3])
+        key=lambda item: (-item[2], -item[0], -item[1], item[3])
     )
     selected_packs = [item[4] for item in ranked[:MAX_SELECTED_PACKS]]
 
@@ -578,6 +863,19 @@ def select_expertise(
                     ),
                 }
             )
+        if pack["_maestro"]["origin"] == "candidate":
+            warnings.append(
+                {
+                    "code": "EXPERTISE_CANDIDATE_IN_USE",
+                    "expertise_pack_id": pack["expertise_pack_id"],
+                    "candidate_id": pack["_maestro"]["candidate_id"],
+                    "message": (
+                        "A validated project candidate is immediately "
+                        "available to the authorized Executor; keep its "
+                        "task result and review status visible."
+                    ),
+                }
+            )
 
     if not selected_packs:
         discovery_matches = [
@@ -641,7 +939,12 @@ def select_expertise(
         "selection_trace": {
             "catalog_packs": len(catalog),
             "project_packs": sum(
-                pack["_maestro"]["origin"] == "project"
+                pack["_maestro"]["origin"]
+                in {"project", "candidate"}
+                for pack in catalog
+            ),
+            "candidate_packs": sum(
+                pack["_maestro"]["origin"] == "candidate"
                 for pack in catalog
             ),
             "eligible_packs": len(eligible_packs),

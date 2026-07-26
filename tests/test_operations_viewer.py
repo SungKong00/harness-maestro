@@ -26,6 +26,7 @@ from maestro.history import (
 from maestro.observations import (
     import_codex_app_server_trace,
     record_host_observation,
+    start_desktop_request_observation,
     start_run_observation,
 )
 from maestro.planning import route_goal_v2
@@ -104,6 +105,50 @@ class OperationsViewerTests(unittest.TestCase):
             }
         ]
         write_json(project_path, project)
+
+    def test_desktop_observation_starts_and_attaches_request_settings_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self._initialized_repo(Path(temporary))
+
+            first = start_desktop_request_observation(
+                repo,
+                run_id="desktop-request",
+                task_label="Desktop 요청 설정 연결",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                requested_model="gpt-5.6-sol",
+                requested_reasoning_effort="xhigh",
+            )
+            repeated = start_desktop_request_observation(
+                repo,
+                run_id="desktop-request",
+                task_label="Desktop 요청 설정 연결",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                requested_model="gpt-5.6-sol",
+                requested_reasoning_effort="xhigh",
+            )
+
+            self.assertEqual("observe-desktop", first["command"])
+            self.assertEqual("started", first["status"])
+            self.assertTrue(first["writes_performed"])
+            self.assertEqual("already_started", repeated["status"])
+            self.assertFalse(repeated["writes_performed"])
+            telemetry = repeated["telemetry"]
+            self.assertEqual(
+                "codex-desktop-request-meta",
+                telemetry["source"],
+            )
+            self.assertEqual("gpt-5.6-sol", telemetry["requested_model"])
+            self.assertEqual(
+                "xhigh",
+                telemetry["requested_reasoning_effort"],
+            )
+            self.assertEqual("unavailable", telemetry["model_event_evidence"])
+            self.assertIsNone(telemetry["applied_model"])
+            self.assertIsNone(telemetry["tokens"])
 
     def test_observation_enriches_one_idempotent_run_and_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -358,7 +403,7 @@ class OperationsViewerTests(unittest.TestCase):
             viewer_source = (
                 ROOT / "src/maestro/resources/viewer/app.js"
             ).read_text(encoding="utf-8")
-            self.assertIn('"Route 권고"', viewer_source)
+            self.assertIn('"Maestro 권장"', viewer_source)
             self.assertIn("run.models.requested", viewer_source)
             self.assertIn("run.models.applied", viewer_source)
             self.assertNotIn(
@@ -644,7 +689,10 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn('className: "run-detail-row"', viewer_source)
         self.assertIn("target.append(detailRow)", viewer_source)
         self.assertNotIn('id="run-detail"', viewer_markup)
-        self.assertIn("제목을 누르면 계획·관측 단계를 보고", viewer_markup)
+        self.assertIn(
+            "제목을 누르면 작업 기준, 결과, 모델·토큰 기록",
+            viewer_markup,
+        )
         self.assertIn('checkbox.type = "checkbox"', viewer_source)
         self.assertIn('id="history-bundles"', viewer_markup)
         self.assertIn(".run-detail-row", viewer_styles)
@@ -833,12 +881,51 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn('data-view-target="work"', viewer_markup)
         self.assertIn('data-view-target="expertise"', viewer_markup)
         self.assertIn('data-view-target="management"', viewer_markup)
-        self.assertIn("배포 단계·지식 최신성·프로젝트 선택 기록", viewer_markup)
-        self.assertIn('evidence_gathering: "로컬 선택 관찰 중"', viewer_source)
-        self.assertIn('stable: "저변동 지식"', viewer_source)
-        self.assertIn('"3 · Host 로드"', viewer_source)
-        self.assertIn('"4 · 산출물 적용"', viewer_source)
+        self.assertIn("전문 지식 묶음의 사용 단계", viewer_markup)
+        self.assertIn('evidence_gathering: "사용 결과 수집 중"', viewer_source)
+        self.assertIn('stable: "변경이 드문 기준"', viewer_source)
+        self.assertIn("후보 · 즉시 사용 가능", viewer_source)
+        self.assertIn("최근 선택된 작업", viewer_source)
+        self.assertIn("게시 전에도 관련 작업에 즉시 사용", viewer_markup)
+        self.assertIn('"3 · 본문 불러오기"', viewer_source)
+        self.assertIn('"4 · 결과에 적용"', viewer_source)
         self.assertNotIn("최근 사용 ${usage}", viewer_source)
+
+    def test_viewer_uses_clear_axis_specific_status_language(self) -> None:
+        viewer_root = ROOT / "src/maestro/resources/viewer"
+        viewer_source = (viewer_root / "app.js").read_text(encoding="utf-8")
+        viewer_markup = (viewer_root / "index.html").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("실행 정보가 기록된 작업 비율", viewer_markup)
+        self.assertIn("0%는 작업 실패가 아니라", viewer_markup)
+        self.assertIn('<details class="meaning-guide" open>', viewer_markup)
+        self.assertIn('host_not_connected: "모델·토큰 기록 없음"', viewer_source)
+        self.assertIn(
+            'host_request_observed: "채팅에서 선택한 설정만 기록됨"',
+            viewer_source,
+        )
+        self.assertIn(
+            'host_event_stream_complete: "실제 실행 모델 기록됨"',
+            viewer_source,
+        )
+        self.assertIn('"작업 기준"', viewer_source)
+        self.assertIn('"작업 결과"', viewer_source)
+        self.assertIn('"모델과 사용량 기록"', viewer_source)
+        self.assertIn('"기술 기록 보기"', viewer_source)
+        self.assertIn("0토큰이라는 뜻이 아닙니다", viewer_source)
+        self.assertNotIn("작업 요약", viewer_source + viewer_markup)
+        self.assertNotIn("토큰 미측정", viewer_source + viewer_markup)
+        self.assertNotIn("요청 설정 확인", viewer_source + viewer_markup)
+        self.assertIn('active: "정식 사용"', viewer_source)
+        self.assertIn('deprecated: "교체 예정"', viewer_source)
+        self.assertIn("function lifecycleTone", viewer_source)
+        self.assertIn("function displayReasoningEffort", viewer_source)
+        self.assertIn('"보통 (medium)"', viewer_source)
+        self.assertIn('"매우 높음 (xhigh)"', viewer_source)
+        self.assertNotIn("실행 이벤트 미연결", viewer_source + viewer_markup)
+        self.assertNotIn("Host 정보 없음", viewer_source + viewer_markup)
 
     def test_dashboard_is_local_read_only_and_token_gated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

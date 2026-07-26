@@ -59,7 +59,42 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승인과 자가개선
 신호는 관리 뷰에 둔다. 모든 카탈로그 내용을 한 긴 페이지에 동시에 펼치지 않는다.
 
-`메인 요청 모델`, `실제 적용 모델`, `Route 권고 모델`은 서로 다른 필드다. Route가
+## 표시 언어 계약
+
+저장 파일과 API의 enum은 호환성을 위해 바꾸지 않는다. 뷰어는 enum을 그대로
+노출하지 않고 아래처럼 **서로 다른 판단 축**으로 번역한다. 같은 화면에 함께
+나와도 한 축의 상태를 다른 축의 품질 판정으로 해석하지 않는다.
+
+| 판단 축 | 내부 값 | 사용자 표기 | 뜻 |
+| --- | --- | --- | --- |
+| 작업 결과 | `completed/corrected/failed/blocked/interrupted` | 완료됨 / 수정 후 완료 / 실패함 / 진행 불가 / 실행 중단됨 | 작업이 최종적으로 어떻게 끝났는가 |
+| 단계 실행 | `planned_only/not_observed` | 실행 전(계획) / 세부 실행 기록 없음 | 단계별 결과가 실제로 기록됐는가 |
+| 모델·토큰 기록 | `host_not_connected/host_request_observed/host_event_stream_complete` | 모델·토큰 기록 없음 / 채팅에서 선택한 설정만 기록됨 / 실제 실행 모델 기록됨 | 실행 환경에서 어떤 값을 실제로 받았는가 |
+| Pack 사용 단계 | `candidate/pilot/active/deprecated/retired` | 후보 / 시험 사용 / 정식 사용 / 교체 예정 / 사용 종료 | 전문 지식 묶음이 어느 사용 단계인가 |
+| Guide 최신성 | `stable/versioned/volatile` | 변경이 드문 기준 / 사용 버전별 확인 / 작업 때 최신 자료 확인 | 근거를 언제 다시 확인해야 하는가 |
+| 프로젝트 사용 검토 | `awaiting_usage/evidence_gathering/review_due/review_required` | 사용 기록 없음 / 사용 결과 수집 중 / 정기 검토 필요 / 문제 검토 필요 | 이 프로젝트의 사용 기록으로 무엇을 할 때인가 |
+
+표기 규칙은 다음과 같다.
+
+- 짧은 배지는 상태만 말하고, 원인과 다음 행동은 바로 옆 설명이나 tooltip에 쓴다.
+- `기록 없음`, `불러옴 기록 없음`은 오류가 아니므로 경고색으로 표시하지
+  않는다. 실제 실패·충돌·검토 필요 상태만 경고나 오류색을 사용한다.
+- 색만으로 상태를 구분하지 않고 항상 텍스트를 함께 표시한다.
+- `low/medium/high/critical`, `fast/standard/deep`,
+  `low/medium/high/xhigh`는 각각 위험도·작업 절차 깊이·요청 추론 강도다. 화면에는
+  `보통 (medium)`처럼 한국어 뜻과 원래 값을 함께 표시한다.
+- Host, RunReceipt, Assignment 같은 구현 용어는 일반 화면의 주 표기로 쓰지 않는다.
+  정확한 디버깅이 필요한 상세 설명에서만 실행 환경, 최종 작업 기록, 실행 단계 뒤에
+  보조적으로 사용한다.
+
+이 계약은 상태 태그를 짧고 일관되게 유지하라는
+[GOV.UK Design System의 tag 지침](https://design-system.service.gov.uk/components/tag/)과
+색보다 텍스트를 우선하고 여러 단서를 함께 쓰라는
+[Carbon의 status indicator 지침](https://v10.carbondesignsystem.com/patterns/status-indicator-pattern/)을
+따른다.
+
+`채팅에서 선택한 모델`, `실제로 실행된 모델`, `Maestro 권장 모델`은 서로 다른
+필드다. Route가
 선택한 Terra 같은 값은 실행 사실이 아니라 권고이므로 실제 적용 모델의 fallback으로
 사용하지 않는다. Host가 값을 주지 않으면 `null`이며, route v2 계획이 없던 과거
 실행은 순서를 발명하지 않고 `summary_only` 한 단계로 표시한다.
@@ -88,8 +123,8 @@ Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
 Codex Desktop의 현재 tool runtime이 공개 요청 메타데이터로 `model`,
 `reasoning_effort`, `thread_id`, `turn_id`를 제공하면 `$maestro`는 이 네 값만
 allowlist해 `codex-desktop-request-meta` 관측으로 자동 연결한다. 이 경로는 요청
-설정만 증명하므로 적용 모델·reroute·token은 계속 미측정이다. 해당 메타데이터가
-없으면 Host 정보 없음으로 유지하며, 어느 경우에도 비공개 session JSONL이나 원본
+설정만 증명하므로 적용 모델·reroute·token은 계속 기록 없음이다. 해당 메타데이터가
+없으면 `모델·토큰 기록 없음`으로 유지하며, 어느 경우에도 비공개 session JSONL이나 원본
 메타데이터 객체를 저장하지 않는다.
 
 Maestro의 `observe import-codex`는 Host가 소유한 완전한 JSON-RPC JSONL에서
@@ -102,28 +137,36 @@ Guide 선택값도 품질 점수나 원인 귀속이 아니다. “선택된 Run
 수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
 로드됐다고 추정하지 않는다. 이 값만으로 Pack·Guide를 자동 승격·수정·삭제하지 않는다.
 선택 이력이 없으면 `awaiting_usage`, 선택 이력은 있지만 아직 검토 주기에 이르지
-않으면 `evidence_gathering`으로 기록하되 UI에서는 각각 “이 프로젝트 선택 기록
-없음”, “로컬 선택 관찰 중”으로 표시한다. 이는 출처 수집이나 Pack 품질 검증 상태가
+않으면 `evidence_gathering`으로 기록하되 UI에서는 각각 “사용 기록 없음”,
+“사용 결과 수집 중”으로 표시한다. 이는 출처 수집이나 Pack 품질 검증 상태가
 아니다. 실제 Skill body가 실행 컨텍스트에
 로드됐다는 Host 증명이 없을 때는 `host_attestation_unavailable`로 표시한다.
 서로 다른 원인을 하나의 모호한 `not_observed` 상태로 합치지 않는다.
 
-Pack의 `candidate/pilot/stable`은 배포 lifecycle이고, Guide의
-`stable/versioned/volatile`은 지식이 변하는 속도다. 따라서 원격에서 받은 Stable
-Pack은 이 프로젝트의 선택 기록이 0회여도 Stable로 표시한다. `freshness=stable`은
-“저변동 지식”으로 표시하며 품질 승격으로 해석하지 않는다.
+Pack의 `candidate/pilot/active/deprecated/retired`는 사용 lifecycle이고, Guide의
+`stable/versioned/volatile`은 지식이 변하는 속도다. 따라서 원격에서 받은 active
+Pack은 이 프로젝트의 선택 기록이 0회여도 `정식 사용`으로 표시한다.
+`freshness=stable`은 “변경이 드문 기준”으로 표시하며 품질 승격으로 해석하지 않는다.
 
 작업의 Host 관측 상태는 세 단계로 표시한다.
 
-- `host_not_connected`: 공개 Host 정보가 전혀 없음
-- `host_request_observed`: 요청 모델 또는 요청 추론 강도만 연결됨
-- `host_event_stream_complete`: 완료까지의 model event stream이 연결되어 적용
-  모델을 확정할 수 있음
+- `host_not_connected` → `모델·토큰 기록 없음`: 실행 기록 수집에 연결되지 않았으며
+  작업 실패를 뜻하지 않음
+- `host_request_observed` → `채팅에서 선택한 설정만 기록됨`: 채팅에서 선택한 모델
+  또는 추론 강도만 알며 실제 실행 모델과 token은 확인할 수 없음
+- `host_event_stream_complete` → `실제 실행 모델 기록됨`: 완료까지의 model event
+  stream이 연결되어 실제 실행 모델을 확정할 수 있음
+
+일반 화면은 이 상태명을 또 하나의 해석 대상처럼 나열하지 않는다. 작업 상세는
+`작업 기준`, `작업 결과`, `모델과 사용량 기록`으로 나누고 각 값에 “무엇을
+아는가”, “무엇을 모르는가”, “왜 기록이 없는가”, “작업 실패를 뜻하는가”를
+문장으로 표시한다. 원본 enum, 기록 source·quality와 correlation ID는 기본
+정보가 아니라 접힌 `기술 기록 보기` 안에서만 제공한다.
 
 `maestro host codex`로 Maestro가 직접 시작한 새 turn은 마지막 상태까지 자동으로
 올라갈 수 있다. 이 명령은 기존 Desktop 대화를 긁지 않고 별도 ephemeral App Server
 turn을 소유한다. 완전한 stream에서도 token notification이 오지 않으면 적용 모델과
-완료는 확정하되 token만 미측정으로 남긴다. final agent message와 prompt는 viewer
+완료는 확정하되 token 사용량은 `기록 없음`으로 남긴다. final agent message와 prompt는 viewer
 snapshot의 입력이 아니며 Observation에도 저장되지 않는다.
 
 화면의 `risk low/medium/high`, Route의 `fast/standard/deep`, 모델의
@@ -137,11 +180,17 @@ Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강
 `aria-labelledby`를 연결하므로 마우스로 행을 선택하는 동작과 키보드
 Enter·Space 동작이 같은 상태 전이를 사용한다.
 
-Run 상세의 Expertise는 `선택 → Assignment 연결 → Host 로드 → 산출물 적용` 네
+작업 상세의 전문 지식은 선택된 묶음이 있을 때만 `작업 기준으로 선택 → 실행 단계로
+전달 → 본문 불러오기 →
+결과에 반영` 네
 증거 단계를 보여준다. 현재 receipt가 증명하는 것은 앞의 두 단계까지다. Host load
-또는 산출물 적용 필드가 없으면 “확인 안 됨”으로 표시하며 선택된 Pack을 “사용됨”으로
+또는 산출물 적용 필드가 없으면 “본문을 불러온 기록 없음” 또는 “결과 적용 근거
+없음”으로 표시하고, 바로 뒤 문장에서 기록이 없다는 것과 실제 미수행을 구분한다.
+선택된 Pack을 “사용됨”으로
 바꾸어 쓰지 않는다. snapshot의 `expertise.evidence`는 이 네 상태와 연결된
 Assignment ID만 담고 Guide 본문·prompt·hidden reasoning을 담지 않는다.
+선택된 묶음이 없으면 뒤의 세 단계를 경고처럼 나열하지 않고 확인할 대상이 없다는
+한 문장만 표시한다.
 
 행의 체크박스는 상세 열기와 별도다. 선택한 최대 50개 event를 새 이름 또는 기존
 묶음에 추가하기 전에 정확한 개수와 “raw receipt를 삭제하지 않음”을 다시 보여준다.
@@ -158,8 +207,14 @@ apply는 event digest가 preview 뒤 바뀌지 않았는지 확인한 다음
 한 번이면 문제 검토를 권한다. 이는 상관관계 기반의 저비용 신호이며 Guide가
 결과를 개선하거나 악화시켰다는 인과 증명이 아니다.
 
-프로젝트 후보가 lifecycle validator를 통과한 경우에만 뷰어에서
-`activate`·`update`·`export` 미리보기를 만들 수 있다. 활성 project Pack은
+프로젝트 후보가 lifecycle validator를 통과하면 즉시 사용 여부와 candidate
+definition digest에 결합된 선택 횟수·최근 사용, 최근 선택 작업의 제목과 결과를
+최대 세 건까지 함께 보여 준다. 후보는 Pack을
+게시하지 않아도 작업에 적용될 수 있지만, 후보 상태를 유지해 결과를 더 눈에 띄게
+검토한다. 검증 실패·만료·동일 최고 version 충돌·게시된 version 이하 후보는
+라우팅되지 않는다.
+
+검증된 후보만 뷰어에서 `activate`·`update`·`export` 미리보기를 만들 수 있다. 활성 project Pack은
 `deactivate` 미리보기를 만들 수 있다. 모든 동작은 기존 CLI와 같은 digest-bound
 typed plan을 사용하며, 두 번째 확인 전에는 쓰지 않는다. export는 검토 가능한
 project-local contribution bundle만 만들고 전역 설치, 기본 Pack 변경, 커밋,

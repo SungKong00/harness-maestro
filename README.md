@@ -116,7 +116,8 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | Lens·Executor·Adapter 등 후보 만들기 | `$maestro-registry-builder` | active Registry를 바꾸지 않는 격리 후보와 frozen case만 생성 |
 | 비-Expertise 후보 묶음 검사 | `maestro component validate-candidate` | 분류·digest·독립 경계·positive/non-trigger/regression case를 읽기 전용 검증 |
 | Expertise 후보 묶음 검사 | `maestro expertise validate-candidate` | 출처·Guide·평가 결과 artifact 연결을 쓰기 없이 검증 |
-| 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 새 후보를 추적되는 project pilot으로 preview/apply 활성화 |
+| 검증된 로컬 Expertise 바로 쓰기 | `$maestro <작업 요청>` | 비만료·비충돌 최신 후보를 후보 표기 그대로 선택; 구현 권한은 기존 Executor 계약을 따름 |
+| 검증된 로컬 Expertise를 프로젝트 권위로 게시 | `maestro expertise activate` | 사용 중인 후보를 추적되는 project pilot으로 preview/apply 게시 |
 | 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
 | 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
 | 검증된 Expertise를 Harness 기여 후보로 추출 | `maestro expertise export` | project-local content-addressed review bundle만 생성; 설치·push는 하지 않음 |
@@ -304,9 +305,11 @@ Maestro workflow는 다음 순서로 진행합니다.
   전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
   ResearchBundle 파일 없이는 gate를 통과하지 못합니다.
 - **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
-  baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 후보만
-  `.agents/skills`의 tracked pilot으로 명시적 활성화합니다. 다음 버전도 새 후보와
-  검토된 update plan을 거치며, 전역 승격이나 Agent 설치는 자동화하지 않습니다.
+  baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 최신 후보는
+  후보로 표시한 채 즉시 작업 기준으로 사용할 수 있고, 쓰기 권한은 기존 Executor
+  계약을 그대로 따릅니다. 계속 유지할 후보만 `.agents/skills`의 tracked pilot으로
+  명시적으로 게시합니다. 다음 버전도 새 후보와 검토된 update plan을 거치며, 전역
+  승격이나 Agent 설치는 자동화하지 않습니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.
 - **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
@@ -359,36 +362,46 @@ $maestro 이 프로젝트의 대시보드 열어줘.
 ```
 
 Maestro가 `127.0.0.1`의 임시 서버와 브라우저를 열고 종료까지 맡습니다. 매 작업마다
-HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·시간·token·메인 요청 모델·
-요청 추론 강도·실제 적용 모델·Route 권고 모델과 권고 추론 강도·Expertise
+HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·걸린 시간·token·채팅에서 선택한 모델·
+선택한 추론 강도·실제로 실행된 모델·Maestro 권장 모델과 권장 추론 강도·전문 지식
 출처·검토 후보를 다시 읽습니다.
-Route 권고는 실측값으로 대체 표시하지 않습니다. 요청·적용값은 Host가 안정적인
+Maestro 권장값은 실제 실행값으로 대체 표시하지 않습니다. 채팅 설정·실행값은 실행 환경이 안정적인
 공개 인터페이스와 완전한 model event 구간으로 제공할 때만 기록합니다. Desktop이
-현재 요청의 모델·추론 강도만 제공하면 `요청 정보 연결됨`, 전체 이벤트까지 있으면
-`실행 관측 완료`, 아무 정보도 없으면 `Host 정보 없음`으로 구분하며 값을 추정하지
-않습니다.
+현재 요청의 모델·추론 강도만 제공하면 `채팅에서 선택한 설정만 기록됨`, 전체
+이벤트까지 있으면 `실제 실행 모델 기록됨`, 아무 정보도 없으면 `모델·토큰 기록
+없음`으로 구분하며 값을 추정하지 않습니다. 작업 상세는 이 값을 `작업 기준`,
+`작업 결과`, `모델과 사용량 기록`으로 나눠 설명하고, 내부 enum과 연결 ID는
+`기술 기록 보기`에 접어 둡니다.
 
 뷰어에서 할 수 있는 변경은 탐지된 검증 명령 승인, 작업 묶음, 과거 작업의 표시
-이름 변경과 검증을 통과한 프로젝트 Expertise 후보 관리로 제한됩니다. 작업 행을
-체크한 뒤 새 이름 또는 기존 묶음을 고르면, 원본 RunReceipt는 지우지 않고 최근
-목록에서 접어 위의 `작업 묶음`으로 옮깁니다. Expertise는 사용 전·근거 수집 중·
-정기 검토·문제 검토를 구분하고 실제 Skill load 증명이 없으면 별도로
-`Host 로드 증명 없음`이라 표시합니다. Guide 선택 5회 또는 반복 문제 신호는
+이름 변경과 검증을 통과한 프로젝트 전문 지식 후보 관리로 제한됩니다. 작업 행을
+체크한 뒤 새 이름 또는 기존 묶음을 고르면, 원본 최종 작업 기록(RunReceipt)은
+지우지 않고 최근 목록에서 접어 위의 `작업 묶음`으로 옮깁니다. 전문 지식은
+`사용 기록 없음`·`사용 결과 수집 중`·`정기 검토 필요`·`문제 검토 필요`를 구분하고
+실제 Skill 본문을 불러온 기록이 없으면 별도로 `불러옴 기록 없음`이라 표시합니다.
+판단 가이드(Guide) 선택 5회 또는 반복 문제 신호는
 검토를 열 뿐 자동 수정하지 않으며, 하위 Guide 변경도 완전한 다음 Pack 후보로
 처리합니다. 모든 권위 변경과 묶음 생성은 미리보기 뒤 두 번째 확인이 필요하고
 명령 자체, 자동 커밋·푸시는 실행하지 않습니다.
 
+상태값의 전체 뜻과 서로 섞으면 안 되는 축은
+[운영 뷰어의 표시 언어 계약](docs/architecture/operations-viewer.md#표시-언어-계약)에
+정리되어 있습니다.
+
 일반 개발 요청에서는 사용자가 `observe`나 `record` 명령을 외울 필요가 없습니다.
 `$maestro`가 구현 계획을 확정한 뒤 compact 관측을 시작하고 최종 검증 결과에
-연결합니다. `dashboard`는 보고 싶을 때만 여는 on-demand 운영 도구이며 영구
-daemon을 설치하지 않습니다.
+연결합니다. 현재 Desktop에서 직접 실행해야 하는 작업도 공개 요청 설정을
+`observe desktop` 한 번으로 시작과 동시에 연결하므로, 요청 모델과 추론 강도를
+별도 명령 사이에서 빠뜨리지 않습니다. `dashboard`는 보고 싶을 때만 여는
+on-demand 운영 도구이며 영구 daemon을 설치하지 않습니다.
 
 새 Codex 작업을 Maestro가 직접 시작하는 경우에는 내장 `host codex` 경로가
 ephemeral App Server turn을 소유합니다. 검증된 Assignment에서 읽기 전용 또는
 저장소 루트 한정 writer 권한, 선택 모델과 추론 강도를 파생하고, 완료까지의
 reroute·token 이벤트를 자동 연결합니다. 현재 열려 있는 Desktop 대화를 사후
 스크래핑하는 기능은 아니므로 이미 시작된 작업은 공개 요청 메타데이터 범위까지만
-표시됩니다. 상세 저수준 계약은
+표시됩니다. 이 token은 App Server가 소유한 Executor turn만의 실측값이며 상위
+Desktop 오케스트레이터까지 합친 전체 비용으로 표시하지 않습니다. 상세 저수준 계약은
 [시작 및 운용 가이드](docs/runbooks/getting-started.md)와
 [Codex Host conformance](docs/runbooks/codex-host-conformance.md)에 있습니다.
 

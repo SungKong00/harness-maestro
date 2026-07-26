@@ -407,15 +407,21 @@ def start_run_observation(
     }
     if target.exists() or target.is_symlink():
         existing = _read_observation_file(target)
+        runtime_fields = {
+            "started_at",
+            "host_observation",
+            "completed_at",
+            "duration_ms",
+        }
         comparable = {
             key: item
             for key, item in existing.items()
-            if key != "started_at"
+            if key not in runtime_fields
         }
         expected = {
             key: item
             for key, item in value.items()
-            if key != "started_at"
+            if key not in runtime_fields
         }
         if comparable != expected:
             raise MaestroError(
@@ -442,6 +448,88 @@ def start_run_observation(
         "observation_id": observation_id,
         "observation_path": relative_path,
         "writes_performed": True,
+    }
+
+
+def start_desktop_request_observation(
+    repo_path: str | Path,
+    *,
+    run_id: str,
+    task_label: str,
+    thread_id: str,
+    turn_id: str,
+    requested_model: str,
+    requested_reasoning_effort: str | None = None,
+    plan_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Start a run and attach allowlisted Codex Desktop request data."""
+
+    thread = _bounded_line(
+        thread_id,
+        field="thread-id",
+        maximum=72,
+    )
+    turn = _bounded_line(
+        turn_id,
+        field="turn-id",
+        maximum=72,
+    )
+    model = _bounded_line(
+        requested_model,
+        field="requested-model",
+        maximum=128,
+    )
+    effort = (
+        _bounded_line(
+            requested_reasoning_effort,
+            field="requested-reasoning-effort",
+            maximum=40,
+        )
+        if requested_reasoning_effort is not None
+        else None
+    )
+    started = start_run_observation(
+        repo_path,
+        run_id=run_id,
+        task_label=task_label,
+        plan_path=plan_path,
+    )
+    attached = record_host_observation(
+        repo_path,
+        observation_id=started["observation_id"],
+        run_id=run_id,
+        source="codex-desktop-request-meta",
+        quality="host_reported",
+        correlation_id=f"{thread}:{turn}",
+        requested_model=model,
+        requested_reasoning_effort=effort,
+        model_event_evidence="unavailable",
+    )
+    telemetry = attached.get("telemetry")
+    if telemetry is None:
+        telemetry = observation_receipt_fields(
+            repo_path,
+            observation_id=started["observation_id"],
+            run_id=run_id,
+        )["host_observation"]
+    writes_performed = bool(
+        started["writes_performed"] or attached["writes_performed"]
+    )
+    return {
+        "schema_version": "maestro_command_result_v1",
+        "command": "observe-desktop",
+        "status": (
+            "started"
+            if started["status"] == "started"
+            else "already_started"
+        ),
+        "repo_root": started["repo_root"],
+        "run_id": run_id,
+        "observation_id": started["observation_id"],
+        "observation_path": started["observation_path"],
+        "telemetry_scope": "desktop_request_only",
+        "telemetry": telemetry,
+        "writes_performed": writes_performed,
     }
 
 
