@@ -6,6 +6,12 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
+from .decisions import (
+    build_decision_plan,
+    build_execution_plan,
+    validate_decision_plan,
+    validate_specialist_packet,
+)
 from .doctor import doctor_report
 from .documents import select_documents
 from .errors import MaestroError
@@ -114,6 +120,59 @@ def parser() -> argparse.ArgumentParser:
     validate_plan.add_argument("--plan", required=True)
     validate_plan.add_argument("--json", action="store_true")
 
+    decide = commands.add_parser(
+        "decide",
+        help="Create a read-only specialist decision plan before implementation",
+    )
+    decide.add_argument("--repo", default=".")
+    decide.add_argument("--goal", required=True)
+    decide.add_argument(
+        "--risk",
+        choices=["low", "medium", "high", "critical"],
+        default="medium",
+    )
+    decide.add_argument(
+        "--intent",
+        choices=["implementation", "review", "research"],
+        default="implementation",
+    )
+    decide.add_argument("--host", default="codex")
+    decide.add_argument(
+        "--research-evidence-digest",
+        help="SHA-256 digest satisfying a selected decision research gate",
+    )
+    decide.add_argument("--json", action="store_true")
+
+    validate_decision = commands.add_parser(
+        "validate-decision",
+        help="Validate a decision plan or one specialist packet",
+    )
+    validate_decision.add_argument("--plan", required=True)
+    validate_decision.add_argument("--packet")
+    validate_decision.add_argument("--json", action="store_true")
+
+    enact = commands.add_parser(
+        "enact",
+        help="Authorize a validated decision bundle as an execution plan",
+    )
+    enact.add_argument("--repo", default=".")
+    enact.add_argument("--plan", required=True)
+    enact.add_argument("--bundle", required=True)
+    enact.add_argument(
+        "--packet",
+        action="append",
+        default=[],
+        required=True,
+        help="Validated specialist packet; repeat for every specialist assignment",
+    )
+    enact.add_argument(
+        "--authorization-source",
+        choices=["explicit_user", "prior_explicit_request"],
+        required=True,
+    )
+    enact.add_argument("--host")
+    enact.add_argument("--json", action="store_true")
+
     adapt = commands.add_parser("adapt", help="Inspect project adapter candidates without writing")
     adapt.add_argument("--repo", default=".")
     adapt.add_argument("--json", action="store_true")
@@ -217,6 +276,47 @@ def main(argv: Sequence[str] | None = None) -> int:
             if result["status"] != "PASS":
                 return 2
             return 4 if result["execution_status"] == "RESEARCH_REQUIRED" else 0
+        if args.command == "decide":
+            result = build_decision_plan(
+                args.repo,
+                args.goal,
+                args.risk,
+                host_id=args.host,
+                intent=args.intent,
+                research_evidence_digest=args.research_evidence_digest,
+            )
+            _emit(result, args.json)
+            gate = result["expertise"]["research_requirement"]["gate"]
+            return 4 if gate == "open" else 0
+        if args.command == "validate-decision":
+            plan = read_json(Path(args.plan).expanduser().resolve())
+            result = (
+                validate_specialist_packet(
+                    read_json(Path(args.packet).expanduser().resolve()),
+                    plan,
+                )
+                if args.packet
+                else validate_decision_plan(plan)
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
+        if args.command == "enact":
+            plan = read_json(Path(args.plan).expanduser().resolve())
+            bundle = read_json(Path(args.bundle).expanduser().resolve())
+            packets = [
+                read_json(Path(path).expanduser().resolve())
+                for path in args.packet
+            ]
+            result = build_execution_plan(
+                args.repo,
+                plan,
+                bundle,
+                packets,
+                authorization_source=args.authorization_source,
+                host_id=args.host,
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "adapt":
             result = inspect_adapter(args.repo)
             _emit(result, args.json)

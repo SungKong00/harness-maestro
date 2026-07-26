@@ -12,6 +12,7 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [언제 무엇을 쓰나요?](#언제-무엇을-쓰나요) ·
 [문서 지도](docs/README.md) ·
 [전문성 팩 계획](docs/plans/active/v0.4-expertise-packs.md) ·
+[판단 우선 계획](docs/plans/active/v0.5-decision-workflow.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
 
 ## 먼저 이것만 알면 됩니다
@@ -46,7 +47,9 @@ maestro init → project/architecture 초안 작성 → status → upgrade → d
               ├─ 최신 사례가 필요할 때만 reference research
               ├─ 위험에 맞는 Fast / Standard / Deep 경로 선택
               ├─ 필요한 경우 독립 Lens 검토
-              ├─ 한 명의 writer가 구현
+              ├─ 방향이 정해진 변경: 한 명의 writer가 구현
+              ├─ 설계·기술 선택: decide → 독립 전문가 판단 → 결정 번들
+              │                 → enact 승인 뒤 한 명의 writer가 구현
               └─ test·lint·diff로 검증
               │
               ▼
@@ -63,8 +66,9 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 |---|---|---|
 | 새 프로젝트에 처음 적용 | `maestro init` 또는 `$maestro-adapter-builder` | Markdown 문서 체계와 프로젝트 설정을 미리보기 후 생성 |
 | 기능 구현·버그 수정·리팩터링 | `$maestro <요청>` | 관련 문서만 읽고 작업 위험에 맞춰 구현·검증 |
-| 패턴·아키텍처 선택 | `$maestro <요청>` | 필요한 Lens가 독립 검토하고 중요한 충돌만 비교 |
-| 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide만 선택하고 최신 사례가 필요할 때만 조사 |
+| 패턴·아키텍처를 판단만 함 | `$maestro <요청>` 또는 `maestro decide --intent review` | 읽기 전용 판단 결과만 반환하고 구현하지 않음 |
+| 판단한 뒤 구현 | `$maestro <요청>` | `decide`로 역할별 판단 후 검증된 결정 번들만 `enact`하여 구현 |
+| 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide를 역할별로 적용하고 최신 사례가 필요할 때만 조사 |
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
@@ -134,9 +138,23 @@ rm -- "$maestro_plan"
 
 ### 4. 개발 작업마다: `$maestro`로 요청
 
+방향이 이미 정해진 작은 변경:
+
 ```text
 $maestro 인증 API를 변경해줘. 현재 Convention을 확인하고 구현한 뒤 계약과 회귀 테스트로 검증해줘.
 ```
+
+구현 전에 여러 전문 관점으로 방향을 확정할 작업:
+
+```text
+$maestro 결제 화면의 정보 구조와 시각 위계를 먼저 판단하고, 기술 타당성 확인까지 끝난 뒤 구현해줘.
+```
+
+두 번째 요청은 곧바로 코드를 수정하지 않습니다. 디자인과 UX가 서로의 최초 결론을
+보지 않고 읽기 전용으로 판단하고, Maestro가 공통점·충돌을 합성한 뒤 기술 타당성을
+확인합니다. blocking question이 없고 결정 번들·현재 checkout이 유효할 때만 별도
+실행 승인을 만들어 기존 한 명 writer 경로로 넘어갑니다. `판단만`, `코드는
+수정하지 마`라고 요청하면 이 승인 단계 자체가 금지됩니다.
 
 설정 과정, custom 문서 Adapter, CLI별 사용법은
 [시작 및 운용 가이드](docs/runbooks/getting-started.md)에 있습니다.
@@ -161,13 +179,17 @@ Maestro workflow는 다음 순서로 진행합니다.
 5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 먼저 작은 reference
    research를 하고, 결과 digest로 같은 작업을 다시 route합니다. 일반 작업은 이
    단계를 건너뜁니다.
-6. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
+6. 방향 선택이 필요한 요청은 구현 전에 읽기 전용 Decision Plan을 만듭니다.
+   Specialist는 자신의 `owns`에 속한 finding만 반환하고, 다른 역할의 문제는 typed
+   escalation으로 넘깁니다.
+7. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
    먼저 검토합니다.
-7. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
+8. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
    실패 영향으로 결정합니다.
-8. 한 명의 writer가 코드를 수정하고 test·lint·schema·diff 같은 실제 artifact로
-   검증합니다.
-9. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
+9. 결정 번들에 열린 blocker가 없고 checkout·Registry·research digest가 그대로일
+   때만 실행 승인을 만들며, 그 뒤 한 명의 writer가 코드를 수정하고
+   test·lint·schema·diff 같은 실제 artifact로 검증합니다.
+10. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
    성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
 
 ## 무엇을 해결하나요?
@@ -178,6 +200,10 @@ Maestro workflow는 다음 순서로 진행합니다.
   예산 안에서 선택합니다.
 - **선택형 전문성** — generic persona 대신 실제 판단 기준을 Pack과 작은 Guide로
   두고, 최대 한 팩·네 가이드만 읽습니다.
+- **판단과 실행 분리** — 디자인·아키텍처·기술 선택은 read-only `decide`로
+  확정하고, digest와 checkout에 묶인 `enact` 승인 뒤에만 writer를 엽니다.
+- **역할 오염 제한** — Specialist는 소유 concern과 claim 종류만 반환합니다.
+  코드 지시나 다른 역할의 결론은 packet validation에서 거부합니다.
 - **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
   전문 분야에서만 research gate를 엽니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
@@ -231,6 +257,7 @@ project/
 | 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
 | v0.3 Assignment Plan·검증·HTML 후속 계획 | [v0.3 Typed Plan 계획](docs/plans/active/v0.3-typed-plan.md) |
 | 전문가 기준 재사용·조건부 조사·후보 관리 | [v0.4 Expertise Pack 계획](docs/plans/active/v0.4-expertise-packs.md) |
+| 판단·역할 검토·결정 번들·실행 승인 | [v0.5 Decision Workflow 계획](docs/plans/active/v0.5-decision-workflow.md) |
 | Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
 | 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
 | 개선 후보가 Convention이 되는 조건 | [구성요소 생명주기](docs/governance/component-lifecycle.md) |

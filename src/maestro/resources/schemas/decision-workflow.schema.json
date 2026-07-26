@@ -1,0 +1,678 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/decision-workflow.schema.json",
+  "title": "Harness Maestro Decision Workflow",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/decisionPlan"
+    },
+    {
+      "$ref": "#/$defs/specialistFindingPacket"
+    },
+    {
+      "$ref": "#/$defs/decisionBundle"
+    },
+    {
+      "$ref": "#/$defs/executionPlan"
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requestContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_mode",
+        "side_effect_policy",
+        "authorization_source"
+      ],
+      "properties": {
+        "decision_mode": {
+          "enum": [
+            "direct",
+            "staged"
+          ]
+        },
+        "side_effect_policy": {
+          "enum": [
+            "forbidden",
+            "after_decision",
+            "direct"
+          ]
+        },
+        "authorization_source": {
+          "enum": [
+            "explicit_user",
+            "explicit_cli",
+            null
+          ]
+        }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "head",
+        "state_digest",
+        "dirty_path_count"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "git",
+            "unavailable"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dirty_path_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "researchRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "gate",
+        "reasons",
+        "evidence_digest"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "reuse",
+            "contextualize",
+            "refresh",
+            "discover"
+          ]
+        },
+        "gate": {
+          "enum": [
+            "not-required",
+            "open",
+            "satisfied",
+            "in-plan"
+          ]
+        },
+        "reasons": {
+          "$ref": "#/$defs/stringList"
+        },
+        "evidence_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "expertiseSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_pack_ids",
+        "selected_guide_ids",
+        "research_requirement"
+      ],
+      "properties": {
+        "selected_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "selected_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "research_requirement": {
+          "$ref": "#/$defs/researchRequirement"
+        }
+      }
+    },
+    "specialistContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "specialist_id",
+        "summary",
+        "owns",
+        "out_of_scope",
+        "allowed_inputs",
+        "allowed_claim_kinds",
+        "allowed_side_effects",
+        "decision_guide_ids",
+        "fresh_context",
+        "may_spawn"
+      ],
+      "properties": {
+        "specialist_id": {
+          "$ref": "#/$defs/id"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owns": {
+          "$ref": "#/$defs/stringList"
+        },
+        "out_of_scope": {
+          "$ref": "#/$defs/stringList"
+        },
+        "allowed_inputs": {
+          "$ref": "#/$defs/stringList"
+        },
+        "allowed_claim_kinds": {
+          "$ref": "#/$defs/stringList"
+        },
+        "allowed_side_effects": {
+          "const": []
+        },
+        "decision_guide_ids": {
+          "$ref": "#/$defs/stringList"
+        },
+        "fresh_context": {
+          "const": true
+        },
+        "may_spawn": {
+          "const": false
+        }
+      }
+    },
+    "decisionAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_id",
+        "kind",
+        "specialist_id",
+        "executor_id",
+        "depends_on",
+        "input_packets",
+        "output_packet",
+        "read_only",
+        "allowed_side_effects",
+        "conclusion_visibility",
+        "model_route",
+        "may_spawn",
+        "max_children",
+        "max_rounds"
+      ],
+      "properties": {
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "specialist-review",
+            "synthesis"
+          ]
+        },
+        "specialist_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executor_id": {
+          "const": "lens-reviewer"
+        },
+        "depends_on": {
+          "$ref": "#/$defs/stringList"
+        },
+        "input_packets": {
+          "$ref": "#/$defs/stringList"
+        },
+        "output_packet": {
+          "type": "string",
+          "minLength": 1
+        },
+        "read_only": {
+          "const": true
+        },
+        "allowed_side_effects": {
+          "const": []
+        },
+        "conclusion_visibility": {
+          "enum": [
+            "blind",
+            "dependencies-only",
+            "synthesis-only"
+          ]
+        },
+        "model_route": {
+          "type": "object"
+        },
+        "may_spawn": {
+          "const": false
+        },
+        "max_children": {
+          "const": 0
+        },
+        "max_rounds": {
+          "const": 1
+        }
+      }
+    },
+    "decisionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "plan_id",
+        "goal",
+        "goal_digest",
+        "registry_digest",
+        "base_revision",
+        "risk",
+        "host",
+        "request_contract",
+        "expertise",
+        "specialist_contracts",
+        "assignments",
+        "entry_assignments",
+        "terminal_assignments",
+        "limits",
+        "deliberation",
+        "warnings",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_decision_plan_v1"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "base_revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "host": {
+          "$ref": "#/$defs/id"
+        },
+        "request_contract": {
+          "$ref": "#/$defs/requestContract"
+        },
+        "expertise": {
+          "$ref": "#/$defs/expertiseSelection"
+        },
+        "specialist_contracts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/specialistContract"
+          }
+        },
+        "assignments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/decisionAssignment"
+          }
+        },
+        "entry_assignments": {
+          "$ref": "#/$defs/stringList"
+        },
+        "terminal_assignments": {
+          "$ref": "#/$defs/stringList"
+        },
+        "limits": {
+          "type": "object"
+        },
+        "deliberation": {
+          "type": "object"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "writes_performed": {
+          "const": false
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concern_id",
+        "claim_kind",
+        "statement",
+        "evidence_refs",
+        "confidence"
+      ],
+      "properties": {
+        "concern_id": {
+          "$ref": "#/$defs/id"
+        },
+        "claim_kind": {
+          "$ref": "#/$defs/id"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringList"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_specialism",
+        "question",
+        "evidence_refs"
+      ],
+      "properties": {
+        "target_specialism": {
+          "$ref": "#/$defs/id"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "specialistFindingPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "decision_plan_id",
+        "assignment_id",
+        "specialist_id",
+        "findings",
+        "escalations"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_specialist_finding_packet_v1"
+        },
+        "decision_plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "specialist_id": {
+          "$ref": "#/$defs/id"
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "escalations": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/escalation"
+          }
+        }
+      }
+    },
+    "decisionBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "bundle_digest",
+        "decision_plan_id",
+        "registry_digest",
+        "goal",
+        "goal_digest",
+        "base_revision",
+        "risk",
+        "request_contract",
+        "expertise",
+        "source_packet_digests",
+        "accepted_constraints",
+        "accepted_decisions",
+        "conflicts",
+        "unresolved_questions",
+        "technical_feasibility",
+        "execution_scope",
+        "research_gate",
+        "status"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_decision_bundle_v1"
+        },
+        "bundle_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "decision_plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "base_revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "request_contract": {
+          "$ref": "#/$defs/requestContract"
+        },
+        "expertise": {
+          "$ref": "#/$defs/expertiseSelection"
+        },
+        "source_packet_digests": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "accepted_constraints": {
+          "$ref": "#/$defs/stringList"
+        },
+        "accepted_decisions": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "unresolved_questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "question",
+              "blocking",
+              "owner"
+            ],
+            "properties": {
+              "question": {
+                "type": "string",
+                "minLength": 1
+              },
+              "blocking": {
+                "type": "boolean"
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "technical_feasibility": {
+          "enum": [
+            "pass",
+            "conditional",
+            "fail"
+          ]
+        },
+        "execution_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allowed_paths",
+            "prohibited_changes"
+          ],
+          "properties": {
+            "allowed_paths": {
+              "$ref": "#/$defs/stringList"
+            },
+            "prohibited_changes": {
+              "$ref": "#/$defs/stringList"
+            }
+          }
+        },
+        "research_gate": {
+          "$ref": "#/$defs/researchRequirement"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "blocked"
+          ]
+        }
+      }
+    },
+    "executionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "execution_plan_id",
+        "decision_plan_id",
+        "decision_bundle_digest",
+        "execution_authorization",
+        "route_plan",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_execution_plan_v1"
+        },
+        "execution_plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "decision_plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "decision_bundle_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "execution_authorization": {
+          "type": "object"
+        },
+        "route_plan": {
+          "type": "object"
+        },
+        "writes_performed": {
+          "const": false
+        }
+      }
+    }
+  }
+}

@@ -28,6 +28,8 @@ sensitivity: internal
 | DecisionGuide | 한 종류의 전문가 판단을 어떻게 수행·검증하는가? | 입력, 결정 질문, 요구 증거, 중단·기각·검증 기준 | 상주 agent identity, 전체 source archive |
 | Department | 이 종류의 목표에서 어떤 Lens 후보를 고르는가? | 후보 Lens, 최대 선택 수, 숙의 규칙 | 상주 agent 조직도 |
 | ResearchLaneCard | 어떤 출처 묶음을 조사하는가? | corpus 경계, 출처 tier, stop rule | 장기 persona |
+| SpecialistContract | 이번 판단 단계에서 무엇만 소유하는가? | owns, out-of-scope, input·claim, side-effect와 context 경계 | 영구 agent identity, 구현 명령 |
+| DecisionBundle | 어떤 판단이 구현 입력으로 승인되었는가? | packet digest, 결정·충돌·blocker, feasibility, 허용 path | 대화 전문, 숨은 추론, 구현 diff |
 | Assignment | 이번 실행에서 무엇을 결합하는가? | goal, 선택 Lens, Executor, 권한, budget, 입력 digest | 재사용 Registry 정의의 수정 |
 
 v0의 Finding·Review·Research Packet JSON Schema는 구조 계약이다. Lens Reviewer가
@@ -62,6 +64,12 @@ Expertise Pack은 다섯 번째 Executor가 아니다. 같은 `implementation-en
 `lens-reviewer`가 route에서 선택된 전문가 기준을 적용한다. 고유 tool, 권한,
 sandbox 또는 context isolation이 필요하다는 평가가 있을 때만 specialist Executor를
 별도로 검토한다.
+
+SpecialistContract도 다섯 번째 Executor나 영구 조직도가 아니다. 한 DecisionPlan에서
+`lens-reviewer`에게 주는 임시 소유 범위다. 제품 디자인에서는 visual-design,
+ux-product, technical-feasibility가 각기 다른 concern을 소유하지만 모두 read-only
+Executor 계약을 사용한다. 역할 밖 문제는 다른 specialism으로 escalation하며
+직접 결론이나 구현 명령을 만들지 않는다.
 
 ## 선택과 컨텍스트 절약
 

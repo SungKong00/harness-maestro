@@ -35,6 +35,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 |---|---|---|
 | CLI | 초기화·업그레이드 계획, 상태, 문서 선택, 라우팅, RunReceipt, 읽기 전용 보고 | 결정론적이며 외부 서비스에 쓰지 않음 |
 | Registry | Lens, Executor, Expertise Pack, Department, Adapter 계약 | package 안에서 버전 관리하고 검증 |
+| Decision workflow | 요청의 write 경계, 임시 Specialist 역할, read-only 판단 DAG, packet·bundle·실행 승인 | 방향 선택이 필요한 요청에만 사용하고 기존 route writer를 재사용 |
 | Project state | 프로젝트 ID, 문서 권위, 탐지된 후보 명령과 사용자 승인 검증 명령 | 저장소의 `.maestro/`에 추적 |
 | Runtime state | 실행 이벤트, 실제 token·시간·finding과 격리 candidate | `.maestro/state/`에 두고 Git에서 제외 |
 | Skills | 사용자 요청을 CLI 계약과 선택된 전문가 절차에 연결 | `$maestro`가 workflow를 소유하고 pack Skill은 선택 때만 사용 |
@@ -57,6 +58,9 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 optional Expertise Pack·research gate를 검증 | 없음 |
 | `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
+| `maestro decide --repo <path> --goal "<goal>" --json` | 구현 전 독립 Specialist 판단과 synthesis·기술 타당성의 read-only 계획 생성 | 없음 |
+| `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
+| `maestro enact --repo <path> --plan <plan> --bundle <bundle> --packet <packet>... --authorization-source <source> --json` | 결정·근거·checkout을 재검사하고 digest-bound ExecutionPlan 생성 | 없음 |
 | `maestro record --repo <path> --receipt <file> --json` | 작업 종료 시 compact RunReceipt 한 건 기록 | `.maestro/state/events/`에 append |
 | `maestro govern report --repo <path> --json` | 반복된 finding을 후보 신호로 집계 | 없음 |
 
@@ -86,17 +90,22 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 1. 목표와 되돌리기 어려움으로 위험도를 정한다.
 2. `docs`로 관련 문서를 좁힌다.
 3. `route`가 Fast, Standard, Deep 중 가장 작은 충분한 경로를 만든다.
-4. Host 통합이나 계획 검토가 필요하면 route v2로 정규화해 Assignment 의존 관계와
+4. 방향이 이미 정해진 작은 변경은 route v2로 정규화해 Assignment 의존 관계와
    Packet·권한 계약을 실행 전에 검사한다.
-5. 선택된 Expertise Pack과 관련 Decision Guide만 읽는다. research gate가 열렸으면
+5. 디자인·아키텍처·기술 선택 또는 “판단 후 구현” 요청은 `decide`로 전환한다.
+   초기 역할은 서로의 결론을 보지 않고 read-only packet만 반환하며, synthesis와
+   기술 타당성 뒤 유효한 DecisionBundle이 생기기 전에는 writer를 만들지 않는다.
+6. 선택된 Expertise Pack과 관련 Decision Guide만 읽는다. research gate가 열렸으면
    bounded artifact를 만든 뒤 digest로 재-route해 `READY`가 될 때까지 중단한다.
-6. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
+7. staged 요청은 `enact`가 모든 packet digest, Registry와 Git revision, blocker,
+   feasibility와 허용 path를 검증한 뒤에만 기존 한 명 writer route로 전환한다.
+8. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
    증거를 반환한다.
-7. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
-8. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
+9. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
+10. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
    기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
    `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
-9. 실행 비용과 finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt 한
+11. 실행 비용과 finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt 한
    건으로 runtime JSONL에 남기되
    checkpoint와 장문 대화를 복제하지 않는다.
 
@@ -106,6 +115,8 @@ call, token과 duration은 Host가 측정 출처와 함께 반환하기 전까�
 [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md)을 따른다.
 Expertise Pack과 조건부 research는
 [v0.4 Expertise Pack 계획](../plans/active/v0.4-expertise-packs.md)을 따른다.
+판단·역할 격리·실행 승인은
+[v0.5 Decision Workflow 계획](../plans/active/v0.5-decision-workflow.md)을 따른다.
 
 ## 작업 강도
 
@@ -132,3 +143,4 @@ Lens 개수는 agent 개수가 아니다. 작업을 분해해도 공유 쓰기 �
 v0는 편향 제거, exactly-once 외부 작업, 완전한 자동 복구, 자동 global Skill 승격, 다수
 에이전트의 정답 보장을 약속하지 않는다. 보류 범위와 이유는
 [제외·보류 목록](../governance/deferred-and-excluded.md)에 있다.
+CLI의 `read_only=true`도 Host의 실제 tool binding을 대신하지 않는다.

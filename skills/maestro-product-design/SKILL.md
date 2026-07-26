@@ -7,6 +7,8 @@ description: Use when a Maestro route selects the product-design Expertise Pack 
 
 Apply selected design criteria as a compact professional rubric. This Skill is
 an Expertise Pack, not a separate permanent agent and not a visual style preset.
+It supplies advisory criteria only. It never authorizes or performs repository
+writes.
 
 ## Inputs
 
@@ -49,15 +51,19 @@ Read `expertise.research_requirement`.
 Never mark an open gate satisfied with a URL list, fabricated digest, search
 snippet, or the same model's unsupported preference.
 
-## Work sequence
+## Advisory sequence
 
 1. Translate the brief into a ranked content and action hierarchy.
 2. Read only the selected Decision Guides.
 3. Inspect current artifacts and project tokens before proposing a new system.
 4. Make explicit choices for typography, scale, spacing, emphasis, states, and
    responsive behavior that are relevant to the task.
-5. Implement through the route's single mutation owner.
-6. Verify the rendered result at representative widths and interaction states.
+5. Return evidence-backed recommendations inside the assigned Specialist
+   contract. Send technical, UX, or other out-of-scope questions through typed
+   escalations instead of deciding them.
+6. Evaluate an existing rendered result at representative widths and interaction
+   states when one is supplied. Do not create code or claim an unrendered
+   proposal was visually verified.
 7. Return evidence and remaining uncertainty; do not claim “professional” from
    visual polish alone.
 
@@ -70,7 +76,7 @@ brief:
 selected_guides:
 priority_model:
 decisions:
-implemented_or_recommended_changes:
+recommended_changes:
 rendered_checks:
 accessibility_and_state_checks:
 reference_artifact:
@@ -88,4 +94,5 @@ verdict:
   product role and content constraints.
 - Do not promote one task-specific observation into this Skill. Send reusable
   candidates through the expertise candidate lifecycle.
-
+- Do not emit code, file edits, tool calls, or implementation commands. The
+  Maestro execution plan owns those only after a valid DecisionBundle.

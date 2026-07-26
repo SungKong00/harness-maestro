@@ -194,7 +194,7 @@ def _reconstruct_source_route(plan: dict[str, Any]) -> dict[str, Any] | None:
         route_intent,
     )
     try:
-        return route_goal(*arguments)
+        return route_goal(*arguments, decision_authorized=True)
     except MaestroError as exc:
         if exc.code != "CONFLICT_EVIDENCE_REQUIRED":
             return None
@@ -203,6 +203,7 @@ def _reconstruct_source_route(plan: dict[str, Any]) -> dict[str, Any] | None:
             *arguments[:4],
             "validator-reconstruction",
             *arguments[5:],
+            decision_authorized=True,
         )
     except MaestroError:
         return None
@@ -690,6 +691,7 @@ def route_goal_v2(
     host_id: str = "codex",
     intent: str = "auto",
     research_evidence_digest: str | None = None,
+    decision_authorized: bool = False,
 ) -> dict[str, Any]:
     route = route_goal(
         goal,
@@ -699,6 +701,7 @@ def route_goal_v2(
         conflict_evidence,
         host_id,
         intent,
+        decision_authorized,
     )
     return compile_route_v2(
         route,

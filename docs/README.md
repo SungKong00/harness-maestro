@@ -30,6 +30,8 @@ sensitivity: internal
    Assignment DAG, 실행 전 검증과 HTML·resume의 단계적 도입 조건
 7. [v0.4 Expertise Pack 계획](plans/active/v0.4-expertise-packs.md) — 선택형
    전문가 기준, 조건부 reference research와 project-local 후보 수명주기
+8. [v0.5 Decision Workflow 계획](plans/active/v0.5-decision-workflow.md) —
+   판단과 구현 분리, Specialist 역할 경계, DecisionBundle과 실행 승인
 
 ## 거버넌스
 
@@ -61,6 +63,7 @@ sensitivity: internal
 - [ADR-0004: 주제별 단일 문서 권위](decisions/0004-single-document-authority.md)
 - [ADR-0005: 프로젝트 로컬 개선과 사용자 문서 Adapter 경계](decisions/0005-project-local-extension-boundary.md)
 - [ADR-0006: 증거를 선택형 전문성 팩으로 컴파일](decisions/0006-evidence-compiled-expertise.md)
+- [ADR-0007: 판단과 실행 승인을 분리](decisions/0007-separate-decision-and-execution.md)
 
 ## 역사 자료
 

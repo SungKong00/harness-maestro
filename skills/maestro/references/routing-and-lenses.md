@@ -10,6 +10,8 @@
 | Adapter | project facts, commands, authority choices | generic Lens content |
 | Expertise Pack | reusable expert criteria and Decision Guide routing | tools, permissions, permanent agent identity |
 | Decision Guide | one compact family of professional decision checks | full source archive, runtime log, generic persona |
+| Specialist Contract | one decision-stage role's owned concerns and allowed claims | permanent agent identity, implementation commands, write permission |
+| Decision Bundle | accepted decisions, blockers, feasibility, source digests, and execution scope | transcripts, hidden reasoning, implementation diff |
 | Maestro | routing, budgets, synthesis, completion | unapproved project policy |
 
 ## Depth
@@ -62,3 +64,10 @@ handoff, and top-level model route, then adds a bounded Assignment DAG.
 ## Specialist admission
 
 Keep a concern as a Lens unless repeated evaluation proves a need for a distinct tool, permission, model, sandbox, durable state, ownership handoff, or approval boundary. A Specialist is a candidate until an old/new evaluation and owner approval succeed.
+
+For a staged decision, an ephemeral Specialist Contract may reuse the
+`lens-reviewer` Executor without creating a permanent Specialist. It must have
+disjoint `owns` and `out_of_scope`, no side effects, fresh context, no spawn,
+and a closed Finding Packet. Out-of-scope content is an escalation question,
+not an extra conclusion. Only repeated evaluation showing a distinct tool,
+permission, or ownership boundary justifies a permanent component.

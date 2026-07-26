@@ -164,6 +164,48 @@ v2의 Assignment는 Host가 실행할 정적 계획이며 실행 로그가 아�
 dependency, Packet과 side-effect 계약은 Maestro가 검증하지만 실제 호출 모델,
 token, 시간과 성공 결과는 Host가 직접 제공해야 한다.
 
+### 판단을 끝낸 뒤 구현하는 작업
+
+디자인, 아키텍처, 기술 스택처럼 방향부터 정해야 하면 일반 route로 writer를 열지
+않고 read-only DecisionPlan을 만든다.
+
+```bash
+maestro_decision="$(mktemp -t maestro-decision.XXXXXX.json)"
+maestro decide --repo /path/to/project \
+  --goal "결제 화면의 시각 위계와 UX를 판단한 후 구현" \
+  --risk medium --intent implementation --host codex --json \
+  > "$maestro_decision"
+maestro validate-decision --plan "$maestro_decision" --json
+```
+
+Host는 plan의 entry Specialist를 서로의 최초 결론을 숨긴 fresh read-only
+context에서 실행한다. 각 결과는 별도 임시 JSON packet으로 저장해 바로 검사한다.
+
+```bash
+maestro validate-decision --plan "$maestro_decision" \
+  --packet /tmp/visual-packet.json --json
+```
+
+모든 유효 packet을 합성하고 기술 타당성을 확인한 뒤
+`maestro_decision_bundle_v1`을 만든다. 구현이 원래 요청에 포함된 low·medium
+risk 작업은 다음과 같이 실행 계획으로 전환할 수 있다.
+
+```bash
+maestro enact --repo /path/to/project \
+  --plan "$maestro_decision" \
+  --bundle /tmp/decision-bundle.json \
+  --packet /tmp/visual-packet.json \
+  --packet /tmp/ux-packet.json \
+  --packet /tmp/technical-packet.json \
+  --authorization-source prior_explicit_request --json
+```
+
+`enact`도 파일을 수정하지 않는다. 모든 digest, research gate, Registry, Git
+checkout, blocker와 허용 path가 그대로일 때만 기존 route v2 writer를 감싼
+ExecutionPlan을 반환한다. high·critical risk는
+`--authorization-source explicit_user`가 필요하다. `판단만`, `수정하지 마` 요청은
+DecisionPlan에서 끝나며 `enact`를 호출하면 안 된다.
+
 ## 5. 상태와 업그레이드
 
 다음 명령은 저장소 상태를 읽기만 한다.
@@ -218,7 +260,8 @@ govern 보고서는 live Harness를 수정하거나 후보를 자동 승격하�
 
 ## 쓰기 경계 요약
 
-- `status`, `doctor`, `docs`, `adapt`, `route`, `validate-plan`,
+- `status`, `doctor`, `docs`, `adapt`, `route`, `validate-plan`, `decide`,
+  `validate-decision`, `enact`,
   `govern report`는 읽기 전용이다.
 - `init`, `upgrade`는 `--apply-plan`이 없으면 미리보기만 한다.
 - `record`는 검증된 project-scoped JSONL receipt 한 건만 append한다.

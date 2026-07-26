@@ -875,11 +875,132 @@ def _goal_has(goal: str, terms: Iterable[str]) -> bool:
     return any(_trigger_matches(term, goal_terms) for term in terms)
 
 
+READ_ONLY_REQUEST_PATTERNS = (
+    r"\b(?:do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b",
+    r"\bwithout\s+(?:any\s+)?(?:code\s+)?changes?\b",
+    r"\bno\s+(?:code\s+)?changes?\b",
+    r"\b(?:analysis|assessment|review)\s+only\b",
+    r"(?:코드\s*)?(?:작업|변경|수정|구현)\s*(?:은|는|을|를)?\s*(?:하지\s*마|하지\s*말|없이)",
+    r"(?:판단|검토|분석|평가)\s*만",
+)
+STAGED_REQUEST_PATTERNS = (
+    r"\b(?:review|assess|analy[sz]e|design|plan)\b.{0,40}\b(?:then|before)\b.{0,40}\b(?:implement|change|modify|build)\b",
+    r"\b(?:implement|change|modify|build)\b.{0,40}\bafter\b.{0,40}\b(?:review|assessment|analysis|design|plan)\b",
+    r"(?:검토|판단|분석|설계|기획|확정)\s*(?:한|한\s*뒤|후|뒤|하고\s*나서).{0,40}(?:구현|개발|수정|변경)",
+    r"(?:먼저|우선).{0,40}(?:검토|판단|분석|설계|기획).{0,40}(?:그\s*후|이후|다음|나서).{0,40}(?:구현|개발|수정|변경)",
+)
+
+
+def _matches_any_pattern(goal: str, patterns: Iterable[str]) -> bool:
+    folded = goal.casefold()
+    return any(re.search(pattern, folded) is not None for pattern in patterns)
+
+
+def resolve_request_contract(
+    goal: str,
+    intent: str = "auto",
+) -> dict[str, Any]:
+    """Classify whether a request may reach a mutation owner.
+
+    Negative side-effect language intentionally wins over nearby mutation
+    keywords. A staged request is not an implementation authorization.
+    """
+
+    if intent not in {"auto", "implementation", "review", "research"}:
+        raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
+
+    if _matches_any_pattern(goal, READ_ONLY_REQUEST_PATTERNS):
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "forbidden",
+            "authorization_source": None,
+        }
+    if intent in {"review", "research"}:
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "forbidden",
+            "authorization_source": None,
+        }
+    if _matches_any_pattern(goal, STAGED_REQUEST_PATTERNS):
+        return {
+            "decision_mode": "staged",
+            "side_effect_policy": "after_decision",
+            "authorization_source": (
+                "explicit_cli" if intent == "implementation" else None
+            ),
+        }
+    if intent == "implementation":
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "direct",
+            "authorization_source": "explicit_cli",
+        }
+
+    if _goal_has(
+        goal,
+        (
+            "add",
+            "change",
+            "delete",
+            "fix",
+            "implement",
+            "migrate",
+            "modify",
+            "remove",
+            "rename",
+            "format",
+            "sort",
+            "update",
+            "추가",
+            "변경",
+            "삭제",
+            "수정",
+            "구현",
+            "마이그레이션",
+            "이름 변경",
+            "포맷",
+            "정렬",
+        ),
+    ):
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "direct",
+            "authorization_source": None,
+        }
+    return {
+        "decision_mode": "direct",
+        "side_effect_policy": "forbidden",
+        "authorization_source": None,
+    }
+
+
 def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
     if intent not in {"auto", "implementation", "review", "research"}:
         raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
     if intent != "auto":
         return intent, "explicit"
+
+    request_contract = resolve_request_contract(goal, intent)
+    if request_contract["side_effect_policy"] == "forbidden":
+        if _goal_has(
+            goal,
+            (
+                "research",
+                "survey",
+                "look up",
+                "sources",
+                "리서치",
+                "조사",
+                "자료 조사",
+                "찾아봐",
+            ),
+        ):
+            return "research", "inferred"
+        return "review", "inferred"
+    if request_contract["side_effect_policy"] == "after_decision":
+        return "implementation", "inferred"
+    if request_contract["side_effect_policy"] == "direct":
+        return "implementation", "inferred"
 
     mutation_intent = _goal_has(
         goal,
@@ -937,7 +1058,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
         ),
     ):
         return "review", "inferred"
-    return "implementation", "inferred"
+    return "review", "inferred"
 
 
 def _risk_warnings(
@@ -1289,6 +1410,7 @@ def route_goal(
     conflict_evidence: str | None = None,
     host_id: str = "codex",
     intent: str = "auto",
+    decision_authorized: bool = False,
 ) -> dict[str, Any]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -1302,6 +1424,31 @@ def route_goal(
     if department_id not in departments:
         raise MaestroError("DEPARTMENT_UNKNOWN", f"Unknown department: {department_id}")
     department = departments[department_id]
+    request_contract = resolve_request_contract(goal, intent)
+    if (
+        intent == "implementation"
+        and request_contract["side_effect_policy"] == "forbidden"
+    ):
+        raise MaestroError(
+            "SIDE_EFFECT_POLICY_CONFLICT",
+            (
+                "The request explicitly forbids project changes. "
+                "Use review intent and do not create a mutation plan."
+            ),
+        )
+    if (
+        request_contract["side_effect_policy"] == "after_decision"
+        and intent in {"auto", "implementation"}
+        and not decision_authorized
+    ):
+        raise MaestroError(
+            "DECISION_WORKFLOW_REQUIRED",
+            (
+                "This request requires a read-only decision before implementation. "
+                "Run maestro decide, synthesize a valid decision bundle, then use "
+                "maestro enact."
+            ),
+        )
     resolved_intent, intent_source = _resolve_intent(goal, intent)
     material_conflict = _goal_has(
         goal,

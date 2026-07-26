@@ -369,6 +369,61 @@ workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 
 [v0.4 Expertise Pack 계획](../plans/active/v0.4-expertise-packs.md),
 저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)에 있다.
 
+## 9. 판단과 실행 권한은 다른 artifact로 연결한다
+
+### 확인한 공식 자료와 저장소
+
+- [OpenAI Agents SDK orchestration](https://openai.github.io/openai-agents-python/multi_agent/)은
+  한 manager가 최종 통제를 유지하며 specialist를 tool처럼 호출하는
+  manager-as-tools와, 통제 자체를 넘기는 handoff를 구분한다. Maestro의 bounded
+  specialist 판단에는 전자가 더 가깝다.
+- [OpenAI Agents SDK guardrails](https://openai.github.io/openai-agents-python/guardrails/)은
+  tool guardrail을 function call 단위에 적용하고, blocking input guardrail이
+  실패하면 agent·tool 실행 전에 중단할 수 있는 경계를 제공한다.
+- [LangGraph workflow 문서](https://docs.langchain.com/oss/python/langgraph/workflows-agents)는
+  미리 정한 workflow, orchestrator-worker와 explicit state를 구분하며,
+  [LangChain human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)는
+  민감한 tool 실행을 pause한 뒤 approve·edit·reject하는 상태 경계를 설명한다.
+- [OWASP LLM06 Excessive Agency](https://owasp.org/www-project-top-10-for-large-language-model-applications/2_0_vulns/LLM06_ExcessiveAgency.html)는
+  tool·permission·autonomy를 필요한 최소로 줄이고 downstream authorization과
+  human approval을 함께 쓰라고 권한다.
+- [OWASP Agentic AI security guidance](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)는
+  agent 사이 구조화된 output, least privilege, decision과 execution의 분리,
+  multi-agent chaining 자체의 검증을 강조한다.
+- gstack의
+  [plan-design-review Skill](https://github.com/garrytan/gstack/blob/main/plan-design-review/SKILL.md)은
+  계획 검토 단계에서 코드를 작성하지 않는 경계를 명시하고,
+  [Superpowers executing-plans](https://github.com/obra/superpowers/tree/main/skills/executing-plans)는
+  승인된 설계·계획과 실행 절차를 별도 Skill로 나누는 공개 구현 사례다.
+
+### Maestro에 반영한 동작
+
+- “검토만”과 “검토 후 구현”을 같은 implementation route로 처리하지 않는다.
+  `RequestContract`가 `forbidden`, `after_decision`, `direct`를 먼저 결정한다.
+- DecisionPlan의 Specialist는 영구 agent가 아니라 manager가 통제하는 read-only
+  role contract다. 각 역할은 소유 concern, 허용 claim과 input만 받는다.
+- 최초 visual·UX 판단은 서로의 결론을 보지 않고, synthesis가 공통점과 충돌만
+  추출한 뒤 technical feasibility를 호출한다.
+- Specialist packet은 구조화하고 역할 밖 문제를 typed escalation으로 제한한다.
+  구현 명령이나 write permission은 packet과 DecisionPlan에서 거부한다.
+- 구현은 별도 `enact` 전이에서만 열린다. 이 전이는 DecisionBundle과 packet digest,
+  research gate, Registry와 Git checkout, blocker, feasibility, 허용 path와 사용자
+  권한을 함께 검사한다.
+- CLI의 계약만으로 실제 Host tool denial을 증명하지 않는다. Host가 reviewer의
+  write call을 거부한 결과는 conformance에서 별도로 확인한다.
+
+### 차용하지 않은 부분
+
+LangGraph checkpoint DB, 범용 graph runtime, 모든 tool call의 영구 approval UI,
+role마다 별도 permanent agent와 모든 packet의 LLM semantic judge는 도입하지 않았다.
+현재 고정 DAG는 최대 다섯 단계이고 기존 route writer를 재사용하므로, typed artifact와
+Git freshness check만으로 먼저 평가한다. 실제 오염이나 중단·재개 요구가 반복될 때만
+Host Adapter나 runtime 확장을 검토한다.
+
+구현 권위는
+[ADR-0007](../decisions/0007-separate-decision-and-execution.md)과
+[v0.5 Decision Workflow 계획](../plans/active/v0.5-decision-workflow.md)에 있다.
+
 ## 세부 동작과 근거 연결표
 
 | 실제 동작 | 주 근거 | 저장소 권위 |
@@ -384,6 +439,7 @@ workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 
 | 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
 | v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [v0.3 Typed Plan 계획](../plans/active/v0.3-typed-plan.md) |
 | 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
+| read-only DecisionPlan, 역할 제한 packet, digest-bound enactment | OpenAI orchestration·guardrails, OWASP least privilege, LangGraph HITL, gstack·Superpowers 단계 분리 | [ADR-0007](../decisions/0007-separate-decision-and-execution.md) |
 
 ## 아직 검증하지 않았거나 주장하지 않는 것
 
