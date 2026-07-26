@@ -57,6 +57,7 @@ sensitivity: internal
 | 기능 | 판정 | v0에서 보류한 이유 | 도입 게이트 |
 |---|---|---|---|
 | 실제 멀티에이전트 scheduler와 fan-out | deferred | CLI가 아직 capability, cancel, retry, lease를 runtime에서 강제하지 않음 | 상태 기계, packet schema, budget·cancel·writer invariant 검증 |
+| Assignment 실행 상태 머신·자동 retry·cancel 전파 | deferred | terminal Packet과 최종 관측은 있지만 pending/running lease, idempotency, crash recovery를 CLI가 소유하지 않음 | 공개 Host lifecycle/cancel API와 두 프로젝트 이상의 반복 부분 실패 |
 | workspace lease와 base-revision gate | deferred | 동시 writer 안전성을 파일 문구만으로 보장할 수 없음 | 격리 worktree 통합 test와 crash recovery |
 | 외부 API 쓰기 capability broker | deferred | idempotency, 승인, read-after-write와 compensation 계약이 없음 | service별 adapter와 명시적 user approval |
 | Notion 양방향 sync·쓰기 | deferred | dual master, freshness, deletion, 민감 정보 문제가 해결되지 않음 | topic별 단일 권위, revision/digest, tombstone, 실패 복구 |
@@ -65,7 +66,8 @@ sensitivity: internal
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
 | research wave 자동 scheduler·fan-out | deferred | lane·artifact 계약과 validator는 구현했지만 CLI가 researcher 실행·cancel·retry를 runtime에서 강제하지 않음 | host capability 계약, bounded cancel, 실제 비용·품질 forward test |
-| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | SpecialistFinding과 ResearchPacket은 검사하지만 모든 실행·검토 Packet 내부 의미까지 같은 수준으로 강제하지 않음 | 남은 Packet별 source ref와 conformance test |
+| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | FindingPacket v2와 공통 terminal Packet은 plan binding을 검사하지만 Research·Implementation·Verification payload의 도메인 의미 전체를 catalog화하지 않음 | 두 번째 구체 Packet의 미검증 내부 의미가 반복 병목이 되는 실제 사례 |
+| 범용 SurfaceMap ontology·상주 generalist | deferred | 현재 bounded Engineering Baseline이면 artifact·boundary·lifecycle gap을 표현할 수 있고, 더 큰 ontology는 Fast token과 추정 사실을 늘림 | 간단 baseline이 놓친 Lens 밖 defect가 서로 다른 실행에서 반복 |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
 
 ## 큰 자동화 기능의 재평가

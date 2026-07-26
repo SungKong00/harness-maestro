@@ -32,16 +32,34 @@ sensitivity: internal
 | DecisionBundle | 어떤 판단이 구현 입력으로 승인되었는가? | packet digest, 결정·충돌·blocker, feasibility, 허용 path | 대화 전문, 숨은 추론, 구현 diff |
 | Assignment | 이번 실행에서 무엇을 결합하는가? | goal, 선택 Lens, Executor, 권한, budget, 입력 digest | 재사용 Registry 정의의 수정 |
 
-v0의 Finding·Review·Research Packet JSON Schema는 구조 계약이다. Lens Reviewer가
-선택된 route는 `FindingPacket`을 Implementation Engineer에 전달하는
+Lens의 `questions`는 반드시 확인할 최소 기준이고 `reject_when`은 기각 조건이다.
+필드 이름을 `mandatory_checks`, `reject_conditions`로 복제하지 않는다. 모든 bundled
+Lens는 `non_exhaustive: true`이며, material evidence가 concern 밖에 있거나 artifact
+owner가 없거나 증거가 부족하면 `escalate_when`에 따라 coverage gap을 보고한다.
+Lens는 검토의 상한이 아니다.
+고정 `coverage_tags`는 넣지 않는다. Registry의 `triggers`는 선택 힌트일 뿐 coverage
+증거가 아니며, 실제 소유권은 매 작업의 Surface Map·Engineering Baseline이 현재
+artifact와 함께 결정한다.
+
+기존 Finding·Review·Research Packet JSON Schema는 구조 계약이다. 관리 route v2의
+Lens Reviewer는 추가로 plan·Assignment·전체 Lens set에 결합된 FindingPacket v2를
+사용한다. Standard에서 두 Lens를 한 reviewer가 적용해도 finding마다
+`owner_lens_id`를 보존한다. 선택된 Lens 밖의 문제는 결론을 대신 내리지 않고
+artifact evidence가 있는 `coverage_gaps` 최대 2개로 반환한다.
+
+Lens Reviewer가 선택된 route는 `FindingPacket`을 Implementation Engineer에 전달하는
 `handoff_contract`를 명시한다. Host는 objective, completion contract, 허용된
-path/interface, 선택 Convention digest와 stop condition을 함께 공급한다. handoff에는
-finding, evidence reference, 추천 행동과 미해결 질문만 넣고 대화, 숨은 추론, 전문과
-파일 본문은 넣지 않는다. Writer는 파일을 packet에서 복사하지 않고 현재 artifact를
-다시 읽는다. Registry ID 참조, Research
-source 참조, tier별 채택 가능성 같은 의미 검사는 아직 runtime에서 강제하지 않는다.
-schema가 없는 나머지 Executor 입출력 이름도 scheduler 도입 전까지는 비강제 계약
-이름이며, 구현된 validator보다 강한 보장을 주장하지 않는다.
+path/interface, 선택 Convention digest와 stop condition을 함께 공급한다. 관리 Host는
+이를 `maestro assignment project`로 실제 AssignmentInput에 투영하고,
+`maestro validate-packet`을 통과한 dependency만 다음 Assignment에 포함한다.
+handoff에는 finding, evidence reference, 추천 행동과 미해결 질문만 넣고 대화, 숨은
+추론, 전문과 파일 본문은 넣지 않는다. Writer는 파일을 packet에서 복사하지 않고 현재
+artifact를 다시 읽는다.
+
+이 validator는 구조, ID binding, evidence allowlist와 bounded text를 검사한다. 자유문
+주장의 진실성이나 실제 Host context 격리를 증명하지 않는다. schema가 없는 다른
+도메인 payload는 terminal Packet envelope로만 결합하며, 별도 의미 검사가
+반복해서 필요해질 때 해당 Packet validator를 추가한다.
 
 ## v0 Registry
 
@@ -79,6 +97,8 @@ Executor 계약을 사용한다. 역할 밖 문제는 다른 specialism으로 es
 4. Deep에서 독립성이 중요한 Lens만 서로의 결론을 숨긴 fresh context로 실행한다.
 5. 각 reviewer는 본문 재서술 대신 최대 5개의 중간 이상 finding과 직접 증거를 반환한다.
 6. 같은 파일, 같은 사실, 같은 도구를 반복 읽는 lane은 합치거나 제거한다.
+7. 다른 concern의 중요한 문제는 최대 2개의 evidence-backed coverage gap으로만
+   보고하고, material gap 때문에 route를 확장하는 횟수는 한 번으로 제한한다.
 
 선택되지 않은 Lens 정의와 archive 문서는 prompt에 넣지 않는다. Registry 전체를
 에이전트에게 전달하는 대신 Assignment에 필요한 LensCard만 투영한다.

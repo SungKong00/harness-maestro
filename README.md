@@ -74,7 +74,10 @@ maestro init → project/architecture 초안 작성 → status → upgrade → d
               ├─ 최신·외부 근거가 필요할 때만 내부 reference research
               │    └─ 독립 lane → 검증된 ResearchBundle → 같은 작업 재-route
               ├─ 위험에 맞는 Fast / Standard / Deep 경로 선택
+              ├─ 실제 artifact로 작은 Surface Map·Engineering Baseline 작성
+              ├─ 각 context에는 허용된 Lens·Guide·reference만 투영
               ├─ 필요한 경우 독립 Lens 검토
+              ├─ plan·Assignment에 결합된 Packet만 다음 단계로 전달
               ├─ 방향이 정해진 변경: 한 명의 writer가 구현
               ├─ 설계·기술 선택: decide → blind Specialist 판단 → 충돌만 합성
               │                 → 기술 타당성 → enact 승인 → 한 명의 writer
@@ -255,16 +258,21 @@ Maestro workflow는 다음 순서로 진행합니다.
    escalation으로 넘깁니다.
 7. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
    먼저 검토합니다.
-8. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
+8. affected artifact·boundary·failure state와 여섯 Engineering Baseline check를
+   짧게 만들고, reviewer에는 해당 Lens·Guide·reference만 전달합니다. Lens 밖의
+   중요한 공백은 최대 2개의 근거 있는 coverage gap으로 남깁니다.
+9. reviewer 결과가 plan·Assignment·Lens와 일치하고 evidence가 있는 Packet인지
+   검증한 뒤에만 writer가 현재 파일을 다시 읽습니다.
+10. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
    실패 영향으로 결정합니다.
-9. 결정 번들에 열린 blocker가 없고 checkout·Registry·research bundle digest가 그대로일
+11. 결정 번들에 열린 blocker가 없고 checkout·Registry·research bundle digest가 그대로일
    때만 실행 승인을 만들며, 그 뒤 한 명의 writer가 코드를 수정하고
    test·lint·schema·diff 같은 실제 artifact로 검증합니다.
-10. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
+12. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
    성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
-11. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
+13. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
     compact RunReceipt 한 건으로 연결합니다.
-12. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
+14. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
 
 ## 무엇을 해결하나요?
 
@@ -278,6 +286,9 @@ Maestro workflow는 다음 순서로 진행합니다.
   확정하고, digest와 checkout에 묶인 `enact` 승인 뒤에만 writer를 엽니다.
 - **역할 오염 제한** — Specialist는 소유 concern과 claim 종류만 반환합니다.
   코드 지시나 다른 역할의 결론은 packet validation에서 거부합니다.
+- **입력·출력 경계** — context를 넘길 때 작은 Engineering Baseline과 허용
+  reference만 투영하고, plan·Assignment·Lens에 결합된 Packet만 다음 단계가
+  소비합니다. 실제 fresh context 강제 여부는 Host conformance에서 따로 확인합니다.
 - **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
   전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
   ResearchBundle 파일 없이는 gate를 통과하지 못합니다.

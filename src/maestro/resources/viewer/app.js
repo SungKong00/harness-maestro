@@ -445,8 +445,20 @@ function renderExpertise(snapshot) {
     }));
     const guides = element("ul", { className: "card-list" });
     pack.guides.forEach((guide) => {
+      const usage = snapshot.governance.decision_guide_usage
+        ? snapshot.governance.decision_guide_usage[guide.guide_id]
+        : null;
+      const usageText = usage
+        ? ` · 최근 사용 ${usage.count}회 · 마지막 ${formatDate(usage.last_used_timestamp)}`
+        : " · 최근 사용 0회";
+      const outcomeSignals = usage
+        ? ` · 검증 실패 동시 발생 ${usage.failed_verification_run_count}회 · 수정 동시 발생 ${usage.corrected_run_count}회`
+        : "";
+      const recentRuns = usage && usage.recent_run_ids.length
+        ? ` · 실행 ${usage.recent_run_ids.join(", ")}`
+        : "";
       guides.append(element("li", {
-        text: `${guide.guide_id} · ${guide.summary}`,
+        text: `${guide.guide_id} · ${guide.summary}${usageText}${outcomeSignals}${recentRuns}`,
       }));
     });
     card.append(guides);

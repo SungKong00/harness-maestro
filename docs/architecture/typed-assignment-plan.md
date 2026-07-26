@@ -20,7 +20,7 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 `maestro_route_v1`을 호환 입력으로 유지하면서, Host가 실행 전에 확인할 수 있는
 작고 고정된 Assignment DAG로 정규화한다.
 
-이번 범위에서 채택하는 것은 다음 다섯 가지다.
+이번 범위에서 채택하는 것은 다음 일곱 가지다.
 
 1. 기존 route를 최대 5개의 typed Assignment로 정규화한다.
 2. Assignment마다 Executor, Lens, 의존 관계, 입출력 Packet, side effect와 model
@@ -28,6 +28,10 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 3. 실행 전에 ID, 연결, cycle, Packet 호환성, 한 명 writer와 비용 상한을 검사한다.
 4. v1은 기본 출력으로 유지하고 v2를 명시적으로 선택하게 한다.
 5. 20개의 고정 route 사례로 v1 선택과 v2 계획의 회귀를 검사한다.
+6. Context 경계를 넘기기 전에 작은 Surface Map과 Engineering Baseline을
+   `AssignmentInput`으로 투영한다.
+7. 일반 reviewer의 FindingPacket과 나머지 Assignment의 terminal result를
+   plan·Assignment에 결합해 downstream 전달 전에 검증한다.
 
 실제 agent 생성, 실행 순서 제어, retry, checkpoint, resume와 per-call trace는
 현재 구현 범위가 아니다. 실행 뒤 compact metadata를 읽는 HTML 운영 뷰어는 별도
@@ -40,7 +44,10 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
   → route v1이 문서·Lens·Executor를 선택
   → route v2가 고정 Assignment Plan으로 정규화
   → pre-execution validator가 참조·연결·권한·상한 검사
-  → Codex 같은 Host가 Assignment를 실행
+  → Main이 실제 artifact에서 작은 Engineering Baseline 작성
+  → CLI가 Assignment별 허용 입력만 투영
+  → Codex 같은 Host가 그 투영으로 Assignment를 실행
+  → CLI가 반환 Packet을 plan·Assignment에 결합해 검증
   → 명령과 artifact로 검증
   → 마지막 RunReceipt 한 건 기록
 ```
@@ -60,6 +67,76 @@ maestro validate-plan --plan route-v2.json --json
 
 `route`와 `validate-plan`은 모두 읽기 전용이다. 기본 `route` 호출은 계속 v1을
 반환한다.
+
+컨텍스트 경계를 실제로 사용하는 관리 Host는 다음 읽기 전용 단계를 추가한다.
+사용자가 이 명령들을 직접 입력하는 흐름이 아니라 `$maestro`가 임시 JSON을 만들고
+호출하는 내부 Host 동작이다.
+
+```bash
+maestro assignment project --repo . \
+  --plan route-v2.json --assignment review-contract \
+  --baseline baseline.json --document docs/architecture.md --json \
+  > assignment-input.json
+
+maestro validate-packet --repo . \
+  --plan route-v2.json --assignment review-contract \
+  --projection assignment-input.json --packet finding.json --json
+```
+
+`assignment project`는 파일 내용을 복사하지 않고 repository-relative path와
+SHA-256만 반환한다. reviewer의 validated FindingPacket은 compact payload 그대로
+다음 Assignment에 포함할 수 있지만, transcript나 원본 파일 본문은 포함할 수 없다.
+
+## 작은 Surface Map과 Engineering Baseline
+
+모든 Lens를 불러오는 대신 관리 v2 실행은 작업과 직접 관련된 표면만 임시 JSON으로
+표현한다.
+
+- 최대 10개의 existing/planned artifact
+- 최대 8개의 affected boundary
+- 최대 6개의 stakeholder
+- 최대 8개의 success/failure/retry/cancel/rollback/recovery state
+- behavior contract, affected surface, failure/recovery, compatibility,
+  completion evidence, risk ownership의 여섯 check
+
+existing artifact는 현재 저장소 안의 regular file이어야 한다. `covered` check는
+task contract, 선택된 Lens 또는 계획의 Assignment owner와 artifact evidence를
+가져야 한다. 알 수 없는 것은 `gap`으로 남긴다. read-only reviewer는 gap을 조사할
+수 있지만 mutation owner는 gap이 남은 projection을 받을 수 없다.
+
+이 계약은 별도 generalist agent나 범용 coverage ontology가 아니다. Fast 작업도
+Main이 같은 여섯 질문을 짧게 확인하되, 다른 context로 넘기는 payload가 없으면
+projection 파일 자체를 영구 보존하지 않는다. Standard·Deep 또는 reviewer→writer
+handoff에서만 정형 projection을 사용한다.
+
+## AssignmentInput과 Packet 검증
+
+`maestro_assignment_input_v1`은 다음 정보만 포함한다.
+
+- plan·Assignment·goal digest와 task/Assignment contract
+- 해당 Assignment의 LensCard와 Decision Guide ID
+- bounded Surface Map과 Engineering Baseline
+- 선택한 문서·artifact의 path, digest, logical reference
+- 직접 dependency의 **검증된** compact Packet
+- fresh context와 금지 context에 대한 Host 요청
+
+FindingPacket v2는 `plan_id`, `assignment_id`, 전체 `lens_ids`와 finding별
+`owner_lens_id`를 가져 Standard의 다중-Lens reviewer도 손실 없이 표현한다.
+finding은 중간 이상 심각도와 비어 있지 않은 evidence reference를 가져야 한다.
+선택된 Lens 밖의 중요한 공백은 다른 Lens의 결론을 대신 내리지 않고 최대 2개의
+`coverage_gaps`로 보고한다. `PASS`와 coverage gap은 함께 존재할 수 없다.
+
+나머지 Assignment는 작은 `maestro_terminal_packet_v1` terminal envelope로
+`completed`, `failed_transient`, `failed_semantic`, `blocked`, `cancelled`,
+`skipped` 중 하나를 반환할 수 있다. 이는 결과 관측 계약이지 상태 머신이나 retry
+실행기가 아니다. CLI는 plan의 기대 output Packet과 evidence/failure shape를
+검사하지만 어떤 Assignment도 실행·취소·재시도하지 않는다.
+
+닫힌 schema, 한 줄·길이 제한, reference allowlist는 raw transcript·file body가
+우연히 handoff에 섞이는 것을 막는다. 자유문 의미를 완전히 판별하거나 Host가 정말
+부모 대화를 상속하지 않았음을 증명하지는 못한다. invalid Packet을 downstream에
+전달하지 않는 것은 관리 Skill과 Host adapter가 validator를 필수 edge로 사용할 때만
+성립한다.
 
 ## Route v2 계약
 
@@ -120,6 +197,10 @@ Validator는 LLM 판단이 아니라 정적으로 증명할 수 있는 사실만
 - repository writer 최대 한 명
 - Lens, Assignment, 반박, model escalation 상한
 - Assignment 내부 spawn 금지
+- Engineering Baseline의 bounded surface, 실제 path와 owner/evidence 결합
+- AssignmentInput이 선택된 Lens·Guide·직접 dependency만 포함하는지
+- FindingPacket v2의 plan·Assignment·다중 Lens 결합과 evidence/gap 한도
+- terminal Assignment result의 기대 Packet 종류와 failure 분류
 
 v2를 생성하는 관리 경로에는 validator 우회 옵션을 제공하지 않는다. Python subtype
 추론이나 임의 JSON Schema 포함 관계는 분석하지 않고, 첫 버전에서는 Registry의
@@ -172,6 +253,7 @@ Packet, DAG 의미 검사를 더한다. 두 계약의 required field 집합은 �
 | Bounded Host Observation | 현재 구현 | Host가 제공한 값만 compact final receipt에 기록하고 미측정값은 null |
 | JSON snapshot | 현재 구현 | 최근 실행·Expertise·governance metadata만 합성 |
 | localhost HTML Inspector | 현재 구현 | localhost bind, session token, CSP, no raw prompt, read-only API |
+| AssignmentInput·FindingPacket v2 | 현재 구현 | 전체 test, package schema와 실제 Host projection 확인 |
 | partial invalidation·change collector | 보류 | 중복 검증과 재읽기 비용이 측정됨 |
 | checkpoint·resume·replay | 별도 milestone | 실행 상태 소유권, lease, idempotency, compensation과 crash test |
 
@@ -193,6 +275,10 @@ trace는 여전히 이 문서의 범위 밖이다.
 | [Microsoft Agent Framework Workflow Builder](https://learn.microsoft.com/en-us/agent-framework/workflows/workflows) | type compatibility, connectivity, Executor binding, duplicate·invalid edge 검사 | Packet, 도달성, Executor와 dependency 검사 |
 | [Pydantic GraphBuilder](https://pydantic.dev/docs/ai/graph/builder/) | 명시적 start·end와 typed step을 build 단계에서 검증 | entry·terminal과 Packet 계약을 명시 |
 | [Pydantic Graph API](https://pydantic.dev/docs/ai/api/pydantic_graph/graph_builder/) | build가 validation·normalization을 수행하며 graph 실행과 구분 | 생성과 실행을 분리하고 검증 우회를 제공하지 않음 |
+| [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final) | 기존 SDLC에 통합할 고수준 practice와 evidence | 새 runtime 대신 작은 evidence contract |
+| [SEI QAW](https://sei.cmu.edu/library/quality-attribute-workshops-qaws-third-edition/)·[ATAM](https://www.sei.cmu.edu/library/architecture-tradeoff-analysis-method-collection/) | 우선순위 scenario를 architecture risk·trade-off와 연결 | surface의 lifecycle scenario를 evidence/owner와 연결 |
+| [JSON Schema](https://json-schema.org/specification) | instance와 schema의 구조 검증 | process 경계 Packet의 닫힌 wire shape |
+| [Hermes delegation](https://github.com/NousResearch/hermes-agent/blob/eb52760564dbba2e5971fa54bd67384e281cd3b8/website/docs/user-guide/features/delegation.md) | child에 goal/context만 주고 final summary만 반환 | 부모 대화 대신 명시적 AssignmentInput을 주는 Host 규칙 |
 
 외부 도구는 실행 runtime까지 소유하지만 Maestro는 Host에 실행을 위임한다. 따라서
 superstep, worker, checkpoint와 graph framework dependency는 채택하지 않았다.
@@ -215,9 +301,10 @@ Maestro가 소유하고 message text와 분리한다.
 
 현재 계약은 다음 상한을 유지한다.
 
-- route v2 자체는 신규 runtime module 1개
-- 신규 schema 1개
-- 신규 test module 1개와 20-case fixture
+- route v2와 Assignment contract는 각각 기존 plan module과 전용 contract module에
+  분리
+- Assignment boundary schema 1개
+- Assignment contract test module 1개와 기존 20-case fixture
 - Assignment 최대 5개, Lens 최대 3개
 - 신규 scheduler·database·외부 dependency 없음
 - 별도 read-only localhost viewer만 포함하고 distributed trace·resume 구현 없음

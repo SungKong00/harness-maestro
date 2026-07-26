@@ -33,6 +33,12 @@
     "stored meaning changes without a migration decision",
     "a destructive transformation lacks backup, rollback, or owner approval"
   ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
+  ],
   "finding_limits": {
     "max_findings": 5,
     "minimum_severity": "medium"

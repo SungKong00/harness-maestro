@@ -199,6 +199,29 @@ v2의 Assignment는 Host가 실행할 정적 계획이며 실행 로그가 아�
 dependency, Packet과 side-effect 계약은 Maestro가 검증하지만 실제 호출 모델,
 token, 시간과 성공 결과는 Host가 직접 제공해야 한다.
 
+다른 context나 Executor로 넘어갈 때 `$maestro`는 실제 artifact에서 작은
+Engineering Baseline을 만들고 Assignment별 허용 입력만 투영한다. 사용자는 이
+명령을 외울 필요가 없다. 아래는 Host Adapter와 문제 재현을 위한 저수준 경계다.
+
+```bash
+maestro assignment project --repo /path/to/project \
+  --plan "$maestro_route" --assignment review \
+  --baseline /tmp/engineering-baseline.json \
+  --document docs/architecture.md --json
+
+maestro validate-packet --repo /path/to/project \
+  --plan "$maestro_route" --assignment review \
+  --projection /tmp/assignment-input.json \
+  --packet /tmp/finding-packet.json --json
+```
+
+baseline은 affected artifact·boundary·stakeholder·lifecycle state와 여섯 coverage
+check만 가진다. file body, 사용자 대화와 hidden reasoning은 projection에 들어가지
+않는다. mutation Assignment는 coverage gap이 남아 있으면 시작할 수 없고, invalid
+Packet은 dependency로 전달할 수 없다. CLI는 허용 payload를 검증하지만 실제 Host가
+fresh context를 만들었는지는 증명하지 않으므로 release 전 Host conformance가
+별도로 필요하다.
+
 `$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
 검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
 필요는 없다. Host가 공개 API/event로 실제 모델·token을 제공하면 Maestro가

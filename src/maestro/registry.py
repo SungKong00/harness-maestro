@@ -10,7 +10,14 @@ from .matching import searchable_terms, term_matches
 from .util import canonical_json, sha256_text
 
 LENS_FORBIDDEN = {"model", "models", "tools", "permissions", "capabilities", "context_policy"}
-EXECUTOR_FORBIDDEN = {"questions", "reject_when", "required_evidence", "trigger"}
+EXECUTOR_FORBIDDEN = {
+    "questions",
+    "reject_when",
+    "required_evidence",
+    "trigger",
+    "non_exhaustive",
+    "escalate_when",
+}
 LENS_ALLOWED = {
     "schema_version",
     "kind",
@@ -22,6 +29,8 @@ LENS_ALLOWED = {
     "questions",
     "required_evidence",
     "reject_when",
+    "non_exhaustive",
+    "escalate_when",
     "finding_limits",
     "output",
 }
@@ -313,7 +322,21 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         errors.extend(
             _required(
                 lens,
-                ("schema_version", "kind", "lens_id", "domain", "summary", "triggers", "questions"),
+                (
+                    "schema_version",
+                    "kind",
+                    "lens_id",
+                    "domain",
+                    "summary",
+                    "triggers",
+                    "questions",
+                    "required_evidence",
+                    "reject_when",
+                    "non_exhaustive",
+                    "escalate_when",
+                    "finding_limits",
+                    "output",
+                ),
                 "lens",
             )
         )
@@ -344,13 +367,23 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
             errors.append(
                 f"lens {lens_id or '?'} references missing domain: {lens.get('domain')!r}"
             )
-        for field in ("triggers", "questions", "required_evidence", "reject_when"):
+        for field in (
+            "triggers",
+            "questions",
+            "required_evidence",
+            "reject_when",
+            "escalate_when",
+        ):
             if not _string_list(lens.get(field), nonempty=True):
                 errors.append(f"lens {lens_id or '?'} {field} must be a non-empty string list")
         if not _unique_string_list(lens.get("triggers"), nonempty=True):
             errors.append(f"lens {lens_id or '?'} triggers must be unique")
         if lens.get("output") != "FindingPacket":
             errors.append(f"lens {lens_id or '?'} output must be FindingPacket")
+        if lens.get("non_exhaustive") is not True:
+            errors.append(
+                f"lens {lens_id or '?'} non_exhaustive must be true"
+            )
         if not isinstance(lens.get("priority"), int) or isinstance(lens.get("priority"), bool):
             errors.append(f"lens {lens_id or '?'} priority must be an integer")
         limits = lens.get("finding_limits", {})

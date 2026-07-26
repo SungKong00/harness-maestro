@@ -18,8 +18,9 @@ sensitivity: internal
 receipt의 구조를 증명할 수 있지만, reviewer의 읽기 전용 권한, 독립 컨텍스트,
 blind-first, bounded wait는 실제 host 실행 없이는 증명할 수 없다.
 
-각 릴리스 후보에서 아래 세 시나리오를 한 번씩 실행한다. 전체 대화는 저장하지 않는다.
-route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판정만 보존한다.
+각 릴리스 후보에서 아래 시나리오를 한 번씩 실행한다. 전체 대화는 저장하지 않는다.
+route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검증 command
+결과, 최종 RunReceipt와 아래 판정만 보존한다.
 
 | 시나리오 | 요청 예시 | 통과 조건 |
 |---|---|---|
@@ -31,6 +32,14 @@ route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판�
 모든 시나리오에서 다음을 확인한다.
 
 - `maestro route`의 선택 Lens와 실제 reviewer 입력이 일치한다.
+- Standard·Deep reviewer는 `maestro assignment project`가 만든
+  `maestro_assignment_input_v1`만 시작 입력으로 받고, 그 projection에는 해당
+  LensCard, 선택 Guide ID, 허용 document/artifact reference만 있다.
+- mutation owner는 Engineering Baseline에 `gap`이 남아 있으면 시작하지 않는다.
+- reviewer의 FindingPacket v2는 plan, Assignment, 전체 Lens set에 결합되고
+  `maestro validate-packet` PASS 전에는 dependency로 전달되지 않는다.
+- parent conversation, 다른 blind reviewer의 최초 결론, transcript, hidden reasoning,
+  file body가 projection이나 Packet에 없음을 검사한다.
 - `maestro decide`의 Specialist는 자신의 `owns`, selected guide와 evidence만
   받고 다른 초기 결론·write tool·implementation packet을 받지 않는다.
 - read-only 요청은 `enact`를 호출하지 않으며 staged 요청은 유효한
@@ -48,6 +57,16 @@ route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판�
 하나라도 관찰할 수 없거나 위반되면 릴리스 판정은 `CONTINUE`다. 실제 host가 강제하지
 못하는 권한·격리 속성을 CLI 통과만으로 `DONE`이라고 주장하지 않는다.
 
+각 격리 속성은 다음 세 상태를 구분한다.
+
+- `requested`: projection과 Executor policy가 Host에 요구했다.
+- `host_attested`: Host의 공개·안정된 관측이나 실제 capability denial artifact로
+  확인했다.
+- `unavailable`: Host가 확인 가능한 값을 제공하지 않았다.
+
+`requested`를 `host_attested`로 올리거나, private session file·추정 token·canary
+부재를 격리 증거로 사용하지 않는다.
+
 ## 보존할 결과
 
 전체 대화나 node별 상태는 남기지 않는다. 릴리스 후보마다
@@ -62,8 +81,22 @@ route JSON, 최종 diff, 검증 command 결과, 최종 RunReceipt와 아래 판�
   "checked_at": "2026-07-26",
   "scenarios": {
     "fast": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"},
-    "standard": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"},
-    "deep": {"verdict": "PASS", "route": "artifact", "receipt": "artifact"}
+    "standard": {
+      "verdict": "PASS",
+      "route": "artifact",
+      "projection": "artifact",
+      "packet_validation": "artifact",
+      "fresh_context": "host_attested",
+      "receipt": "artifact"
+    },
+    "deep": {
+      "verdict": "PASS",
+      "route": "artifact",
+      "projection": "artifact",
+      "packet_validation": "artifact",
+      "fresh_context": "host_attested",
+      "receipt": "artifact"
+    }
   },
   "overall": "PASS"
 }

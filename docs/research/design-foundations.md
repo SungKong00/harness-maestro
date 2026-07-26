@@ -287,6 +287,21 @@ architecture, decision, convention 권위 모델로 축소했다.
 - [PocketFlow](https://github.com/The-Pocket/PocketFlow)는 작은 Node·Flow 추상화만
   제공한다. 모든 작업을 복잡한 그래프로 만들지 않아도 되며, 실제 전이가 필요한
   곳만 명시하는 최소 구현의 반례로 참고했다.
+- [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final)는 특정 runtime을
+  처방하지 않고 기존 SDLC에 통합할 고수준 practice와 evidence를 제시한다.
+- [SEI QAW](https://sei.cmu.edu/library/quality-attribute-workshops-qaws-third-edition/)와
+  [ATAM](https://www.sei.cmu.edu/library/architecture-tradeoff-analysis-method-collection/)은
+  우선순위 scenario를 architecture risk·trade-off·evidence와 연결한다.
+- [JSON Schema 2020-12](https://json-schema.org/specification)는 process 경계의
+  JSON instance를 선언된 wire shape에 대해 검증하는 표준이다. 구조 통과가 진실성,
+  권한과 evidence 품질을 증명하지는 않는다.
+- [Hermes delegation](https://github.com/NousResearch/hermes-agent/blob/eb52760564dbba2e5971fa54bd67384e281cd3b8/website/docs/user-guide/features/delegation.md)은
+  child에 goal과 bounded context만 전달하고 final summary만 되돌리는 fresh child
+  패턴을 제공한다. Hermes의 background Kanban/runtime 전체는 채택하지 않았다.
+- [Chain-of-Verification](https://arxiv.org/abs/2309.11495)과
+  [CRITIC](https://arxiv.org/abs/2305.11738)은 최초 draft와 verification 질문을
+  분리하고 외부 도구 feedback으로 수정하는 task별 연구 근거다. 이를 production
+  correctness 보장으로 확대하지 않는다.
 
 ### Maestro에 채택한 범위
 
@@ -298,6 +313,11 @@ Maestro는 이 저장소들처럼 실행 경계에서 오류를 일찍 발견하
   표현한다.
 - Assignment의 Executor·Lens·Packet·model route와 한 명 writer를 실행 전에
   검사하며, machine-readable diagnostic code를 외부 framework 문구와 분리한다.
+- Standard·Deep context 경계에는 실제 artifact path와 lifecycle scenario만 가진
+  작은 Engineering Baseline을 두고, Assignment마다 허용된 Lens·Guide·reference와
+  validated dependency Packet만 투영한다.
+- FindingPacket v2를 plan·Assignment·전체 Lens set에 결합하고, Lens 밖의 중요한
+  공백은 최대 2개의 evidence-backed coverage gap으로 표현한다.
 - `status`는 저장된 `ready` 플래그 대신 핵심 문서 상태와 검증 명령 승인 여부에서
   현재 준비도를 계산한다.
 - 감지한 검증 명령 후보와 사용자가 승인한 `verification_commands`를 분리한다.
@@ -439,6 +459,7 @@ Host Adapter나 runtime 확장을 검토한다.
 | custom Adapter는 handoff만 하고 임의 명령은 실행하지 않음 | 최소 커널과 프로젝트 권한 경계 | [ADR-0005](../decisions/0005-project-local-extension-boundary.md) |
 | 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
 | v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
+| bounded surface·AssignmentInput·FindingPacket v2 | NIST SSDF, SEI QAW/ATAM, JSON Schema, Hermes delegation, CoVe·CRITIC | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
 | 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
 | read-only DecisionPlan, 역할 제한 packet, digest-bound enactment | OpenAI orchestration·guardrails, OWASP least privilege, LangGraph HITL, gstack·Superpowers 단계 분리 | [ADR-0007](../decisions/0007-separate-decision-and-execution.md) |
 

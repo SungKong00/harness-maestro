@@ -333,6 +333,10 @@ def snapshot_report(
             "agent_call_summary": governance["agent_call_summary"],
             "correction_summary": governance["correction_summary"],
             "expertise_pack_usage": governance["expertise_pack_usage"],
+            "decision_guide_usage": governance.get(
+                "decision_guide_usage",
+                {},
+            ),
             "expertise_research_modes": governance[
                 "expertise_research_modes"
             ],

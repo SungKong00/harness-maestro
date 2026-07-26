@@ -111,19 +111,54 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Pilot packs require task-specific verification. A successful use does not
      make them active.
 10. If Lens selection adds a new evidence boundary, rerun `maestro docs` with the selected Lens IDs. Deduplicate by path and read only newly selected documents.
-11. Apply the Assignment plan in dependency order:
+11. Before crossing an Assignment context boundary, build one bounded
+    Engineering Baseline from current project evidence.
+   - Keep its Surface Map to the affected artifacts, boundaries, stakeholders,
+     and lifecycle states only. Do not launch a generalist agent, copy file
+     bodies, or turn model guesses into Tier 0 facts.
+   - Map the six baseline checks—behavior contract, affected surface,
+     failure/recovery, compatibility, completion evidence, and risk ownership—
+     to the selected Lens, task contract, or verification Assignment. Mark
+     unknown ownership as `gap`; do not infer coverage.
+   - Run `maestro assignment project --repo <repo> --plan <route-v2.json>
+     --assignment <id> --baseline <baseline.json> [--document <path>]
+     [--dependency-packet <packet.json>] --json`. The Host must launch the
+     Assignment from the returned `maestro_assignment_input_v1` only.
+   - A read-only reviewer may inspect a declared gap. A mutation Assignment is
+     blocked while a baseline gap remains. Extend the route at most once when
+     a material gap names another Lens; otherwise return
+     `INSUFFICIENT_EVIDENCE`.
+   - The projection requests fresh context and excludes parent conversation,
+     other initial conclusions, transcripts, hidden reasoning, and file
+     bodies. This CLI artifact constrains the allowed payload; it does not prove
+     that a Host actually created an isolated context. Record that separately
+     as `requested`, `host_attested`, or `unavailable`.
+12. Apply the Assignment plan in dependency order:
    - `fast`: Main applies zero or one Lens; do not spawn.
    - `standard`: one read-only Lens Reviewer pass may apply one or two selected Lenses.
    - `deep`: up to three selected Lenses may use fresh, isolated reviewer contexts.
    - Only the Assignment named by `mutation_owner_assignment_id` may write. Research, review, and verification Assignments stay read-only.
    - Stop when a required gate fails, a user decision is required, or the bounded budget is exhausted. The CLI does not schedule, retry, checkpoint, or resume Assignments.
-12. Before launching reviewers, record the exact expected Lens or Specialist IDs. Keep initial conclusions hidden from other reviewers and return compact evidence packets, not transcripts.
-13. Bound coordination:
+13. Before launching reviewers, record the exact expected Lens or Specialist
+    IDs. Keep initial conclusions hidden from other reviewers and return
+    compact evidence packets, not transcripts.
+   - `questions` are mandatory minimum checks and `reject_when` are rejection
+     conditions; every bundled Lens is `non_exhaustive`.
+   - A route v2 reviewer returns `maestro_finding_packet_v2`, bound to the
+     exact plan, Assignment, and Lens set. A material concern outside those
+     Lenses is a typed `coverage_gap`, not another Lens's conclusion.
+   - Validate every reviewer or terminal Assignment packet with
+     `maestro validate-packet --repo <repo> --plan <route-v2.json>
+     --assignment <id> --packet <packet.json> [--projection
+     <assignment-input.json>] --json` before it reaches a dependent
+     Assignment. An invalid packet is terminal evidence failure, never a
+     best-effort handoff.
+14. Bound coordination:
    - Use a bounded host wait. After one no-progress wake, request compact completion once; after the next no-progress wake, cancel that lane and mark its evidence unavailable.
    - As soon as every expected Lens has returned a packet or terminal failure, synthesis is the parent's next action. Do not inspect more files, rerun routing, launch another lane, or wait again unless a material conflict names the new evidence required.
-14. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
-15. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Apply selected conventions and run deterministic verification plus an independent completion check proportional to risk.
-16. After implementation evidence passes, classify newly learned knowledge:
+15. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
+16. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Apply selected conventions and run deterministic verification plus an independent completion check proportional to risk.
+17. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
     - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
@@ -135,7 +170,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only when its admission gate passes.
     - Never edit an active project Expertise Skill as same-run self-improvement. A later owner decision or accepted held-out evaluation may publish a new candidate with `maestro expertise update`; keep Pack/Skill identity, increment one version, and use the preview/apply boundary. Use `deactivate` to remove only the allowlist entry when the Pack should stop routing.
-17. For a non-trivial initialized run, write one compact RunReceipt after the
+18. For a non-trivial initialized run, write one compact RunReceipt after the
     final verdict with `maestro record --repo <repo> --receipt
     <temporary-json> [--observation <id>] --json`.
     - When an implementation observation was started, pass its ID so Maestro
@@ -174,7 +209,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       `preview → apply` flow. Treat approval as a project-authority change:
       show the exact command and apply only after explicit user approval. This
       operation never executes the command.
-18. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
+19. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
 
 ## Reference routing
 

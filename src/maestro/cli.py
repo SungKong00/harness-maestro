@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
+from .assignment_contracts import (
+    project_assignment_input,
+    validate_assignment_packet,
+)
 from .decisions import (
     build_decision_plan,
     build_execution_plan,
@@ -295,6 +299,44 @@ def parser() -> argparse.ArgumentParser:
         help="Repository used to re-resolve project Expertise.",
     )
     validate_plan.add_argument("--json", action="store_true")
+
+    assignment = commands.add_parser(
+        "assignment",
+        help="Project a bounded input contract for one route v2 Assignment",
+    )
+    assignment_commands = assignment.add_subparsers(
+        dest="assignment_command",
+        required=True,
+    )
+    assignment_project = assignment_commands.add_parser(
+        "project",
+        help="Validate a baseline and emit only the Assignment input allowlist",
+    )
+    assignment_project.add_argument("--repo", default=".")
+    assignment_project.add_argument("--plan", required=True)
+    assignment_project.add_argument("--assignment", required=True)
+    assignment_project.add_argument("--baseline", required=True)
+    assignment_project.add_argument("--document", action="append", default=[])
+    assignment_project.add_argument(
+        "--dependency-packet",
+        action="append",
+        default=[],
+    )
+    assignment_project.add_argument("--json", action="store_true")
+
+    validate_packet = commands.add_parser(
+        "validate-packet",
+        help="Fail closed on an invalid Assignment result packet",
+    )
+    validate_packet.add_argument("--repo", default=".")
+    validate_packet.add_argument("--plan", required=True)
+    validate_packet.add_argument("--assignment", required=True)
+    validate_packet.add_argument("--packet", required=True)
+    validate_packet.add_argument(
+        "--projection",
+        help="Optional Assignment projection used to enforce evidence scope",
+    )
+    validate_packet.add_argument("--json", action="store_true")
 
     validate_research = commands.add_parser(
         "validate-research",
@@ -656,6 +698,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             if result["status"] != "PASS":
                 return 2
             return 4 if result["execution_status"] == "RESEARCH_REQUIRED" else 0
+        if (
+            args.command == "assignment"
+            and args.assignment_command == "project"
+        ):
+            result = project_assignment_input(
+                args.repo,
+                read_json(Path(args.plan).expanduser().resolve()),
+                args.assignment,
+                read_json(Path(args.baseline).expanduser().resolve()),
+                document_paths=args.document,
+                dependency_packets=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.dependency_packet
+                ],
+            )
+            _emit(result, args.json)
+            if result["status"] == "FAIL":
+                return 2
+            return 4 if result["status"] == "BLOCKED" else 0
+        if args.command == "validate-packet":
+            projection = (
+                read_json(Path(args.projection).expanduser().resolve())
+                if args.projection
+                else None
+            )
+            result = validate_assignment_packet(
+                read_json(Path(args.packet).expanduser().resolve()),
+                read_json(Path(args.plan).expanduser().resolve()),
+                args.assignment,
+                projection,
+                repo_path=args.repo,
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "validate-research":
             result = validate_research_artifact(
                 read_json(Path(args.artifact).expanduser().resolve())

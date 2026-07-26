@@ -14,6 +14,41 @@
 | Decision Bundle | accepted decisions, blockers, feasibility, source digests, and execution scope | transcripts, hidden reasoning, implementation diff |
 | Maestro | routing, budgets, synthesis, completion | unapproved project policy |
 
+`questions` are the Lens's mandatory minimum checks and `reject_when` contains
+its rejection conditions. They are not an exhaustive list of possible
+failures. Every bundled Lens declares `non_exhaustive: true`; evidence outside
+its concern is reported as a bounded coverage gap rather than silently ignored
+or decided on behalf of another Lens.
+
+## Engineering Baseline and input projection
+
+Before a managed Assignment crosses into another context, Main describes only
+the affected surface:
+
+- repository artifacts and their existing/planned state;
+- affected boundaries and stakeholders;
+- success, failure, retry, cancellation, rollback, or recovery states that
+  actually matter; and
+- six coverage checks for behavior, surface, failure/recovery, compatibility,
+  completion evidence, and ownership.
+
+This is a bounded index over Tier 0 references, not a new analysis agent or a
+copy of repository files. Unknown ownership remains a `gap`. The route may be
+extended once when a material gap identifies an unselected Lens.
+
+`maestro assignment project` combines that baseline with the validated plan,
+only the Assignment's Lens cards and guide IDs, bounded document/artifact
+references, and validated direct dependency packets. It emits no file body,
+parent conversation, raw transcript, hidden reasoning, or other blind
+reviewer's first conclusion. `maestro validate-packet` then binds a
+FindingPacket v2 or terminal Assignment result to the same plan and Assignment
+before downstream use.
+
+Projection is a deterministic allowlist artifact. Actual fresh-context and
+tool isolation remain Host behavior and must be recorded as requested,
+host-attested, or unavailable; the CLI must not claim it observed a Host fact
+that the Host did not expose.
+
 ## Depth
 
 | Depth | Lens limit | Binding |

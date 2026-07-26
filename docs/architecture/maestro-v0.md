@@ -67,6 +67,8 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 optional Expertise Pack·research gate를 검증 | 없음 |
 | `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
+| `maestro assignment project --plan <route-v2.json> --assignment <id> --baseline <file> --json` | bounded surface, 선택 Lens·Guide·reference와 validated dependency만 AssignmentInput으로 투영 | 없음 |
+| `maestro validate-packet --plan <route-v2.json> --assignment <id> --packet <file> --json` | FindingPacket v2 또는 terminal Packet을 plan·Assignment에 결합해 검사 | 없음 |
 | `maestro validate-research --artifact <packet-or-bundle.json> --json` | 내부 ResearchPacket·ResearchBundle의 source ref·tier·합성·follow-up 계약 검사 | 없음 |
 | `maestro decide --repo <path> --goal "<goal>" --json` | 구현 전 독립 Specialist 판단과 synthesis·기술 타당성의 read-only 계획 생성 | 없음 |
 | `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
@@ -113,15 +115,20 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
    기술 타당성 뒤 유효한 DecisionBundle이 생기기 전에는 writer를 만들지 않는다.
 6. 선택된 Expertise Pack과 관련 Decision Guide만 읽는다. research gate가 열렸으면
    bounded artifact를 만든 뒤 digest로 재-route해 `READY`가 될 때까지 중단한다.
-7. staged 요청은 `enact`가 모든 packet digest, Registry와 Git revision, blocker,
+7. 실제 artifact에서 작은 Surface Map과 Engineering Baseline을 만들고,
+   Assignment마다 허용된 Lens·Guide·reference와 validated dependency만 투영한다.
+   mutation owner는 coverage gap이 남으면 시작하지 않는다.
+8. reviewer FindingPacket과 terminal Packet을 plan·Assignment에 결합해
+   검증하고, invalid Packet은 다음 edge로 넘기지 않는다.
+9. staged 요청은 `enact`가 모든 packet digest, Registry와 Git revision, blocker,
    feasibility와 허용 path를 검증한 뒤에만 기존 한 명 writer route로 전환한다.
-8. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
+10. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
    증거를 반환한다.
-9. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
-10. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
+11. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
+12. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
    기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
    `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
-11. 구현을 시작할 때 prompt 없이 작업명과 compact 계획만 관측하고, 실행 비용과
+13. 구현을 시작할 때 prompt 없이 작업명과 compact 계획만 관측하고, 실행 비용과
    finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt 한 건으로 runtime
    JSONL에 남기되
    checkpoint와 장문 대화를 복제하지 않는다.

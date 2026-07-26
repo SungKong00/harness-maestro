@@ -39,6 +39,7 @@ MAX_EVENT_FILE_BYTES = 2_000_000
 MAX_EVENT_TOTAL_BYTES = 64_000_000
 MAX_EVENT_RECORDS = 200_000
 MAX_EVENT_LINE_BYTES = 1_000_000
+MAX_RECENT_GUIDE_RUN_IDS = 3
 RUN_RECEIPT_ALLOWED_FIELDS = {
     "run_id",
     "kind",
@@ -2261,6 +2262,35 @@ def govern_report(
         for event in unique_runs
         for pack_id in event.get("selected_expertise_packs", [])
     )
+    decision_guide_usage: dict[str, dict[str, Any]] = {}
+    ordered_unique_runs = sorted(
+        unique_runs,
+        key=lambda event: (
+            _parse_timestamp(event.get("timestamp"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+            event.get("run_id", ""),
+        ),
+        reverse=True,
+    )
+    for event in ordered_unique_runs:
+        for guide_id in event.get("selected_decision_guides", []):
+            usage = decision_guide_usage.setdefault(
+                guide_id,
+                {
+                    "count": 0,
+                    "last_used_timestamp": event["timestamp"],
+                    "recent_run_ids": [],
+                    "failed_verification_run_count": 0,
+                    "corrected_run_count": 0,
+                },
+            )
+            usage["count"] += 1
+            if event.get("verifier_result") == "failed":
+                usage["failed_verification_run_count"] += 1
+            if event.get("correction_count", 0) > 0:
+                usage["corrected_run_count"] += 1
+            if len(usage["recent_run_ids"]) < MAX_RECENT_GUIDE_RUN_IDS:
+                usage["recent_run_ids"].append(event["run_id"])
     expertise_research_modes = Counter(
         event.get("expertise_research_mode", "reuse")
         for event in unique_runs
@@ -2327,6 +2357,7 @@ def govern_report(
             sorted(project_convention_actions.items())
         ),
         "expertise_pack_usage": dict(sorted(expertise_pack_usage.items())),
+        "decision_guide_usage": dict(sorted(decision_guide_usage.items())),
         "expertise_research_modes": dict(
             sorted(expertise_research_modes.items())
         ),

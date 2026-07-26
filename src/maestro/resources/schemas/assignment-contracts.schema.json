@@ -1,0 +1,684 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/assignment-contracts.schema.json",
+  "title": "Harness Maestro Assignment Boundary Contracts",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/engineeringBaseline"
+    },
+    {
+      "$ref": "#/$defs/assignmentInput"
+    },
+    {
+      "$ref": "#/$defs/findingPacket"
+    },
+    {
+      "$ref": "#/$defs/terminalPacket"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "referenceList": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/line"
+      }
+    },
+    "surfaceMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "affected_boundaries",
+        "stakeholders",
+        "lifecycle_states"
+      ],
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "kind",
+              "path",
+              "state"
+            ],
+            "properties": {
+              "artifact_id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "enum": [
+                  "source",
+                  "test",
+                  "schema",
+                  "config",
+                  "documentation",
+                  "interface",
+                  "data",
+                  "external"
+                ]
+              },
+              "path": {
+                "$ref": "#/$defs/line"
+              },
+              "state": {
+                "enum": [
+                  "existing",
+                  "planned"
+                ]
+              }
+            }
+          }
+        },
+        "affected_boundaries": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "boundary_id",
+              "artifact_ids"
+            ],
+            "properties": {
+              "boundary_id": {
+                "$ref": "#/$defs/id"
+              },
+              "artifact_ids": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        },
+        "stakeholders": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stakeholder_id",
+              "concern"
+            ],
+            "properties": {
+              "stakeholder_id": {
+                "$ref": "#/$defs/id"
+              },
+              "concern": {
+                "$ref": "#/$defs/line"
+              }
+            }
+          }
+        },
+        "lifecycle_states": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state_id",
+              "kind",
+              "artifact_ids"
+            ],
+            "properties": {
+              "state_id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "enum": [
+                  "success",
+                  "validation-failure",
+                  "timeout",
+                  "retry",
+                  "cancellation",
+                  "rollback",
+                  "recovery",
+                  "other"
+                ]
+              },
+              "artifact_ids": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "baselineCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "status",
+        "owner",
+        "evidence_refs",
+        "note"
+      ],
+      "properties": {
+        "check_id": {
+          "enum": [
+            "behavior-contract",
+            "affected-surface",
+            "failure-recovery",
+            "compatibility",
+            "completion-evidence",
+            "risk-ownership"
+          ]
+        },
+        "status": {
+          "enum": [
+            "covered",
+            "gap",
+            "not_applicable"
+          ]
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "note": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    },
+    "engineeringBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "goal_digest",
+        "surface_map",
+        "checks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_engineering_baseline_v1"
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "surface_map": {
+          "$ref": "#/$defs/surfaceMap"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/baselineCheck"
+          }
+        }
+      }
+    },
+    "artifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "path",
+        "state",
+        "sha256"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/line"
+        },
+        "state": {
+          "enum": [
+            "existing",
+            "planned"
+          ]
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "documentReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref_id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "ref_id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "$ref": "#/$defs/line"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "assignmentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "projection_digest",
+        "plan_id",
+        "assignment_id",
+        "goal_digest",
+        "task_contract",
+        "assignment_contract",
+        "surface_map",
+        "engineering_baseline",
+        "selected_lens_cards",
+        "decision_guide_ids",
+        "document_refs",
+        "artifact_refs",
+        "dependency_packets",
+        "context_policy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_assignment_input_v1"
+        },
+        "projection_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "task_contract": {
+          "type": "object"
+        },
+        "assignment_contract": {
+          "type": "object"
+        },
+        "surface_map": {
+          "$ref": "#/$defs/surfaceMap"
+        },
+        "engineering_baseline": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/baselineCheck"
+          }
+        },
+        "selected_lens_cards": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object"
+          }
+        },
+        "decision_guide_ids": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "document_refs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/documentReference"
+          }
+        },
+        "artifact_refs": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/artifactReference"
+          }
+        },
+        "dependency_packets": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref_id",
+              "assignment_id",
+              "packet"
+            ],
+            "properties": {
+              "ref_id": {
+                "$ref": "#/$defs/id"
+              },
+              "assignment_id": {
+                "$ref": "#/$defs/id"
+              },
+              "packet": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "context_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "host_attestation",
+            "forbidden"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fresh_context",
+                "read_only",
+                "packet_only",
+                "hide_other_lens_conclusions"
+              ],
+              "properties": {
+                "fresh_context": {
+                  "type": "boolean"
+                },
+                "read_only": {
+                  "type": "boolean"
+                },
+                "packet_only": {
+                  "type": "boolean"
+                },
+                "hide_other_lens_conclusions": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "host_attestation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fresh_context",
+                "read_only",
+                "packet_only"
+              ],
+              "properties": {
+                "fresh_context": {
+                  "const": "unavailable"
+                },
+                "read_only": {
+                  "const": "unavailable"
+                },
+                "packet_only": {
+                  "const": "unavailable"
+                }
+              }
+            },
+            "forbidden": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/line"
+              }
+            }
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner_lens_id",
+        "location",
+        "severity",
+        "claim",
+        "evidence_refs",
+        "counterexample",
+        "suggested_action",
+        "fingerprint"
+      ],
+      "properties": {
+        "owner_lens_id": {
+          "$ref": "#/$defs/id"
+        },
+        "location": {
+          "$ref": "#/$defs/line"
+        },
+        "severity": {
+          "enum": [
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "claim": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "counterexample": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggested_action": {
+          "$ref": "#/$defs/line"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    },
+    "coverageGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "affected_artifact",
+        "possible_failure",
+        "evidence_refs",
+        "severity",
+        "why_uncovered",
+        "suggested_lens"
+      ],
+      "properties": {
+        "affected_artifact": {
+          "$ref": "#/$defs/id"
+        },
+        "possible_failure": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "severity": {
+          "enum": [
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "why_uncovered": {
+          "$ref": "#/$defs/line"
+        },
+        "suggested_lens": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "findingPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "plan_id",
+        "assignment_id",
+        "lens_ids",
+        "verdict",
+        "findings",
+        "coverage_gaps",
+        "uncertainties",
+        "inspected",
+        "skipped"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_finding_packet_v2"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "lens_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "FINDINGS",
+            "BLOCK",
+            "INSUFFICIENT_EVIDENCE"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "coverage_gaps": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coverageGap"
+          }
+        },
+        "uncertainties": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "inspected": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "skipped": {
+          "$ref": "#/$defs/referenceList"
+        }
+      }
+    },
+    "terminalPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "plan_id",
+        "assignment_id",
+        "packet_type",
+        "status",
+        "summary",
+        "evidence_refs",
+        "retryable"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_terminal_packet_v1"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "packet_type": {
+          "$ref": "#/$defs/line"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed_transient",
+            "failed_semantic",
+            "blocked",
+            "cancelled",
+            "skipped"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

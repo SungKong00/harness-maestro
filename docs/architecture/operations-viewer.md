@@ -45,6 +45,8 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 - Host가 제공한 경우에만 실제 모델, 단계별 시간·token과 근거 참조
 - 진행 중이거나 24시간을 넘긴 관측
 - bundled·project Expertise Pack, Guide, source manifest와 project 후보
+- compact receipt에서 확인된 Guide별 선택 횟수, 마지막 선택 시각, 최근 Run ID와
+  검증 실패·수정이 같은 Run에 함께 나타난 횟수
 - 반복된 governance finding과 reusable Expertise gap
 
 계획 모델과 실제 모델은 별도 필드다. Host가 실제 값을 주지 않으면 `null`이며
@@ -56,6 +58,10 @@ summary만 가진다. `host_reported`는 Host가 실행 단위 값을 직접 제
 `host_delta`는 동일 Host의 두 누적 관측 사이 차이를 뜻한다. Maestro는 Codex
 Desktop의 비공개 session JSONL을 읽지 않는다. 현재 Host가 안정적인 공개 값을
 주지 않으면 미측정 상태를 정직하게 유지한다.
+
+Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
+수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
+로드됐다고 추정하지 않는다. 이 값만으로 Pack·Guide를 자동 승격·수정·삭제하지 않는다.
 
 최근 작업 목록은 한 번에 한 Run만 여는 inline disclosure다. 선택한 Run의 상세
 단계는 전체 목록 뒤의 분리된 패널이 아니라 해당 행 바로 다음 행에 렌더링한다.

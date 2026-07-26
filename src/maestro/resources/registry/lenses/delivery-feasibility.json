@@ -33,10 +33,15 @@
     "a hard budget, schedule, staffing, or regulatory constraint is exceeded",
     "an irreversible commitment is made from unsupported estimates"
   ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
+  ],
   "finding_limits": {
     "max_findings": 5,
     "minimum_severity": "medium"
   },
   "output": "FindingPacket"
 }
-

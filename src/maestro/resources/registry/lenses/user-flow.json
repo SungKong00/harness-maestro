@@ -32,10 +32,15 @@
     "the client assumes an event was never lost",
     "a stale local state cannot be reconciled with the source of truth"
   ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
+  ],
   "finding_limits": {
     "max_findings": 5,
     "minimum_severity": "medium"
   },
   "output": "FindingPacket"
 }
-

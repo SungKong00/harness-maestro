@@ -44,6 +44,29 @@ class RegistryContractTests(unittest.TestCase):
             errors,
         )
 
+    def test_lenses_are_non_exhaustive_minimum_checks(self) -> None:
+        registry = load_registry()
+
+        for lens in registry["lenses"]:
+            with self.subTest(lens=lens["lens_id"]):
+                self.assertIs(lens["non_exhaustive"], True)
+                self.assertTrue(lens["questions"])
+                self.assertTrue(lens["reject_when"])
+                self.assertTrue(lens["escalate_when"])
+
+        invalid = copy.deepcopy(registry)
+        invalid["lenses"][0]["non_exhaustive"] = False
+        invalid["lenses"][0]["escalate_when"] = []
+        errors = validate_registry(invalid)
+        self.assertTrue(
+            any("non_exhaustive" in error for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("escalate_when" in error for error in errors),
+            errors,
+        )
+
     def test_executor_rejects_lens_questions(self) -> None:
         registry = copy.deepcopy(load_registry())
         registry["executors"][0]["questions"] = ["What should this inspect?"]

@@ -142,6 +142,10 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual([], snapshot["inflight"])
             self.assertEqual(1, smallest_snapshot["window"])
             self.assertEqual(3, smallest_snapshot["governance"]["window"])
+            self.assertIn(
+                "decision_guide_usage",
+                snapshot["governance"],
+            )
 
     def test_host_observation_supplies_actual_model_and_tokens_without_estimation(
         self,
@@ -215,6 +219,17 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertIn("run.host_observation.source", viewer_source)
             self.assertIn("run.host_observation.quality", viewer_source)
             self.assertIn("run.host_observation.correlation_id", viewer_source)
+            self.assertIn(
+                "snapshot.governance.decision_guide_usage",
+                viewer_source,
+            )
+            self.assertIn("usage.last_used_timestamp", viewer_source)
+            self.assertIn("usage.recent_run_ids", viewer_source)
+            self.assertIn(
+                "usage.failed_verification_run_count",
+                viewer_source,
+            )
+            self.assertIn("usage.corrected_run_count", viewer_source)
 
     def test_run_details_use_one_inline_accessible_disclosure(self) -> None:
         viewer_root = ROOT / "src/maestro/resources/viewer"

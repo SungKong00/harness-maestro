@@ -14,6 +14,7 @@ from maestro.cli import main
 from maestro.governance import govern_report, record_run
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry, validate_registry
+from maestro.snapshot import snapshot_report
 from maestro.util import canonical_json, sha256_text
 
 
@@ -374,6 +375,7 @@ class ExpertiseReceiptTests(unittest.TestCase):
                 .splitlines()[0]
             )
             report = govern_report(repo, window=20, threshold=2)
+            snapshot = snapshot_report(repo, window=20)
 
             self.assertEqual(
                 ["product-design"],
@@ -386,6 +388,32 @@ class ExpertiseReceiptTests(unittest.TestCase):
             self.assertEqual(
                 {"product-design": 1},
                 report["expertise_pack_usage"],
+            )
+            self.assertEqual(
+                {
+                    "count": 1,
+                    "last_used_timestamp": event["timestamp"],
+                    "recent_run_ids": ["design-run"],
+                    "failed_verification_run_count": 0,
+                    "corrected_run_count": 0,
+                },
+                report["decision_guide_usage"]["design-brief"],
+            )
+            self.assertEqual(
+                {
+                    "count": 1,
+                    "last_used_timestamp": event["timestamp"],
+                    "recent_run_ids": ["design-run"],
+                    "failed_verification_run_count": 0,
+                    "corrected_run_count": 0,
+                },
+                report["decision_guide_usage"][
+                    "visual-hierarchy-layout"
+                ],
+            )
+            self.assertEqual(
+                report["decision_guide_usage"],
+                snapshot["governance"]["decision_guide_usage"],
             )
             self.assertEqual(
                 {"contextualize": 1},
