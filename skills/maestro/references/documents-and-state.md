@@ -18,7 +18,7 @@ operational JSONL event
 
 Keep active knowledge concise. Exclude `docs/archive/` from normal selection. Do not promote raw transcripts, tool payloads, or one-off implementation notes.
 
-Operational state must include `project_id`, `checkout_id`, and `run_id`. Store actual token or duration values when available; otherwise use `null`, never estimates.
+Operational state must include `project_id`, `checkout_id`, and `run_id`. Store actual token or duration values when available; otherwise use `null`, never estimates. Host telemetry also names its public source, quality, and correlation ID. Never infer the actual model from the planned route or scrape private Host session files.
 
 ## Project convention boundary
 
@@ -27,6 +27,10 @@ For the Markdown provider, read the configured project and architecture core doc
 `required_documents` is the default hot path and `documents` remains its compatibility alias. `optional_documents` contains metadata for matching research evidence or active plans that should not be opened during ordinary implementation. Open an optional item only when the user explicitly requests that evidence boundary, the current decision needs it, or required evidence is otherwise insufficient. Optional candidates do not consume the required-document byte budget and do not make evidence insufficient merely by remaining unopened.
 
 No matching convention is not a stop condition. Use current code, tests, and reproducible commands as project evidence. `init` and `upgrade` may synchronize allowlisted, reproducible static facts, but discovered commands remain candidates and detector output is not an approved policy.
+
+A detected verification command becomes project authority only through an exact
+candidate preview and explicit apply. The browser and CLI use the same typed
+plan; neither path executes the command during approval.
 
 When `self_improvement.mode` is `verified-project-conventions`, an implementation run may automatically emit a project Convention candidate only when all are true:
 

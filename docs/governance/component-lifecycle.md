@@ -108,9 +108,13 @@ frozen eval을 만든다. 이 디렉터리는 정상 context와 Git에서 제외
 owner 결정 또는 accepted held-out evaluation을 받은 후보는
 `maestro expertise activate`의 preview/apply 경계로
 `.agents/skills/<skill-id>/`의 project `pilot`이 될 수 있다. project manifest
-allowlist에 든 Pack만 라우팅하며 candidate는 보존한다. 기존 범용 Pack에 속하는
-판단은 base ID·version·digest를 고정한 한 단계 `extends`를 기본으로 사용한다.
-동일 ID shadowing, inherited guide 재정의와 자동 전역 승격은 허용하지 않는다.
+allowlist에 든 Pack만 라우팅하며 candidate와 게시 시점 snapshot은 보존한다.
+다음 revision도 새 candidate와 held-out/owner 근거를 요구하며
+`maestro expertise update`로 같은 ID의 version을 정확히 하나 올린다. 사용 중지는
+`maestro expertise deactivate`로 allowlist만 제거하고 파일을 보존한다. 기존 범용
+Pack에 속하는 판단은 base ID·version·digest를 고정한 한 단계 `extends`를 기본으로
+사용한다. 동일 ID shadowing, inherited guide 재정의, 활성 파일 직접 수정과 자동
+전역 승격은 허용하지 않는다.
 
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은

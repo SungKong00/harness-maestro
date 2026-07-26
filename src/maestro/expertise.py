@@ -194,6 +194,15 @@ def _load_project_packs(
         _required_pack_file(skill_root, "agents/openai.yaml")
         _required_pack_file(skill_root, pack["source_manifest"])
         _required_pack_file(skill_root, pack["evaluation_suite"])
+        candidate_snapshot = safe_target(
+            skill_root,
+            "evidence/candidate.json",
+        )
+        if candidate_snapshot.is_symlink():
+            raise MaestroError(
+                "PROJECT_EXPERTISE_SYMLINK",
+                f"Project Expertise may not contain symlinks: {candidate_snapshot}",
+            )
         for guide in pack["guides"]:
             _required_pack_file(
                 skill_root,
@@ -306,6 +315,11 @@ def _load_project_packs(
             "definition_digest": _skill_tree_digest(skill_root),
             "guide_origins": guide_origins,
             "base": base_card,
+            "candidate_snapshot_path": (
+                candidate_snapshot.relative_to(repo).as_posix()
+                if candidate_snapshot.is_file()
+                else None
+            ),
         }
         result.append(resolved)
     return result
@@ -334,6 +348,7 @@ def load_expertise_catalog(
                 for guide in pack["guides"]
             },
             "base": None,
+            "candidate_snapshot_path": None,
         }
         bundled.append(item)
     if repo_path is None:

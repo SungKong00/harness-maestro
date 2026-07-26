@@ -25,6 +25,7 @@ from .project import (
     GITIGNORE_END,
     MAX_MANAGED_TEXT_BYTES,
     git_ignored,
+    git_indexed_paths,
     inspect_adapter,
 )
 from .registry import (
@@ -550,6 +551,82 @@ def doctor_report(
                         ".agents/skills paths."
                     )
                     if ignored_project_packs
+                    else "",
+                )
+            )
+            missing_snapshots = [
+                pack["_maestro"]["pack_path"]
+                for pack in project_packs
+                if pack["_maestro"]["candidate_snapshot_path"] is None
+            ]
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_EVIDENCE",
+                    "WARN" if missing_snapshots else "PASS",
+                    (
+                        f"active={len(project_packs)} "
+                        f"missing_candidate_snapshot={missing_snapshots}"
+                    ),
+                    (
+                        "Publish the next reviewed update through "
+                        "`maestro expertise update`; legacy Packs remain "
+                        "usable but lack a durable candidate snapshot."
+                    )
+                    if missing_snapshots
+                    else "",
+                )
+            )
+
+            project_skill_roots = sorted(
+                {
+                    str(Path(pack["_maestro"]["pack_path"]).parent)
+                    for pack in project_packs
+                }
+            )
+            project_skill_files: list[str] = []
+            for root in project_skill_roots:
+                skill_root = safe_target(repo, root)
+                project_skill_files.extend(
+                    path.relative_to(repo).as_posix()
+                    for path in sorted(skill_root.rglob("*"))
+                    if path.is_file() and not path.is_symlink()
+                )
+            tracked_expertise_paths = [
+                *project_skill_files,
+                *([".maestro/project.json"] if project_packs else []),
+            ]
+            indexed = git_indexed_paths(repo, tracked_expertise_paths)
+            unindexed = (
+                sorted(set(tracked_expertise_paths) - indexed)
+                if indexed is not None
+                else []
+            )
+            tracking_status = (
+                "PASS"
+                if not project_packs or (indexed is not None and not unindexed)
+                else "WARN"
+            )
+            tracking_evidence = (
+                f"active={len(project_packs)} indexed={len(indexed or set())} "
+                f"unindexed={unindexed}"
+                if indexed is not None
+                else (
+                    f"active={len(project_packs)} "
+                    "git_index=unavailable"
+                )
+            )
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_GIT_TRACKING",
+                    tracking_status,
+                    tracking_evidence,
+                    (
+                        "Run `git add -- "
+                        + " ".join(project_skill_roots)
+                        + " .maestro/project.json` and commit the reviewed "
+                        "project Expertise."
+                    )
+                    if tracking_status == "WARN" and project_skill_roots
                     else "",
                 )
             )

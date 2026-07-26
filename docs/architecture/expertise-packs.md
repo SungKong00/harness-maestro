@@ -37,6 +37,7 @@ sensitivity: internal
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
   → 반복된 재사용 공백만 project-local candidate 검토
   → owner 결정/held-out 평가가 있으면 tracked project pilot으로 활성화
+  → 다음 버전은 새 후보로 검증해 update, 불필요하면 파일을 보존한 채 deactivate
 ```
 
 ## 현재 구현 범위
@@ -147,6 +148,7 @@ candidate를 만든다. 먼저 checker/schema → Convention → 기존 Guide �
 ├── SKILL.md
 ├── references/
 ├── agents/openai.yaml
+├── evidence/candidate.json
 ├── evidence/sources.json
 ├── evals/cases.json
 └── activation.json
@@ -167,11 +169,26 @@ maestro expertise activate --repo /path/to/project \
   --json > /tmp/maestro-expertise-plan.json
 maestro expertise activate --repo /path/to/project \
   --apply-plan /tmp/maestro-expertise-plan.json --json
+maestro expertise update --repo /path/to/project \
+  --candidate project-design-v2 \
+  --approval-ref held_out_evaluation:eval-9 \
+  --json > /tmp/maestro-expertise-update.json
+maestro expertise update --repo /path/to/project \
+  --apply-plan /tmp/maestro-expertise-update.json --json
+maestro expertise deactivate --repo /path/to/project \
+  --pack project-design --json > /tmp/maestro-expertise-off.json
+maestro expertise deactivate --repo /path/to/project \
+  --apply-plan /tmp/maestro-expertise-off.json --json
 maestro doctor --repo /path/to/project --strict --json
 ```
 
-활성화는 프로젝트 파일만 바꾸고 candidate를 보존한다. 전역 Harness Registry,
-원격 저장소와 Agent 권한은 바꾸지 않는다.
+활성화는 candidate의 compact snapshot까지 project Skill에 복사한다. update는
+Pack·Skill ID를 유지하고 version을 정확히 하나 올리며, 현재 bundled base digest로
+다시 합성한 후보만 받는다. deactivate는 allowlist만 바꾸고 Skill 파일을 삭제하지
+않으므로 Maestro 라우팅만 멈춘다. 보존된 Skill은 Host에 명시 호출 대상으로 계속
+보일 수 있다. 세 명령 모두 프로젝트 파일만 바꾸며 candidate, 전역 Harness Registry,
+원격 저장소와 Agent 권한은 바꾸지 않는다. Doctor는 active Skill과 project manifest가
+Git index에 없는 경우 경고하지만 stage·commit·push는 하지 않는다.
 
 ## 평가 계약
 

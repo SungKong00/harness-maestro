@@ -24,6 +24,15 @@ class PackageContractTests(unittest.TestCase):
             "resources/**/*.json",
             pyproject["tool"]["setuptools"]["package-data"]["maestro"],
         )
+        for pattern in (
+            "resources/**/*.html",
+            "resources/**/*.css",
+            "resources/**/*.js",
+        ):
+            self.assertIn(
+                pattern,
+                pyproject["tool"]["setuptools"]["package-data"]["maestro"],
+            )
 
         resource_root = resources.files("maestro.resources")
         source_root = ROOT / "src" / "maestro" / "resources"
@@ -40,6 +49,12 @@ class PackageContractTests(unittest.TestCase):
                     json.loads(item.read_text(encoding="utf-8")),
                     dict,
                 )
+        for relative in (
+            "viewer/index.html",
+            "viewer/styles.css",
+            "viewer/app.js",
+        ):
+            self.assertTrue(resource_root.joinpath(relative).is_file(), relative)
 
     def test_source_checkout_contains_valid_skill_references(self) -> None:
         for skill_root in sorted((ROOT / "skills").iterdir()):

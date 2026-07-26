@@ -12,7 +12,11 @@ from .project import build_upgrade_plan
 from .util import ensure_repo, read_json, safe_target
 
 
-def status_report(repo_path: str | Path) -> dict[str, Any]:
+def status_report(
+    repo_path: str | Path,
+    *,
+    precomputed_governance: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     project_path = safe_target(repo, ".maestro/project.json")
     managed_path = safe_target(repo, ".maestro/managed.json")
@@ -77,7 +81,11 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
     }
     if initialized:
         try:
-            governance_report = govern_report(repo)
+            governance_report = (
+                precomputed_governance
+                if precomputed_governance is not None
+                else govern_report(repo)
+            )
             governance = {
                 "status": "available",
                 "review_due": governance_report["governance_review_due"],
@@ -143,8 +151,9 @@ def status_report(repo_path: str | Path) -> dict[str, Any]:
                 "id": "review_verification_commands",
                 "path": ".maestro/project.json",
                 "reason": (
-                    "Detected commands are candidates only; copy verified commands "
-                    "into verification_commands to make them project authority."
+                    "Detected commands are candidates only; review and approve "
+                    "an exact verified candidate in the dashboard or typed "
+                    "verification plan to make it project authority."
                 ),
             }
         )

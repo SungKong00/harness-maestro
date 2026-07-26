@@ -18,14 +18,20 @@ from .conventions import (
     build_convention_draft_plan,
 )
 from .doctor import doctor_report
+from .dashboard import serve_dashboard
 from .documents import select_documents
 from .errors import MaestroError
 from .expertise_lifecycle import (
     apply_expertise_activation_plan,
+    apply_expertise_deactivation_plan,
+    apply_expertise_update_plan,
     build_expertise_activation_plan,
+    build_expertise_deactivation_plan,
+    build_expertise_update_plan,
     expertise_inventory,
 )
 from .governance import govern_report, record_run
+from .observations import record_host_observation, start_run_observation
 from .project import (
     apply_plan,
     build_init_plan,
@@ -36,7 +42,13 @@ from .research import BUNDLE_VERSION, validate_research_artifact
 from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
+from .snapshot import snapshot_report
 from .util import read_json
+from .verification import (
+    apply_verification_approval_plan,
+    build_verification_approval_plan,
+    verification_inventory,
+)
 
 
 def _research_evidence_digest(
@@ -96,6 +108,23 @@ def _emit(value: dict[str, Any], as_json: bool) -> None:
     ):
         if key in value:
             print(f"{key}: {value[key]}")
+
+
+def _host_token_summary(args: argparse.Namespace) -> dict[str, int] | None:
+    fields = {
+        "input": args.input_tokens,
+        "output": args.output_tokens,
+        "cached": args.cached_tokens,
+        "reasoning": args.reasoning_tokens,
+        "total": args.total_tokens,
+    }
+    supplied = {key: value for key, value in fields.items() if value is not None}
+    if supplied and "total" not in supplied:
+        raise MaestroError(
+            "HOST_OBSERVATION_INVALID",
+            "Host token telemetry requires --total-tokens.",
+        )
+    return supplied or None
 
 
 def parser() -> argparse.ArgumentParser:
@@ -174,7 +203,7 @@ def parser() -> argparse.ArgumentParser:
 
     expertise = commands.add_parser(
         "expertise",
-        help="Inspect or explicitly activate project-local Expertise",
+        help="Inspect or explicitly manage project-local Expertise",
     )
     expertise_commands = expertise.add_subparsers(
         dest="expertise_command",
@@ -195,6 +224,23 @@ def parser() -> argparse.ArgumentParser:
     expertise_activate.add_argument("--approval-ref")
     expertise_activate.add_argument("--apply-plan")
     expertise_activate.add_argument("--json", action="store_true")
+    expertise_update = expertise_commands.add_parser(
+        "update",
+        help="Preview or apply one reviewed project pilot version increment",
+    )
+    expertise_update.add_argument("--repo", default=".")
+    expertise_update.add_argument("--candidate")
+    expertise_update.add_argument("--approval-ref")
+    expertise_update.add_argument("--apply-plan")
+    expertise_update.add_argument("--json", action="store_true")
+    expertise_deactivate = expertise_commands.add_parser(
+        "deactivate",
+        help="Preview or remove a project Pack from the active allowlist",
+    )
+    expertise_deactivate.add_argument("--repo", default=".")
+    expertise_deactivate.add_argument("--pack")
+    expertise_deactivate.add_argument("--apply-plan")
+    expertise_deactivate.add_argument("--json", action="store_true")
 
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
     route.add_argument(
@@ -324,13 +370,111 @@ def parser() -> argparse.ArgumentParser:
     adapt.add_argument("--repo", default=".")
     adapt.add_argument("--json", action="store_true")
 
+    observe = commands.add_parser(
+        "observe",
+        help="Capture bounded task metadata without storing prompts or messages",
+    )
+    observe_commands = observe.add_subparsers(
+        dest="observe_command",
+        required=True,
+    )
+    observe_start = observe_commands.add_parser(
+        "start",
+        help="Start one project-local run observation",
+    )
+    observe_start.add_argument("--repo", default=".")
+    observe_start.add_argument("--run-id", required=True)
+    observe_start.add_argument("--task-label", required=True)
+    observe_start.add_argument(
+        "--plan",
+        help="Optional validated route v2 plan whose compact assignments are recorded",
+    )
+    observe_start.add_argument("--json", action="store_true")
+    observe_host = observe_commands.add_parser(
+        "host",
+        help="Attach explicit Host-reported model and token telemetry",
+    )
+    observe_host.add_argument("--repo", default=".")
+    observe_host.add_argument("--observation", required=True)
+    observe_host.add_argument("--run-id", required=True)
+    observe_host.add_argument("--source", required=True)
+    observe_host.add_argument(
+        "--quality",
+        choices=["host_reported", "host_delta"],
+        required=True,
+    )
+    observe_host.add_argument("--correlation-id", required=True)
+    observe_host.add_argument("--actual-model")
+    observe_host.add_argument("--input-tokens", type=int)
+    observe_host.add_argument("--output-tokens", type=int)
+    observe_host.add_argument("--cached-tokens", type=int)
+    observe_host.add_argument("--reasoning-tokens", type=int)
+    observe_host.add_argument("--total-tokens", type=int)
+    observe_host.add_argument("--json", action="store_true")
+
     record = commands.add_parser(
         "record",
         help="Append one validated compact RunReceipt at task completion",
     )
     record.add_argument("--repo", default=".")
     record.add_argument("--receipt", required=True)
+    record.add_argument(
+        "--observation",
+        help=(
+            "Observation ID returned by observe start; fills the task label, "
+            "plan summary, and missing duration"
+        ),
+    )
     record.add_argument("--json", action="store_true")
+
+    snapshot = commands.add_parser(
+        "snapshot",
+        help="Build one read-only operations snapshot for people or tools",
+    )
+    snapshot.add_argument("--repo", default=".")
+    snapshot.add_argument("--window", type=int, default=20)
+    snapshot.add_argument("--json", action="store_true")
+
+    dashboard = commands.add_parser(
+        "dashboard",
+        help="Serve the read-only project operations viewer on localhost",
+    )
+    dashboard.add_argument("--repo", default=".")
+    dashboard.add_argument("--window", type=int, default=20)
+    dashboard.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Local port; zero selects a free ephemeral port",
+    )
+    dashboard.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not open the viewer in the default browser",
+    )
+
+    verification = commands.add_parser(
+        "verification",
+        help="Inspect or approve detected verification commands without executing them",
+    )
+    verification_commands = verification.add_subparsers(
+        dest="verification_command",
+        required=True,
+    )
+    verification_list = verification_commands.add_parser(
+        "list",
+        help="List detected verification candidates and approval state",
+    )
+    verification_list.add_argument("--repo", default=".")
+    verification_list.add_argument("--json", action="store_true")
+    verification_approve = verification_commands.add_parser(
+        "approve",
+        help="Preview or apply one exact candidate approval",
+    )
+    verification_approve.add_argument("--repo", default=".")
+    verification_approve.add_argument("--candidate")
+    verification_approve.add_argument("--apply-plan")
+    verification_approve.add_argument("--json", action="store_true")
 
     govern = commands.add_parser("govern", help="Read-only harness governance")
     govern_commands = govern.add_subparsers(dest="govern_command", required=True)
@@ -426,6 +570,46 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.repo,
                     candidate_id=args.candidate,
                     approval_ref=args.approval_ref,
+                )
+            _emit(result, args.json)
+            return 0
+        if args.command == "expertise" and args.expertise_command == "update":
+            if args.apply_plan:
+                result = apply_expertise_update_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.approval_ref:
+                    raise MaestroError(
+                        "EXPERTISE_UPDATE_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --approval-ref.",
+                    )
+                result = build_expertise_update_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    approval_ref=args.approval_ref,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "deactivate"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_deactivation_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.pack:
+                    raise MaestroError(
+                        "EXPERTISE_DEACTIVATION_ARGUMENTS_REQUIRED",
+                        "Preview requires --pack.",
+                    )
+                result = build_expertise_deactivation_plan(
+                    args.repo,
+                    expertise_pack_id=args.pack,
                 )
             _emit(result, args.json)
             return 0
@@ -527,8 +711,74 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = inspect_adapter(args.repo)
             _emit(result, args.json)
             return 0
+        if args.command == "observe" and args.observe_command == "start":
+            result = start_run_observation(
+                args.repo,
+                run_id=args.run_id,
+                task_label=args.task_label,
+                plan_path=args.plan,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "host":
+            result = record_host_observation(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                source=args.source,
+                quality=args.quality,
+                correlation_id=args.correlation_id,
+                actual_model=args.actual_model,
+                tokens=_host_token_summary(args),
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "record":
-            result = record_run(args.repo, args.receipt)
+            result = record_run(
+                args.repo,
+                args.receipt,
+                observation_id=args.observation,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "snapshot":
+            result = snapshot_report(args.repo, window=args.window)
+            _emit(result, args.json)
+            return 0
+        if args.command == "dashboard":
+            serve_dashboard(
+                args.repo,
+                port=args.port,
+                window=args.window,
+                open_browser=not args.no_open,
+            )
+            return 0
+        if (
+            args.command == "verification"
+            and args.verification_command == "list"
+        ):
+            result = verification_inventory(args.repo)
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "verification"
+            and args.verification_command == "approve"
+        ):
+            if args.apply_plan:
+                result = apply_verification_approval_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate:
+                    raise MaestroError(
+                        "VERIFICATION_CANDIDATE_REQUIRED",
+                        "Preview requires --candidate.",
+                    )
+                result = build_verification_approval_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                )
             _emit(result, args.json)
             return 0
         if args.command == "govern" and args.govern_command == "report":

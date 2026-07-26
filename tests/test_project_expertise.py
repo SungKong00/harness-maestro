@@ -12,7 +12,11 @@ from maestro.doctor import doctor_report
 from maestro.expertise import expertise_manifest_digest
 from maestro.expertise_lifecycle import (
     apply_expertise_activation_plan,
+    apply_expertise_deactivation_plan,
+    apply_expertise_update_plan,
     build_expertise_activation_plan,
+    build_expertise_deactivation_plan,
+    build_expertise_update_plan,
     expertise_inventory,
 )
 from maestro.governance import govern_report, record_run
@@ -23,10 +27,17 @@ from maestro.registry import load_registry
 def _candidate(
     repo: Path,
     *,
+    candidate_id: str = "project-design",
+    pack_id: str = "project-design",
+    version: int = 1,
+    guide_id: str = "project-type-rules",
+    guide_text: str = (
+        "# Project type rules\n\n"
+        "purpose: Preserve the approved project typography.\n"
+    ),
     stale_base: bool = False,
     standalone: bool = False,
 ) -> None:
-    candidate_id = "project-design"
     root = (
         repo
         / ".maestro/state/candidates/expertise"
@@ -41,7 +52,7 @@ def _candidate(
     candidate = {
         "schema_version": "maestro_expertise_candidate_v1",
         "candidate_id": candidate_id,
-        "expertise_pack_id": candidate_id,
+        "expertise_pack_id": pack_id,
         "status": "candidate",
         "portability": "project",
         "owner": "test-owner",
@@ -53,7 +64,7 @@ def _candidate(
         "evidence_refs": ["research:project-type"],
         "proposed_guides": [
             {
-                "guide_id": "project-type-rules",
+                "guide_id": guide_id,
                 "failure_prevented": "Wrong project font hierarchy",
                 "decision_checks": ["Use approved families", "Verify hierarchy"],
                 "freshness": "versioned",
@@ -69,17 +80,17 @@ def _candidate(
     pack = {
         "schema_version": "maestro_expertise_pack_v1",
         "kind": "expertise-pack",
-        "expertise_pack_id": candidate_id,
+        "expertise_pack_id": pack_id,
         "summary": "Project-specific product design criteria.",
         "status": "pilot",
         "portability": "project",
-        "version": 1,
+        "version": version,
         "triggers": ["project typography", "프로젝트 타이포그래피"],
-        "skill_id": candidate_id,
-        "default_guides": ["project-type-rules"],
+        "skill_id": pack_id,
+        "default_guides": [guide_id],
         "guides": [
             {
-                "guide_id": "project-type-rules",
+                "guide_id": guide_id,
                 "summary": "Apply the project's approved font and hierarchy rules.",
                 "triggers": ["project typography", "프로젝트 타이포그래피"],
                 "freshness": "versioned",
@@ -105,16 +116,15 @@ def _candidate(
     (root / "draft/agents").mkdir(parents=True, exist_ok=True)
     (root / "draft/SKILL.md").write_text(
         "---\n"
-        "name: project-design\n"
-        "description: Use only when Maestro selects the project-design pack.\n"
+        f"name: {pack_id}\n"
+        f"description: Use only when Maestro selects the {pack_id} pack.\n"
         "---\n\n"
         "# Project design\n\n"
         "Load only the selected project guide.\n",
         encoding="utf-8",
     )
-    (root / "draft/references/project-type-rules.md").write_text(
-        "# Project type rules\n\n"
-        "purpose: Preserve the approved project typography.\n",
+    (root / f"draft/references/{guide_id}.md").write_text(
+        guide_text,
         encoding="utf-8",
     )
     (root / "draft/agents/openai.yaml").write_text(
@@ -160,6 +170,13 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             self.assertTrue(
                 (repo / ".agents/skills/project-design/SKILL.md").is_file()
             )
+            snapshot = json.loads(
+                (
+                    repo
+                    / ".agents/skills/project-design/evidence/candidate.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual("project-design", snapshot["candidate_id"])
             after = route_goal_v2(
                 "Apply our project typography to the product design",
                 "medium",
@@ -417,6 +434,263 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 (repo / ".maestro/project.json").read_text(encoding="utf-8")
             )
             self.assertEqual([], project["expertise"]["active_pack_paths"])
+
+    def test_reviewed_update_replaces_one_version_and_keeps_a_snapshot(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:issue-16",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_expertise_activation_plan(activation_path, repo)
+            old_route = route_goal_v2(
+                "Review project typography",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+
+            _candidate(
+                repo,
+                candidate_id="project-design-v2",
+                pack_id="project-design",
+                version=2,
+                guide_id="project-layout-rules",
+                guide_text=(
+                    "# Project layout rules\n\n"
+                    "purpose: Verify hierarchy and layout together.\n"
+                ),
+            )
+            update = build_expertise_update_plan(
+                repo,
+                candidate_id="project-design-v2",
+                approval_ref="held_out_evaluation:eval-16",
+            )
+            update_path = Path(temporary) / "update.json"
+            write_json(update_path, update)
+            result = apply_expertise_update_plan(update_path, repo)
+
+            self.assertEqual(2, result["version"])
+            self.assertFalse(
+                (
+                    repo
+                    / ".agents/skills/project-design/references/"
+                    "project-type-rules.md"
+                ).exists()
+            )
+            self.assertTrue(
+                (
+                    repo
+                    / ".agents/skills/project-design/references/"
+                    "project-layout-rules.md"
+                ).is_file()
+            )
+            snapshot = json.loads(
+                (
+                    repo
+                    / ".agents/skills/project-design/evidence/candidate.json"
+                ).read_text(encoding="utf-8")
+            )
+            publication = json.loads(
+                (
+                    repo / ".agents/skills/project-design/activation.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual("project-design-v2", snapshot["candidate_id"])
+            self.assertEqual("update", publication["action"])
+            self.assertIsNotNone(
+                publication["previous_definition_digest"]
+            )
+            self.assertEqual(
+                "FAIL",
+                validate_route_v2(old_route, repo_path=repo)["status"],
+            )
+            new_route = route_goal_v2(
+                "Review project typography",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+            self.assertEqual(
+                "PASS",
+                validate_route_v2(new_route, repo_path=repo)["status"],
+            )
+            self.assertEqual(
+                2,
+                new_route["expertise"]["pack_cards"][0]["version"],
+            )
+
+    def test_update_requires_exactly_one_version_increment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:issue-17",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_expertise_activation_plan(activation_path, repo)
+            _candidate(
+                repo,
+                candidate_id="project-design-same-version",
+                pack_id="project-design",
+                version=1,
+            )
+
+            with self.assertRaisesRegex(Exception, "exactly one"):
+                build_expertise_update_plan(
+                    repo,
+                    candidate_id="project-design-same-version",
+                    approval_ref="owner_decision:issue-17-update",
+                )
+
+    def test_stale_update_plan_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:issue-18",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_expertise_activation_plan(activation_path, repo)
+            _candidate(
+                repo,
+                candidate_id="project-design-v2",
+                pack_id="project-design",
+                version=2,
+            )
+            update = build_expertise_update_plan(
+                repo,
+                candidate_id="project-design-v2",
+                approval_ref="owner_decision:issue-18-update",
+            )
+            update_path = Path(temporary) / "update.json"
+            write_json(update_path, update)
+            candidate_guide = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design-v2"
+                / "draft/references/project-type-rules.md"
+            )
+            candidate_guide.write_text(
+                candidate_guide.read_text(encoding="utf-8") + "\nChanged.\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(Exception, "changed after preview"):
+                apply_expertise_update_plan(update_path, repo)
+
+            active_pack = json.loads(
+                (
+                    repo / ".agents/skills/project-design/maestro-pack.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(1, active_pack["version"])
+
+    def test_deactivation_preserves_skill_files_and_stops_routing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:issue-19",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_expertise_activation_plan(activation_path, repo)
+            deactivation = build_expertise_deactivation_plan(
+                repo,
+                expertise_pack_id="project-design",
+            )
+            deactivation_path = Path(temporary) / "deactivation.json"
+            write_json(deactivation_path, deactivation)
+            result = apply_expertise_deactivation_plan(
+                deactivation_path,
+                repo,
+            )
+
+            self.assertEqual(
+                ".agents/skills/project-design/maestro-pack.json",
+                result["preserved_pack_path"],
+            )
+            self.assertTrue(
+                (repo / ".agents/skills/project-design/SKILL.md").is_file()
+            )
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual([], project["expertise"]["active_pack_paths"])
+            route = route_goal_v2(
+                "Review project typography",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+            self.assertNotIn(
+                "project-design",
+                route["expertise"]["selected_pack_ids"],
+            )
+
+    def test_doctor_warns_until_active_expertise_is_in_the_git_index(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            apply_fresh_init(repo)
+            _candidate(repo)
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:issue-20",
+            )
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_expertise_activation_plan(activation_path, repo)
+
+            before = check_by_id(
+                doctor_report(repo),
+                "PROJECT_EXPERTISE_GIT_TRACKING",
+            )
+            self.assertEqual("WARN", before["status"])
+            subprocess.run(
+                [
+                    "git",
+                    "add",
+                    "--",
+                    ".agents/skills/project-design",
+                    ".maestro/project.json",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            after = check_by_id(
+                doctor_report(repo),
+                "PROJECT_EXPERTISE_GIT_TRACKING",
+            )
+            self.assertEqual("PASS", after["status"])
 
 
 if __name__ == "__main__":

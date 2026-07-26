@@ -71,6 +71,10 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - A stale checkout, changed Registry, packet digest mismatch, open research
      gate, failed feasibility, blocking question, or forbidden side-effect
      policy stops execution.
+   - Before running the authorized mutation owner, save the returned
+     `route_plan` as temporary JSON and start the same bounded implementation
+     observation described below. The decision packets and bundle are not copied
+     into runtime state.
 8. For a direct request, use route v2 as the execution contract.
    - The CLI keeps v1 as its compatibility default. This managed Skill intentionally opts into v2 so the Host receives explicit dependency, read-only, and one-writer boundaries.
    - The result preserves the v1 selection while adding at most five typed Assignments, their dependencies, Packet contracts, side-effect owner, per-Assignment model routes, terminal condition, and plan digest.
@@ -78,6 +82,13 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --repo <repo> --plan <path> --json` before execution.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
+   - For an authorized non-trivial implementation in an initialized project,
+     save the validated route v2 JSON in a temporary file and start one bounded
+     observation with `maestro observe start --repo <repo> --run-id <id>
+     --task-label "<short task>" --plan <route-v2.json> --json`. Keep the
+     returned observation ID for the final receipt. This stores no prompt,
+     message, guide body, or file content. Do not start it for a read-only
+     request merely to obtain telemetry.
 9. Inspect the optional `expertise` selection before executing Assignments.
    - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
      For a project pack, use `pack_cards[].skill_path`; load inherited guide
@@ -123,8 +134,24 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only when its admission gate passes.
-17. For a non-trivial initialized run, write one compact RunReceipt after the final verdict with `maestro record --repo <repo> --receipt <temporary-json> --json`.
+    - Never edit an active project Expertise Skill as same-run self-improvement. A later owner decision or accepted held-out evaluation may publish a new candidate with `maestro expertise update`; keep Pack/Skill identity, increment one version, and use the preview/apply boundary. Use `deactivate` to remove only the allowlist entry when the Pack should stop routing.
+17. For a non-trivial initialized run, write one compact RunReceipt after the
+    final verdict with `maestro record --repo <repo> --receipt
+    <temporary-json> [--observation <id>] --json`.
+    - When an implementation observation was started, pass its ID so Maestro
+      freezes the task label, compact plan, and missing total duration. A
+      repeated identical record remains a no-op.
+    - If the Host exposes an actual model or token summary through a supported
+      public event/API, attach it with `maestro observe host` before the final
+      record. Include the Host source, quality, and correlation ID. Do this
+      automatically as part of the run; never ask the user to type the command.
+      Do not scrape private Codex session files. If the Host exposes no stable
+      value, keep it unmeasured.
     - Record actual duration and token values only when available; use `null` otherwise.
+    - `stage_results` is optional and bounded to the plan's five Assignments.
+      Record its actual model, duration, tokens, status, and up to three evidence
+      refs only when the Host directly exposes them. Never substitute planned
+      model or aggregate estimates for actual values.
     - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
     - Record `project_convention_action`, `project_convention_basis`, and a path only when the action created or updated an approved project Convention. Same-run discoveries use `same_run_candidate` and no Convention path.
@@ -132,6 +159,21 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - For `created` or `updated`, include `project_convention_evidence`: the active Convention SHA-256, a basis-matching kind, and one repository-local verification artifact path and SHA-256. `owner_decision` also needs a bounded summary of the explicit user decision. The `command_artifact_ref` must name that artifact.
     - Record summaries and artifact references, never messages, hidden reasoning, or file bodies.
     - Do not write checkpoints or one event per agent exchange.
+    - If a reusable Expertise failure occurred, add at most three
+      `expertise_observations` with a stable kind, domain, severity, resolution,
+      and an evidence ref already present in the receipt. Mark `reusable=false`
+      for project-specific details. The returned `management_check` may
+      recommend review after repeated runs, but never authorizes automatic Pack,
+      Skill, or Convention mutation.
+    - When the user asks to open or inspect the Maestro dashboard, start
+      `maestro dashboard --repo <repo>` on their behalf, open the returned local
+      URL, and keep ownership of stopping that on-demand server. Do not require
+      the user to copy a command and do not install a daemon.
+    - A request to approve a detected verification command uses
+      `maestro verification approve` or the dashboard's exact candidate
+      `preview → apply` flow. Treat approval as a project-authority change:
+      show the exact command and apply only after explicit user approval. This
+      operation never executes the command.
 18. Report changed artifacts, commands, evidence, document impact, project convention action, RunReceipt result, global candidates, uncertainty, and the next action.
 
 ## Reference routing

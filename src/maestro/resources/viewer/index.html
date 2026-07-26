@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Harness Maestro</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">HARNESS MAESTRO</p>
+        <h1>프로젝트 운영 뷰어</h1>
+        <p id="repo-path" class="muted">프로젝트 정보를 불러오는 중입니다.</p>
+      </div>
+      <div class="header-actions">
+        <span id="updated-at" class="muted">—</span>
+        <button id="refresh" type="button">새로고침</button>
+      </div>
+    </header>
+
+    <main>
+      <section aria-labelledby="overview-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">OVERVIEW</p>
+            <h2 id="overview-title">지금 상태</h2>
+          </div>
+          <span id="connection-state" class="pill neutral">연결 중</span>
+        </div>
+        <div id="metrics" class="metric-grid"></div>
+        <div id="coverage" class="coverage"></div>
+      </section>
+
+      <section aria-labelledby="attention-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">REVIEW QUEUE</p>
+            <h2 id="attention-title">확인이 필요한 항목</h2>
+          </div>
+        </div>
+        <div id="attention" class="stack"></div>
+      </section>
+
+      <section aria-labelledby="verification-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">VERIFICATION AUTHORITY</p>
+            <h2 id="verification-title">검증 명령</h2>
+          </div>
+          <p class="muted">탐지된 명령을 확인한 뒤 프로젝트 권위로 승인합니다. 여기서 명령은 실행되지 않습니다.</p>
+        </div>
+        <div id="verification" class="stack"></div>
+        <div id="verification-preview" class="detail-panel empty">
+          후보를 선택하면 실제 변경 내용을 먼저 보여줍니다.
+        </div>
+      </section>
+
+      <section aria-labelledby="runs-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">RUNS</p>
+            <h2 id="runs-title">작업 흐름</h2>
+          </div>
+          <p class="muted">행을 선택하면 계획·실측·Expertise 근거가 펼쳐집니다.</p>
+        </div>
+        <div id="inflight" class="stack compact"></div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>작업</th>
+                <th>결과</th>
+                <th>시간</th>
+                <th>토큰</th>
+                <th>모델</th>
+                <th>Expertise</th>
+              </tr>
+            </thead>
+            <tbody id="run-table"></tbody>
+          </table>
+        </div>
+        <div id="run-detail" class="detail-panel empty">
+          작업을 선택하면 실행 단계가 표시됩니다.
+        </div>
+      </section>
+
+      <section aria-labelledby="expertise-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">EXPERTISE</p>
+            <h2 id="expertise-title">전문 지식 카탈로그</h2>
+          </div>
+          <p class="muted">활성 상태, 판단 가이드, 출처와 검토 후보를 함께 봅니다.</p>
+        </div>
+        <div id="expertise" class="card-grid"></div>
+      </section>
+
+      <section aria-labelledby="governance-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">GOVERNANCE</p>
+            <h2 id="governance-title">자가개선 신호</h2>
+          </div>
+          <span class="pill neutral">자동 변경 없음</span>
+        </div>
+        <div id="governance" class="governance-grid"></div>
+      </section>
+    </main>
+
+    <footer>
+      이 페이지는 로컬 메타데이터를 읽고, 명시적으로 확인한 검증 명령 승인만
+      프로젝트 설정에 반영합니다. 명령 실행, 프롬프트 본문과 원문 대화 저장은
+      하지 않습니다.
+    </footer>
+    <div id="error" class="error-banner" role="alert" hidden></div>
+  </body>
+</html>

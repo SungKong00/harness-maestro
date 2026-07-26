@@ -199,6 +199,32 @@
         "null"
       ]
     },
+    "task_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "plan_summary": {
+      "$ref": "#/$defs/planSummary"
+    },
+    "stage_results": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/stageResult"
+      }
+    },
+    "expertise_observations": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/expertiseObservation"
+      }
+    },
+    "host_observation": {
+      "$ref": "#/$defs/hostObservation"
+    },
     "project_convention_action": {
       "enum": [
         "none",
@@ -291,6 +317,399 @@
           }
         }
       ]
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "hostObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "source",
+        "quality",
+        "correlation_id",
+        "actual_model",
+        "tokens",
+        "observed_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_host_observation_v1"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "quality": {
+          "enum": [
+            "host_reported",
+            "host_delta"
+          ]
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "actual_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokenSummary"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "actual_model"
+          ],
+          "properties": {
+            "actual_model": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "required": [
+            "tokens"
+          ],
+          "properties": {
+            "tokens": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "tokenSummary": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total"
+          ],
+          "properties": {
+            "input": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "output": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "cached": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "reasoning": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "parent_context_total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "total_system": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "planSummary": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "plan_id",
+        "intent",
+        "department",
+        "assignments",
+        "research"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_plan_summary_v1"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "department": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assignments": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "assignment_id",
+              "kind",
+              "executor_id",
+              "depends_on",
+              "planned_model",
+              "reasoning_effort",
+              "expertise_pack_ids",
+              "decision_guide_ids"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "executor_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "depends_on": {
+                "$ref": "#/$defs/stringList"
+              },
+              "planned_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reasoning_effort": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ]
+              },
+              "expertise_pack_ids": {
+                "type": "array",
+                "maxItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "decision_guide_ids": {
+                "type": "array",
+                "maxItems": 4,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "research": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "gate"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "reuse",
+                "contextualize",
+                "refresh",
+                "discover"
+              ]
+            },
+            "gate": {
+              "enum": [
+                "not-required",
+                "satisfied",
+                "in-plan",
+                "open"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "stageResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_id",
+        "status",
+        "actual_model",
+        "duration_ms",
+        "tokens",
+        "evidence_refs"
+      ],
+      "properties": {
+        "assignment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "blocked",
+            "skipped"
+          ]
+        },
+        "actual_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "duration_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokenSummary"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "expertiseObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "domain",
+        "pack_id",
+        "guide_id",
+        "severity",
+        "reusable",
+        "resolution",
+        "evidence_ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "missing_pack",
+            "missing_guide",
+            "stale_guide",
+            "trigger_miss",
+            "unnecessary_research"
+          ]
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "pack_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "guide_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "reusable": {
+          "type": "boolean"
+        },
+        "resolution": {
+          "enum": [
+            "reuse",
+            "research",
+            "manual_correction",
+            "unresolved"
+          ]
+        },
+        "evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   },
   "allOf": [

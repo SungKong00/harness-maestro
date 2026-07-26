@@ -29,8 +29,9 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 4. v1은 기본 출력으로 유지하고 v2를 명시적으로 선택하게 한다.
 5. 20개의 고정 route 사례로 v1 선택과 v2 계획의 회귀를 검사한다.
 
-실제 agent 생성, 실행 순서 제어, retry, checkpoint, resume, per-call trace와 HTML
-Inspector는 현재 구현 범위가 아니다.
+실제 agent 생성, 실행 순서 제어, retry, checkpoint, resume와 per-call trace는
+현재 구현 범위가 아니다. 실행 뒤 compact metadata를 읽는 HTML 운영 뷰어는 별도
+구조로 구현했으며 scheduler나 replay 기능을 갖지 않는다.
 
 ## 사용자에게 보이는 흐름
 
@@ -168,26 +169,19 @@ Packet, DAG 의미 검사를 더한다. 두 계약의 required field 집합은 �
 | 단계 | 상태 | 도입 조건 |
 |---|---|---|
 | Typed Plan과 pre-execution validator | 현재 구현 | 전체 test, schema package, strict Doctor와 Host 수동 검사 |
-| Trusted Host Observation | 보류 | Host가 `plan_id`와 실제 Assignment 결과를 직접 반환 |
-| JSON·Mermaid inspection | 보류 | v2 계획을 실제 두 프로젝트에서 사용하고 조회 요구가 반복 |
-| localhost HTML Inspector | 보류 | 신뢰 가능한 Host evidence, redaction·retention·접근 정책과 실제 사용자 요구 |
+| Bounded Host Observation | 현재 구현 | Host가 제공한 값만 compact final receipt에 기록하고 미측정값은 null |
+| JSON snapshot | 현재 구현 | 최근 실행·Expertise·governance metadata만 합성 |
+| localhost HTML Inspector | 현재 구현 | localhost bind, session token, CSP, no raw prompt, read-only API |
 | partial invalidation·change collector | 보류 | 중복 검증과 재읽기 비용이 측정됨 |
 | checkpoint·resume·replay | 별도 milestone | 실행 상태 소유권, lease, idempotency, compensation과 crash test |
 
 ### HTML Inspector 계획
 
-HTML 조회 기능은 폐기하지 않는다. 다음 순서로 도입한다.
-
-1. 현재는 route v2 JSON과 `validate-plan` 결과를 권위로 사용한다.
-2. 조회 요구가 반복되면 검증된 계획에서 정적으로 파생한 Mermaid 또는 JSON summary를
-   추가한다.
-3. Host가 실제 Assignment 결과와 측정 출처를 제공하면 planned와 actual을 구분해
-   저장한다.
-4. 그 뒤 localhost HTML Inspector를 별도 security review와 함께 검토한다.
-
-HTML 단계에서는 raw prompt·대화·파일 본문을 기본 노출하지 않고, 허용 필드,
-redaction, 보존 기간, 삭제, CSP, Host·Origin 검사와 local access 경계를 먼저
-정해야 한다.
+HTML 조회는 [통합 운영 뷰어](operations-viewer.md)로 구현했다. route v2 계획에서
+정적으로 파생한 compact assignment와 Host가 명시적으로 제공한 actual 값만
+사용한다. raw prompt·대화·파일 본문은 허용 필드가 아니며 CSP, Host·Origin,
+session token과 localhost bind를 적용한다. 신뢰 가능한 per-call distributed
+trace는 여전히 이 문서의 범위 밖이다.
 
 ## 벤치마킹한 근거
 
@@ -221,12 +215,12 @@ Maestro가 소유하고 message text와 분리한다.
 
 현재 계약은 다음 상한을 유지한다.
 
-- 신규 runtime module 1개
+- route v2 자체는 신규 runtime module 1개
 - 신규 schema 1개
 - 신규 test module 1개와 20-case fixture
 - Assignment 최대 5개, Lens 최대 3개
-- 신규 scheduler·server·database·외부 dependency 없음
-- HTML·trace·resume 구현 없음
+- 신규 scheduler·database·외부 dependency 없음
+- 별도 read-only localhost viewer만 포함하고 distributed trace·resume 구현 없음
 
 이 상한을 넘는 요구는 v0.3에 이어 붙이지 않고 별도 문제와 평가로 다시 연다.
 

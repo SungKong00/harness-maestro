@@ -88,7 +88,14 @@ def runtime_record(package_root: Path | None = None) -> dict[str, Any]:
         if relative == Path("resources") / RELEASE_MANIFEST_RESOURCE:
             return False
         if relative.parts and relative.parts[0] == "resources":
-            return relative.suffix in {".json", ".md", ".py"}
+            return relative.suffix in {
+                ".json",
+                ".md",
+                ".py",
+                ".html",
+                ".css",
+                ".js",
+            }
         return relative.suffix == ".py"
 
     return _tree_record(root, include=include)

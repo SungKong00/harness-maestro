@@ -1,0 +1,75 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "product-design",
+  "verified_on": "2026-07-26",
+  "sources": [
+    {
+      "source_id": "w3c-klreq",
+      "tier": 1,
+      "authority": "standardization working group note",
+      "url": "https://www.w3.org/TR/klreq/",
+      "supports": [
+        "Korean text layout and Hangul-specific typographic considerations"
+      ],
+      "used_by": [
+        "typography-korean"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-wcag-22",
+      "tier": 1,
+      "authority": "W3C Recommendation",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "supports": [
+        "keyboard access, focus, target size, contrast, reflow, and accessible interaction criteria"
+      ],
+      "used_by": [
+        "interaction-responsive-accessibility",
+        "visual-hierarchy-layout"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-page-structure",
+      "tier": 1,
+      "authority": "W3C Web Accessibility Initiative guidance",
+      "url": "https://www.w3.org/WAI/tutorials/page-structure/",
+      "supports": [
+        "semantic headings, regions, and structural reading order"
+      ],
+      "used_by": [
+        "design-brief",
+        "visual-hierarchy-layout"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "apple-typography",
+      "tier": 1,
+      "authority": "platform design guidance",
+      "url": "https://developer.apple.com/design/human-interface-guidelines/typography",
+      "supports": [
+        "legibility, hierarchy, text scaling, and platform typography"
+      ],
+      "used_by": [
+        "typography-korean",
+        "visual-hierarchy-layout"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "material-accessibility",
+      "tier": 1,
+      "authority": "platform design system guidance",
+      "url": "https://m3.material.io/foundations/accessible-design/overview",
+      "supports": [
+        "accessible visual and interaction design considerations"
+      ],
+      "used_by": [
+        "interaction-responsive-accessibility"
+      ],
+      "freshness": "volatile"
+    }
+  ]
+}

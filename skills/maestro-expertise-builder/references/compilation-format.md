@@ -20,6 +20,13 @@ Standalone packs omit `extends`. Project specializations add:
 Local triggers and guides are additive. A local guide ID must not collide with
 an inherited guide.
 
+For a new Pack, `candidate_id`, `expertise_pack_id`, and `skill_id` may use the
+same project slug. For a revision, give the working candidate a new ID such as
+`project-design-v2`, preserve the active Pack and Skill IDs, increment
+`maestro-pack.json.version` by exactly one, and refresh the bundled base pin.
+The CLI copies `candidate.json` into `evidence/candidate.json` on publication;
+do not hand-edit that snapshot.
+
 Each Decision Guide should contain:
 
 ```text

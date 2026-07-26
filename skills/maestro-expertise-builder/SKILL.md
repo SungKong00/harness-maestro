@@ -5,8 +5,9 @@ description: Use when repeated project evidence or a completed reference researc
 
 # Maestro Expertise Builder
 
-Compile validated evidence into a project-local candidate. Do not mutate an
-active Expertise Pack, Registry item, global Skill, or agent installation.
+Compile validated evidence into a project-local candidate. This Skill never
+mutates an active Expertise Pack, Registry item, global Skill, or agent
+installation directly; publication stays behind Maestro's reviewed CLI plan.
 
 Maestro remains the workflow owner. This Skill designs one reusable specialist
 surface; it does not create a second orchestrator.
@@ -75,7 +76,13 @@ Use one of two shapes:
 
 Prefer `extends`. Pin the bundled `expertise_pack_id`, `version`, and canonical
 manifest `digest`; inheritance is additive and one level only. Use a distinct
-local pack and Skill ID. Never shadow or redefine an inherited guide ID.
+local pack and Skill ID for a new project Pack. Never shadow or redefine an
+inherited guide ID.
+
+When revising an already active project pilot, use a new candidate ID but keep
+the active `expertise_pack_id` and `skill_id`, increment its version by exactly
+one, and pin the currently installed bundled base. Do not edit the active
+`.agents/skills` tree while building the candidate.
 
 ## Evaluation
 
@@ -117,6 +124,15 @@ After an owner decision or accepted held-out evaluation, preview
 `maestro expertise activate --repo . --candidate <id>
 --approval-ref <owner_decision:ref|held_out_evaluation:ref> --json`, save the
 plan, review it, and apply it with `--apply-plan`. Activation copies the
-candidate to tracked `.agents/skills/`, adds it to the project allowlist, keeps
-it in `pilot`, and retains the ignored candidate.
+candidate and a compact evidence snapshot to tracked `.agents/skills/`, adds it
+to the project allowlist, keeps it in `pilot`, and retains the ignored
+candidate.
+
+For an active project pilot, use the same preview/apply sequence with
+`maestro expertise update`. It accepts only the same Pack/Skill identity and
+one version increment. To stop using a Pack, preview/apply
+`maestro expertise deactivate --pack <pack-id>`; it removes only the allowlist
+entry and preserves the Skill files. Run Doctor, stage, and commit the reviewed
+project files after each operation. No command stages, commits, pushes, or
+promotes globally.
 Global promotion always requires an explicit repository change and approval.

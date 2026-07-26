@@ -1086,3 +1086,47 @@ def git_ignored(repo: Path, relative_path: str) -> bool | None:
     if result.returncode == 1:
         return False
     return None
+
+
+def git_indexed_paths(
+    repo: Path,
+    relative_paths: list[str],
+) -> set[str] | None:
+    """Return repository-relative paths present in Git's index.
+
+    ``None`` means the directory is not a Git worktree or Git is unavailable.
+    An empty set means Git is available but none of the requested paths are
+    indexed. Index membership deliberately does not claim that a path has
+    already been committed or pushed.
+    """
+
+    if not relative_paths:
+        return set()
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", *relative_paths],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return {
+        item.decode("utf-8", errors="surrogateescape")
+        for item in result.stdout.split(b"\0")
+        if item
+    }

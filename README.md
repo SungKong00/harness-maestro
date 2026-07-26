@@ -13,6 +13,7 @@ Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝�
 [문서 지도](docs/README.md) ·
 [전문성 팩 구조](docs/architecture/expertise-packs.md) ·
 [판단 우선 구조](docs/architecture/decision-workflow.md) ·
+[통합 운영 뷰어](docs/architecture/operations-viewer.md) ·
 [내부 리서치·전문성 경계](docs/decisions/0009-internal-research-and-expertise-boundary.md) ·
 [프로젝트 로컬 Expertise 활성화](docs/decisions/0010-project-local-expertise-activation.md) ·
 [설계 근거와 참고 자료](docs/research/design-foundations.md)
@@ -103,8 +104,12 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
 | Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
 | 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
+| 작업 흐름·비용·Expertise 확인 | `$maestro 대시보드 열어줘` | 명령 입력 없이 localhost 페이지를 열어 현재 metadata를 조회 |
+| 검증 명령 후보 승인 | 뷰어에서 `승인 검토 → 승인` 또는 `$maestro 이 검증 명령을 승인해줘` | 명령을 실행하지 않고 정확한 후보만 프로젝트 권위에 추가 |
 | 반복되는 전문성 공백을 후보로 만들기 | `$maestro-expertise-builder` | RED baseline·frozen case를 거친 프로젝트 로컬 후보만 생성 |
-| 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 후보를 추적되는 project pilot으로 preview/apply 활성화 |
+| 검증된 로컬 Expertise를 계속 쓰기 | `maestro expertise activate` | 새 후보를 추적되는 project pilot으로 preview/apply 활성화 |
+| 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
+| 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
 | 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
 
 ## 빠른 시작
@@ -257,6 +262,9 @@ Maestro workflow는 다음 순서로 진행합니다.
    test·lint·schema·diff 같은 실제 artifact로 검증합니다.
 10. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
    성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
+11. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
+    compact RunReceipt 한 건으로 연결합니다.
+12. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
 
 ## 무엇을 해결하나요?
 
@@ -275,8 +283,8 @@ Maestro workflow는 다음 순서로 진행합니다.
   ResearchBundle 파일 없이는 gate를 통과하지 못합니다.
 - **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
   baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 후보만
-  `.agents/skills`의 tracked pilot으로 명시적 활성화하며, 전역 승격이나 Agent
-  설치는 자동화하지 않습니다.
+  `.agents/skills`의 tracked pilot으로 명시적 활성화합니다. 다음 버전도 새 후보와
+  검토된 update plan을 거치며, 전역 승격이나 Agent 설치는 자동화하지 않습니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.
 - **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
@@ -320,6 +328,30 @@ project/
 승격합니다. 기존 Markdown 본문과 `AGENTS.md`는 Maestro 관리 블록 밖에서
 보존됩니다.
 
+### 작업 흐름을 한눈에 보고 싶을 때
+
+Codex Desktop에서 다음처럼 말하면 됩니다.
+
+```text
+$maestro 이 프로젝트의 대시보드 열어줘.
+```
+
+Maestro가 `127.0.0.1`의 임시 서버와 브라우저를 열고 종료까지 맡습니다. 매 작업마다
+HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·시간·token·계획/실제
+모델·Expertise 출처·검토 후보를 다시 읽습니다. 값은 Host가 안정적인 공개
+인터페이스로 제공할 때만 기록하고, 없으면 추정하지 않고 `측정되지 않음`으로
+표시합니다.
+
+뷰어에서 할 수 있는 변경은 탐지된 검증 명령을 정확히 확인한 뒤 승인하는 것 하나다.
+`승인 검토`는 아무것도 쓰지 않고, 두 번째 `승인`이
+`.maestro/project.json`의 `verification_commands`만 바꿉니다. 명령 자체는 실행하지
+않습니다.
+
+일반 개발 요청에서는 사용자가 `observe`나 `record` 명령을 외울 필요가 없습니다.
+`$maestro`가 구현 계획을 확정한 뒤 compact 관측을 시작하고 최종 검증 결과에
+연결합니다. `dashboard`는 보고 싶을 때만 여는 on-demand 운영 도구이며 영구
+daemon을 설치하지 않습니다.
+
 ## 문서 안내
 
 | 원하는 것 | 읽을 문서 |
@@ -328,6 +360,7 @@ project/
 | 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
 | 현재 릴리스 TODO | [v0.3 릴리스 계획](docs/plans/active/v0.3-release.md) |
 | Assignment Plan·검증·HTML 도입 경계 | [Typed Assignment Plan](docs/architecture/typed-assignment-plan.md) |
+| 작업 흐름·비용·Expertise 통합 조회 | [통합 운영 뷰어](docs/architecture/operations-viewer.md) |
 | 전문가 기준 재사용·조건부 조사·후보 관리 | [Expertise Pack](docs/architecture/expertise-packs.md) |
 | 내부 research·Skill·Custom Agent의 경계 | [ADR-0009](docs/decisions/0009-internal-research-and-expertise-boundary.md) |
 | 판단·역할 검토·결정 번들·실행 승인 | [Decision Workflow](docs/architecture/decision-workflow.md) |

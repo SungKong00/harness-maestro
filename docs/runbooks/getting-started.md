@@ -121,8 +121,9 @@ rm -- "$maestro_plan"
 4. `maestro status`가 안내하는 `upgrade`를 미리보기하고, 사용자 문서 기준선만
    바뀌는지 확인한 뒤 적용한다.
 5. `.maestro/project.json`에서 문서 권위와 검증 명령을 확인한다. 자동 탐지된
-   `commands`는 후보일 뿐이다. 실제로 실행해 확인한 항목만
-   `verification_commands`에 `{name, command}`로 복사한다.
+   `commands`는 후보일 뿐이다. 실제로 실행해 확인한 항목만 뷰어의
+   `승인 검토 → 승인` 또는 Maestro의 같은 typed plan으로
+   `verification_commands`에 추가한다. JSON을 손으로 복사할 필요가 없다.
 6. `maestro doctor --strict`와 `maestro docs --task "project setup"`이 모두
    충분한 근거를 보고하는지 확인한다.
 
@@ -138,7 +139,7 @@ rm -- "$maestro_plan"
 ```
 
 `verification_commands`는 프로젝트가 검증한 기계 판독 권위지만 자동 실행 권한은
-아니다. 수동 수정 뒤에는 다시 `upgrade` plan으로 기준선 변경을 검토한다.
+아니다. 승인은 명령을 실행하지 않으며 이름이 같은 다른 명령을 덮어쓰지 않는다.
 
 ## 4. 일상 작업
 
@@ -175,7 +176,6 @@ maestro route --repo /path/to/project --goal "결제 webhook 재시도 변경" \
   --risk medium --intent implementation --host codex \
   --route-version v2 --json > "$maestro_route"
 maestro validate-plan --repo /path/to/project --plan "$maestro_route" --json
-rm -- "$maestro_route"
 ```
 
 validation의 `execution_status`가 `RESEARCH_REQUIRED`이면 exit code 4를 반환하며
@@ -198,6 +198,34 @@ artifact의 내용 주소이고 source 품질을 대신 검증하지 않는다.
 v2의 Assignment는 Host가 실행할 정적 계획이며 실행 로그가 아니다. `plan_id`,
 dependency, Packet과 side-effect 계약은 Maestro가 검증하지만 실제 호출 모델,
 token, 시간과 성공 결과는 Host가 직접 제공해야 한다.
+
+`$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
+검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
+필요는 없다. Host가 공개 API/event로 실제 모델·token을 제공하면 Maestro가
+출처·quality·correlation ID와 함께 자동 연결한다. 비공개 Codex session 파일은
+읽지 않고, 지원되는 값이 없으면 `null`을 유지한다. 다른 Host나 자동화가 같은
+계약을 구현할 때만 다음 저수준 명령을 호출한다.
+
+```bash
+maestro observe start --repo /path/to/project \
+  --run-id run-20260726-01 \
+  --task-label "결제 webhook 재시도 변경" \
+  --plan "$maestro_route" --json
+
+maestro observe host --repo /path/to/project \
+  --observation <observation-id> --run-id run-20260726-01 \
+  --source <public-host-source> --quality host_reported \
+  --correlation-id <host-run-id> --actual-model <actual-model> \
+  --total-tokens <actual-total> --json
+
+maestro record --repo /path/to/project \
+  --receipt /tmp/run-receipt.json \
+  --observation <observation-id> --json
+rm -- "$maestro_route"
+```
+
+`record` 결과의 `management_check`는 최근 반복 finding과 reusable Expertise
+공백의 검토 필요 여부만 알려준다. Skill, Pack과 Convention을 자동 변경하지 않는다.
 
 ### 판단을 끝낸 뒤 구현하는 작업
 
@@ -248,7 +276,20 @@ DecisionPlan에서 끝나며 `enact`를 호출하면 안 된다.
 ```bash
 maestro status --repo /path/to/project --json
 maestro doctor --repo /path/to/project --strict --json
+maestro snapshot --repo /path/to/project --window 20 --json
 ```
+
+사람이 최근 작업 흐름과 Expertise 상태를 함께 보고 싶으면 Codex Desktop에서
+다음처럼 말한다.
+
+```text
+$maestro 이 프로젝트 대시보드 열어줘.
+```
+
+Maestro가 on-demand 서버를 시작하고 브라우저를 열며 종료도 맡는다. CLI 통합을
+시험할 때만 `maestro dashboard --repo /path/to/project`를 직접 사용한다. 브라우저
+새로고침이 같은 snapshot API를 다시 읽는다. 매 작업별 HTML 생성, 외부 서버 전송과
+raw 대화 저장은 없다.
 
 `upgrade`도 `init`과 같이 미리보기 후 같은 plan을 적용한다.
 
@@ -304,14 +345,53 @@ maestro expertise activate --repo /path/to/project \
   --json > "$maestro_expertise_plan"
 maestro expertise activate --repo /path/to/project \
   --apply-plan "$maestro_expertise_plan" --json
+git -C /path/to/project add -- \
+  .agents/skills/project-design .maestro/project.json
 maestro doctor --repo /path/to/project --strict --json
+git -C /path/to/project commit -m "chore: activate project expertise"
 rm -- "$maestro_expertise_plan"
 ```
 
 활성 결과는 `.agents/skills/<skill-id>/`의 추적 가능한 project `pilot`이다.
-후보는 삭제하지 않으며, 범용 Registry·원격 저장소·전역 Agent는 바뀌지 않는다.
+후보와 `evidence/candidate.json` snapshot은 삭제하지 않으며, 범용 Registry·원격
+저장소·전역 Agent는 바뀌지 않는다. Doctor의 Git tracking PASS는 파일이 index에
+있다는 뜻일 뿐 commit·push 완료를 대신하지 않는다.
 기존 범용 Pack의 프로젝트 특화라면 고정 `extends`가 기본이고, 맞는 base가 없는
 새 판단 분야만 standalone으로 만든다.
+
+다음 버전은 활성 파일을 직접 수정하지 않고 같은 Pack·Skill ID, 정확히 하나 높은
+version을 가진 새 후보로 갱신한다. bundled base가 바뀌었다면 후보가 현재 base
+digest를 고정해야 하므로 같은 update 명령이 rebase도 처리한다.
+
+```bash
+maestro_expertise_update="$(mktemp -t maestro-expertise-update.XXXXXX.json)"
+maestro expertise update --repo /path/to/project \
+  --candidate project-design-v2 \
+  --approval-ref held_out_evaluation:eval-9 \
+  --json > "$maestro_expertise_update"
+maestro expertise update --repo /path/to/project \
+  --apply-plan "$maestro_expertise_update" --json
+git -C /path/to/project add -- .agents/skills/project-design
+maestro doctor --repo /path/to/project --strict --json
+git -C /path/to/project commit -m "chore: update project expertise"
+rm -- "$maestro_expertise_update"
+```
+
+Maestro 라우팅을 멈출 때는 Skill을 지우지 않고 allowlist만 바꾼다. 보존된
+`.agents/skills` package는 Host에 명시 호출 대상으로 계속 보일 수 있다. Host에서도
+없애려면 보존 기간과 rollback 필요성을 별도로 판단한 뒤 일반 Git 변경으로 파일을
+제거한다.
+
+```bash
+maestro_expertise_off="$(mktemp -t maestro-expertise-off.XXXXXX.json)"
+maestro expertise deactivate --repo /path/to/project \
+  --pack project-design --json > "$maestro_expertise_off"
+maestro expertise deactivate --repo /path/to/project \
+  --apply-plan "$maestro_expertise_off" --json
+git -C /path/to/project add -- .maestro/project.json
+git -C /path/to/project commit -m "chore: deactivate project expertise"
+rm -- "$maestro_expertise_off"
+```
 
 새 프로젝트 Convention 초안이 필요하면 LLM이 임의로 활성 문서를 바로 쓰게 하지
 말고 preview/apply 경계를 사용한다.
@@ -340,13 +420,21 @@ owner 결정 또는 held-out 평가를 통한 활성화는 별도 검토 작업�
 
 - `status`, `doctor`, `docs`, `adapt`, `route`, `validate-plan`, `decide`,
   `validate-decision`, `enact`,
-  `expertise list`, `govern report`는 읽기 전용이다.
+  `expertise list`, `snapshot`, `govern report`는 읽기 전용이다.
 - `init`, `upgrade`는 `--apply-plan`이 없으면 미리보기만 한다.
 - `convention draft`도 `--apply-plan`이 없으면 미리보기만 하며 적용해도
   비활성 draft 한 건만 생성한다.
-- `expertise activate`도 `--apply-plan` 전에는 미리보기만 하며 적용해도
-  allowlist에 든 tracked project pilot만 게시한다.
-- `record`는 검증된 project-scoped JSONL receipt 한 건만 append한다.
+- `expertise activate`, `update`, `deactivate`도 `--apply-plan` 전에는
+  미리보기만 한다. activate/update는 검토된 tracked project pilot만 게시하고,
+  deactivate는 allowlist만 제거한다.
+- `observe start`는 prompt 없이 작업명·시각·compact 계획 marker 한 건만 쓴다.
+- `observe host`는 지원되는 Host 실측값이 있을 때 같은 marker에 bounded telemetry만
+  추가한다.
+- `record`는 검증된 project-scoped JSONL receipt 한 건만 append하고 완료된
+  observation을 고정한다.
+- `verification approve`와 dashboard는 미리보기만으로 쓰지 않는다. 명시적으로
+  확인한 exact candidate를 apply할 때만 `verification_commands`를 갱신하며 명령을
+  실행하지 않는다.
 - 동일한 `run_id`와 동일 내용의 재시도는 no-op이고, 내용이 다르면 거부한다.
 - manifest에서 찾은 검증 명령은 candidate이며 자동 실행 권한이 아니다.
 

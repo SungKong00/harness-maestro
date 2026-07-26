@@ -24,4 +24,10 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-maestro = ["resources/**/*.json", "resources/**/*.md"]
+maestro = [
+  "resources/**/*.json",
+  "resources/**/*.md",
+  "resources/**/*.html",
+  "resources/**/*.css",
+  "resources/**/*.js",
+]

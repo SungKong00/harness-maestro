@@ -5,14 +5,14 @@ type: decision
 status: active
 authority: repository
 owner: harness-maestro
-summary: 검토된 Expertise 후보를 추적되는 프로젝트 Skill로 명시적으로 활성화하고, 범용 Pack 확장은 한 단계 고정 extends로 합성한다.
+summary: 검토된 Expertise 후보를 추적되는 프로젝트 Skill로 활성화·갱신하고, 비활성화는 파일을 보존한 allowlist 변경으로 처리한다.
 scope: [.agents/skills, .maestro/project.json, expertise, route-v2]
 last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
 
-# ADR-0010: 프로젝트 로컬 Expertise 활성화
+# ADR-0010: 프로젝트 로컬 Expertise 수명주기
 
 ## 결정
 
@@ -25,7 +25,17 @@ sensitivity: internal
 후보는 기존처럼 `.maestro/state/candidates/expertise/`에 격리해 자동 호출하지
 않는다. owner 결정 또는 accepted held-out evaluation이 있으면
 `maestro expertise activate`의 preview/apply 경계로 `pilot`을 원자적으로
-게시한다. 후보 원본은 rollback과 감사용으로 남긴다.
+게시한다. 게시된 Skill에는 candidate의 compact snapshot을 복사해 clone 뒤에도
+승인 당시 문제·범위·평가 계약을 확인할 수 있게 한다. Git에서 제외된 후보 원본도
+rollback과 재평가용으로 남긴다.
+
+이미 활성화된 pilot은 파일을 직접 고치지 않는다. 같은 Pack·Skill ID를 유지하고
+version을 정확히 하나 올린 새 candidate를 만든 뒤 `maestro expertise update`의
+preview/apply 경계로 교체한다. bundled base가 바뀌었다면 같은 후보가 현재 base의
+ID·version·digest를 다시 고정해야 하므로 update 한 번이 rebase 경계도 겸한다.
+Maestro 라우팅을 멈출 때는 `maestro expertise deactivate`로 allowlist만 제거하고
+Skill 파일은 검토·rollback용으로 보존한다. 표준 project Skill 경로에 파일이
+남으므로 Host의 명시적 발견·호출까지 uninstall하는 명령은 아니다.
 
 로컬 Pack은 두 형식만 지원한다.
 
@@ -46,13 +56,25 @@ digest를 고정하고 local trigger·guide·research trigger만 더한다. 상�
 - [Agent Skills 구현 가이드](https://agentskills.io/client-implementation/adding-skills-support)는
   project Skill 경로, progressive disclosure, 위치·collision 진단과 workspace
   trust를 구현 책임으로 둔다.
+- [Agent Skills 명세](https://agentskills.io/specification)는 자기완결 Skill package
+  형식은 정의하지만 update·deactivate 의미는 정하지 않는다. 따라서 표준 디렉터리
+  형식은 유지하고 수명주기만 Maestro의 검토된 plan으로 소유한다.
 - [OpenAI Build skills](https://learn.chatgpt.com/docs/build-skills),
   [Claude Code Skills](https://code.claude.com/docs/en/skills),
   [GitHub Copilot Agent Skills](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills)는
   반복 사용할 project Skill을 저장소 범위에 두는 공통 패턴을 제공한다.
 - [Anthropic Skills](https://github.com/anthropics/skills)는 배포 대상을 명시적
-  manifest로 제한하고, [gstack](https://github.com/garrytan/gstack)은 후보를
-  staging한 뒤 승인 시 publish하는 구현 사례를 제공한다.
+  manifest로 제한하고,
+  [gstack의 고정된 upgrade 구현](https://github.com/garrytan/gstack/blob/a3259400a366593e0c909dd9ac3e59752efd2488/gstack-upgrade/SKILL.md.tmpl)은
+  교체 전 검증과 rollback 가능한 publish 경계의 구현 사례를 제공한다.
+- [Git status](https://git-scm.com/docs/git-status.html)와
+  [git ls-files](https://git-scm.com/docs/git-ls-files.html)를 구분해, ignore
+  여부만이 아니라 실제 index 포함 여부도 Doctor가 진단한다. index 확인은 commit·
+  push 완료를 주장하지 않는다.
+- [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)의
+  base·overlay 분리처럼 범용 base는 복사해 고치지 않고 프로젝트 기준만 additive
+  extension으로 유지한다. 일반적인 콘텐츠 변경에는 별도 migration engine을 두지
+  않고 현재 base pin을 확인한 versioned update로 제한한다.
 - Host마다 동일 이름의 우선순위가 다르고 Agent Skills 표준에는 Skill 상속이 없다.
   따라서 silent project override나 Host 임의 merge 대신 Maestro가 결정론적
   합성과 충돌 실패를 소유해야 한다.
@@ -69,10 +91,15 @@ digest를 고정하고 local trigger·guide·research trigger만 더한다. 상�
   오인한다.
 - 자동 원격 PR·push·전역 설치: 프로젝트 권한을 범용 Harness 변경 권한으로
   확대한다.
+- 활성 Skill 직접 수정: candidate의 평가·승인과 원자적 rollback 경계를 우회한다.
+- deactivate 시 디렉터리 삭제: 사용 중지와 복구 불가능한 제거를 결합한다.
+- 모든 변경을 위한 migration subsystem: JSON schema가 호환되지 않게 바뀐 경우가
+  아닌데도 유지보수 표면과 테스트 비용을 키운다.
 
 ## 후속 경계
 
-프로젝트 pilot의 수정·active 전환은 별도 versioned diff와 forward evaluation으로
-진행한다. 범용 승격은 로컬 원본을 이동하거나 삭제하지 않고 프로젝트 사실을 제거한
+project pilot의 active 전환은 여전히 별도 forward evaluation과 owner 결정이
+필요하다. 범용 승격은 로컬 원본을 이동하거나 삭제하지 않고 프로젝트 사실을 제거한
 복사본을 Harness 후보로 만든 뒤, 여러 무관한 작업의 평가와 release owner 승인을
-거쳐 일반 PR로 처리한다.
+거쳐 일반 PR로 처리한다. 자동 stage·commit·push, 백그라운드 업데이트와 전역 설치는
+이 수명주기에 포함하지 않는다.

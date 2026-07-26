@@ -31,8 +31,12 @@ sensitivity: internal
    조건부 reference research와 project-local 후보 수명주기
 7. [Decision Workflow](architecture/decision-workflow.md) — 판단과 구현 분리,
    Specialist 역할 경계, DecisionBundle과 실행 승인
-8. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+8. [통합 운영 뷰어](architecture/operations-viewer.md) — 작업 흐름, 측정값,
+   Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
+9. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
    릴리스·실사용 Pilot TODO만 관리
+10. [이름 있는 목표 히스토리 계획](plans/active/named-goal-history.md) — 기존
+    JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶는 후속 구현 계획
 
 ## 거버넌스
 
