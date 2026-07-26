@@ -592,6 +592,13 @@ def parser() -> argparse.ArgumentParser:
     )
     observe_host.add_argument("--correlation-id", required=True)
     observe_host.add_argument("--requested-model")
+    observe_host.add_argument(
+        "--requested-reasoning-effort",
+        help=(
+            "Host-reported requested/configured reasoning effort. This is "
+            "not a claim about reasoning tokens actually consumed."
+        ),
+    )
     applied_model = observe_host.add_mutually_exclusive_group()
     applied_model.add_argument("--applied-model")
     applied_model.add_argument("--actual-model", help=argparse.SUPPRESS)
@@ -1094,6 +1101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 quality=args.quality,
                 correlation_id=args.correlation_id,
                 requested_model=args.requested_model,
+                requested_reasoning_effort=(
+                    args.requested_reasoning_effort
+                ),
                 applied_model=args.applied_model,
                 model_event_evidence=args.model_event_evidence,
                 reroutes=_host_model_reroutes(args),

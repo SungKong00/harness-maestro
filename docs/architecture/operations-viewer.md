@@ -43,8 +43,8 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 - 프로젝트 readiness, Doctor 결과와 현재 검토 대기 항목
 - 최근 작업의 짧은 이름, 결과, 시간, token, 수정 횟수와 검증 결과
 - route가 계획한 Assignment 순서, Executor, **권고 모델**과 Expertise
-- Host가 제공한 경우에만 메인 요청 모델, 실제 적용 모델, reroute, 단계별
-  시간·token과 근거 참조
+- Host가 제공한 경우에만 메인 요청 모델·요청 추론 강도, 실제 적용 모델,
+  reroute, 단계별 시간·token과 근거 참조
 - 진행 중이거나 24시간을 넘긴 관측
 - bundled·project Expertise Pack, Guide, source manifest와 project 후보
 - compact receipt에서 확인된 Guide별 선택 횟수, 마지막 선택 시각, 최근 Run ID와
@@ -59,8 +59,10 @@ record: 최종 RunReceipt 1건 + 반복 신호 검사
 실행은 순서를 발명하지 않고 `summary_only` 한 단계로 표시한다.
 
 Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
-`applied_model`, `model_event_evidence`, 최대 네 번의 `reroutes`와 token summary만
-가진다. `applied_model`은 Host가 턴 완료까지 model event stream을 관측한
+선택적인 `requested_reasoning_effort`와 그 근거, `applied_model`,
+`model_event_evidence`, 최대 네 번의 `reroutes`와 token summary만 가진다.
+요청 추론 강도는 실행에 설정된 강도이며 실제 사용된 reasoning token 양을 뜻하지
+않는다. `applied_model`은 Host가 턴 완료까지 model event stream을 관측한
 `model_event_evidence=complete`일 때만 허용한다. reroute가 없으면 요청 모델과 적용
 모델이 같아야 하고, reroute가 있으면 event chain의 마지막 `to_model`이 적용
 모델이어야 한다. 요청 모델만 알거나 이벤트 구간이 불완전하면 적용 모델은
@@ -72,15 +74,20 @@ Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
 `host_delta`는 동일 Host의 두 누적 token 관측 사이 차이를 뜻한다.
 
 [Codex App Server](https://developers.openai.com/codex/app-server/)는 `turn/start`의
-요청 모델, `model/rerouted`, `thread/tokenUsage/updated`와 `turn/completed`
-이벤트를 제공한다. Maestro가 App Server 실행과 전체 이벤트 구간을 직접 소유하는
-Host adapter에서는 이 값들을 `thread_id`·`turn_id`로 연결할 수 있다. 이미 열린
-Codex Desktop 채팅을 Skill로 실행하는 경로에서는 사용자가 선택한 모델과 이벤트
-완전성을 공개 API로 읽을 수 없으므로 미측정으로 유지한다. 비공개 session JSONL은
-읽지 않는다.
+요청 모델·추론 강도, `model/rerouted`, `thread/tokenUsage/updated`와
+`turn/completed` 이벤트를 제공한다. Maestro가 App Server 실행과 전체 이벤트
+구간을 직접 소유하는 Host adapter에서는 이 값들을 `thread_id`·`turn_id`로
+연결할 수 있다.
+
+Codex Desktop의 현재 tool runtime이 공개 요청 메타데이터로 `model`,
+`reasoning_effort`, `thread_id`, `turn_id`를 제공하면 `$maestro`는 이 네 값만
+allowlist해 `codex-desktop-request-meta` 관측으로 자동 연결한다. 이 경로는 요청
+설정만 증명하므로 적용 모델·reroute·token은 계속 미측정이다. 해당 메타데이터가
+없으면 Host 정보 없음으로 유지하며, 어느 경우에도 비공개 session JSONL이나 원본
+메타데이터 객체를 저장하지 않는다.
 
 Maestro의 `observe import-codex`는 Host가 소유한 완전한 JSON-RPC JSONL에서
-`thread/start` 또는 `turn/start` 요청 모델, `model/rerouted`,
+`thread/start` 또는 `turn/start` 요청 모델·추론 강도, `model/rerouted`,
 `thread/tokenUsage/updated`의 turn 사용량과 terminal `turn/completed`를 같은
 thread·turn으로 검증해 observation을 단조롭게 보강한다. 완료 이벤트가 없거나
 여러 turn이 모호하면 기록하지 않는다. Route 권고값은 이 경로의 입력이 아니다.
@@ -92,6 +99,17 @@ Guide 사용값도 품질 점수나 원인 귀속이 아니다. “선택된 Run
 않으면 `evidence_gathering`으로 표시한다. 실제 Skill body가 실행 컨텍스트에
 로드됐다는 Host 증명이 없을 때는 `host_attestation_unavailable`로 표시한다.
 서로 다른 원인을 하나의 모호한 `not_observed` 상태로 합치지 않는다.
+
+작업의 Host 관측 상태는 세 단계로 표시한다.
+
+- `host_not_connected`: 공개 Host 정보가 전혀 없음
+- `host_request_observed`: 요청 모델 또는 요청 추론 강도만 연결됨
+- `host_event_stream_complete`: 완료까지의 model event stream이 연결되어 적용
+  모델을 확정할 수 있음
+
+화면의 `risk low/medium/high`, Route의 `fast/standard/deep`, 모델의
+`reasoning effort low/medium/high/xhigh`는 서로 다른 축이다. 위험도는 검토 필요성,
+Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강도다.
 
 최근 작업 목록은 한 번에 한 Run만 여는 inline disclosure다. 선택한 Run의 상세
 단계는 전체 목록 뒤의 분리된 패널이 아니라 해당 행 바로 다음 행에 렌더링한다.
@@ -168,6 +186,7 @@ maestro observe host --repo /path/to/project \
   --source codex-app-server --quality host_reported \
   --correlation-id <thread-id:turn-id> \
   --requested-model <requested-model-id> \
+  --requested-reasoning-effort <low|medium|high|xhigh> \
   --applied-model <applied-model-id> \
   --model-event-evidence complete \
   --total-tokens <host-reported-total> --json

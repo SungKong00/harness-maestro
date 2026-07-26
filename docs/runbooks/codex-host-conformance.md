@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Codex가 Maestro의 Fast·Standard·Deep 계약을 실제로 지키는지 릴리스 전에 확인하는 최소 수동 검사.
 scope: [release, codex, routing]
-last_verified: 2026-07-24
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -66,6 +66,12 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
 
 `requested`를 `host_attested`로 올리거나, private session file·추정 token·canary
 부재를 격리 증거로 사용하지 않는다.
+
+관측 연결도 같은 원칙으로 구분한다. Codex Desktop의 공개 요청 메타데이터는
+요청 모델·요청 추론 강도와 thread·turn 상관관계까지만 증명한다. 적용 모델,
+reroute와 token은 완전한 App Server 이벤트 구간이 있을 때만 Host 실측으로
+판정한다. reasoning effort는 설정 강도이며 실제 reasoning token 소비량의
+대체 지표가 아니다.
 
 ## 보존할 결과
 

@@ -41,6 +41,8 @@ def _host_model_provenance(
 ) -> dict[str, Any]:
     result = {
         "requested": None,
+        "requested_reasoning_effort": None,
+        "reasoning_effort_evidence": "unavailable",
         "applied": None,
         "evidence": "unavailable",
         "reroutes": [],
@@ -50,6 +52,13 @@ def _host_model_provenance(
         return result
     if host_observation.get("schema_version") == "maestro_host_observation_v2":
         result["requested"] = host_observation.get("requested_model")
+        result["requested_reasoning_effort"] = host_observation.get(
+            "requested_reasoning_effort",
+        )
+        result["reasoning_effort_evidence"] = host_observation.get(
+            "reasoning_effort_evidence",
+            "unavailable",
+        )
         result["evidence"] = host_observation.get(
             "model_event_evidence",
             "unavailable",
@@ -158,6 +167,9 @@ def _run_card(
     route_recommended = _unique_strings(
         [stage.get("route_recommended_model") for stage in flow]
     )
+    route_recommended_effort = _unique_strings(
+        [stage.get("reasoning_effort") for stage in flow]
+    )
     applied = _unique_strings(
         [
             host_models["applied"],
@@ -181,8 +193,17 @@ def _run_card(
         "correction_summary": list(event.get("correction_summary", [])),
         "models": {
             "requested": _unique_strings([host_models["requested"]]),
+            "requested_reasoning_effort": _unique_strings(
+                [host_models["requested_reasoning_effort"]]
+            ),
             "applied": applied,
             "route_recommended": route_recommended,
+            "route_recommended_reasoning_effort": (
+                route_recommended_effort
+            ),
+            "reasoning_effort_evidence": host_models[
+                "reasoning_effort_evidence"
+            ],
             "model_event_evidence": host_models["evidence"],
             "reroutes": host_models["reroutes"],
             "legacy_reported": _unique_strings(
@@ -192,9 +213,13 @@ def _run_card(
             "actual": applied,
             "estimated": False,
             "measurement_state": (
-                "host_observed"
-                if host_observation is not None
-                else "host_not_connected"
+                "host_not_connected"
+                if host_observation is None
+                else (
+                    "host_event_stream_complete"
+                    if host_models["evidence"] == "complete"
+                    else "host_request_observed"
+                )
             ),
         },
         "host_observation": host_observation,
@@ -242,9 +267,16 @@ def _measurement_coverage(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "requested_model": measured(
             lambda run: bool(run.get("models", {}).get("requested"))
         ),
+        "requested_reasoning_effort": measured(
+            lambda run: bool(
+                run.get("models", {}).get(
+                    "requested_reasoning_effort",
+                )
+            )
+        ),
         "interpretation": (
-            "측정되지 않은 값은 추정하지 않는다. Host가 공개 이벤트를 연결한 "
-            "실행만 요청·적용 모델과 토큰을 실측으로 표시한다."
+            "측정되지 않은 값은 추정하지 않는다. 공개 Host 요청 메타데이터는 "
+            "요청값만, 완료 이벤트 구간은 적용 모델과 토큰까지 표시한다."
         ),
     }
 

@@ -487,9 +487,24 @@ td {
   padding: 2px 0;
 }
 
+.model-line.has-effort {
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+}
+
 .model-line small {
   color: var(--muted);
   font-size: 10px;
+}
+
+.model-effort {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: #f7f6f1;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .model-line strong {

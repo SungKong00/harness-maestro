@@ -26,7 +26,10 @@ const outcomeLabels = {
   no_evidence: "아직 근거 없음",
   insufficient_evidence: "근거 부족",
   complete: "관측 완료",
-  unavailable: "Host 미연결",
+  unavailable: "실행 이벤트 없음",
+  host_not_connected: "Host 정보 없음",
+  host_request_observed: "요청 정보 연결됨",
+  host_event_stream_complete: "실행 관측 완료",
   active: "진행 중",
   in_progress: "진행 중",
   record_pending: "최종 기록 대기",
@@ -105,10 +108,17 @@ function formatModels(values, fallback = "미측정") {
     : fallback;
 }
 
+function formatReasoningEfforts(values) {
+  return Array.isArray(values) && values.length
+    ? `추론 ${values.join(", ")}`
+    : "";
+}
+
 function appendModelLine(
   target,
   label,
   values,
+  reasoningEfforts = [],
   className = "",
   fallback = "미측정",
 ) {
@@ -117,6 +127,14 @@ function appendModelLine(
   });
   line.append(element("small", { text: label }));
   line.append(element("strong", { text: formatModels(values, fallback) }));
+  const effort = formatReasoningEfforts(reasoningEfforts);
+  if (effort) {
+    line.classList.add("has-effort");
+    line.append(element("span", {
+      className: "model-effort",
+      text: effort,
+    }));
+  }
   target.append(line);
 }
 
@@ -166,6 +184,7 @@ function renderMetrics(snapshot) {
     tokens: "토큰",
     plan: "계획",
     requested_model: "요청 모델",
+    requested_reasoning_effort: "요청 추론 강도",
     actual_model: "실제 적용 모델",
   };
   Object.entries(snapshot.measurement_coverage).forEach(([key, value]) => {
@@ -262,6 +281,15 @@ function renderInflight(snapshot) {
     body.append(element("strong", { text: item.task_label }));
     body.append(element("p", {
       text: `${item.run_id} · ${formatDuration(item.elapsed_ms)}`,
+    }));
+    body.append(element("p", {
+      text: [
+        displayStatus(item.host_state),
+        item.requested_model || null,
+        item.requested_reasoning_effort
+          ? `추론 ${item.requested_reasoning_effort}`
+          : null,
+      ].filter(Boolean).join(" · "),
     }));
     row.append(body);
     row.append(element("span", {
@@ -567,27 +595,36 @@ function renderRuns(snapshot) {
     row.append(element("td", { text: formatDuration(run.duration_ms) }));
     row.append(element("td", { text: formatTokens(run.tokens) }));
     const models = element("td", { className: "model-summary" });
-    const hostFallback = run.models.measurement_state === "host_not_connected"
-      ? "Host 미연결"
-      : "미측정";
+    const hostMissing = (
+      run.models.measurement_state === "host_not_connected"
+    );
+    const requestedFallback = hostMissing
+      ? "Host 정보 없음"
+      : "요청 모델 미제공";
+    const appliedFallback = hostMissing
+      ? "Host 정보 없음"
+      : "실행 이벤트 미연결";
     appendModelLine(
       models,
       "메인 요청",
       run.models.requested,
+      run.models.requested_reasoning_effort,
       "",
-      hostFallback,
+      requestedFallback,
     );
     appendModelLine(
       models,
       "실제 적용",
       run.models.applied,
+      [],
       "",
-      hostFallback,
+      appliedFallback,
     );
     appendModelLine(
       models,
       "Route 권고",
       run.models.route_recommended,
+      run.models.route_recommended_reasoning_effort,
       "model-line-recommended",
       "미기록",
     );
@@ -702,20 +739,39 @@ function buildRunDetail(run) {
   }
   addMeta(meta, `수정 ${run.correction_count}회`);
   addMeta(meta, `검증 ${displayStatus(run.verifier_result)}`);
-  const hostFallback = run.models.measurement_state === "host_not_connected"
-    ? "Host 미연결"
-    : "미측정";
+  addMeta(meta, `위험도 ${run.risk} · Route ${run.route_depth}`);
   addMeta(
     meta,
-    `메인 요청 모델 ${formatModels(run.models.requested, hostFallback)}`,
+    `Host 상태 ${displayStatus(run.models.measurement_state)}`,
+  );
+  const hostMissing = (
+    run.models.measurement_state === "host_not_connected"
+  );
+  const requestedFallback = hostMissing
+    ? "Host 정보 없음"
+    : "요청 모델 미제공";
+  const appliedFallback = hostMissing
+    ? "Host 정보 없음"
+    : "실행 이벤트 미연결";
+  addMeta(
+    meta,
+    `메인 요청 모델 ${formatModels(run.models.requested, requestedFallback)}`,
   );
   addMeta(
     meta,
-    `실제 적용 모델 ${formatModels(run.models.applied, hostFallback)}`,
+    `요청 추론 강도 ${formatModels(run.models.requested_reasoning_effort)}`,
+  );
+  addMeta(
+    meta,
+    `실제 적용 모델 ${formatModels(run.models.applied, appliedFallback)}`,
   );
   addMeta(
     meta,
     `Route 권고 모델 ${formatModels(run.models.route_recommended, "미기록")}`,
+  );
+  addMeta(
+    meta,
+    `Route 권고 추론 강도 ${formatModels(run.models.route_recommended_reasoning_effort, "미기록")}`,
   );
   if (run.models.reroutes.length) {
     addMeta(meta, `Host reroute ${run.models.reroutes.length}회`);
@@ -735,7 +791,7 @@ function buildRunDetail(run) {
   } else {
     addMeta(
       meta,
-      "Host 미연결 · 모델·토큰을 거짓으로 추정하지 않음",
+      "Host 정보 없음 · 모델·토큰을 거짓으로 추정하지 않음",
     );
   }
   target.append(meta);
@@ -771,9 +827,11 @@ function buildRunDetail(run) {
     const model = element("div");
     model.append(element("small", { text: "실제 적용 모델 · 실측" }));
     model.append(element("span", {
-      text: stage.applied_model || hostFallback,
+      text: stage.applied_model || appliedFallback,
     }));
-    model.append(element("small", { text: "Route 권고 모델 · 계획" }));
+    model.append(element("small", {
+      text: `Route 권고 모델 · 계획${stage.reasoning_effort ? ` · 추론 ${stage.reasoning_effort}` : ""}`,
+    }));
     model.append(element("span", {
       text: stage.route_recommended_model || "미기록",
     }));

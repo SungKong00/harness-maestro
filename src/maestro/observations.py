@@ -116,6 +116,18 @@ def _valid_model(value: Any) -> bool:
     )
 
 
+def _valid_reasoning_effort(value: Any) -> bool:
+    return (
+        value is None
+        or (
+            isinstance(value, str)
+            and bool(value.strip())
+            and len(value) <= 40
+            and not any(character in value for character in "\r\n\x00")
+        )
+    )
+
+
 def _valid_legacy_host_observation(value: dict[str, Any]) -> bool:
     if set(value) != {
         "schema_version",
@@ -194,7 +206,7 @@ def _valid_host_observation(value: Any) -> bool:
         return False
     if value.get("schema_version") == LEGACY_HOST_OBSERVATION_VERSION:
         return _valid_legacy_host_observation(value)
-    if set(value) != {
+    required_fields = {
         "schema_version",
         "source",
         "quality",
@@ -205,10 +217,25 @@ def _valid_host_observation(value: Any) -> bool:
         "reroutes",
         "tokens",
         "observed_at",
-    }:
+    }
+    optional_fields = {
+        "requested_reasoning_effort",
+        "reasoning_effort_evidence",
+    }
+    if (
+        not required_fields.issubset(value)
+        or set(value) - required_fields - optional_fields
+    ):
         return False
     requested_model = value.get("requested_model")
     applied_model = value.get("applied_model")
+    requested_reasoning_effort = value.get(
+        "requested_reasoning_effort",
+    )
+    reasoning_effort_evidence = value.get(
+        "reasoning_effort_evidence",
+        "unavailable",
+    )
     model_event_evidence = value.get("model_event_evidence")
     reroutes = value.get("reroutes")
     tokens = value.get("tokens")
@@ -217,10 +244,27 @@ def _valid_host_observation(value: Any) -> bool:
         and _valid_host_observation_identity(value)
         and _valid_model(requested_model)
         and _valid_model(applied_model)
+        and _valid_reasoning_effort(requested_reasoning_effort)
+        and reasoning_effort_evidence in {
+            "unavailable",
+            "host_request",
+        }
         and model_event_evidence in {"unavailable", "complete"}
         and _valid_token_summary(tokens)
-        and (requested_model is not None or applied_model is not None or tokens is not None)
+        and (
+            requested_model is not None
+            or applied_model is not None
+            or tokens is not None
+        )
         and _parse_timestamp(value.get("observed_at")) is not None
+    ):
+        return False
+    if (
+        requested_reasoning_effort is None
+        and reasoning_effort_evidence != "unavailable"
+    ) or (
+        requested_reasoning_effort is not None
+        and reasoning_effort_evidence != "host_request"
     ):
         return False
     if model_event_evidence == "unavailable":
@@ -492,6 +536,7 @@ def record_host_observation(
     quality: str,
     correlation_id: str,
     requested_model: str | None = None,
+    requested_reasoning_effort: str | None = None,
     applied_model: str | None = None,
     model_event_evidence: str = "unavailable",
     reroutes: list[dict[str, str]] | None = None,
@@ -551,6 +596,20 @@ def record_host_observation(
             if requested_model is not None
             else None
         ),
+        "requested_reasoning_effort": (
+            _bounded_line(
+                requested_reasoning_effort,
+                field="requested-reasoning-effort",
+                maximum=40,
+            )
+            if requested_reasoning_effort is not None
+            else None
+        ),
+        "reasoning_effort_evidence": (
+            "host_request"
+            if requested_reasoning_effort is not None
+            else "unavailable"
+        ),
         "applied_model": (
             _bounded_line(
                 applied_model,
@@ -595,6 +654,19 @@ def record_host_observation(
                 same_identity
                 and existing.get("requested_model")
                 in {None, host_observation["requested_model"]}
+                and existing.get("requested_reasoning_effort")
+                in {
+                    None,
+                    host_observation["requested_reasoning_effort"],
+                }
+                and existing.get(
+                    "reasoning_effort_evidence",
+                    "unavailable",
+                )
+                in {
+                    "unavailable",
+                    host_observation["reasoning_effort_evidence"],
+                }
                 and existing.get("applied_model")
                 in {None, host_observation["applied_model"]}
                 and existing.get("model_event_evidence")
@@ -758,6 +830,7 @@ def import_codex_app_server_trace(
             notifications.append(message)
 
     thread_models: dict[str, str] = {}
+    thread_reasoning_efforts: dict[str, str] = {}
     turn_requests: list[dict[str, Any]] = []
     for identifier, request in requests.items():
         response = responses.get(identifier)
@@ -785,6 +858,16 @@ def import_codex_app_server_trace(
                 and model.strip()
             ):
                 thread_models[thread["id"]] = model.strip()
+            reasoning_effort = result.get("reasoningEffort")
+            if (
+                isinstance(thread, dict)
+                and isinstance(thread.get("id"), str)
+                and isinstance(reasoning_effort, str)
+                and reasoning_effort.strip()
+            ):
+                thread_reasoning_efforts[thread["id"]] = (
+                    reasoning_effort.strip()
+                )
         elif request.get("method") == "turn/start":
             turn = result.get("turn")
             thread = params.get("threadId")
@@ -802,6 +885,12 @@ def import_codex_app_server_trace(
                             if isinstance(params.get("model"), str)
                             and params["model"].strip()
                             else thread_models.get(thread)
+                        ),
+                        "requested_reasoning_effort": (
+                            params["effort"].strip()
+                            if isinstance(params.get("effort"), str)
+                            and params["effort"].strip()
+                            else thread_reasoning_efforts.get(thread)
                         ),
                     }
                 )
@@ -875,6 +964,9 @@ def import_codex_app_server_trace(
         quality="host_reported",
         correlation_id=f"{selected_thread}:{selected_turn}",
         requested_model=requested_model,
+        requested_reasoning_effort=selected[
+            "requested_reasoning_effort"
+        ],
         applied_model=applied_model if evidence == "complete" else None,
         model_event_evidence=evidence,
         reroutes=reroutes if evidence == "complete" else [],
@@ -968,6 +1060,21 @@ def inflight_observations(
             continue
         elapsed = max(0.0, (now - started_at).total_seconds() * 1000)
         completed_at = _parse_timestamp(value.get("completed_at"))
+        host_observation = value.get("host_observation")
+        host_state = "host_not_connected"
+        requested_model = None
+        requested_reasoning_effort = None
+        if isinstance(host_observation, dict):
+            host_state = (
+                "host_event_stream_complete"
+                if host_observation.get("model_event_evidence")
+                == "complete"
+                else "host_request_observed"
+            )
+            requested_model = host_observation.get("requested_model")
+            requested_reasoning_effort = host_observation.get(
+                "requested_reasoning_effort",
+            )
         results.append(
             {
                 "observation_id": value.get("observation_id"),
@@ -985,6 +1092,11 @@ def inflight_observations(
                     )
                 ),
                 "plan_summary": value.get("plan_summary"),
+                "host_state": host_state,
+                "requested_model": requested_model,
+                "requested_reasoning_effort": (
+                    requested_reasoning_effort
+                ),
             }
         )
     return sorted(

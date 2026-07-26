@@ -199,6 +199,14 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       Host source, quality, and correlation ID. Do this automatically as part
       of the run; never ask the user to type the command. Do not scrape private
       Codex session files.
+    - In Codex Desktop, when the current public tool runtime exposes
+      `nodeRepl.requestMeta["x-codex-turn-metadata"]`, allowlist only `model`,
+      `reasoning_effort`, `thread_id`, and `turn_id`. Attach them immediately
+      after `observe start` with source `codex-desktop-request-meta`, quality
+      `host_reported`, correlation `<thread_id>:<turn_id>`, and
+      `model_event_evidence=unavailable`. Pass `reasoning_effort` as
+      `--requested-reasoning-effort`; it is a requested setting, not actual
+      reasoning-token consumption. Never persist the raw metadata object.
     - Record actual duration and token values only when available; use `null` otherwise.
     - `stage_results` is optional and bounded to the plan's five Assignments.
       Record its applied model, duration, tokens, status, and up to three
@@ -226,9 +234,11 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
     - When the Host owns a complete Codex App Server event stream, import it
       with `maestro observe import-codex` before `record` so requested model,
       reroutes, applied model, token usage, and turn duration stay correlated.
-      This is a Host action, not a command the user should type. Existing
-      Desktop chat runs without that public stream remain explicitly
-      `host_not_connected`; never scrape private session files or infer values.
+      This is a Host action, not a command the user should type. Desktop request
+      metadata may produce `host_request_observed`, but without the complete
+      public stream the applied model and tokens remain unmeasured. With no
+      supported metadata, keep `host_not_connected`; never scrape private
+      session files or infer values.
     - A request to approve a detected verification command uses
       `maestro verification approve` or the dashboard's exact candidate
       `preview → apply` flow. Treat approval as a project-authority change:

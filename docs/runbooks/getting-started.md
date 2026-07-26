@@ -232,11 +232,12 @@ projection을 함께 전달한다. Downstream 단계가 축약 projection을 새
 
 `$maestro`는 승인된 구현을 시작할 때 작업명·시각·compact 계획만 관측하고, 최종
 검증 뒤 같은 ID를 RunReceipt에 연결한다. 사용자가 보통 이 명령을 직접 입력할
-필요는 없다. Host가 공개 API/event로 요청 모델, 완전한 reroute 구간, 실제 적용
-모델과 token을 제공하면 Maestro가 출처·quality·correlation ID와 함께 자동
-연결한다. Route 권고 모델은 실측값을 대신하지 않는다. 비공개 Codex session
-파일은 읽지 않고, 지원되는 값이 없으면 `null`을 유지한다. 다른 Host나 자동화가
-같은 계약을 구현할 때만 다음 저수준 명령을 호출한다.
+필요는 없다. Codex Desktop이 현재 요청의 공개 메타데이터로 모델·추론 강도와
+thread·turn ID를 제공하면 Maestro가 요청 정보만 자동 연결한다. Host가 완전한
+공개 API/event 구간까지 제공하면 reroute, 실제 적용 모델과 token도 출처·quality·
+correlation ID와 함께 연결한다. Route 권고 모델은 실측값을 대신하지 않는다.
+비공개 Codex session 파일은 읽지 않고, 지원되는 값이 없으면 `null`을 유지한다.
+다른 Host나 자동화가 같은 계약을 구현할 때만 다음 저수준 명령을 호출한다.
 
 ```bash
 maestro observe start --repo /path/to/project \
@@ -249,6 +250,7 @@ maestro observe host --repo /path/to/project \
   --source <public-host-source> --quality host_reported \
   --correlation-id <host-run-id> \
   --requested-model <requested-model> \
+  --requested-reasoning-effort <requested-effort> \
   --applied-model <applied-model> \
   --model-event-evidence complete \
   --total-tokens <actual-total> --json
@@ -534,8 +536,9 @@ scope 확대는 `--allow-scope-expansion`, owner 결정은
   미리보기만 한다. activate/update는 검토된 tracked project pilot만 게시하고,
   deactivate는 allowlist만 제거한다.
 - `observe start`는 prompt 없이 작업명·시각·compact 계획 marker 한 건만 쓴다.
-- `observe host`는 지원되는 Host 실측값이 있을 때 같은 marker에 bounded telemetry만
-  추가한다. 실제 적용 모델은 `model_event_evidence=complete`일 때만 허용한다.
+- `observe host`는 지원되는 Host 요청 정보나 실측값이 있을 때 같은 marker에
+  bounded telemetry만 추가한다. 요청 추론 강도는 설정값으로 기록하며, 실제 적용
+  모델은 `model_event_evidence=complete`일 때만 허용한다.
 - `record`는 검증된 project-scoped JSONL receipt 한 건만 append하고 완료된
   observation을 고정한다.
 - `verification approve`와 dashboard는 미리보기만으로 쓰지 않는다. 명시적으로

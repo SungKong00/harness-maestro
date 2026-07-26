@@ -188,6 +188,7 @@ class OperationsViewerTests(unittest.TestCase):
                 quality="host_reported",
                 correlation_id="thread-1:turn-2",
                 requested_model="gpt-host-observed",
+                requested_reasoning_effort="medium",
                 applied_model="gpt-host-observed",
                 model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
@@ -200,6 +201,7 @@ class OperationsViewerTests(unittest.TestCase):
                 quality="host_reported",
                 correlation_id="thread-1:turn-2",
                 requested_model="gpt-host-observed",
+                requested_reasoning_effort="medium",
                 applied_model="gpt-host-observed",
                 model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
@@ -229,6 +231,16 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual(
                 ["gpt-host-observed"],
                 snapshot["runs"][0]["models"]["applied"],
+            )
+            self.assertEqual(
+                ["medium"],
+                snapshot["runs"][0]["models"][
+                    "requested_reasoning_effort"
+                ],
+            )
+            self.assertEqual(
+                "host_event_stream_complete",
+                snapshot["runs"][0]["models"]["measurement_state"],
             )
             self.assertEqual(
                 "host_reported",
@@ -280,6 +292,16 @@ class OperationsViewerTests(unittest.TestCase):
                 quality="host_reported",
                 correlation_id="thread-1:turn-3",
                 requested_model="gpt-5.6-sol",
+                requested_reasoning_effort="xhigh",
+            )
+            inflight = snapshot_report(repo)["inflight"][0]
+            self.assertEqual(
+                "host_request_observed",
+                inflight["host_state"],
+            )
+            self.assertEqual(
+                "xhigh",
+                inflight["requested_reasoning_effort"],
             )
             receipt = _receipt_from_plan(plan)
             receipt["run_id"] = "requested-only-run"
@@ -295,6 +317,14 @@ class OperationsViewerTests(unittest.TestCase):
             run = snapshot_report(repo)["runs"][0]
             self.assertEqual(["gpt-5.6-sol"], run["models"]["requested"])
             self.assertEqual([], run["models"]["applied"])
+            self.assertEqual(
+                ["xhigh"],
+                run["models"]["requested_reasoning_effort"],
+            )
+            self.assertEqual(
+                "host_request_observed",
+                run["models"]["measurement_state"],
+            )
             self.assertEqual(
                 [
                     assignment["model_route"]["selected_model"]
@@ -426,7 +456,10 @@ class OperationsViewerTests(unittest.TestCase):
                 {
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "result": {"thread": {"id": "thread-1"}},
+                    "result": {
+                        "thread": {"id": "thread-1"},
+                        "reasoningEffort": "high",
+                    },
                 },
                 {
                     "jsonrpc": "2.0",
@@ -522,6 +555,10 @@ class OperationsViewerTests(unittest.TestCase):
                 "gpt-5.6-terra",
                 imported["telemetry"]["applied_model"],
             )
+            self.assertEqual(
+                "high",
+                imported["telemetry"]["requested_reasoning_effort"],
+            )
             self.assertEqual(90, imported["telemetry"]["tokens"]["total"])
             self.assertEqual(2500, imported["turn_duration_ms"])
             receipt_path = root / "app-server-receipt.json"
@@ -565,8 +602,12 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual(["gpt-5.6-sol"], run["models"]["requested"])
             self.assertEqual(["gpt-5.6-terra"], run["models"]["applied"])
             self.assertEqual(
-                "host_observed",
+                "host_event_stream_complete",
                 run["models"]["measurement_state"],
+            )
+            self.assertEqual(
+                ["high"],
+                run["models"]["requested_reasoning_effort"],
             )
 
     def test_run_details_use_one_inline_accessible_disclosure(self) -> None:

@@ -81,7 +81,7 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
 | `maestro enact --repo <path> --plan <plan> --bundle <bundle> --packet <packet>... --authorization-source <source> --json` | 결정·근거·checkout을 재검사하고 digest-bound ExecutionPlan 생성 | 없음 |
 | `maestro observe start --repo <path> --run-id <id> --task-label "<label>" [--plan <route-v2>] --json` | prompt 없이 작업명·시작 시각·compact 계획 관측 시작 | `.maestro/state/inflight/` 한 건 |
-| `maestro observe host ... --json` | 공개 Host가 제공한 요청 모델·완전한 model event 근거·적용 모델·token과 상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
+| `maestro observe host ... --json` | 공개 Host가 제공한 요청 모델·요청 추론 강도·완전한 model event 근거·적용 모델·token과 상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
 | `maestro record --repo <path> --receipt <file> [--observation <id>] --json` | 작업 종료 시 compact RunReceipt 한 건 기록하고 반복 개선 신호 확인 | `.maestro/state/events/`에 append |
 | `maestro snapshot --repo <path> --json` | 상태·작업·Expertise·거버넌스를 하나의 read-only JSON으로 합성 | 없음 |
 | `maestro verification approve ...` | 탐지된 정확한 검증 명령 승인 plan 미리보기·적용 | apply 때만 project state |

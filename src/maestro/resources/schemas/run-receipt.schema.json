@@ -546,6 +546,21 @@
           "maxLength": 128,
           "pattern": "^[^\\r\\n\\u0000]+$"
         },
+        "requested_reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "reasoning_effort_evidence": {
+          "enum": [
+            "unavailable",
+            "host_request"
+          ]
+        },
         "applied_model": {
           "type": [
             "string",
