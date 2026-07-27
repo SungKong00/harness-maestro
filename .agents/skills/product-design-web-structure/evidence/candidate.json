@@ -1,0 +1,72 @@
+{
+  "schema_version": "maestro_expertise_candidate_v1",
+  "candidate_id": "product-design-web-structure",
+  "expertise_pack_id": "product-design-web-structure",
+  "status": "candidate",
+  "portability": "global",
+  "owner": "harness-maestro",
+  "review_after": "2026-10-28",
+  "problem": "Web screens are often composed from visible content or a preferred style before the end-to-end journey, role and situation differences, reachable states, evidence needs, and action priorities are established. The current product-design Guides can rank and render an already-framed screen but do not require this information-architecture and user-flow model or a bounded handoff to interactive-web-motion.",
+  "reusable_when": [
+    "Structuring a web page or multi-page flow around user tasks, decisions, and evidence",
+    "Choosing element placement and emphasis for different roles, situations, permissions, and reachable states",
+    "Designing dashboards, onboarding, forms, decision-support pages, and service journeys with clear entry, exit, recovery, and continuation",
+    "Deciding whether a need is satisfied by static structure or requires a separate interaction or scroll-motion decision"
+  ],
+  "not_for": [
+    "Pure typography, color, or visual-style changes with no information-architecture or task-flow decision",
+    "Detailed motion choreography, scroll-trigger mechanics, animation accessibility, or runtime performance owned by interactive-web-motion",
+    "Marketing positioning, claims, and copy strategy owned by marketing",
+    "Backend orchestration, authorization enforcement, or business-policy decisions"
+  ],
+  "existing_coverage": "product-design owns design briefs, typography, visual hierarchy, generic interaction states, responsive accessibility, and reference selection. interactive-web-motion separately owns motion intent, choreography, scroll-triggered and scroll-linked behavior, motion accessibility, and runtime verification. This candidate adds one information-architecture and user-flow Guide to product-design and preserves the motion Pack boundary.",
+  "evidence_refs": [
+    "classification:.maestro/state/web-design-surface-signal.json",
+    "research-bundle:.maestro/state/work/web-design-expertise/research-bundle.json#artifact-digest=7d8f550f1505ea6381f07e68d89c64c028b2c1078271e9c2c5801f646126c230",
+    "baseline:.maestro/state/work/web-design-expertise/baseline.json#sha256=0622c536e0da9b7db75b01c92478f156da423909210606fde5d7bb24cd128cbe",
+    "frozen-cases:.maestro/state/work/web-design-expertise/frozen-cases.json#sha256=7b6b17304ed90452cf90304e7ef56bd8c0769faea4b03e330fcaba7a628180c6",
+    "route-replay:.maestro/state/work/web-design-expertise/route-replay.json#sha256=08d36a336a9f2af4e76f449d4934382403506bd3100663116598ad56c441229d"
+  ],
+  "proposed_guides": [
+    {
+      "guide_id": "information-architecture-and-user-flow",
+      "failure_prevented": "Pages mirror an organization, component library, or default persona instead of the user's end-to-end task, causing misplaced emphasis, duplicate or hidden actions, role-state dead ends, inconsistent continuity, and unjustified interaction.",
+      "decision_checks": [
+        "Define the user's problem, desired outcome, entry context, constraints, and end-to-end journey before fixing page boundaries",
+        "Map roles and situations by task, frequency, experience, permissions, evidence needs, and reachable states rather than demographics alone",
+        "Give every page, section, and prominent element a traceable user question, decision, proof need, or next action",
+        "Choose primary, secondary, destructive, recovery, and deferred actions per role and state instead of making all actions equally prominent",
+        "Preserve meaning across visual order, programmatic reading order, focus order, responsive reflow, navigation labels, and repeated controls",
+        "Expose entry, continuation, completion, cancellation, correction, empty, loading, failure, retry, undo, and permission-denied paths that the product can reach",
+        "Use interaction only for feedback, state change, continuity, orientation, disclosure, or decision support; hand detailed motion and scroll behavior to interactive-web-motion",
+        "Verify the structure with representative content and task evidence across role, state, input, and viewport variations"
+      ],
+      "freshness": "stable"
+    }
+  ],
+  "evaluation": {
+    "baseline": "existing-pack",
+    "cases_path": "evals/cases.json",
+    "quality_path": "evals/quality.json",
+    "pass_criteria": [
+      "Information-architecture and role-state flow requests select the local Guide together with no more than three inherited product-design Guides",
+      "Every prominent element and action can be traced to a user need, journey step, role or situation, reachable state, or evidence requirement",
+      "The Guide requires meaningful visual, reading, focus, responsive, and cross-page continuity",
+      "Explicit motion and scroll-specific requests remain owned by interactive-web-motion"
+    ],
+    "regression_criteria": [
+      "Backend, marketing-only, and motion-specific requests are not hijacked",
+      "The Guide does not prescribe universal coordinates, one-thing-per-page, progressive disclosure, or a single persona as default truth",
+      "The Pack never grants repository or external write authority",
+      "Unrendered structure and unsupported user assumptions are never reported as verified"
+    ]
+  },
+  "generation": {
+    "mode": "user-requested",
+    "signal_fingerprint": null
+  },
+  "component_change": {
+    "kind": "guide-addition",
+    "target_guide_id": "information-architecture-and-user-flow"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "overlap-scroll-storytelling",
+  "baseline_observation": "The existing interactive-web-motion Pack owns explicit scroll-driven animation, pin, scrub, parallax, reduced motion, and runtime performance decisions.",
+  "candidate_observation": "The candidate retains that boundary: it may state a justified interaction job, but the motion-specific request selects interactive-web-motion rather than the web-structure extension.",
+  "evidence_refs": [
+    "repo:src/maestro/resources/registry/expertise-packs/interactive-web-motion.json",
+    "evaluation:overlap-scroll-storytelling"
+  ]
+}

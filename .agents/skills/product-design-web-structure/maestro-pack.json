@@ -1,0 +1,121 @@
+{
+  "schema_version": "maestro_expertise_pack_v1",
+  "kind": "expertise-pack",
+  "expertise_pack_id": "product-design-web-structure",
+  "summary": "A product-design extension for information architecture, end-to-end user flow, role- and situation-aware content and action priority, state continuity, and bounded handoff to interactive web motion.",
+  "status": "pilot",
+  "portability": "project",
+  "version": 1,
+  "triggers": [
+    "information architecture",
+    "web information architecture",
+    "user flow",
+    "task flow",
+    "page flow",
+    "page structure",
+    "content structure",
+    "content priority",
+    "action hierarchy",
+    "role based interface",
+    "role aware design",
+    "state aware design",
+    "journey mapping",
+    "decision support page",
+    "정보 구조",
+    "웹 정보 구조",
+    "사용자 흐름",
+    "사용자 플로우",
+    "태스크 흐름",
+    "페이지 흐름",
+    "페이지 구조",
+    "콘텐츠 구조",
+    "콘텐츠 우선순위",
+    "액션 위계",
+    "역할별 화면",
+    "상황별 화면",
+    "상태별 화면",
+    "사용자 여정",
+    "요소 배치"
+  ],
+  "dominance_triggers": [
+    "information architecture",
+    "web information architecture",
+    "user flow",
+    "task flow",
+    "role based interface",
+    "role aware design",
+    "journey mapping",
+    "정보 구조",
+    "웹 정보 구조",
+    "사용자 흐름",
+    "태스크 흐름",
+    "역할별 화면",
+    "상황별 화면",
+    "사용자 여정",
+    "요소 배치"
+  ],
+  "skill_id": "product-design-web-structure",
+  "default_guides": [
+    "information-architecture-and-user-flow"
+  ],
+  "guides": [
+    {
+      "guide_id": "information-architecture-and-user-flow",
+      "summary": "Structure pages and flows from user outcomes, journey boundaries, role and situation differences, reachable states, evidence needs, action priority, meaningful order, and explicit motion handoff.",
+      "triggers": [
+        "information architecture",
+        "user flow",
+        "task flow",
+        "page flow",
+        "page structure",
+        "content priority",
+        "action hierarchy",
+        "role based interface",
+        "state aware design",
+        "journey mapping",
+        "decision support",
+        "정보 구조",
+        "사용자 흐름",
+        "태스크 흐름",
+        "페이지 흐름",
+        "페이지 구조",
+        "콘텐츠 우선순위",
+        "액션 위계",
+        "역할별 화면",
+        "상황별 화면",
+        "상태별 화면",
+        "사용자 여정",
+        "요소 배치"
+      ],
+      "freshness": "stable"
+    }
+  ],
+  "research_policy": {
+    "default_mode": "reuse",
+    "contextualize_triggers": [
+      "latest information architecture examples",
+      "current competitor user flow",
+      "current dashboard patterns",
+      "latest role based interface references",
+      "최신 정보 구조 사례",
+      "현재 경쟁사 사용자 흐름",
+      "최신 대시보드 패턴",
+      "최신 역할별 화면 레퍼런스"
+    ],
+    "refresh_triggers": [
+      "refresh web structure expertise",
+      "update information architecture sources",
+      "refresh product design web structure",
+      "웹 구조 전문성 갱신",
+      "정보 구조 출처 갱신",
+      "제품 디자인 웹 구조 갱신"
+    ]
+  },
+  "source_manifest": "evidence/sources.json",
+  "evaluation_suite": "evals/cases.json",
+  "extends": {
+    "expertise_pack_id": "product-design",
+    "version": 1,
+    "digest": "da14403358132f279d43e266b161c4028695baaf720f05c6c3911d17183feadb"
+  }
+}

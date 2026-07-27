@@ -270,6 +270,7 @@ class ExpertiseRoutingTests(unittest.TestCase):
             "Find current references for a modern landing page design",
             "medium",
             intent="implementation",
+            repo_path=ROOT,
         )
         with tempfile.TemporaryDirectory() as temporary:
             plan_path = Path(temporary) / "plan.json"

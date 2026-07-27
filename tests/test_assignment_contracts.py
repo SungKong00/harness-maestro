@@ -225,9 +225,10 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
         self.assertEqual("advisory-only", load["application_mode"])
         self.assertEqual("unavailable", load["host_attestation"]["status"])
         self.assertEqual([], load["host_attestation"]["loaded_skill_digests"])
-        self.assertEqual(["product-design"], [
-            item["expertise_pack_id"] for item in load["packs"]
-        ])
+        self.assertEqual(
+            review_plan["expertise"]["selected_pack_ids"],
+            [item["expertise_pack_id"] for item in load["packs"]],
+        )
         self.assertRegex(
             load["packs"][0]["skill_definition_digest"],
             r"^[a-f0-9]{64}$",

@@ -1,0 +1,94 @@
+{
+  "schema_version": "maestro_expertise_eval_v2",
+  "expertise_pack_id": "product-design-web-structure",
+  "evaluated_on": "2026-07-28",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "951d75d64f39b8be9793f39d3edbcee11d4a890a16ebd8c75f5dd46201b4bee7"
+  },
+  "cases": [
+    {
+      "case_id": "normal-role-aware-onboarding",
+      "stratum": "normal",
+      "goal": "신규 고객과 반복 운영자가 함께 쓰는 SaaS 온보딩 대시보드의 정보 구조와 페이지 흐름을 설계해줘. 첫 방문, 재방문, 권한 부족, 오류 상태에서 무엇을 어디에 두고 어떤 행동을 강조할지도 정해줘",
+      "expected_pack_id": "product-design-web-structure",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "observable_criteria": [
+        "Selects the information-architecture Guide together with the inherited brief, hierarchy, and interaction criteria",
+        "Requires role, situation, state, entry, exit, evidence, and action priorities before fixing element placement"
+      ],
+      "forbidden_behaviors": [
+        "Treats the organization chart or one default persona as the page information architecture",
+        "Assigns exact prominence or position without a traceable user need, journey step, or state"
+      ]
+    },
+    {
+      "case_id": "normal-decision-support-page",
+      "stratum": "normal",
+      "goal": "B2B 가격 비교 페이지에서 실무자, 구매 담당자, 관리자에게 필요한 증거와 CTA를 어떤 순서와 위치로 보여줄지, 비교에서 문의 또는 구매로 이어지는 흐름까지 설계해줘",
+      "expected_pack_id": "product-design-web-structure",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "observable_criteria": [
+        "Separates shared content from role- or situation-dependent evidence and actions",
+        "Defines page scope, decision sequence, continuity, and correction paths before visual emphasis"
+      ],
+      "forbidden_behaviors": [
+        "Makes every role-specific action equally prominent",
+        "Uses a fashionable layout pattern as sufficient evidence for the decision flow"
+      ]
+    },
+    {
+      "case_id": "edge-high-frequency-operations",
+      "stratum": "edge",
+      "goal": "초보 검토자와 하루 수백 건을 처리하는 숙련 운영자가 함께 쓰는 승인 화면을 설계해줘. 대기, 빈 상태, 부분 실패, 재시도, 되돌리기, 일괄 작업에서 정보와 액션 우선순위를 역할과 상황별로 정해줘",
+      "expected_pack_id": "product-design-web-structure",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "observable_criteria": [
+        "Distinguishes novice comprehension from expert frequency and switching needs without forking unrelated products",
+        "Requires reachable loading, empty, failure, retry, undo, and permission states with a coherent next action"
+      ],
+      "forbidden_behaviors": [
+        "Applies one-thing-per-page as a universal rule despite high-frequency comparison and batch work",
+        "Hides consequential status or recovery behind progressive disclosure"
+      ]
+    },
+    {
+      "case_id": "non-trigger-backend-orchestration",
+      "stratum": "non-trigger",
+      "goal": "백엔드 작업 큐의 재시도, 지수 백오프, 멱등성 키와 dead-letter 처리 구조를 설계해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Keeps backend orchestration outside the product-design web-structure extension"
+      ],
+      "forbidden_behaviors": [
+        "Selects information architecture because the request contains flow or state concepts"
+      ]
+    },
+    {
+      "case_id": "overlap-scroll-storytelling",
+      "stratum": "overlap",
+      "goal": "제품 소개 랜딩페이지에 scroll-driven animation, pin, scrub, parallax 장면을 설계하고 reduced motion과 runtime performance를 검토해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Leaves explicit scroll-linked motion design and verification to interactive-web-motion"
+      ],
+      "forbidden_behaviors": [
+        "Hijacks a motion-specific request with generic information-architecture criteria",
+        "Treats the new Guide as a substitute for motion accessibility or runtime evidence"
+      ]
+    }
+  ]
+}

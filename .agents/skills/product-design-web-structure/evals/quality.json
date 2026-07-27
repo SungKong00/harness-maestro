@@ -1,0 +1,157 @@
+{
+  "schema_version": "maestro_expertise_quality_eval_v1",
+  "expertise_pack_id": "product-design-web-structure",
+  "evaluated_on": "2026-07-28",
+  "evaluator": {
+    "kind": "fresh-context",
+    "authoring_run_ref": "authoring:product-design-web-structure:2026-07-28",
+    "evaluation_run_ref": "host-codex:web-design-expertise-quality-20260728:dde70bcc60268f71c73089cb06ac41ac"
+  },
+  "cases": [
+    {
+      "case_id": "normal-role-aware-onboarding",
+      "artifact": {
+        "path": "evals/artifacts/normal-role-aware-onboarding.json",
+        "sha256": "21c4b819cb25deb03587eee782152478683775f508deeec7906a740f82e50b9c"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects the information-architecture Guide together with the inherited brief, hierarchy, and interaction criteria",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-role-aware-onboarding.json"
+        },
+        {
+          "criterion": "Requires role, situation, state, entry, exit, evidence, and action priorities before fixing element placement",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-role-aware-onboarding.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats the organization chart or one default persona as the page information architecture",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-role-aware-onboarding.json"
+        },
+        {
+          "behavior": "Assigns exact prominence or position without a traceable user need, journey step, or state",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-role-aware-onboarding.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-decision-support-page",
+      "artifact": {
+        "path": "evals/artifacts/normal-decision-support-page.json",
+        "sha256": "74e8fecd3b4acfd69e2a046999ad9ceea1c56e5fae8ae006fcc0fbe8890768fe"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Separates shared content from role- or situation-dependent evidence and actions",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-decision-support-page.json"
+        },
+        {
+          "criterion": "Defines page scope, decision sequence, continuity, and correction paths before visual emphasis",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-decision-support-page.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Makes every role-specific action equally prominent",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-decision-support-page.json"
+        },
+        {
+          "behavior": "Uses a fashionable layout pattern as sufficient evidence for the decision flow",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-decision-support-page.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-high-frequency-operations",
+      "artifact": {
+        "path": "evals/artifacts/edge-high-frequency-operations.json",
+        "sha256": "3e5dfa4cb588f34daffbacad002911fa39038ef468a0a89644ff9e10d8978c51"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Distinguishes novice comprehension from expert frequency and switching needs without forking unrelated products",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-high-frequency-operations.json"
+        },
+        {
+          "criterion": "Requires reachable loading, empty, failure, retry, undo, and permission states with a coherent next action",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-high-frequency-operations.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Applies one-thing-per-page as a universal rule despite high-frequency comparison and batch work",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-high-frequency-operations.json"
+        },
+        {
+          "behavior": "Hides consequential status or recovery behind progressive disclosure",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-high-frequency-operations.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-orchestration",
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-backend-orchestration.json",
+        "sha256": "d95cf9191a014bc0021cdf0d0ce936a78ca73425abd7ca35aea8f4d966301fcf"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Keeps backend orchestration outside the product-design web-structure extension",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/non-trigger-backend-orchestration.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects information architecture because the request contains flow or state concepts",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/non-trigger-backend-orchestration.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-scroll-storytelling",
+      "artifact": {
+        "path": "evals/artifacts/overlap-scroll-storytelling.json",
+        "sha256": "90a84303e172bcd21f6ec5e8d3b79769014876298d4d4dbfbf0d14fe5a2d2c34"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Leaves explicit scroll-linked motion design and verification to interactive-web-motion",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/overlap-scroll-storytelling.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks a motion-specific request with generic information-architecture criteria",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/overlap-scroll-storytelling.json"
+        },
+        {
+          "behavior": "Treats the new Guide as a substitute for motion accessibility or runtime evidence",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/overlap-scroll-storytelling.json"
+        }
+      ],
+      "verdict": "pass"
+    }
+  ]
+}

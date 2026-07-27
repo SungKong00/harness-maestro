@@ -1,0 +1,88 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "product-design-web-structure",
+  "verified_on": "2026-07-28",
+  "sources": [
+    {
+      "source_id": "w3c-wcag-22",
+      "tier": 1,
+      "authority": "W3C Recommendation for web accessibility",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "supports": [
+        "Meaningful sequence and predictable navigation",
+        "Consistent identification, reduced redundant entry, error correction, and disablement of non-essential interaction animation"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-focus-order",
+      "tier": 1,
+      "authority": "W3C WAI WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html",
+      "supports": [
+        "Logical focus order that preserves meaning and reinforces the mental model implied by the visual layout"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-user-needs",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/user-research/start-by-learning-user-needs",
+      "supports": [
+        "Evidence-backed user needs framed by outcome, role, trigger, and constraints rather than proposed solutions"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-whole-journey",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/design/map-a-users-whole-problem",
+      "supports": [
+        "End-to-end journey and touchpoint mapping",
+        "Detection of dead ends, duplicate content, unclear transaction choice, and broken cross-channel continuity"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-role-context",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/design/services-for-government-users",
+      "supports": [
+        "Task, circumstance, frequency, switching, comparison, and realistic-data differences for internal and role-specific services",
+        "Limits of universal one-thing-per-page application"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "uswds-design-principles",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/design-principles/",
+      "supports": [
+        "Real user needs, audience segments, prototypes, accessibility, continuity, and regular testing as design decision inputs"
+      ],
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ],
+      "freshness": "versioned"
+    }
+  ]
+}
