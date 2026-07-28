@@ -400,22 +400,6 @@ class OperationsViewerTests(unittest.TestCase):
                 "observed-pipeline",
                 plan,
             )
-            selected_packs = plan.get("expertise", {}).get(
-                "selected_pack_ids",
-                [],
-            )
-            routing = {
-                "selection_status": (
-                    "selected" if selected_packs else "not_selected"
-                ),
-                "selection_method": (
-                    "work_kind" if selected_packs else None
-                ),
-                "reroute_count": 1 if selected_packs else 0,
-                "warnings": (
-                    ["EXPERTISE_HINTS_AMBIGUOUS"] if selected_packs else []
-                ),
-            }
             pending = snapshot_report(repo)["inflight"][0]
             self.assertEqual("receipt_pending", pending["status"])
             self.assertEqual(
@@ -431,7 +415,6 @@ class OperationsViewerTests(unittest.TestCase):
                 evidence_refs=["tests:observed-pipeline"],
                 verifier_result="passed",
                 command_artifact_ref="tests:observed-pipeline",
-                expertise_routing=routing,
             )
             snapshot = snapshot_report(repo)
             run = snapshot["runs"][0]
@@ -454,7 +437,6 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual(["gpt-5.6-sol"], run["models"]["requested"])
             self.assertEqual([], run["models"]["applied"])
             self.assertIsNone(run["tokens"])
-            self.assertEqual(routing, run["expertise"]["routing"])
             self.assertEqual(
                 {
                     "plan_id": plan["plan_id"],
@@ -1069,28 +1051,6 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual("fallback_attached", attached["status"])
             self.assertTrue(attached["writes_performed"])
             self.assertEqual("recorded", recorded["status"])
-
-    def test_receipt_rejects_routing_that_disagrees_with_selection(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            repo = self._initialized_repo(Path(temporary))
-            plan = route_goal_v2(
-                "구조 경계 구현을 검증한다",
-                "low",
-                intent="implementation",
-                repo_path=repo,
-            )
-            receipt = _receipt_from_plan(plan)
-            receipt["expertise_routing"] = {
-                "selection_status": "selected",
-                "selection_method": None,
-                "reroute_count": 0,
-                "warnings": [],
-            }
-
-            with self.assertRaises(MaestroError) as raised:
-                record_run(repo, receipt)
-
-            self.assertEqual("RUN_RECEIPT_INVALID", raised.exception.code)
 
     def test_observation_enriches_one_idempotent_run_and_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -2306,8 +2266,6 @@ class OperationsViewerTests(unittest.TestCase):
             'function restoreViewFromLocation(options = {})',
             viewer_source,
         )
-        self.assertIn('function displayRoutingMethod(value)', viewer_source)
-        self.assertIn('"전문성 라우팅"', viewer_source)
         self.assertIn('url.searchParams.set("view", viewName)', viewer_source)
         self.assertIn('`${url.pathname}${url.search}${url.hash}`', viewer_source)
         self.assertIn('window.addEventListener("popstate"', viewer_source)

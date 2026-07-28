@@ -388,14 +388,6 @@ function displayResearch(value) {
   return labels[value] || value || "미기록";
 }
 
-function displayRoutingMethod(value) {
-  return {
-    natural_language: "자연어 선택",
-    work_kind: "작업 종류 보정",
-    explicit_pack: "사용자 명시 선택",
-  }[value] || "기록 없음";
-}
-
 function element(tag, options = {}) {
   const node = document.createElement(tag);
   if (options.className) node.className = options.className;
@@ -2151,20 +2143,6 @@ function buildRunDetail(run) {
     "전문 지식 묶음",
     run.expertise.packs.map(packName).join(", ") || "선택하지 않음",
   );
-  if (run.expertise.routing) {
-    const routing = run.expertise.routing;
-    const warningText = routing.warnings.length
-      ? `충돌 경고 ${routing.warnings.join(", ")}`
-      : "충돌 경고 없음";
-    addFact(
-      criteria.facts,
-      "전문성 라우팅",
-      routing.selection_status === "not_selected"
-        ? "선택하지 않음"
-        : displayRoutingMethod(routing.selection_method),
-      `보정 ${routing.reroute_count}회 · ${warningText}`,
-    );
-  }
   addFact(
     criteria.facts,
     "판단 가이드",
