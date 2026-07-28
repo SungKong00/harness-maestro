@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 현재 top-1 Pack 계약을 유지하면서 자연어 표현 누락을 작업 종류와 상대 경로 힌트로 보완하는 최소 라우팅 개선 계획.
 scope: [expertise, route-v2]
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -205,31 +205,62 @@ LLM이 만든 신뢰도 숫자는 사용하지 않는다. 선택 근거가 없�
 
 ### 5단계 — 제한된 Pilot
 
-- [ ] 서로 다른 실제 작업에서 자연어만 사용한 결과와 hint 보정 결과를 기록한다.
-- [ ] 불필요한 Pack 호출, 놓친 Pack, 사용자 override, 충돌 경고를 구분해 집계한다.
-- [ ] 같은 작업에서 재-route가 두 번 이상 필요했는지 기록한다.
-- [ ] 작업 종료 시 선택 정확도뿐 아니라 실제 Guide 적용 여부도 확인한다.
-- [ ] Pilot 결과가 나올 때까지 의미 기반 라우터와 다중 Pack 실행은 보류한다.
+#### 5A. Pilot을 측정할 수 있는 최소 관측
+
+- [x] 최종 route에서 `selected`/`not_selected`, 선택 원천, route 1·2차,
+      충돌 코드만 `plan_summary.expertise_routing`에 자동 기록한다.
+- [x] 선택 원천을 `natural_language`, `work_kind`, `explicit_pack`, `none`으로
+      구분한다.
+- [x] 새 route의 “선택 없음”과 이 필드가 없던 과거 기록의 “기록 없음”을
+      snapshot과 기존 작업 상세에서 구분한다.
+- [x] 경로, 요청 원문, 후보 목록, warning 문장은 Receipt에 복사하지 않는다.
+- [x] 불필요한 호출·놓침 같은 주관적 판정은 새 저장소를 만들지 않고 기존
+      `expertise_observations`의 `trigger_false_positive`, `trigger_miss` 등을 쓴다.
+- [x] 라우팅 보정 횟수를 구현 수정 횟수인 `correction_count`와 섞지 않는다.
+
+#### 5B. 실제 Host Pilot 체크리스트
+
+- [ ] 자연어만으로 맞게 선택된 실제 작업을 기록한다.
+- [ ] 읽기 전용 탐색 뒤 `work_kind`로 한 번 보정된 실제 작업을 기록한다.
+- [ ] 사용자가 Pack을 명시한 작업과 아무 Pack도 선택하지 않은 작업을 각각 기록한다.
+- [ ] 일반 위험 충돌 경고가 남은 작업을 기록하고 선택 결과가 유용했는지 확인한다.
+- [ ] `trigger_miss`, `trigger_false_positive`, 명시 override를 작업 종료 시
+      `expertise_observations`로 구분해 남긴다.
+- [ ] 선택 정확도와 별개로 Guide 본문 load·결과 적용 증거가 있는지 확인한다.
+- [ ] 서로 다른 실제 작업에서 위 사례가 한 번씩 모일 때까지 의미 기반 라우터와
+      Assignment별 Pack을 열지 않는다.
+
+고위험 충돌은 Plan과 Assignment가 만들어지기 전에 중단되므로 RunReceipt에 성공
+작업처럼 기록하지 않는다. 현재는 frozen CLI 평가가 차단을 증명한다. 운영에서
+고위험 차단 횟수를 따로 분석해야 한다는 요구가 생길 때만 아래 TODO의 pre-plan
+거부 event를 검토한다.
 
 완료 조건:
 
-- hint가 실제 누락을 줄였는지 확인할 수 있다.
-- 늘어난 입력·검증 복잡성이 얻은 효과보다 큰지 판단할 근거가 있다.
+- hint가 실제 누락을 줄였는지 선택 원천별로 설명할 수 있다.
+- 잘못 고른 경우를 “라우터 오선택”과 “Guide 미적용”으로 구분할 수 있다.
+- 늘어난 입력·검증 복잡성이 얻은 효과보다 큰지 실제 작업 근거로 판단할 수 있다.
 
-## 이후 큰 구조를 다시 여는 조건
+## 추후 TODO와 다시 여는 조건
 
-다음 문제가 서로 다른 실제 작업에서 반복될 때만 더 큰 설계를 검토한다.
+다음 항목은 현재 구현 범위가 아니다. 표의 조건이 서로 다른 실제 작업에서 반복되고
+기존 `expertise_observations`와 routing summary로 근거를 제시할 수 있을 때 별도
+계획을 만든다.
 
-| 반복 문제 | 다음 검토 |
+| 추후 TODO | 다시 여는 조건 |
 |---|---|
-| 한 번의 보정 route 뒤에도 같은 단계에서 여러 전문 영역이 반드시 함께 필요함 | Assignment별 Pack |
-| Host가 작업 종류를 안정적으로 정할 수 없음 | 구조화된 TaskSignals extractor |
-| 올바른 작업 종류인데 Pack 간 겹침이 계속 남음 | 제한적 model classifier |
-| Pack·Guide 수가 늘어 정적 후보 비교 비용이 실제 병목이 됨 | BM25·semantic retrieval |
-| 내부 매핑 규칙의 변경·감사 비용이 커짐 | 별도 정책 저장소 또는 policy engine |
+| Assignment별 Pack | 한 번의 보정 뒤에도 같은 단계에서 여러 전문 영역이 반드시 함께 필요함 |
+| 구조화된 TaskSignals extractor | Host가 닫힌 작업 종류를 안정적으로 정하지 못함 |
+| 제한적 model classifier | 올바른 작업 종류인데 Pack 겹침과 오선택이 반복되고 frozen 비교에서 개선 가능성이 확인됨 |
+| BM25·semantic retrieval | Pack·Guide 수 증가로 정적 후보 비교가 측정된 병목이 됨 |
+| 별도 policy engine | 내부 매핑 규칙의 변경·감사 비용이 작은 코드 매핑보다 커짐 |
+| 라우팅 전용 대시보드 | 기존 작업 상세와 snapshot 집계만으로 owner가 Pilot 결정을 내릴 수 없음 |
+| pre-plan 거부 event | 고위험 충돌 차단을 여러 작업에 걸쳐 운영 지표로 분석해야 함 |
+| History bundle routing 요약 | 묶음으로 보관한 작업에서도 선택 원천·보정·충돌을 계속 비교해야 함 |
 
 이 조건이 생기기 전에는 키워드 목록을 무한히 늘리거나 전체 의미 라우터로 교체하지
-않는다. 먼저 이 최소 계약의 frozen case와 Pilot 결과를 다음 계획의 기준선으로 쓴다.
+않는다. 먼저 이 최소 계약의 frozen case와 실제 Pilot 기록을 다음 계획의 기준선으로
+쓴다.
 
 ## 예상 작업량
 

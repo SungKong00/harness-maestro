@@ -316,6 +316,15 @@ Assignment ID만 담고 Guide 본문·prompt·hidden reasoning을 담지 않는�
 선택된 묶음이 없으면 뒤의 세 단계를 경고처럼 나열하지 않고 확인할 대상이 없다는
 한 문장만 표시한다.
 
+새로 관찰한 route는 `plan_summary.expertise_routing`에 선택 여부, 선택 원천,
+route 1·2차, 닫힌 충돌 코드만 보관한다. 이 값은 호출자가 RunReceipt에 넣는
+자유 입력이 아니라 검증된 최종 Plan에서 자동 투영한다. snapshot은 이를
+`expertise.routing`으로 보여주고 기존 작업 상세의 한 줄에서 `자연어 어휘`,
+`작업 종류`, `사용자 명시`, `선택 없음`과 `최초 선택`·`1회 보정`을 구분한다.
+필드가 없던 과거 event는 결과를 추측하지 않고 `unavailable`, 화면에서는
+“선택 방식 기록 없음”으로 표시한다. 상대 경로, 요청 원문, 후보 목록과 warning
+문장은 이 요약에 복사하지 않는다.
+
 ### Run snapshot projection 경계
 
 `snapshot_runs.py`가 event와 plan summary를 기존 `maestro_snapshot_v1`의 additive
@@ -326,9 +335,11 @@ Assignment ID만 담고 Guide 본문·prompt·hidden reasoning을 담지 않는�
   RunReceipt 값/관측 stage 합계를 구분한다.
 - 출처를 보존하고 빈 token은 측정값이 아니다.
 
-plan은 실제 실행 증거가 아니다. attempt·실제 시작/종료·retry, result artifact,
-Lens 적용, Pack·Guide load/반영, verifier 기준·digest, response model과 비용
-provenance는 새 원본 계약 전까지 unavailable이다.
+plan은 실제 실행 증거가 아니다. routing summary의 `route_attempt`는 최종 Plan이
+첫 route인지 한 번 보정된 route인지만 뜻한다. 실제 작업 attempt·시작/종료·retry,
+result artifact, Lens 적용, Pack·Guide load/반영, verifier 기준·digest, response
+model과 비용 provenance를 대신하지 않는다. 별도 원본 계약이 없는 항목은
+unavailable이다.
 
 행의 체크박스는 상세 열기와 별도다. 선택한 최대 50개 event를 새 이름 또는 기존
 묶음에 추가하기 전에 정확한 개수와 “raw receipt를 삭제하지 않음”을 다시 보여준다.
