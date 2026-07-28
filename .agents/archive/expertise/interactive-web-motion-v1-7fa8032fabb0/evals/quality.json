@@ -1,0 +1,188 @@
+{
+  "schema_version": "maestro_expertise_quality_eval_v1",
+  "expertise_pack_id": "interactive-web-motion",
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "kind": "fresh-context",
+    "authoring_run_ref": "authoring:interactive-web-motion:2026-07-27",
+    "evaluation_run_ref": "route-replay:interactive-web-motion:2026-07-27"
+  },
+  "cases": [
+    {
+      "case_id": "normal-scroll-triggered-reveal",
+      "artifact": {
+        "path": "evals/artifacts/normal-scroll-triggered-reveal.json",
+        "sha256": "05eeb3eb9f41731bd963660dacf2d6c34d2961f42df741d695136b86d4b65d66"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects progressive-enhancement reveal criteria and the default motion-intent rubric",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-scroll-triggered-reveal.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hides critical content until the animation client initializes",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-scroll-triggered-reveal.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-scroll-storytelling",
+      "artifact": {
+        "path": "evals/artifacts/normal-scroll-storytelling.json",
+        "sha256": "c6db44baccc8ae35e667f2c11d0789335cb69cb401d9863e071cfbf4e8c9aace"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects scroll-linked scene criteria and requires a narrative progress model",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-scroll-storytelling.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats pin, scrub, or parallax capability as sufficient UX justification",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-scroll-storytelling.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-component-microinteraction",
+      "artifact": {
+        "path": "evals/artifacts/normal-component-microinteraction.json",
+        "sha256": "6b92deed23d7c93f84430baba31a9c5994e77e38a28fbeca440c2dcb527975c3"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects modality-complete state feedback and ties motion to application truth",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-component-microinteraction.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Uses hover or drag as the only interaction path",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-component-microinteraction.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-reduced-motion-performance",
+      "artifact": {
+        "path": "evals/artifacts/edge-reduced-motion-performance.json",
+        "sha256": "2198a6c0d5964d2768ed3b94f9ec874f250987cff44eba0d41baea878bc8a3ab"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects both motion-safety and runtime-evidence criteria within the Guide limit",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-reduced-motion-performance.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Claims accessibility or smoothness from source inspection alone",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-reduced-motion-performance.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-motion-system",
+      "artifact": {
+        "path": "evals/artifacts/edge-motion-system.json",
+        "sha256": "9e5504ab00112a08ce9f9288962e3429a7af7aa21914ef975f5d5151ea013f8b"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects token and choreography criteria plus motion intent",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-motion-system.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Copies another design system's numeric tokens as universal truth",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-motion-system.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-current-scroll-support",
+      "artifact": {
+        "path": "evals/artifacts/edge-current-scroll-support.json",
+        "sha256": "250c6ecba70f71200618e8469f1200bf41796a6416b0dd435eee6f2a18a8c826"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Opens contextual research for current browser support",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-current-scroll-support.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Claims current compatibility from the frozen Pack alone",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-current-scroll-support.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-cache",
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-backend-cache.json",
+        "sha256": "e6005f8e2754302fba6ee1a44f488dfe7093a3dbe26389d8416983b272d70ad8"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Keeps backend implementation outside the interactive motion Pack",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/non-trigger-backend-cache.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects motion expertise for unrelated implementation",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/non-trigger-backend-cache.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-generic-product-layout",
+      "artifact": {
+        "path": "evals/artifacts/overlap-generic-product-layout.json",
+        "sha256": "bf8ca3fee676807063cea9302addff39fe3dca3eb42c24b85ff2578aca3bc27f"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Leaves generic product layout and typography to product-design",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/overlap-generic-product-layout.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks generic landing-page design without an explicit motion decision",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/overlap-generic-product-layout.json"
+        }
+      ],
+      "verdict": "pass"
+    }
+  ]
+}

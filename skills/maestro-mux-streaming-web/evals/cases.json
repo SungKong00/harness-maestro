@@ -1,0 +1,126 @@
+{
+  "schema_version": "maestro_expertise_eval_v2",
+  "expertise_pack_id": "mux-streaming-web",
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "bd5deae82cf9046bf0082a0f6bdb2bf374abbe4f797de4fec33a9ae3462fc99d"
+  },
+  "cases": [
+    {
+      "case_id": "normal-signed-vod",
+      "stratum": "normal",
+      "goal": "Mux playback integration으로 signed VOD를 재생하고 playback token 갱신을 구현해줘",
+      "expected_pack_id": "mux-streaming-web",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "playback-integration",
+        "secure-playback"
+      ],
+      "observable_criteria": [
+        "Selects Mux playback and secure-playback criteria for signed VOD"
+      ],
+      "forbidden_behaviors": [
+        "Routes signed playback as visual design without a protected token boundary"
+      ]
+    },
+    {
+      "case_id": "normal-live-webhook",
+      "stratum": "normal",
+      "goal": "Mux Live 상태를 웹훅으로 동기화하고 idle 뒤 replay 화면으로 전환해줘",
+      "expected_pack_id": "mux-streaming-web",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "live-lifecycle",
+        "webhook-state-sync",
+        "playback-integration"
+      ],
+      "observable_criteria": [
+        "Selects live lifecycle and webhook synchronization with the playback boundary"
+      ],
+      "forbidden_behaviors": [
+        "Infers authoritative live state only from browser player events"
+      ]
+    },
+    {
+      "case_id": "edge-expired-token-duplicate-event",
+      "stratum": "edge",
+      "goal": "Mux Live signed playback token이 만료되는 순간 duplicate webhook retry도 도착하는 경계를 처리해줘",
+      "expected_pack_id": "mux-streaming-web",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "live-lifecycle",
+        "playback-integration",
+        "secure-playback",
+        "webhook-state-sync"
+      ],
+      "observable_criteria": [
+        "Selects the four bounded Guides needed for concurrent token and live-event failures"
+      ],
+      "forbidden_behaviors": [
+        "Selects more than four Guides or omits token and webhook safety"
+      ]
+    },
+    {
+      "case_id": "normal-playback-observability",
+      "stratum": "normal",
+      "goal": "Mux Data로 playback startup, rebuffering, playback failure를 관측해줘",
+      "expected_pack_id": "mux-streaming-web",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "playback-integration",
+        "playback-observability"
+      ],
+      "observable_criteria": [
+        "Selects playback observability and its player integration boundary"
+      ],
+      "forbidden_behaviors": [
+        "Treats provider playback health as a generic business conversion metric"
+      ]
+    },
+    {
+      "case_id": "edge-current-react-api",
+      "stratum": "edge",
+      "goal": "Use the latest Mux docs for current Mux SDK React playback integration",
+      "expected_pack_id": "mux-streaming-web",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "playback-integration"
+      ],
+      "observable_criteria": [
+        "Opens contextual research for current Mux React compatibility"
+      ],
+      "forbidden_behaviors": [
+        "Claims current SDK compatibility from the frozen Pack alone"
+      ]
+    },
+    {
+      "case_id": "non-trigger-furniture-video",
+      "stratum": "non-trigger",
+      "goal": "Add a generic background video to a furniture landing page",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Keeps generic landing-page video work outside the Mux Pack"
+      ],
+      "forbidden_behaviors": [
+        "Selects Mux expertise from the generic word video"
+      ]
+    },
+    {
+      "case_id": "overlap-player-visual-layout",
+      "stratum": "overlap",
+      "goal": "Redesign the visual hierarchy and layout around an existing Mux player",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Lets product-design own a visual-only request around an already integrated player"
+      ],
+      "forbidden_behaviors": [
+        "Lets the vendor noun Mux override the explicit visual design decision family"
+      ]
+    }
+  ]
+}

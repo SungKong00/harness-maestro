@@ -1,41 +1,97 @@
 # Research and evidence
 
-Use `$maestro-reference-research` when an Expertise route opens a research gate.
-Maestro remains the workflow owner. Research depth and Researcher count are
-separate decisions. Start with the narrowest source lane that can answer the
-question. Add a lane only when its evidence is independent and can change the
-recommendation. Use at most three initial lanes and one narrow follow-up for a
-material conflict with new evidence.
+Use `$maestro-reference-research` when a selected Expertise route opens a
+`discover`, `contextualize`, or `refresh` gate, or when an explicit current or
+external evidence request needs pre-route discovery. Maestro remains the
+workflow owner.
 
-Useful lanes are:
+## Admission
 
-- official: specifications, version-matched documentation, release notes, and migration guides;
-- repository: current project evidence, maintainer examples, and comparable maintained implementations;
-- field: operational experience, pitfalls, and contextual trade-offs;
-- skeptic: counterevidence capable of reversing or qualifying the leading option.
+First establish the domain. General words such as `reference`, `latest`,
+`benchmark`, or `research` may choose the research mode only after a
+domain-specific Pack is selected; they must not select a Pack by themselves.
 
-## Source tiers
+- `reuse`: selected Guides are adequate; do not repeat general research.
+- `contextualize`: current examples or task-specific external context can
+  materially change how an existing Pack applies.
+- `refresh`: version-sensitive Pack sources need revalidation.
+- `discover`: an important expert decision has no active Pack.
 
-| Tier | Evidence | Allowed use |
-| ---: | --- | --- |
-| 0 | Current user instruction, current repository, team policy, direct execution | Project-specific fact and policy |
-| 1 | Official docs, standards, specifications, release and migration notes | Framework behavior rules |
-| 2 | Official examples and maintainer repositories | Idiomatic examples and checklist items |
-| 3 | Maintained popular repositories, books, respected engineering publications | Contextual recommendations |
-| 4 | Community answers, conference posts, personal field reports | Warnings, disagreements, open questions |
-| 5 | Uncited, copied, stale, SEO-driven, or unmaintained material | Search leads only |
+Research depth and researcher count are separate. Start with one lane. Add a
+read-only lane only when its evidence is independent, decision-changing, and
+better collected separately. Use at most three initial lanes and one material
+conflict follow-up with new evidence.
 
-Classify each claim as fact, policy, preference, or prediction. Tier alone does not decide authority: direct execution leads facts, explicit user or team decisions lead policy, the user leads preference, and comparable experiments lead predictions.
+## Evidence contract
 
-Return sources and claims through validated `maestro_research_packet_v1`
-artifacts, then synthesize one validated `maestro_research_bundle_v1`. Local
-Tier 0 evidence may use an artifact reference without a URL. Preserve version,
-checked date, limitations, and material conflicts. Never assign authority merely
-because a claim appears in a packet.
+Use the Research Skill's source-tier, query, claim, conflict, and adoption
+contracts. Preserve:
 
-When route v2 opens an Expertise research gate, the bundle is a preflight
-artifact. Run `maestro validate-research --artifact <bundle.json>`, then reroute
-with `--research-evidence <bundle.json>`. The CLI validates the file and computes
-its canonical digest. A raw digest cannot satisfy the gate. Keep the bundle out
-of normal prompts unless an Assignment needs its claims. Its digest proves
-plan-to-artifact identity, not truth or source authority.
+- decision framing and date;
+- the exact source plan, queries, admission rationales, and stop conditions;
+- sources with roles, versions, inspected evidence, and limitations;
+- facts, policies, preferences, predictions, practices, opinions, and risks;
+- authority, verification status, evidence, applicability, project fit, and
+  confidence for every claim;
+- adopted and rejected claims, checklist candidates, conflicts, open questions,
+  limitations, and freshness; each conflict preserves its factual,
+  version-or-freshness, scope, authority, practice, preference, or transfer
+  boundary.
+
+Do not optimize tokens by deleting those fields. Bound the question, lane
+count, source and claim counts, and raw material instead. Keep ordinary
+research on the Researcher Executor's configured research-capable route.
+Escalate only a named high-impact or conflict lane through normal model routing.
+
+Return validated `maestro_research_packet_v2` artifacts and synthesize one
+`maestro_research_bundle_v2`. The bundle binds the exact goal digest, research
+mode, selected Pack and Guide IDs, and Pack definition digests. This binding
+prevents valid but unrelated evidence from closing the gate.
+
+## Execution handoff
+
+Validate against the repository:
+
+```bash
+maestro validate-research --repo . --artifact <bundle.json> --json
+```
+
+Then reroute the exact goal:
+
+```bash
+maestro route --repo . --route-version v2 --goal "<goal>" \
+  --research-evidence <bundle.json> --json
+```
+
+Only v2 `status: completed` evidence with a matching binding may close the
+gate. A raw digest, lane packet, legacy v1 artifact, insufficient bundle, or
+unrelated bundle is rejected.
+
+Revalidate a satisfied plan with the same artifact:
+
+```bash
+maestro validate-plan --repo . --plan <route-v2.json> \
+  --research-evidence <bundle.json> --json
+```
+
+An open route remains structurally valid with
+`execution_status: RESEARCH_REQUIRED`, but Assignment projection and the Codex
+Host must block it. A satisfied plan presented without its exact bundle is
+also `RESEARCH_REQUIRED`. For a satisfied route, project each Assignment with
+the same artifact:
+
+```bash
+maestro assignment project --repo . --plan <route-v2.json> \
+  --assignment <id> --baseline <baseline.json> \
+  --research-evidence <bundle.json> --json
+```
+
+The projection preserves the bounded decision-ready v2 context and its digest.
+A completed mutation owner cites `research-bundle:<digest>` and reports one
+`applied`, `not_applicable`, or `conflict` disposition for every adopted claim.
+Applied claims need projected project or verification evidence. An unresolved
+conflict blocks completion.
+
+The digest proves artifact identity and route binding, not truth. Source and
+claim authority still come from inspected evidence. Raw pages, prompts, and
+transcripts never enter route or observation state.

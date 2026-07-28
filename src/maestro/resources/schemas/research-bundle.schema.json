@@ -1,14 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sungkong00.github.io/harness-maestro/schemas/research-bundle.schema.json",
-  "title": "Harness Maestro Synthesized Research Bundle",
+  "title": "Harness Maestro Synthesized Research Bundle v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "workflow_owner",
+    "request_binding",
     "question",
+    "decision_needed",
+    "target_context",
+    "date_checked",
     "depth",
+    "source_plan",
     "packets",
     "synthesis",
     "follow_up_waves",
@@ -16,14 +21,25 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_research_bundle_v1"
+      "const": "maestro_research_bundle_v2"
     },
     "workflow_owner": {
       "const": "maestro"
     },
+    "request_binding": {
+      "$ref": "#/$defs/requestBinding"
+    },
     "question": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/text"
+    },
+    "decision_needed": {
+      "$ref": "#/$defs/text"
+    },
+    "target_context": {
+      "$ref": "#/$defs/text"
+    },
+    "date_checked": {
+      "$ref": "#/$defs/date"
     },
     "depth": {
       "enum": [
@@ -31,6 +47,9 @@
         "normal",
         "deep"
       ]
+    },
+    "source_plan": {
+      "$ref": "#/$defs/sourcePlan"
     },
     "packets": {
       "type": "array",
@@ -41,93 +60,307 @@
       }
     },
     "synthesis": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "adopted_claim_ids",
-        "conflicts",
-        "open_questions",
-        "limitations"
-      ],
-      "properties": {
-        "adopted_claim_ids": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "conflicts": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "claim_ids",
-              "material",
-              "resolution",
-              "evidence_refs"
-            ],
-            "properties": {
-              "claim_ids": {
-                "type": "array",
-                "minItems": 2,
-                "uniqueItems": true,
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "material": {
-                "type": "boolean"
-              },
-              "resolution": {
-                "enum": [
-                  "upheld",
-                  "qualified",
-                  "unresolved",
-                  "rejected"
-                ]
-              },
-              "evidence_refs": {
-                "type": "array",
-                "minItems": 1,
-                "uniqueItems": true,
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              }
-            }
-          }
-        },
-        "open_questions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "limitations": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      }
+      "$ref": "#/$defs/synthesis"
     },
     "follow_up_waves": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 1
+      "enum": [
+        0,
+        1
+      ]
     },
     "status": {
       "enum": [
         "completed",
         "insufficient"
       ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{2,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "textList": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/line"
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "reason"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "requestBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_digest",
+        "research_mode",
+        "selected_pack_ids",
+        "selected_guide_ids",
+        "pack_definition_digests"
+      ],
+      "properties": {
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "research_mode": {
+          "enum": [
+            "discover",
+            "contextualize",
+            "refresh"
+          ]
+        },
+        "selected_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "selected_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "pack_definition_digests": {
+          "type": "object",
+          "maxProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "sourcePlanLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lane_id",
+        "wave",
+        "rationale",
+        "decision_impact",
+        "queries"
+      ],
+      "properties": {
+        "lane_id": {
+          "enum": [
+            "official",
+            "repository",
+            "field",
+            "skeptic"
+          ]
+        },
+        "wave": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "rationale": {
+          "$ref": "#/$defs/text"
+        },
+        "decision_impact": {
+          "$ref": "#/$defs/text"
+        },
+        "queries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "sourcePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lanes",
+        "stop_conditions"
+      ],
+      "properties": {
+        "lanes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/sourcePlanLane"
+          }
+        },
+        "stop_conditions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_ids",
+        "conflict_type",
+        "material",
+        "resolution",
+        "evidence_refs",
+        "reason",
+        "remaining_uncertainty",
+        "what_would_resolve_it"
+      ],
+      "properties": {
+        "claim_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "conflict_type": {
+          "enum": [
+            "factual",
+            "version-or-freshness",
+            "scope",
+            "authority",
+            "practice",
+            "preference",
+            "transfer"
+          ]
+        },
+        "material": {
+          "type": "boolean"
+        },
+        "resolution": {
+          "enum": [
+            "upheld",
+            "qualified",
+            "unresolved",
+            "rejected"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "remaining_uncertainty": {
+          "$ref": "#/$defs/text"
+        },
+        "what_would_resolve_it": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "synthesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adopted_claim_ids",
+        "rejected_claim_ids",
+        "recommended_checklist_items",
+        "conflicts",
+        "open_questions",
+        "limitations",
+        "confidence",
+        "freshness_notes"
+      ],
+      "properties": {
+        "adopted_claim_ids": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "rejected_claim_ids": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "recommended_checklist_items": {
+          "$ref": "#/$defs/textList"
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        },
+        "open_questions": {
+          "$ref": "#/$defs/textList"
+        },
+        "limitations": {
+          "$ref": "#/$defs/textList"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "freshness_notes": {
+          "$ref": "#/$defs/textList"
+        }
+      }
     }
   }
 }

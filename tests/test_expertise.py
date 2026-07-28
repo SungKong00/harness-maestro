@@ -16,6 +16,7 @@ from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry, validate_registry
 from maestro.snapshot import snapshot_report
 from maestro.util import canonical_json, sha256_text
+from tests.test_research_workflow import _bundle as research_bundle
 
 
 def _rehash(plan: dict[str, object]) -> None:
@@ -30,7 +31,18 @@ class ExpertiseRegistryTests(unittest.TestCase):
 
         self.assertEqual([], validate_registry(registry))
         self.assertEqual(
-            {"marketing", "product-design", "software-qa"},
+            {
+                "data-engineering",
+                "devops-sre",
+                "interactive-web-motion",
+                "marketing",
+                "mux-streaming-web",
+                "product-design",
+                "security-engineering",
+                "software-engineering",
+                "software-qa",
+                "technical-seo",
+            },
             {
                 pack["expertise_pack_id"]
                 for pack in registry["expertise_packs"]
@@ -111,6 +123,54 @@ class ExpertiseRegistryTests(unittest.TestCase):
 
 
 class ExpertiseRoutingTests(unittest.TestCase):
+    def test_korean_content_claim_work_routes_to_marketing_claim_review(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "콘텐츠 전략과 상품 주장 검증 기준을 보강해줘",
+            "medium",
+            intent="review",
+        )
+
+        self.assertEqual(
+            ["marketing"],
+            plan["expertise"]["selected_pack_ids"],
+        )
+        self.assertIn(
+            "claim-substantiation",
+            plan["expertise"]["selected_guide_ids"],
+        )
+
+    def test_frontend_page_composition_routes_to_architecture_boundary_review(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "여러 페이지의 조합과 프론트엔드 추상화 경계를 검토해줘",
+            "medium",
+            intent="review",
+        )
+
+        self.assertEqual(
+            ["software-engineering"],
+            plan["expertise"]["selected_pack_ids"],
+        )
+        self.assertEqual(
+            ["architecture-boundaries-and-tradeoffs"],
+            plan["expertise"]["selected_guide_ids"],
+        )
+
+    def test_generic_research_contract_words_do_not_select_a_domain_pack(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Review reference research bundle validation and route CLI behavior",
+            "medium",
+            intent="review",
+        )
+
+        self.assertNotIn("expertise", plan)
+        self.assertEqual("READY", validate_route_v2(plan)["execution_status"])
+
     def test_routine_design_reuses_only_selected_guides(self) -> None:
         plan = route_goal_v2(
             "Improve the product dashboard layout",
@@ -175,22 +235,70 @@ class ExpertiseRoutingTests(unittest.TestCase):
         self.assertEqual("PASS", open_result["status"])
         self.assertEqual("RESEARCH_REQUIRED", open_result["execution_status"])
 
+        bundle = research_bundle(goal)
         ready_plan = route_goal_v2(
             goal,
             "medium",
             intent="implementation",
-            research_evidence_digest="a" * 64,
+            research_evidence=bundle,
         )
         ready_requirement = ready_plan["expertise"]["research_requirement"]
         self.assertEqual("satisfied", ready_requirement["gate"])
-        self.assertEqual("a" * 64, ready_requirement["evidence_digest"])
+        self.assertEqual(
+            sha256_text(canonical_json(bundle)),
+            ready_requirement["evidence_digest"],
+        )
         self.assertEqual(
             [item["assignment_id"] for item in open_plan["assignments"]],
             [item["assignment_id"] for item in ready_plan["assignments"]],
         )
-        ready_result = validate_route_v2(ready_plan)
+        unbound_result = validate_route_v2(ready_plan)
+        self.assertEqual("PASS", unbound_result["status"])
+        self.assertEqual(
+            "RESEARCH_REQUIRED",
+            unbound_result["execution_status"],
+        )
+        ready_result = validate_route_v2(
+            ready_plan,
+            research_bundle=bundle,
+        )
         self.assertEqual("PASS", ready_result["status"])
         self.assertEqual("READY", ready_result["execution_status"])
+
+    def test_korean_design_research_request_requires_evidence(self) -> None:
+        goal = (
+            "전체적으로 모든 디자인과 색 테마 등이 너무 구려. 충분한 리서치를 하고 "
+            "모던하고 심플하고 신뢰감 있는 테마/디자인으로 바꿔줘."
+        )
+
+        plan = route_goal_v2(goal, "medium", intent="implementation")
+
+        expertise = plan["expertise"]
+        self.assertEqual(["product-design"], expertise["selected_pack_ids"])
+        self.assertIn("reference-selection", expertise["selected_guide_ids"])
+        self.assertEqual(
+            "contextualize", expertise["research_requirement"]["mode"]
+        )
+        self.assertEqual("open", expertise["research_requirement"]["gate"])
+        self.assertEqual(
+            "RESEARCH_REQUIRED", validate_route_v2(plan)["execution_status"]
+        )
+
+    def test_adjective_only_ui_refinement_reuses_design_criteria(self) -> None:
+        plan = route_goal_v2(
+            "Make this dashboard UI modern, simple, and trustworthy.",
+            "medium",
+            intent="implementation",
+        )
+
+        expertise = plan["expertise"]
+        self.assertEqual(["product-design"], expertise["selected_pack_ids"])
+        self.assertNotIn("reference-selection", expertise["selected_guide_ids"])
+        self.assertEqual("reuse", expertise["research_requirement"]["mode"])
+        self.assertEqual(
+            "not-required", expertise["research_requirement"]["gate"]
+        )
+        self.assertEqual("READY", validate_route_v2(plan)["execution_status"])
 
     def test_research_intent_performs_discovery_inside_its_assignment(self) -> None:
         plan = route_goal_v2(
@@ -282,6 +390,8 @@ class ExpertiseRoutingTests(unittest.TestCase):
                         "validate-plan",
                         "--plan",
                         str(plan_path),
+                        "--repo",
+                        temporary,
                         "--json",
                     ]
                 )
@@ -290,6 +400,58 @@ class ExpertiseRoutingTests(unittest.TestCase):
         self.assertEqual(4, exit_code)
         self.assertEqual("PASS", result["status"])
         self.assertEqual("RESEARCH_REQUIRED", result["execution_status"])
+
+    def test_validate_plan_requires_the_exact_satisfied_research_bundle(
+        self,
+    ) -> None:
+        goal = "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘"
+        bundle = research_bundle(goal)
+        plan = route_goal_v2(
+            goal,
+            "medium",
+            intent="implementation",
+            research_evidence=bundle,
+            repo_path=ROOT,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            plan_path = Path(temporary) / "plan.json"
+            bundle_path = Path(temporary) / "research.json"
+            write_json(plan_path, plan)
+            write_json(bundle_path, bundle)
+
+            unbound_output = StringIO()
+            with redirect_stdout(unbound_output):
+                unbound_exit = main(
+                    [
+                        "validate-plan",
+                        "--plan",
+                        str(plan_path),
+                        "--repo",
+                        str(ROOT),
+                        "--json",
+                    ]
+                )
+            bound_output = StringIO()
+            with redirect_stdout(bound_output):
+                bound_exit = main(
+                    [
+                        "validate-plan",
+                        "--plan",
+                        str(plan_path),
+                        "--repo",
+                        str(ROOT),
+                        "--research-evidence",
+                        str(bundle_path),
+                        "--json",
+                    ]
+                )
+
+        unbound = json.loads(unbound_output.getvalue())
+        bound = json.loads(bound_output.getvalue())
+        self.assertEqual(4, unbound_exit)
+        self.assertEqual("RESEARCH_REQUIRED", unbound["execution_status"])
+        self.assertEqual(0, bound_exit)
+        self.assertEqual("READY", bound["execution_status"])
 
     def test_frozen_product_design_cases_match_modes_and_guides(self) -> None:
         cases = json.loads(
@@ -311,23 +473,64 @@ class ExpertiseRoutingTests(unittest.TestCase):
                     self.assertEqual("reuse", case["expected_mode"])
                     self.assertEqual([], case["expected_guides"])
                     continue
-                self.assertEqual(
-                    (
-                        [case["expected_pack_id"]]
-                        if case["expected_pack_id"] is not None
-                        else []
-                    ),
-                    expertise["selected_pack_ids"],
-                )
-                self.assertEqual(
-                    case["expected_mode"],
-                    expertise["research_requirement"]["mode"],
-                )
-                self.assertTrue(
-                    set(case["expected_guides"]).issubset(
-                        expertise["selected_guide_ids"]
+                if case["expected_pack_id"] is None:
+                    self.assertNotIn(
+                        "product-design",
+                        expertise["selected_pack_ids"],
                     )
+                else:
+                    self.assertEqual(
+                        [case["expected_pack_id"]],
+                        expertise["selected_pack_ids"],
+                    )
+                    self.assertEqual(
+                        case["expected_mode"],
+                        expertise["research_requirement"]["mode"],
+                    )
+                    self.assertTrue(
+                        set(case["expected_guides"]).issubset(
+                            expertise["selected_guide_ids"]
+                        )
+                    )
+
+    def test_frozen_technical_seo_cases_match_modes_and_guides(self) -> None:
+        cases = json.loads(
+            (
+                ROOT / "skills/maestro-technical-seo/evals/cases.json"
+            ).read_text(encoding="utf-8")
+        )["cases"]
+
+        for case in cases:
+            with self.subTest(case=case["case_id"]):
+                plan = route_goal_v2(
+                    case["goal"],
+                    "medium",
+                    intent="implementation",
                 )
+                expertise = plan.get("expertise")
+                if expertise is None:
+                    self.assertIsNone(case["expected_pack_id"])
+                    self.assertEqual("reuse", case["expected_mode"])
+                    self.assertEqual([], case["expected_guides"])
+                    continue
+                if case["expected_pack_id"] is None:
+                    self.assertNotIn(
+                        "technical-seo",
+                        expertise["selected_pack_ids"],
+                    )
+                else:
+                    self.assertEqual(
+                        [case["expected_pack_id"]],
+                        expertise["selected_pack_ids"],
+                    )
+                    self.assertEqual(
+                        case["expected_mode"],
+                        expertise["research_requirement"]["mode"],
+                    )
+                    self.assertEqual(
+                        set(case["expected_guides"]),
+                        set(expertise["selected_guide_ids"]),
+                    )
 
     def test_frozen_marketing_and_qa_cases_match_modes_and_guides(self) -> None:
         for skill_id in ("maestro-marketing", "maestro-software-qa"):

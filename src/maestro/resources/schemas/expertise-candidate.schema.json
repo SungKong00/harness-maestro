@@ -166,6 +166,74 @@
         }
       }
     },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "signal_fingerprint"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "automatic",
+            "user-requested"
+          ]
+        },
+        "signal_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{24}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "automatic"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signal_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "signal_fingerprint": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pack-merge",
+                  "pack-split",
+                  "guide-move",
+                  "guide-copy"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "change_set_id"
+            ]
+          }
+        }
+      ]
+    },
     "component_change": {
       "type": "object",
       "additionalProperties": false,
@@ -177,9 +245,13 @@
         "kind": {
           "enum": [
             "new-pack",
+            "pack-merge",
+            "pack-split",
             "guide-addition",
             "guide-revision",
             "guide-deprecation",
+            "guide-move",
+            "guide-copy",
             "trigger-adjustment",
             "source-refresh",
             "evaluation-extension"
@@ -191,6 +263,36 @@
             "null"
           ],
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "source_pack_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "target_pack_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "change_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n\\u0000]+$"
         }
       },
       "allOf": [
@@ -201,7 +303,9 @@
                 "enum": [
                   "guide-addition",
                   "guide-revision",
-                  "guide-deprecation"
+                  "guide-deprecation",
+                  "guide-move",
+                  "guide-copy"
                 ]
               }
             }
@@ -217,6 +321,103 @@
             "properties": {
               "target_guide_id": {
                 "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "pack-merge"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_pack_ids"
+            ],
+            "properties": {
+              "source_pack_ids": {
+                "minItems": 2,
+                "maxItems": 4
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "pack-split",
+                    "guide-move",
+                    "guide-copy"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "source_pack_ids"
+              ],
+              "properties": {
+                "source_pack_ids": {
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "source_pack_ids": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "pack-split"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "target_pack_ids"
+            ],
+            "properties": {
+              "target_pack_ids": {
+                "minItems": 2,
+                "maxItems": 4
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "guide-move",
+                    "guide-copy"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "target_pack_ids": {
+                  "maxItems": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "target_pack_ids": {
+                  "maxItems": 0
+                }
               }
             }
           }

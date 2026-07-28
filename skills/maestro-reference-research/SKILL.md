@@ -1,86 +1,147 @@
 ---
 name: maestro-reference-research
-description: Use only when a Maestro route opens a discover, contextualize, or refresh research gate, or when Maestro explicitly delegates a bounded evidence question. Produces source-ranked ResearchPackets and one synthesized ResearchBundle without deciding the whole task, implementing changes, or creating reusable rules directly.
+description: Use only when a Maestro route opens a discover, contextualize, or refresh research gate, or when Maestro explicitly delegates a bounded current or external evidence question. Produces source-ranked ResearchPackets and one bound ResearchBundle without deciding the whole task, implementing changes, or creating reusable rules directly.
 ---
 
 # Maestro Reference Research
 
-Produce bounded evidence for a Maestro-owned workflow. This Skill is an
-internal research capability, not a second orchestrator and not a standing
-research department.
+Collect external and repository reference evidence for a Maestro-owned
+workflow. The output is a source-ranked, decision-ready artifact, not a loose
+summary, a second orchestrator, or a standing research department.
 
-## Contract
+## Core rule
+
+Separate facts, practices, opinions, risks, and project fit. Do not turn a
+popular article, example repository, or community answer into a hard rule
+unless stronger inspected evidence supports that authority.
+
+## Entry contract
 
 Accept:
 
-- the exact decision-changing question;
+- the exact goal binding and decision-changing question;
+- the decision needed, target stack and project context, and time sensitivity;
 - `depth`: `quick`, `normal`, or `deep`;
-- current project evidence and source constraints;
-- the route or decision-plan identifier when one exists.
+- selected Pack and Guide identities and their definition digests when the
+  route already has them;
+- current project artifacts and source constraints.
 
-Return a validated `maestro_research_bundle_v1` artifact and its path. Do not
-return a free-form verdict as a substitute for the artifact.
+Return one validated `maestro_research_bundle_v2` artifact, its canonical
+digest, and its path to Maestro. The artifact must preserve the exact source
+plan, queries used, inspected sources, claim matrix, adopted and rejected
+claims, checklist candidates, conflicts, uncertainty, confidence, and
+freshness. Do not replace it with a prose verdict.
 
-## Plan lanes
+Maestro remains `workflow_owner`; each packet remains
+`decision_scope: research_only`. Runtime run IDs, model telemetry, and
+transcripts stay in Maestro observation state rather than the research
+artifact.
 
-Read `references/lane-planning.md`. Use one lane for a narrow question.
-Use up to three independent initial lanes only when source types can change the
-decision:
+## Workflow
 
-- `official`: specifications, standards, vendor or regulatory guidance;
-- `repository`: current repository and comparable implementation evidence;
-- `field`: practitioner cases and observed operating constraints;
-- `skeptic`: counterevidence, failure modes, and transfer limits.
+1. Frame the question: record the question, decision needed, target context,
+   time sensitivity, depth, and required handoff.
+2. Plan source lanes: read `references/lane-planning.md` and
+   `references/search-query-patterns.md`. Put the exact bounded queries and
+   stop conditions in the v2 `source_plan`.
+3. Start narrow: use one high-value lane by default, usually official material
+   for supported behavior or repository evidence for project facts.
+4. Expand conditionally: add a lane only when its evidence is independent, can
+   change or downgrade the recommendation, and is better collected separately.
+   Use at most three initial read-only lanes.
+5. Build packets: record what was actually opened or inspected. Classify every
+   source and claim using `references/source-tiers-and-claims.md`.
+6. Resolve conflicts: use `references/conflict-resolution.md`. Preserve
+   material disagreement; never use majority vote as proof.
+7. Adopt carefully: apply `references/adoption-rubric.md`. Distinguish reusable
+   rules, checklist items, warnings, optional patterns, rejected claims, and
+   open questions.
+8. Synthesize and validate: read `references/packet-and-synthesis.md`, emit one
+   bound bundle, run the semantic validator, and return it to Maestro.
 
-Researchers must not see another lane's conclusion before their first packet.
-Maestro synthesizes common claims and conflicts. Permit one follow-up wave only
-for a material conflict and only with new evidence.
+When the selected Guide is `reference-selection`, also read
+`references/visual-reference-research.md`.
 
-## Gather and classify
+## Lane and context policy
 
-Read `references/source-tiers-and-claims.md`. Each lane writes one
-`maestro_research_packet_v1`. Separate facts, policy, preference, and prediction.
-Attach exact source or artifact references to every claim. Search snippets,
-memory, and unsourced summaries are discovery leads, never final support.
+Lane definitions and admission rules are in `references/role-contracts.md`.
+Initial conclusions remain isolated. Maestro may run one narrow follow-up only
+for a material conflict, and the follow-up must add new inspected evidence.
 
-Validate every packet:
+Do not save tokens by removing decision content from a packet or by replacing
+evidence with a compressed opinion. Control cost through the narrow question,
+one-lane default, bounded sources and claims, at most three initial lanes, and
+one conflict-only follow-up. A bundle that cannot fit the lossless managed
+context limit must narrow or split the decision; it is never silently
+truncated. The Researcher Executor owns model, effort, tool, network, and
+permission selection; ordinary research keeps its configured research-capable
+route, while only a named high-impact or conflict lane may justify escalation.
+
+## Validate and hand off
+
+Validate every packet and the final bundle against the bound repository:
 
 ```bash
-maestro validate-research --artifact <packet.json> --json
+maestro validate-research --repo . --artifact <packet.json> --json
+maestro validate-research --repo . --artifact <research-bundle.json> --json
 ```
 
-Stop and report `insufficient evidence` when the requested claim cannot meet its
-authority threshold. Do not manufacture consensus.
-
-## Synthesize
-
-Read `references/packet-and-synthesis.md`. Maestro, not a lane researcher:
-
-1. merges duplicate claims;
-2. records agreements without repeating prose;
-3. exposes material conflicts and limitations;
-4. adopts claims by evidence strength and risk, never vote count;
-5. emits one `maestro_research_bundle_v1`;
-6. validates the bundle before routing continues.
+Then re-route with the completed bundle:
 
 ```bash
-maestro validate-research --artifact <research-bundle.json> --json
-maestro route --route-version v2 --goal "<goal>" \
+maestro route --repo . --route-version v2 --goal "<exact goal>" \
   --research-evidence <research-bundle.json> --json
 ```
 
-The CLI computes the canonical digest from the validated file. A digest by
-itself cannot satisfy the gate.
+The CLI recomputes the digest and verifies the goal, research mode, selected
+Pack and Guides, and Pack definition digests. A digest alone, a legacy v1
+bundle, an insufficient bundle, or an unrelated valid bundle cannot satisfy
+the gate.
 
-## Boundaries
+The Host projects the validated v2 context into the Assignment. A completed
+writer cites the bound ResearchBundle and reports one evidence-backed
+disposition for every adopted claim. This proves use without putting raw pages
+or transcripts in the Assignment.
 
-- No project or product verdict beyond the stated question.
-- No implementation, file mutation, publication, or external action.
-- No automatic Convention, Decision Guide, Skill, Agent, or global promotion.
-- No unrestricted group discussion.
-- No more than three initial lanes and one conflict-only follow-up.
-- Raw transcripts and copied pages are temporary evidence, not project docs.
+## Required output
 
-If evidence suggests reusable expertise, hand the validated bundle to
-`$maestro-expertise-builder`; candidate admission and evaluation remain a
-separate stage.
+Return:
+
+- research question, decision scope, target context, and date checked;
+- source plan, exact queries, lane rationale, and stop conditions;
+- source table with tier, role, locator, version, inspected evidence, and
+  limitations;
+- claim matrix with kind, authority, status, evidence, applicability, project
+  fit, confidence, and adoption;
+- adopted and rejected claims and concrete checklist candidates;
+- conflicts, their closed conflict type, what would resolve them, open
+  questions, remaining limitations, confidence, and freshness notes.
+
+## Hard guardrails
+
+- Browse or use live connectors when current docs, versions, regulations,
+  repository state, recent practice, or “latest” information matters.
+- Do not cite a source that was not opened or inspected; search snippets and
+  memory are discovery leads only.
+- Prefer official specifications and vendor documentation for supported
+  behavior. Use repositories and examples for implementation fit, not
+  universal proof. Use field sources for trade-offs and failure modes, not
+  authority by popularity.
+- Do not hide conflicts, invent consensus, or issue the project implementation,
+  readiness, publication, or merge verdict.
+- Do not implement, mutate files, perform external actions, or automatically
+  update a Convention, Guide, Skill, Agent, Pack, or global registry.
+- Research returns adoption candidates. `$maestro-expertise-builder` owns
+  compilation, frozen evaluation, candidate lifecycle, and promotion.
+- Raw pages, screenshots, and transcripts are temporary evidence, not project
+  documentation or normal prompt context.
+
+## Definition of done
+
+- The source plan and every executed query remain in the validated v2 bundle.
+- Every supported claim resolves to inspected source evidence with appropriate
+  authority, version, applicability, project fit, and confidence.
+- Adopted, rejected, conflicting, and uncertain material is explicit.
+- Lane count and any follow-up satisfy the bounded admission rules.
+- Semantic validation passes, the request binding matches the route, and the
+  completed artifact is returned only to Maestro.

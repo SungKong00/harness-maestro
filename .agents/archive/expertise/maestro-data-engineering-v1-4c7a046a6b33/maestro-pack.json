@@ -1,0 +1,185 @@
+{
+  "default_guides": [
+    "pipeline-execution-model"
+  ],
+  "dominance_triggers": [
+    "data engineering",
+    "data pipeline design",
+    "stream processing",
+    "etl",
+    "elt",
+    "data lineage",
+    "data backfill",
+    "데이터 엔지니어링",
+    "데이터 파이프라인 설계",
+    "스트림 처리",
+    "데이터 리니지",
+    "데이터 백필"
+  ],
+  "evaluation_suite": "evals/cases.json",
+  "expertise_pack_id": "data-engineering",
+  "guides": [
+    {
+      "freshness": "volatile",
+      "guide_id": "pipeline-execution-model",
+      "summary": "Choose bounded or unbounded execution, event-time semantics, windows, triggers, watermarks, lateness, and runner capability.",
+      "triggers": [
+        "batch pipeline",
+        "stream processing",
+        "etl",
+        "elt",
+        "data orchestration",
+        "airflow dag",
+        "event time",
+        "watermark",
+        "배치 파이프라인",
+        "스트림 처리",
+        "데이터 오케스트레이션",
+        "Airflow DAG",
+        "이벤트 시간",
+        "워터마크"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "pipeline-schema-contract-evolution",
+      "summary": "Choose directional writer-reader compatibility, field identity, schema preservation, defaults, promotion, rollout, and replay behavior.",
+      "triggers": [
+        "pipeline schema evolution",
+        "pipeline data contract",
+        "analytical data contract",
+        "avro schema compatibility",
+        "writer reader schema",
+        "table format evolution",
+        "파이프라인 스키마 진화",
+        "파이프라인 데이터 계약",
+        "분석 데이터 계약",
+        "Avro 스키마 호환성",
+        "writer reader 스키마",
+        "테이블 포맷 진화",
+        "스키마 변경 백필"
+      ]
+    },
+    {
+      "freshness": "stable",
+      "guide_id": "analytical-data-quality-gates",
+      "summary": "Define fitness-for-purpose dimensions, metrics, measurements, thresholds, warn or block severity, quarantine, and quality ownership.",
+      "triggers": [
+        "analytical data quality",
+        "data quality gate",
+        "dataset assertion",
+        "dataset quality metric",
+        "분석 데이터 품질",
+        "데이터 품질 게이트",
+        "데이터셋 assertion",
+        "데이터 품질 메트릭"
+      ]
+    },
+    {
+      "freshness": "stable",
+      "guide_id": "lineage-and-provenance",
+      "summary": "Design stable dataset, job, and run identity plus input-output derivation, runtime and design lineage, versions, and transformation evidence.",
+      "triggers": [
+        "data lineage",
+        "data provenance",
+        "openlineage",
+        "dataset identity",
+        "데이터 리니지",
+        "데이터 프로비넌스",
+        "OpenLineage",
+        "데이터셋 식별"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "backfill-and-historical-correction",
+      "summary": "Plan interval or partition scope, reprocessing mode, deterministic output, concurrency, ordering, dry run, self-check, and publication for historical correction.",
+      "triggers": [
+        "data backfill",
+        "backfill",
+        "historical correction",
+        "data reprocessing",
+        "partition rerun",
+        "데이터 백필",
+        "백필",
+        "과거 데이터 정정",
+        "데이터 재처리",
+        "파티션 재실행",
+        "파티션 백필"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "state-recovery-and-delivery-semantics",
+      "summary": "Choose replayable sources, state and offset snapshots, checkpoint or savepoint use, delivery guarantee scope, and sink transaction or idempotence.",
+      "triggers": [
+        "pipeline recovery",
+        "checkpoint restore",
+        "checkpoint savepoint",
+        "pipeline delivery semantics",
+        "exactly once pipeline",
+        "파이프라인 복구",
+        "체크포인트 복원",
+        "체크포인트 세이브포인트",
+        "파이프라인 전달 의미",
+        "exactly once 파이프라인",
+        "체크포인트 복구"
+      ]
+    }
+  ],
+  "kind": "expertise-pack",
+  "portability": "project",
+  "research_policy": {
+    "contextualize_triggers": [
+      "current runner capability",
+      "current connector semantics",
+      "current schema format behavior",
+      "current pipeline incident",
+      "현재 실행 엔진 기능",
+      "현재 커넥터 의미",
+      "현재 스키마 포맷 동작",
+      "현재 파이프라인 사고"
+    ],
+    "default_mode": "reuse",
+    "refresh_triggers": [
+      "refresh data engineering expertise",
+      "update data engineering sources",
+      "데이터 엔지니어링 전문성 갱신",
+      "데이터 엔지니어링 출처 갱신"
+    ]
+  },
+  "schema_version": "maestro_expertise_pack_v1",
+  "skill_id": "maestro-data-engineering",
+  "source_manifest": "evidence/sources.json",
+  "status": "pilot",
+  "summary": "Analytical data engineering criteria for batch and stream execution, pipeline schema contracts, quality gates, lineage, backfill, and state-recovery semantics.",
+  "triggers": [
+    "data engineering",
+    "data pipeline design",
+    "batch pipeline",
+    "stream processing",
+    "etl",
+    "elt",
+    "data orchestration",
+    "airflow dag",
+    "event time watermark",
+    "pipeline schema evolution",
+    "analytical data quality",
+    "data lineage",
+    "data backfill",
+    "pipeline recovery",
+    "데이터 엔지니어링",
+    "데이터 파이프라인 설계",
+    "배치 파이프라인",
+    "스트림 처리",
+    "데이터 오케스트레이션",
+    "Airflow DAG",
+    "이벤트 시간 워터마크",
+    "파이프라인 스키마 진화",
+    "분석 데이터 품질",
+    "데이터 리니지",
+    "데이터 백필",
+    "파이프라인 복구"
+  ],
+  "version": 1
+}

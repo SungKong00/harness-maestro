@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .expertise_health import expertise_component_health
 from .expertise_lifecycle import expertise_inventory
+from .expertise_projection import project_expertise_operations
 from .governance import (
     expertise_management_signals,
     govern_report,
@@ -14,6 +14,10 @@ from .governance import (
 )
 from .history import history_inventory, run_display_labels
 from .observations import inflight_observations
+from .snapshot_runs import (
+    _measurement_coverage,
+    _run_card,
+)
 from .status import status_report
 from .errors import MaestroError
 from .util import ensure_repo, safe_target
@@ -26,288 +30,114 @@ def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _unique_strings(values: list[Any]) -> list[str]:
-    return list(
-        dict.fromkeys(
-            value
-            for value in values
-            if isinstance(value, str) and value
-        )
-    )
-
-
-def _host_model_provenance(
-    host_observation: Any,
-) -> dict[str, Any]:
-    result = {
-        "requested": None,
-        "requested_reasoning_effort": None,
-        "reasoning_effort_evidence": "unavailable",
-        "applied": None,
-        "evidence": "unavailable",
-        "reroutes": [],
-        "legacy_reported": None,
-    }
-    if not isinstance(host_observation, dict):
-        return result
-    if host_observation.get("schema_version") == "maestro_host_observation_v2":
-        result["requested"] = host_observation.get("requested_model")
-        result["requested_reasoning_effort"] = host_observation.get(
-            "requested_reasoning_effort",
-        )
-        result["reasoning_effort_evidence"] = host_observation.get(
-            "reasoning_effort_evidence",
-            "unavailable",
-        )
-        result["evidence"] = host_observation.get(
-            "model_event_evidence",
-            "unavailable",
-        )
-        result["reroutes"] = list(host_observation.get("reroutes", []))
-        if result["evidence"] == "complete":
-            result["applied"] = host_observation.get("applied_model")
-        return result
-    if host_observation.get("schema_version") == "maestro_host_observation_v1":
-        result["legacy_reported"] = host_observation.get("actual_model")
-    return result
-
-
-def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
-    plan = event.get("plan_summary")
-    host_observation = event.get("host_observation")
-    host_models = _host_model_provenance(host_observation)
-    stage_results = {
-        item["assignment_id"]: item
-        for item in event.get("stage_results", [])
-        if isinstance(item, dict) and isinstance(item.get("assignment_id"), str)
-    }
-    if not isinstance(plan, dict):
-        return (
-            [
-                {
-                    "assignment_id": "execution-summary",
-                    "kind": "summary",
-                    "executor_id": event.get("primary_executor_id"),
-                    "depends_on": [],
-                    "planned_model": None,
-                    "route_recommended_model": None,
-                    "reasoning_effort": None,
-                    "actual_model": host_models["applied"],
-                    "applied_model": host_models["applied"],
-                    "model_evidence": host_models["evidence"],
-                    "status": event.get("outcome"),
-                    "status_evidence": "run_receipt",
-                    "duration_ms": event.get("duration_ms"),
-                    "tokens": event.get("tokens"),
-                    "evidence_refs": list(event.get("evidence_refs", []))[:3],
-                    "expertise_pack_ids": list(
-                        event.get("selected_expertise_packs", [])
-                    ),
-                    "decision_guide_ids": list(
-                        event.get("selected_decision_guides", [])
-                    ),
-                }
-            ],
-            "summary_only",
-        )
-
-    stages: list[dict[str, Any]] = []
-    for assignment in plan.get("assignments", []):
-        result = stage_results.get(assignment.get("assignment_id"), {})
-        stage_observed = bool(result)
-        model_evidence = result.get("model_evidence", "unavailable")
-        applied_model = (
-            result.get("actual_model")
-            if model_evidence == "complete"
-            else None
-        )
-        stages.append(
-            {
-                "assignment_id": assignment.get("assignment_id"),
-                "kind": assignment.get("kind"),
-                "executor_id": assignment.get("executor_id"),
-                "depends_on": list(assignment.get("depends_on", [])),
-                "planned_model": assignment.get("planned_model"),
-                "route_recommended_model": assignment.get("planned_model"),
-                "reasoning_effort": assignment.get("reasoning_effort"),
-                "actual_model": applied_model,
-                "applied_model": applied_model,
-                "model_evidence": model_evidence,
-                "status": result.get("status", "planned_only"),
-                "status_evidence": (
-                    "host_stage_result" if stage_observed else "plan_only"
-                ),
-                "duration_ms": result.get("duration_ms"),
-                "tokens": result.get("tokens"),
-                "evidence_refs": list(result.get("evidence_refs", []))[:3],
-                "expertise_pack_ids": list(
-                    assignment.get("expertise_pack_ids", [])
-                ),
-                "decision_guide_ids": list(
-                    assignment.get("decision_guide_ids", [])
-                ),
-            }
-        )
-    return stages, "assignment_observation"
-
-
-def _run_card(
-    event: dict[str, Any],
-    display_labels: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    flow, flow_evidence = _run_flow(event)
-    host_observation = event.get("host_observation")
-    host_models = _host_model_provenance(host_observation)
-    event_id = event["event_id"]
-    original_task_label = event.get("task_label") or event["run_id"]
-    task_label = (display_labels or {}).get(
-        event_id,
-        original_task_label,
-    )
-    route_recommended = _unique_strings(
-        [stage.get("route_recommended_model") for stage in flow]
-    )
-    route_recommended_effort = _unique_strings(
-        [stage.get("reasoning_effort") for stage in flow]
-    )
-    applied = _unique_strings(
-        [
-            host_models["applied"],
-            *[stage.get("applied_model") for stage in flow],
-        ]
-    )
-    selected_packs = list(event.get("selected_expertise_packs", []))
-    selected_guides = list(event.get("selected_decision_guides", []))
-    expertise_assignment_ids = _unique_strings(
-        [
-            stage.get("assignment_id")
-            for stage in flow
-            if stage.get("expertise_pack_ids")
-            or stage.get("decision_guide_ids")
-        ]
-    )
+def _stale_registry_governance(error: MaestroError) -> dict[str, Any]:
     return {
-        "event_id": event_id,
-        "run_id": event["run_id"],
-        "task_label": task_label,
-        "original_task_label": original_task_label,
-        "timestamp": event["timestamp"],
-        "risk": event["risk"],
-        "route_depth": event["route_depth"],
-        "outcome": event["outcome"],
-        "verifier_result": event["verifier_result"],
-        "duration_ms": event.get("duration_ms"),
-        "tokens": event.get("tokens"),
-        "agent_calls": event.get("agent_calls"),
-        "correction_count": event.get("correction_count", 0),
-        "correction_summary": list(event.get("correction_summary", [])),
-        "models": {
-            "requested": _unique_strings([host_models["requested"]]),
-            "requested_reasoning_effort": _unique_strings(
-                [host_models["requested_reasoning_effort"]]
-            ),
-            "applied": applied,
-            "route_recommended": route_recommended,
-            "route_recommended_reasoning_effort": (
-                route_recommended_effort
-            ),
-            "reasoning_effort_evidence": host_models[
-                "reasoning_effort_evidence"
-            ],
-            "model_event_evidence": host_models["evidence"],
-            "reroutes": host_models["reroutes"],
-            "legacy_reported": _unique_strings(
-                [host_models["legacy_reported"]]
-            ),
-            "planned": route_recommended,
-            "actual": applied,
+        "schema_version": "maestro_govern_report_v1",
+        "evidence_status": "stale_registry",
+        "runs_considered": 0,
+        "scan_truncated": False,
+        "candidates_for_review": [],
+        "token_summary": {
+            "measured_events": 0,
+            "total": None,
             "estimated": False,
-            "measurement_state": (
-                "host_not_connected"
-                if host_observation is None
-                else (
-                    "host_event_stream_complete"
-                    if host_models["evidence"] == "complete"
-                    else "host_request_observed"
-                )
-            ),
         },
-        "host_observation": host_observation,
-        "flow_evidence": flow_evidence,
-        "flow": flow,
-        "lenses": list(event.get("selected_lenses", [])),
-        "expertise": {
-            "packs": selected_packs,
-            "guides": selected_guides,
-            "research_mode": event.get("expertise_research_mode", "reuse"),
-            "research_gate": event.get(
-                "expertise_research_gate",
-                "not-required",
-            ),
-            "observations": list(event.get("expertise_observations", [])),
-            "evidence": {
-                "selection": (
-                    "run_receipt"
-                    if selected_packs or selected_guides
-                    else "not_selected"
-                ),
-                "assignment_attachment": (
-                    "plan_projection"
-                    if expertise_assignment_ids
-                    else "unavailable"
-                ),
-                "assignment_ids": expertise_assignment_ids,
-                "host_load": "unavailable",
-                "application": "unavailable",
-                "interpretation": (
-                    "Selection and Assignment projection do not prove that "
-                    "the Host loaded or applied the Guide body."
-                ),
+        "duration_summary": {
+            "measured_events": 0,
+            "total_ms": None,
+            "estimated": False,
+        },
+        "agent_call_summary": {
+            "measured_events": 0,
+            "total": None,
+            "estimated": False,
+        },
+        "correction_summary": {
+            "total": 0,
+            "events_with_corrections": 0,
+        },
+        "expertise_pack_usage": {},
+        "decision_guide_usage": {},
+        "expertise_research_modes": {},
+        "retention": {
+            "format": "daily-jsonl",
+            "raw_messages_stored": False,
+            "automatic_deletion_supported": False,
+            "review_due": False,
+        },
+        "error": {
+            "code": error.code,
+            "message": error.message,
+        },
+        "writes_performed": False,
+    }
+
+
+def _expertise_review_attention(
+    review_items: list[dict[str, Any]],
+    *,
+    excluded_candidate_ids: set[str],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str | None, str], dict[str, Any]] = {}
+    for item in review_items:
+        candidate_id = item.get("candidate_id")
+        if candidate_id in excluded_candidate_ids:
+            continue
+        key = (candidate_id, item["pack_id"])
+        group = grouped.setdefault(
+            key,
+            {
+                "id": "review_expertise_component",
+                "candidate_id": candidate_id,
+                "pack_id": item["pack_id"],
+                "guide_ids": [],
+                "pack_scope": False,
+                "severity": "medium",
+                "usage_count": 0,
+                "reasons": [],
             },
-        },
-        "conventions": event.get("convention_usage"),
-        "evidence_refs": list(event.get("evidence_refs", []))[:8],
-    }
-
-
-def _measurement_coverage(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    total = len(runs)
-
-    def measured(predicate: Any) -> dict[str, Any]:
-        count = sum(bool(predicate(run)) for run in runs)
-        return {
-            "measured_runs": count,
-            "total_runs": total,
-            "ratio": round(count / total, 3) if total else None,
-        }
-
-    return {
-        "task_label": measured(
-            lambda run: run["task_label"] != run["run_id"]
+        )
+        guide_id = item.get("guide_id")
+        if isinstance(guide_id, str) and guide_id:
+            if guide_id not in group["guide_ids"]:
+                group["guide_ids"].append(guide_id)
+        else:
+            group["pack_scope"] = True
+        if item.get("utility_verdict") == "review_required":
+            group["severity"] = "high"
+        group["usage_count"] = max(
+            group["usage_count"],
+            item.get("usage_count", 0),
+        )
+        for reason in item.get("reasons", []):
+            if reason not in group["reasons"]:
+                group["reasons"].append(reason)
+    result = []
+    for group in grouped.values():
+        subject = (
+            f"candidate {group['candidate_id']}"
+            if group.get("candidate_id")
+            else group["pack_id"]
+        )
+        scope = (
+            "Pack-wide criteria"
+            if group["pack_scope"]
+            else f"{len(group['guide_ids'])} Guide components"
+        )
+        group["reason"] = (
+            f"{subject} reached a review condition for {scope} "
+            f"after {group['usage_count']} uses: "
+            + "; ".join(group["reasons"])
+        )
+        result.append(group)
+    return sorted(
+        result,
+        key=lambda item: (
+            item["severity"] != "high",
+            item["pack_id"],
+            item.get("candidate_id") or "",
         ),
-        "duration": measured(lambda run: run.get("duration_ms") is not None),
-        "tokens": measured(lambda run: isinstance(run.get("tokens"), dict)),
-        "plan": measured(
-            lambda run: run.get("flow_evidence") == "assignment_observation"
-        ),
-        "actual_model": measured(
-            lambda run: bool(run.get("models", {}).get("applied"))
-        ),
-        "requested_model": measured(
-            lambda run: bool(run.get("models", {}).get("requested"))
-        ),
-        "requested_reasoning_effort": measured(
-            lambda run: bool(
-                run.get("models", {}).get(
-                    "requested_reasoning_effort",
-                )
-            )
-        ),
-        "interpretation": (
-            "측정되지 않은 값은 추정하지 않는다. 공개 Host 요청 메타데이터는 "
-            "요청값만, 완료 이벤트 구간은 적용 모델과 토큰까지 표시한다."
-        ),
-    }
+    )
 
 
 def snapshot_report(
@@ -335,14 +165,22 @@ def snapshot_report(
         )
     )
     governance_window = max(window, 3)
-    governance = (
-        govern_report(repo, window=governance_window)
-        if initialized
-        else None
-    )
+    governance: dict[str, Any] | None = None
+    if initialized:
+        try:
+            governance = govern_report(repo, window=governance_window)
+        except MaestroError as exc:
+            if exc.code != "PROJECT_STATE_STALE":
+                raise
+            governance = _stale_registry_governance(exc)
     status = status_report(
         repo,
-        precomputed_governance=governance,
+        precomputed_governance=(
+            governance
+            if governance is not None
+            and governance.get("evidence_status") != "stale_registry"
+            else None
+        ),
     )
     if not status["initialized"]:
         return {
@@ -356,6 +194,9 @@ def snapshot_report(
                 "doctor": status["doctor"]["status"],
                 "runs": 0,
                 "inflight": 0,
+                "execution_active": 0,
+                "receipt_pending": 0,
+                "stale_observations": 0,
                 "attention": len(status["next_actions"]),
                 "history_bundles": 0,
             },
@@ -380,8 +221,9 @@ def snapshot_report(
             "doctor": status["doctor"],
             "status": status,
             "automation": {
-                "mode": "review_recommendation_only",
+                "mode": "isolated_candidate_authoring",
                 "expertise_signals": [],
+                "automatic_candidate_authoring_allowed": False,
                 "automatic_mutation_allowed": False,
             },
             "verification": {
@@ -415,20 +257,31 @@ def snapshot_report(
         for event in history["runs"]
         if event["event_id"] not in bundled_event_ids
     ]
-    completed_run_ids = {
-        event["run_id"] for event in history["runs"]
-    }
+    completed_run_ids = set(
+        history.get(
+            "recorded_run_ids",
+            [event["run_id"] for event in history["runs"]],
+        )
+    )
     inflight = inflight_observations(
         repo,
         completed_run_ids=completed_run_ids,
     )
     doctor = status["doctor"]
     assert governance is not None
-    expertise = expertise_inventory(repo)
-    expertise["component_health"] = expertise_component_health(
-        expertise,
+    expertise = project_expertise_operations(
+        expertise_inventory(repo),
         history["runs"],
     )
+    promotion_prompt_candidates = [
+        item
+        for item in expertise["component_health"]["candidates"]
+        if item.get("global_promotion", {}).get("owner_prompt_due")
+    ]
+    promotion_prompt_candidate_ids = {
+        item["candidate_id"]
+        for item in promotion_prompt_candidates
+    }
     verification = verification_inventory(repo)
     expertise_signals = expertise_management_signals(history["runs"])
 
@@ -464,34 +317,59 @@ def snapshot_report(
     )
     attention.extend(
         {
-            "id": "review_expertise_component",
+            "id": "ask_global_expertise_promotion",
+            "candidate_id": item["candidate_id"],
             "pack_id": item["pack_id"],
-            "guide_id": item["guide_id"],
             "severity": (
                 "high"
-                if item["utility_verdict"] == "review_required"
+                if item["global_promotion"].get(
+                    "problem_review_required"
+                )
                 else "medium"
             ),
+            "observed_usage_count": item["global_promotion"][
+                "observed_usage_count"
+            ],
+            "required_usage_count": item["global_promotion"][
+                "required_usage_count"
+            ],
+            "problem_review_required": item["global_promotion"].get(
+                "problem_review_required",
+                False,
+            ),
             "reason": (
-                f"{item['pack_id']}/{item['guide_id']} reached a component "
-                f"review condition after {item['usage_count']} uses: "
-                + "; ".join(item["reasons"])
+                f"{item['pack_id']} candidate reached "
+                f"{item['global_promotion']['observed_usage_count']} "
+                "distinct runs with observed application; ask the owner whether to apply "
+                "it to the Harness bundled Pack source."
             ),
         }
-        for item in expertise["component_health"]["review_items"]
+        for item in promotion_prompt_candidates
+    )
+    attention.extend(
+        _expertise_review_attention(
+            expertise["component_health"]["review_items"],
+            excluded_candidate_ids=promotion_prompt_candidate_ids,
+        )
     )
     attention.extend(
         {
             "id": "review_stale_run",
             "run_id": item["run_id"],
+            "observation_status": item["status"],
             "severity": "medium",
-            "reason": "The run observation has remained open for more than 24 hours.",
+            "reason": (
+                "The completed execution still lacks a final receipt after 24 hours."
+                if item["status"] == "receipt_stale"
+                else "The run observation has remained open for more than 24 hours."
+            ),
         }
         for item in inflight
-        if item["status"] == "stale"
+        if item["status"] in {"stale", "receipt_stale"}
     )
 
     outcomes = Counter(run["outcome"] for run in runs)
+    observation_counts = Counter(item["status"] for item in inflight)
     return {
         "schema_version": SNAPSHOT_VERSION,
         "generated_at": _utc_timestamp(),
@@ -503,6 +381,14 @@ def snapshot_report(
             "doctor": doctor["status"],
             "runs": len(runs),
             "inflight": len(inflight),
+            "execution_active": observation_counts["in_progress"],
+            "execution_stale": observation_counts["stale"],
+            "receipt_pending": observation_counts["receipt_pending"],
+            "receipt_stale": observation_counts["receipt_stale"],
+            "stale_observations": (
+                observation_counts["stale"]
+                + observation_counts["receipt_stale"]
+            ),
             "attention": len(attention),
             "history_bundles": len(history_bundles),
             "outcomes": dict(sorted(outcomes.items())),
@@ -517,6 +403,7 @@ def snapshot_report(
         "governance": {
             "window": governance_window,
             "evidence_status": governance["evidence_status"],
+            "error": governance.get("error"),
             "runs_considered": governance["runs_considered"],
             "scan_truncated": governance["scan_truncated"],
             "candidates_for_review": governance["candidates_for_review"],
@@ -537,8 +424,11 @@ def snapshot_report(
         "doctor": doctor,
         "status": status,
         "automation": {
-            "mode": "review_recommendation_only",
+            "mode": "isolated_candidate_authoring",
             "expertise_signals": expertise_signals,
+            "automatic_candidate_authoring_allowed": bool(
+                expertise_signals
+            ),
             "automatic_mutation_allowed": False,
         },
         "verification": {

@@ -7,11 +7,24 @@ description: Use when routing and verifying repository implementation, review, a
 
 Use project evidence and the fewest execution contexts that can change the outcome. A Lens defines what to inspect. An Executor defines model, tools, permissions, and context. Never create one permanent agent per Lens.
 
-Honor the requested side-effect boundary. Review, explain, diagnose, research, and plan requests are read-only. Modify project files only when the user requested a change or implementation.
+Honor the requested side-effect boundary. Review, explain, diagnose, research, and plan requests are read-only. Modify project files only when the user requested a change or implementation. Treat local repository mutation, Git commit, and remote/external writes as separate effects: “do not commit, push, or change the remote” does not revoke an explicit request to edit local project files. Preserve every explicit prohibition in the route v2 task contract.
 
 ## Workflow
 
-1. Locate the repository root and read the nearest `AGENTS.md`.
+1. Perform implicit maintenance, then locate the repository root and read the
+   nearest `AGENTS.md`.
+   - The user never needs to request Host Skill synchronization. At workflow
+     entry, preview `maestro host sync` against the reviewed Harness checkout
+     that provides this root Skill. When the plan contains only missing links,
+     apply it automatically. An empty plan is a no-op. Never overwrite an
+     existing path; report a conflict without turning it into task authority.
+   - This deterministic preflight reads release metadata and link state only.
+     It does not initialize the target project, load Pack bodies, create a run
+     receipt, or start a background process.
+   - A newly created link is available after Codex refreshes its Skill catalog.
+     Continue the current task when its selected Skills are already available;
+     request a restart only when the current task actually requires a newly
+     linked Skill.
 2. Inspect `.maestro/project.json` and its configured documentation entrypoint when present.
    - If the project is not initialized and setup is requested, use `$maestro-adapter-builder`.
    - For the Markdown provider, read the configured `core_documents.project` and `core_documents.architecture` before task-specific documents. Treat draft placeholders as missing facts, not project truth.
@@ -20,15 +33,34 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Run `maestro docs --repo <repo> --task "<goal>" --path <planned-or-changed-path> --json`. Repeat `--path` when paths are known; omit it during the first pass when they are not.
    - Read the index and `required_documents` only. `documents` is the backward-compatible alias for that same list. Deduplicate paths already read as an entrypoint or core document.
    - Treat `optional_documents` as metadata-only candidates. Open one only when the task explicitly enters that research/plan boundary or the required evidence is insufficient; do not load all optional documents.
+   - An exact `docs/**/*.md` target is pinned. A directly targeted completed
+     plan is eligible only from `docs/plans/completed/` with `type: plan` and
+     `status: archived`; other inactive or archived documents remain excluded.
+     Missing or omitted exact document targets make evidence insufficient.
    - Treat `selected_conventions` as implementation and verification criteria.
    - If `convention_status` is `none`, continue from current code patterns and reproducible project evidence; absence of a convention is not a blocker.
 4. Define the outcome, verification, boundaries, risk, and stop condition before non-trivial work.
+   - Create or update a project plan document only when stages, durable
+     decisions, blockers, or handoff state must survive the current task.
+     Active plans use `docs/plans/active/`, `type: plan`, and `status: active`.
+     On completion move the same authority to `docs/plans/completed/` and set
+     `status: archived`; use observation state, not Markdown, for per-run
+     telemetry and Assignment progress.
    - Classify the request before choosing an Executor. `판단만`, `검토만`,
      `코드 작업 없이`, `수정하지 마`, `review only`, `no code changes`,
      and equivalent negative phrases override nearby mutation words.
    - Unknown `auto` wording defaults to read-only review.
    - A request that says to review, design, decide, or plan **before**
      implementation is staged. Do not create or run a mutation Assignment yet.
+   - For a non-trivial implementation request in an initialized project, start
+     one run observation now, before routing. Use a concise task label in the
+     user's language. In Codex Desktop, allowlist the public request
+     `model`, `reasoning_effort`, `thread_id`, and `turn_id` into
+     `maestro observe desktop`; otherwise use `maestro observe start`. Attach
+     no fallback at intake. `desktop_request` means only that the request
+     setting and correlation IDs were observed; it does not authorize
+     current-Host execution. Keep the returned run and observation IDs for the
+     whole workflow. Do not start this operational observation for a read-only request.
    - If the user explicitly names another installed Skill, including
      `$reference-research-team` or `$orchestrated-work-session`, use it at the
      relevant step while Maestro remains workflow owner. Built-in Expertise
@@ -41,6 +73,8 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      signal for `maestro govern classify`, open research only when the evidence
      contract requires it, invoke `$maestro-expertise-builder`, run its frozen
      evaluation and `validate-candidate`, and report the isolated candidate.
+     Mark this path `generation.mode=user-requested` with a null signal
+     fingerprint.
      Attempt at most two bounded repairs for validator failures. Unless the
      user separately requests activation or update, stop at the candidate and
      never modify active Expertise. A non-expired, unambiguous candidate that
@@ -92,55 +126,81 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      gate, failed feasibility, blocking question, or forbidden side-effect
      policy stops execution.
    - Before running the authorized mutation owner, save the returned
-     `route_plan` as temporary JSON and start the same bounded implementation
-     observation described below. The decision packets and bundle are not copied
-     into runtime state.
+     `route_plan` as temporary JSON and attach it to the already-started run
+     with `maestro observe plan`. The decision packets and bundle are not
+     copied into runtime state.
 8. For a direct request, use route v2 as the execution contract.
    - The CLI keeps v1 as its compatibility default. This managed Skill intentionally opts into v2 so the Host receives explicit dependency, read-only, and one-writer boundaries.
+   - Before passing structured Expertise hints or correcting a stage route,
+     read `references/expertise-routing.md` and follow its path, lineage, and
+     risk-specific conflict boundaries.
    - The result preserves the v1 selection while adding at most five typed Assignments, their dependencies, Packet contracts, side-effect owner, per-Assignment model routes, terminal condition, and plan digest.
    - Route v2 is a host-executed plan, not an execution trace or scheduler. Never describe planned values as actual calls, tokens, duration, or outcomes.
-   - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --repo <repo> --plan <path> --json` before execution.
+   - The managed generation path validates references, DAG structure, Packet compatibility, one-writer and budget invariants before returning. If the JSON crosses a process or file boundary, rerun `maestro validate-plan --repo <repo> --plan <path> [--research-evidence <research-bundle.json>] --json` before execution. A plan whose gate says `satisfied` is still `RESEARCH_REQUIRED` until this boundary receives and verifies that exact bundle again.
    - The result returns only the selected Lens cards, never the full Lens catalog.
    - Follow `model_route`; read `references/model-routing.md` for model escalation or unavailability.
    - For an authorized non-trivial implementation in an initialized project,
-     save the validated route v2 JSON in a temporary file. When an Assignment
-     can run with repository-local tools and no interactive approval, network,
-     app connector, or unavailable capability, default its actual Executor
-     turn to `maestro host codex`. The Host command derives read-only versus
-     the one bounded writer, model, and reasoning effort from the plan and
-     starts its own observation. This is the only built-in path that can record
-     that Executor turn's official applied-model, reroute, duration, and token
-     events. Do not reuse that run ID or attach the parent Desktop request
-     metadata to it. If `maestro doctor --host codex` fails, or the Assignment
-     needs a capability the adapter cannot provide, execute in the current Host
-     and use `maestro observe desktop` as the honest request-only fallback.
-     That fallback records the parent Desktop request setting, not worker
-     tokens. Neither path stores a prompt, message, guide body, or file content
-     in Maestro state. Do not start an observation for a read-only request
-     merely to obtain telemetry.
+     save the final validated route v2 JSON in a temporary file and attach only
+     that plan to the run started at request intake with
+     `maestro observe plan`. When an
+     Assignment can run with repository-local tools and no interactive
+     approval, network, app connector, or unavailable capability, default its actual Executor
+     turn to `maestro host codex --observation
+     <parent-observation-id>`. The Host command derives read-only versus the
+     one bounded writer, model, and reasoning effort from the plan and appends
+     official applied-model, reroute, duration, token, and terminal evidence
+     to that Assignment in the parent run. It must not create a separate run
+     for every Assignment.
+     Pass the exact `--projection` returned by `assignment project`, its
+     authoritative `--baseline`, the same `--document`,
+     `--dependency-packet`/`--dependency-projection`, and
+     `--research-evidence` inputs used to produce it. The Host reconstructs
+     the AssignmentInput and rejects any mismatch. Assignment mode never
+     accepts `--prompt-file`; its prompt is derived only from that exact
+     projection. A completed App Server turn is not stage completion until
+     the returned final-answer JSON Packet validates against the same plan,
+     projection, and ResearchBundle. A dependent Assignment also requires
+     each supplied dependency Packet digest to match the digest recorded by
+     its completed parent stage. The Host holds a crash-recoverable
+     interprocess lease from preflight through terminal recording so two
+     processes cannot launch the same pending writer concurrently.
+     The owned App Server path currently requires a POSIX interprocess lease.
+     If the platform cannot provide it, use the typed explicit current-Host
+     fallback; other Maestro CLI commands remain available.
+     If the App Server reports completion but that Packet is missing or
+     invalid, record the Assignment once as `failed` before surfacing the
+     contract error; never leave a possibly mutated writer pending for retry.
+   - If `maestro doctor --host codex` fails, or the Assignment needs a
+     capability the adapter cannot provide, execute it in the current Host.
+     Before the first such Assignment, call `maestro observe fallback` once
+     with the typed reason and one factual line proving the unavailable
+     capability. Never use fallback merely because the current conversation
+     has already started doing the work. After the Assignment reaches a terminal
+     state, call `maestro observe stage` with
+     `current_host` or `deterministic_command` evidence. These sources may
+     record status, duration, and bounded evidence references, but may not
+     claim requested/applied model, reroute, or token values. A completed
+     route-v2 implementation without an explicit execution binding and one
+     terminal observation for every planned Assignment is rejected.
+   - Neither path stores a prompt, message, guide body, transcript, or file
+     content in Maestro state.
    - Write `task-label` as a concise human title in the user's current
      language. For a Korean request, prefer a Korean label even when code
      identifiers are English. Do not reuse the raw prompt or an internal
      English routing phrase as the visible title.
 9. Inspect the optional `expertise` selection before executing Assignments.
-   - Load only the selected Expertise Pack Skill and its `selected_guide_ids`.
-     Use AssignmentInput `expertise_load.packs` to resolve the Skill ID,
-     project Skill path when present, Guide resource path, and expected Skill
-     tree digest. Never load every active pack. Selection is not load proof:
-     leave Host attestation unavailable unless the Host can prove the loaded
-     Skill and Guide digests.
-     A pack supplies decision criteria; it does not create another permanent
-     agent or replace the route's Executor. It never grants write authority.
-     In a read-only Assignment it is advisory. The existing mutation owner may
-     apply its criteria while implementing but the Pack cannot widen paths or
-     authorize another writer.
+   - Follow `references/expertise-routing.md` for bounded Pack loading,
+     attestation, agent, permission, and path authority rules. Never load every
+     active Pack.
    - If `research_requirement.gate` is `not-required`, reuse the selected guides
      without repeating general research.
    - If the gate is `open`, read `references/research-and-evidence.md`, run the
      Maestro-owned `$maestro-reference-research` workflow, save and validate
-     one compact ResearchBundle, and rerun the same route with
+     one decision-ready v2 ResearchBundle, and rerun the exact same goal with
      `--research-evidence <bundle.json>`. The CLI computes and binds its digest;
-     a digest alone is rejected. Do not execute Assignments until
+     goal, mode, Pack, Guide, and Pack definition identities; a digest alone,
+     insufficient bundle, legacy bundle, or unrelated bundle is rejected. Do
+     not execute Assignments until
      `maestro validate-plan` returns `execution_status: READY`.
    - `contextualize` gathers current examples or task context; `refresh`
      revalidates the pack's sources; `discover` covers an important expert
@@ -161,6 +221,7 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
      unknown ownership as `gap`; do not infer coverage.
    - Run `maestro assignment project --repo <repo> --plan <route-v2.json>
      --assignment <id> --baseline <baseline.json> [--document <path>]
+     [--research-evidence <research-bundle.json>]
      [--dependency-packet <packet.json> --dependency-projection
      <source-assignment-input.json>] --json`. Every dependency Packet must be
      paired with the exact projection used to validate it; never synthesize a
@@ -181,6 +242,12 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - `deep`: up to three selected Lenses may use fresh, isolated reviewer contexts.
    - Only the Assignment named by `mutation_owner_assignment_id` may write. Research, review, and verification Assignments stay read-only.
    - Stop when a required gate fails, a user decision is required, or the bounded budget is exhausted. The CLI does not schedule, retry, checkpoint, or resume Assignments.
+   - Immediately after each Assignment reaches `completed`, `failed`,
+     `blocked`, or `interrupted`, append its immutable terminal result to the
+     parent observation. When a failed dependency prevents downstream work,
+     close every affected planned Assignment as `skipped` with a bounded
+     dependency evidence reference. Do not wait until the final response to
+     reconstruct these states.
 13. Before launching reviewers, record the exact expected Lens or Specialist
     IDs. Keep initial conclusions hidden from other reviewers and return
     compact evidence packets, not transcripts.
@@ -192,37 +259,77 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
    - Validate every reviewer or terminal Assignment packet with
      `maestro validate-packet --repo <repo> --plan <route-v2.json>
      --assignment <id> --packet <packet.json> [--projection
-     <assignment-input.json>] --json` before it reaches a dependent
+     <assignment-input.json>] [--research-evidence
+     <research-bundle.json>] --json` before it reaches a dependent
      Assignment. An invalid packet is terminal evidence failure, never a
      best-effort handoff.
 14. Bound coordination:
    - Use a bounded host wait. After one no-progress wake, request compact completion once; after the next no-progress wake, cancel that lane and mark its evidence unavailable.
    - As soon as every expected Lens has returned a packet or terminal failure, synthesis is the parent's next action. Do not inspect more files, rerun routing, launch another lane, or wait again unless a material conflict names the new evidence required.
 15. Merge duplicate findings by evidence and fingerprint. Run at most one rebuttal on a material conflict.
-16. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Let `assignment project` recompute and bind the document selection; do not hand-pick away a selected Convention. For each selected Convention, report `applied`, `not_applicable`, `waived`, or `conflict` in the writer terminal Packet. A waiver needs an `owner_decision` ref and an open conflict blocks completion. Run deterministic verification plus an independent completion check proportional to risk.
+16. When a change is authorized, let one implementation owner write. Otherwise keep every lane read-only. Let `assignment project` recompute and bind the document selection; do not hand-pick away a selected Convention. For each selected Convention, report `applied`, `not_applicable`, `waived`, or `conflict` in the writer terminal Packet. A waiver needs an `owner_decision` ref and an open conflict blocks completion. When research context is present, cite its `research-bundle:<digest>` and report one evidence-backed `applied`, `not_applicable`, or `conflict` disposition for every adopted claim; applied claims require projected project or verification evidence. Run deterministic verification plus an independent completion check proportional to risk.
+    - Treat a Git commit as a separate effect from repository mutation. Commit
+      only when the current request explicitly authorizes it, and never infer
+      push, pull request, tag, release, or other remote authority from commit
+      authority.
+    - Resolve the commit-message convention from the nearest `AGENTS.md`, then
+      explicit repository documentation or configuration, then recent commit
+      history. If these sources conflict or remain ambiguous, stop before
+      committing and request a decision instead of inventing a convention.
+    - Split authorized commits into ordered units with one independently
+      reviewable, verifiable, and revertible intent each. Keep implementation
+      with its direct tests; separate unrelated behavior, refactoring,
+      formatting, documentation, and generated-artifact changes.
+    - Preserve every pre-existing dirty or staged change. Never use broad
+      staging such as `git add -A` or `git add .`; stage only the exact paths or
+      hunks owned by the current unit. If an owned hunk cannot be separated
+      from a pre-existing change, stop before staging or committing.
+    - Review the staged diff and run the smallest relevant deterministic
+      verification before each commit, then run the full task verification
+      after the final unit. Do not create placeholder, WIP, or fixup commits.
+    - Report each created commit's hash, subject, included intent, and
+      verification evidence, plus any remaining task-scope or pre-existing
+      working-tree changes.
 17. After implementation evidence passes, classify newly learned knowledge:
     - Do not document one-off details.
     - Update an existing topic convention instead of creating a duplicate.
     - Let `init` and `upgrade` synchronize only allowlisted facts produced by bounded static detectors, such as detected profiles and manifest commands that remain candidates. This is deterministic state synchronization, not Convention promotion.
     - Read `self_improvement` from `.maestro/project.json`. When its mode is `verified-project-conventions`, automatically report a reusable behavioral or architecture rule as a `candidate` with a stable fingerprint and bounded evidence. Do not create or update an active Convention from same-run implementation success.
     - Create or update at most one `docs/conventions/<topic>.md` only when the user explicitly decided the rule (`owner_decision`) or a previously frozen, held-out comparison was accepted (`held_out_evaluation`). Use `maestro convention activate` or `maestro convention update` preview/apply so the Convention, repository-local verification artifact, checkout and document entrypoint are one plan; then run `maestro doctor`.
+    - Use typed `update` only for the same topic and authority, preserving
+      `supersedes` and `sensitivity`. A new topic or changed authority needs an
+      explicit owner or ADR decision. Archive obsolete historical guidance and
+      remove it from the active index; prefer supersession/archive over
+      deletion. Return `NEEDS_DECISION` for secret, legal, or history-purging
+      deletion. Dedicated automated supersede/archive/delete commands remain
+      deferred.
     - For a new candidate, prefer `maestro convention draft` to produce a reviewed preview plan. Applying that plan creates only a `draft`; it never activates or links the Convention.
     - When the mode is `off`, mention the possible rule in the final report without writing a Convention or governance candidate.
     - If that intended documentation edit is the only managed-baseline drift, preview `maestro upgrade`, verify that the plan changes only the manifest/lock baseline for reviewed files, apply that plan, and rerun strict Doctor. Never accept unrelated drift.
     - Return `NEEDS_DECISION` instead of convention-writing for security policy, external contracts, data policy, or irreversible decisions.
     - Report global Skill, Agent, Lens, Executor, Adapter, and Harness improvements as candidates only; never mutate them in the project run. Before building any durable component, let `$maestro-govern` classify a closed evidence signal with `maestro govern classify`; usage count or persona wording is not a boundary.
     - A reusable missing expert workflow may be drafted under `.maestro/state/candidates/expertise/` with `$maestro-expertise-builder` only for a classified Decision Guide or Expertise Pack. A classified Lens, Executor/Agent, Department, Adapter, Research Lane, Specialist Contract, or Packet contract may be compiled under `.maestro/state/candidates/components/` with `$maestro-registry-builder` only after explicit candidate work is requested. Neither path changes the active Registry in the producing run. A validated Expertise candidate may be selected by later or already-authorized project work while it stays visibly `candidate`; it still cannot grant mutation authority.
+    - Do not wait for three runs when the current run exposes a clear, reusable missing Expertise boundary with concrete failure evidence and the classifier returns `decision-guide` or `expertise-pack`. Record that typed observation with `resolution=author_candidate`, author at most one automatic candidate for that fingerprint, validate it, and keep it visibly candidate. Ambiguous omissions still require three independent reusable signals; one critical omission may author immediately. Record the selected missing field even when authoring fails so the final receipt cannot silently report zero expertise signals.
     - Never edit an active project Expertise Skill as same-run self-improvement. A later owner decision or accepted held-out evaluation may publish a new candidate with `maestro expertise update`; keep Pack/Skill identity, increment one version, and use the preview/apply boundary. Use `deactivate` to remove only the allowlist entry when the Pack should stop routing.
+    - Global promotion and deactivation implicitly trigger `maestro expertise reconcile`; the user never needs a separate cleanup request. Preview it and automatically apply only `globally-superseded` and `inactive-publication` moves. They preserve the complete publication under `.agents/archive/expertise/` while removing it from Host discovery. Never auto-resolve `active-content-differs-from-global`.
     - Treat a Guide addition, revision, deprecation, trigger adjustment, source refresh, or evaluation extension as a `component_change` on one complete next Pack candidate. Let the Viewer report component review conditions from bounded use signals, but never infer causality or mutate on counts alone. Export a portable candidate only as a review bundle; Harness inclusion still requires a separate repository review and release.
-18. For a non-trivial initialized run, write one compact RunReceipt after the
-    final verdict with `maestro record --repo <repo> --receipt
-    <temporary-json> [--observation <id>] --json`.
-    - When an implementation observation was started, pass its ID so Maestro
-      freezes the task label, compact plan, and missing total duration. A
-      repeated identical record remains a no-op.
+    - Give every merge, split, Guide move, or Guide copy a `change_set_id`. If two or more candidates share it, route none when any member is invalid, expired, conflicting, or stale. Never preview or apply their individual activate, update, archive, restore, delete, export, rejection, or global-promotion paths. Use `maestro expertise change-set` so project approval, archive, restore, or permanent removal is one digest-bound transaction with rollback.
+    - When a portable candidate reaches at least five distinct `application_observed` runs and its exact digest remains pending, include the candidate ID, observed count, and the global-promotion question in the Codex final message. Continue doing so after the fifth run until the owner promotes it or records `promotion-decision --decision decline`. A decline applies only to that digest; `reconsider` reopens the prompt.
+18. For a non-trivial initialized run, derive one compact RunReceipt after the
+    final verdict with `maestro finalize --repo <repo> --run-id <id>
+    --observation <id> --outcome <outcome> --evidence <ref>
+    --verifier-result <result> ... --json`.
+    - `finalize` reads the task label, compact plan, planning duration and
+      terminal Assignment results from the bound observation. Do not ask the
+      model to reproduce those fields in a temporary receipt JSON.
+    - Finalization requires exactly one terminal result for every Assignment
+      in the attached plan. Missing results are a workflow failure, not an
+      optional dashboard detail. A repeated identical finalization remains a
+      no-op. `maestro record` is only a compatibility/import boundary for an
+      already validated external receipt.
     - If the Host exposes a requested model, complete model/reroute event range,
       or token summary through a supported public event/API, attach it with
-      `maestro observe host` before the final record. Keep requested, applied,
+      `maestro observe host` before finalization. Keep requested, applied,
       and Route-recommended models separate. Record an applied model only with
       `model_event_evidence=complete`; otherwise keep it unmeasured. Include the
       Host source, quality, and correlation ID. Do this automatically as part
@@ -230,19 +337,22 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       Codex session files.
     - In Codex Desktop, when the current public tool runtime exposes
       `nodeRepl.requestMeta["x-codex-turn-metadata"]`, allowlist only `model`,
-      `reasoning_effort`, `thread_id`, and `turn_id`. For a current-Host
-      fallback, pass those four values to `maestro observe desktop` so starting
+      `reasoning_effort`, `thread_id`, and `turn_id`. Pass those four values to
+      `maestro observe desktop` so starting
       the observation and attaching the request setting cannot be forgotten as
       separate workflow steps. The command fixes source
       `codex-desktop-request-meta`, quality `host_reported`, correlation
       `<thread_id>:<turn_id>`, and `model_event_evidence=unavailable`. The
       `reasoning_effort` is a requested setting, not actual reasoning-token
-      consumption. Never persist the raw metadata object.
+      consumption. It records `desktop_request`, not fallback. Add a typed
+      fallback later only after the selected Assignment cannot use the
+      Maestro-owned App Server. Never persist the raw metadata object.
     - Record actual duration and token values only when available; use `null` otherwise.
-    - `stage_results` is optional and bounded to the plan's five Assignments.
-      Record its applied model, duration, tokens, status, and up to three
-      evidence refs only when the Host directly exposes them. Mark stage model
-      evidence complete before displaying it as applied. Never substitute the
+    - Each `stage_result` is required for a finalized plan and bounded to the
+      plan's five Assignments. App Server stages may record applied model,
+      duration, tokens, status, reroutes, and up to three evidence refs from
+      the complete Host event range. Current-Host and deterministic-command
+      stages record only facts that source can prove. Never substitute the
       Route-recommended model or aggregate estimates for actual values.
     - Use the default `run_summary` for an ordinary completion. Use `review_finding`, `verification_failure`, or `correction` only with a stable reusable `fingerprint`, `finding_severity`, evidence, and a command artifact.
     - Reusing the same `run_id` is a no-op only when the receipt content is identical; different content is a conflict.
@@ -256,14 +366,44 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       `expertise_observations` with a stable kind, domain, severity, resolution,
       and an evidence ref already present in the receipt. Mark `reusable=false`
       for project-specific details. The returned `management_check` may
-      recommend review after repeated runs, but never authorizes automatic Pack,
-      Skill, or Convention mutation.
+      authorize one isolated Expertise candidate authoring pass only when
+      `automatic_candidate_authoring_allowed=true`. Select the highest-severity
+      signal, skip it when an existing candidate already carries the same
+      `generation.signal_fingerprint`, and invoke `$maestro-expertise-builder`
+      at most once after a mutation run. Mark the result
+      `generation.mode=automatic` and bind the signal fingerprint. Keep a
+      failed or incomplete draft isolated and report it; do not retry beyond
+      the Builder's bounded repairs. A read-only run only reports the signal.
+      This permission never authorizes active Pack, Skill, Convention, Registry,
+      project manifest, commit, push, or release mutation.
+    - When `management_check.global_promotion_prompts` is non-empty, never
+      promote automatically. In the same final response, ask the user the
+      returned bounded `question` for the single current-run candidate. Five
+      distinct eligible selections are a recommendation to ask, not a request
+      lock: the user may request a portable validated candidate earlier from
+      the dashboard or command workflow. A later affirmative answer authorizes
+      a digest-bound preview and apply that writes the validated candidate
+      directly into this Harness checkout's bundled Registry and Skill source.
+      Do not add a separate user-facing proposal or export step. This approval
+      does not authorize commit, push, pull request, release, or installation
+      into other projects unless those actions are separately requested.
     - When the user asks to open or inspect the Maestro dashboard, start
       `maestro dashboard --repo <repo>` on their behalf, open the returned local
       URL, and keep ownership of stopping that on-demand server. Do not require
       the user to copy a command and do not install a daemon.
+      Whenever the Host exposes a saved-project inventory, use it at dashboard
+      launch even if the user did not separately ask to compare projects. Keep
+      only local directories that contain an initialized
+      `.maestro/project.json` and pass each additional root as a repeated
+      `--project <repo>` argument. Projects opened by a dashboard are also
+      remembered in Maestro's bounded user-local catalog, so a later restart
+      restores them when the Host inventory is unavailable. Do not recursively
+      scan the filesystem. One session token may read only the immutable
+      server-side allowlist built at startup; the browser receives opaque
+      project IDs. Every preview and apply remains bound to the selected
+      project, so never reuse an action preview after switching projects.
     - When the Host owns a complete Codex App Server event stream, import it
-      with `maestro observe import-codex` before `record` so requested model,
+      into the matching observation before `finalize` so requested model,
       reroutes, applied model, token usage, and turn duration stay correlated.
       This is a Host action, not a command the user should type. Desktop request
       metadata may produce `host_request_observed`, but without the complete
@@ -280,10 +420,20 @@ Honor the requested side-effect boundary. Review, explain, diagnose, research, a
       `failed` or `interrupted` result exits 4; a protocol, timeout, sandbox, or
       contract failure exits 2 and must never be converted into an applied
       model claim. Do not ask the user to invoke this command.
+      Initialize with exact high-volume delta notification opt-outs and keep
+      reading until the semantic terminal event. Unrelated notification volume
+      must not consume the compact observation budget; only the separate raw
+      transport safety limit and overall timeout may stop the stream.
     - Token totals from `maestro host codex` cover only the App Server turn
       owned by that command. The parent Desktop Maestro/orchestrator turn is
       outside that event stream and remains explicitly unmeasured; never label
       a worker-only total as whole-workflow cost.
+    - Record a validated final receipt even when the project framework or
+      Registry lock is stale. Receipt append preserves a completed fact and
+      returns `recording_baseline.status=stale`; it must not trigger an
+      unreviewed lock repair. In that state, leave the current-definition
+      management projection `deferred` and preview/apply `maestro upgrade`
+      separately before governance uses the event.
     - A request to approve a detected verification command uses
       `maestro verification approve` or the dashboard's exact candidate
       `preview → apply` flow. Treat approval as a project-authority change:

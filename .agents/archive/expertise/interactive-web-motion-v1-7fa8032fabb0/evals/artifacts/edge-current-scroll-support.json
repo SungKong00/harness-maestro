@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-current-scroll-support",
+  "baseline_observation": "The frozen baseline has no Pack able to open a current browser-support gate for scroll-driven animation.",
+  "candidate_observation": "The candidate selects scroll-linked criteria and opens contextual research instead of asserting current support from pinned sources.",
+  "evidence_refs": [
+    "route-replay:edge-current-scroll-support",
+    "research-bundle:.maestro/state/work/interactive-web-motion/research-bundle.json"
+  ]
+}

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 from fnmatch import fnmatchcase
 from pathlib import Path
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Iterable
 
 from .errors import MaestroError
 from .matching import searchable_terms, term_matches
@@ -14,7 +15,7 @@ from .registry import route_goal
 from .util import ensure_repo, read_json, safe_target
 
 MAX_SELECTED_DOCUMENTS = 8
-MAX_SELECTED_DOCUMENT_BYTES = 48 * 1024
+MAX_SELECTED_DOCUMENT_BYTES = 52 * 1024
 MAX_OPTIONAL_DOCUMENTS = 4
 MAX_DOCUMENT_ENTRIES = 5_000
 MAX_DOCUMENT_FILE_BYTES = 1_000_000
@@ -124,6 +125,8 @@ PLAN_TASK_TERMS = (
     "마일스톤",
     "구현 계획",
 )
+COMMON_TERM_DOCUMENT_RATIO = 0.25
+MIN_COMMON_TERM_DOCUMENTS = 3
 
 
 def _scan_limit_notice(kind: str, path: str) -> str:
@@ -304,6 +307,8 @@ def _read_document_bounded(path: Path, maximum_bytes: int) -> tuple[str, str, in
 def active_documents(
     repo: Path,
     trace: dict[str, Any] | None = None,
+    *,
+    direct_targets: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
     docs_root = repo / "docs"
     scan_trace: dict[str, Any] = {}
@@ -318,6 +323,13 @@ def active_documents(
         )
     documents: list[dict[str, Any]] = []
     bytes_read = 0
+    direct_target_set = set(direct_targets)
+    document_paths.sort(
+        key=lambda path: (
+            path.relative_to(repo).as_posix() not in direct_target_set,
+            path.relative_to(repo).as_posix(),
+        )
+    )
     for path in document_paths:
         relative = path.relative_to(repo).as_posix()
         if "archive" in path.relative_to(docs_root).parts:
@@ -353,7 +365,18 @@ def active_documents(
             not metadata[field].strip() for field in REQUIRED_DOCUMENT_FIELDS
         ):
             continue
-        if metadata.get("status") != "active":
+        direct_completed_plan = (
+            relative in direct_target_set
+            and relative.startswith("docs/plans/completed/")
+            and metadata.get("type") == "plan"
+            and metadata.get("status") == "archived"
+        )
+        if (
+            relative.startswith("docs/plans/completed/")
+            and not direct_completed_plan
+        ):
+            continue
+        if metadata.get("status") != "active" and not direct_completed_plan:
             continue
         if metadata.get("authority") not in {
             "repository",
@@ -455,6 +478,40 @@ def _terms_match_any(
     candidates: tuple[str, ...],
 ) -> bool:
     return any(term_matches(terms, candidate) for candidate in candidates)
+
+
+def _discriminating_task_terms(
+    documents: list[dict[str, Any]],
+    task_terms: frozenset[str],
+) -> tuple[frozenset[str], dict[str, int], list[str]]:
+    """Drop corpus-wide terms that cannot distinguish one project document."""
+
+    frequencies = {
+        term: sum(
+            1
+            for document in documents
+            if (
+                term_matches(document["path_terms"], term)
+                or term_matches(document["metadata_terms"], term)
+                or term_matches(document["body_terms"], term)
+            )
+        )
+        for term in task_terms
+    }
+    threshold = max(
+        MIN_COMMON_TERM_DOCUMENTS,
+        math.ceil(len(documents) * COMMON_TERM_DOCUMENT_RATIO),
+    )
+    ignored = sorted(
+        term
+        for term, frequency in frequencies.items()
+        if frequency >= threshold
+    )
+    return (
+        frozenset(task_terms - set(ignored)),
+        dict(sorted(frequencies.items())),
+        ignored,
+    )
 
 
 def _document_required_by_task(
@@ -661,6 +718,11 @@ def select_documents(
 ) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     normalized_target_paths = _normalize_target_paths(target_paths or [])
+    direct_document_targets = [
+        path
+        for path in normalized_target_paths
+        if path.startswith("docs/") and path.endswith(".md")
+    ]
     custom_handoff = _custom_adapter_handoff(
         repo,
         task,
@@ -679,7 +741,7 @@ def select_documents(
         and inferred_route["model_route"]["task_class"]
         == "deterministic-verification"
     )
-    task_tokens = (
+    raw_task_tokens = (
         searchable_terms(task, STOPWORDS)
         if not deterministic_verification
         else frozenset()
@@ -694,8 +756,16 @@ def select_documents(
     selected_index: dict[str, Any] | None = None
     ranked: list[tuple[int, str, dict[str, Any]]] = []
     scan_trace: dict[str, Any] = {}
-    active = active_documents(repo, scan_trace)
+    active = active_documents(
+        repo,
+        scan_trace,
+        direct_targets=direct_document_targets,
+    )
+    task_tokens, task_term_frequencies, ignored_common_terms = (
+        _discriminating_task_terms(active, raw_task_tokens)
+    )
     for document in active:
+        direct_target = document["path"] in direct_document_targets
         if document["path"] == "docs/README.md":
             selected_index = {
                 "path": document["path"],
@@ -703,9 +773,10 @@ def select_documents(
                 "reason": "project documentation index",
                 "score": 0,
                 "bytes": document["bytes"],
+                "document_type": document["metadata"]["type"],
+                "pinned": direct_target,
             }
             continue
-
         metadata_matches = sorted(
             token
             for token in task_tokens
@@ -740,6 +811,7 @@ def select_documents(
             and normalized_target_paths
             and path_scopes
             and not scope_matches
+            and not direct_target
         ):
             continue
         score = (
@@ -756,6 +828,7 @@ def select_documents(
             and len(body_matches) < body_match_minimum
             and not lens_matches
             and not scope_matches
+            and not direct_target
         ):
             continue
         reasons = []
@@ -767,17 +840,20 @@ def select_documents(
             reasons.append(f"lens: {', '.join(lens_matches[:3])}")
         if scope_matches:
             reasons.append(f"path scope: {', '.join(scope_matches[:3])}")
+        if direct_target:
+            reasons.insert(0, "exact target path")
         ranked.append(
             (
-                score,
+                score + (10_000 if direct_target else 0),
                 document["path"],
                 {
                     "path": document["path"],
                     "sha256": document["sha256"],
                     "reason": "; ".join(reasons),
-                    "score": score,
+                    "score": score + (10_000 if direct_target else 0),
                     "bytes": document["bytes"],
                     "document_type": document["metadata"]["type"],
+                    "pinned": direct_target,
                 },
             )
         )
@@ -791,22 +867,32 @@ def select_documents(
         for item in ranked
         if _document_required_by_task(
             item[2]["document_type"],
-            task_tokens,
+            raw_task_tokens,
             normalized_target_paths,
         )
+        or item[2].get("pinned") is True
     ]
     optional_ranked = [
         item
         for item in ranked
         if not _document_required_by_task(
             item[2]["document_type"],
-            task_tokens,
+            raw_task_tokens,
             normalized_target_paths,
         )
+        and item[2].get("pinned") is not True
     ]
-    candidates = ([selected_index] if selected_index else []) + [
-        item[2] for item in required_ranked
+    pinned_candidates = [
+        item[2] for item in required_ranked if item[2].get("pinned") is True
     ]
+    ordinary_required = [
+        item[2] for item in required_ranked if item[2].get("pinned") is not True
+    ]
+    candidates = (
+        pinned_candidates
+        + ([selected_index] if selected_index else [])
+        + ordinary_required
+    )
     optional_documents = [
         {
             **item[2],
@@ -844,19 +930,52 @@ def select_documents(
         missing_evidence.append(
             "Documentation scan was truncated by resource limits; selection evidence is incomplete."
         )
+    skipped_paths = set(
+        [*budget_skipped_documents, *limit_skipped_documents]
+    )
+    skipped_active_conventions = sorted(
+        candidate["path"]
+        for candidate in candidates
+        if (
+            candidate["path"] in skipped_paths
+            and candidate.get("document_type") == "convention"
+        )
+    )
+    if skipped_active_conventions:
+        missing_evidence.append(
+            "Matched active Convention documents were omitted by the context "
+            "boundary: "
+            + ", ".join(skipped_active_conventions)
+            + ". Narrow the target path or task before mutation."
+        )
+    selected_paths = {item["path"] for item in selected}
+    missing_direct_targets = sorted(
+        set(direct_document_targets) - selected_paths
+    )
+    if missing_direct_targets:
+        missing_evidence.append(
+            "Exact document targets were missing, ineligible, or omitted by "
+            "the bounded context: "
+            + ", ".join(missing_direct_targets)
+            + "."
+        )
+    if (
+        raw_task_tokens
+        and not task_tokens
+        and not ranked
+        and not normalized_target_paths
+        and not effective_lenses
+    ):
+        missing_evidence.append(
+            "The task contains only corpus-wide document terms; add a component "
+            "name, target path, or Lens before treating selection as complete."
+        )
     missing_evidence.extend(
         _core_document_gaps(core_status)
     )
-    if budget_skipped_documents:
-        missing_evidence.append(
-            "Matched documents were omitted by the selection byte budget; "
-            "narrow the task or target paths before treating the evidence as complete."
-        )
-    if limit_skipped_documents:
-        missing_evidence.append(
-            "Matched documents were omitted by the document-count limit; "
-            "narrow the task or target paths before treating the evidence as complete."
-        )
+    # Bounded top-k retrieval intentionally omits lower-ranked ordinary
+    # matches. That is a context policy, not missing evidence. Scan truncation,
+    # missing core authority, and omitted active Conventions still fail closed.
     evidence_status = "insufficient" if missing_evidence else "sufficient"
     selected_conventions = [
         item["path"]
@@ -906,6 +1025,14 @@ def select_documents(
             "full_document_bodies_returned": 0,
             "evidence_status": evidence_status,
             "deterministic_verification": deterministic_verification,
+            "raw_task_terms": sorted(raw_task_tokens),
+            "discriminating_task_terms": sorted(task_tokens),
+            "ignored_common_terms": ignored_common_terms,
+            "task_term_document_frequency": task_term_frequencies,
+            "common_term_document_threshold": max(
+                MIN_COMMON_TERM_DOCUMENTS,
+                math.ceil(len(active) * COMMON_TERM_DOCUMENT_RATIO),
+            ),
             "scan_truncated": scan_trace["truncated"],
             "scan_truncation_reasons": scan_trace["truncation_reasons"],
             "skipped_documents": scan_trace["skipped_documents"],

@@ -1,0 +1,54 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "technical-seo",
+  "results": [
+    {
+      "case_id": "normal-crawl-index",
+      "observed_pack_id": "technical-seo",
+      "observed_guides": [
+        "crawlability-and-indexability",
+        "seo-measurement-and-verification"
+      ],
+      "observed_mode": "reuse",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-canonical-appearance",
+      "observed_pack_id": "technical-seo",
+      "observed_guides": [
+        "canonical-url-lifecycle",
+        "search-appearance-and-structured-data",
+        "crawlability-and-indexability",
+        "seo-measurement-and-verification"
+      ],
+      "observed_mode": "reuse",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-cwv-rendering",
+      "observed_pack_id": "technical-seo",
+      "observed_guides": [
+        "crawlability-and-indexability",
+        "canonical-url-lifecycle",
+        "web-performance-and-page-experience",
+        "seo-measurement-and-verification"
+      ],
+      "observed_mode": "reuse",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-marketing-copy",
+      "observed_pack_id": null,
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-motion-performance",
+      "observed_pack_id": null,
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "verdict": "pass"
+    }
+  ]
+}

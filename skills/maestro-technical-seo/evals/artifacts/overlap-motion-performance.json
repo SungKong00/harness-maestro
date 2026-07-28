@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "overlap-motion-performance",
+  "baseline_observation": "Interactive-web-motion already owns animation mechanism, frame behavior, observer lifecycle, and teardown evidence.",
+  "candidate_observation": "The candidate dominance triggers require a search or Core Web Vitals boundary and did not select technical-seo for animation-only runtime work.",
+  "evidence_refs": [
+    "inventory:interactive-web-motion-existing-coverage",
+    "route-replay:technical-seo:overlap-motion-performance"
+  ]
+}

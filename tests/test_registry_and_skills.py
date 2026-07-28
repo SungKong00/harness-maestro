@@ -875,6 +875,12 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("global_harness_candidates", text)
         self.assertIn("maestro record", text)
         self.assertIn("maestro observe desktop", text)
+        self.assertIn("management_check.global_promotion_prompts", text)
+        self.assertIn(
+            "distinct eligible selections are a recommendation to ask",
+            text,
+        )
+        self.assertIn("never\n      promote automatically", text)
         self.assertIn("default its actual Executor", text)
         self.assertIn("worker-only total", text)
         self.assertIn("`NEEDS_DECISION` instead of convention-writing", text)

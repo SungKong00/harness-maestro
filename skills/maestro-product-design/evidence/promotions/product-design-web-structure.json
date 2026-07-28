@@ -1,0 +1,23 @@
+{
+  "base_after": {
+    "digest": "2de6f52bcbc7ef5b6e7406bf4c3f2421d2dd00b919c139a874e05212c397ed2a",
+    "version": 2
+  },
+  "base_before": {
+    "digest": "da14403358132f279d43e266b161c4028695baaf720f05c6c3911d17183feadb",
+    "expertise_pack_id": "product-design",
+    "version": 1
+  },
+  "bundle_digest": "95b848ff4d7222c1f7490268dc39a7d162b7e8a2a550c279f1861189b9a1667b",
+  "candidate_digest": "32c4e5a11b4bc9a8b5824899cd3f0414aa4f54c1bce7ce0ab0a6487d274d91ac",
+  "candidate_id": "product-design-web-structure",
+  "component_change": {
+    "kind": "guide-addition",
+    "target_guide_id": "information-architecture-and-user-flow"
+  },
+  "reference_sha256": "30f9c76b2183833c0b5f9a76997cfd2071a88199962cf362493efdee5a8d95ac",
+  "schema_version": "maestro_expertise_global_component_promotion_v1",
+  "source_pack_id": "product-design-web-structure",
+  "target_guide_id": "information-architecture-and-user-flow",
+  "target_pack_id": "product-design"
+}

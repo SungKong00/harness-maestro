@@ -7,9 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from .errors import MaestroError
+from .expertise_changes import candidate_change_set_groups
+from .expertise_routing import (
+    require_route_hints,
+    resolve_structured_pack,
+)
 from .matching import searchable_terms, term_matches
 from .registry import load_registry, validate_registry
-from .release import load_packaged_release_manifest
+from .release import (
+    canonical_skill_execution_record,
+    load_packaged_release_manifest,
+)
 from .util import (
     canonical_json,
     ensure_repo,
@@ -84,6 +92,72 @@ def _project_pack_paths(repo: Path) -> list[str]:
     return configuration["active_pack_paths"]
 
 
+def project_expertise_storage_status(
+    repo_path: str | Path,
+) -> dict[str, list[dict[str, str]]]:
+    """Expose active global shadows and inactive Host-visible publications."""
+
+    repo = ensure_repo(repo_path)
+    active_paths = set(_project_pack_paths(repo))
+    registry = load_registry()
+    bundled_by_id = {
+        pack["expertise_pack_id"]: pack
+        for pack in registry["expertise_packs"]
+    }
+    manifest = load_packaged_release_manifest()
+    superseded: list[dict[str, str]] = []
+    conflicts: list[dict[str, str]] = []
+    inactive: list[dict[str, str]] = []
+    root = safe_target(repo, ".agents/skills")
+    if root.is_symlink() or not root.is_dir():
+        return {
+            "globally_superseded": superseded,
+            "active_conflicts": conflicts,
+            "inactive_publications": inactive,
+        }
+    for skill_root in sorted(root.iterdir()):
+        pack_path = skill_root / PROJECT_PACK_FILENAME
+        activation_path = skill_root / "activation.json"
+        if (
+            skill_root.is_symlink()
+            or not skill_root.is_dir()
+            or not pack_path.is_file()
+            or pack_path.is_symlink()
+            or not activation_path.is_file()
+            or activation_path.is_symlink()
+        ):
+            continue
+        relative_pack = pack_path.relative_to(repo).as_posix()
+        pack = read_json(pack_path)
+        pack_id = pack.get("expertise_pack_id")
+        if not isinstance(pack_id, str):
+            continue
+        entry = {
+            "expertise_pack_id": pack_id,
+            "skill_root": skill_root.relative_to(repo).as_posix(),
+        }
+        if relative_pack not in active_paths:
+            inactive.append(entry)
+            continue
+        bundled = bundled_by_id.get(pack_id)
+        if bundled is None:
+            continue
+        expected = manifest["skills"].get(bundled["skill_id"])
+        if expected == canonical_skill_execution_record(
+            skill_root,
+            source_skill_id=pack.get("skill_id", ""),
+            canonical_skill_id=bundled["skill_id"],
+        ):
+            superseded.append(entry)
+        else:
+            conflicts.append(entry)
+    return {
+        "globally_superseded": superseded,
+        "active_conflicts": conflicts,
+        "inactive_publications": inactive,
+    }
+
+
 def _project_pack_target(repo: Path, relative_path: str) -> tuple[Path, str]:
     if "\\" in relative_path:
         raise MaestroError(
@@ -114,6 +188,11 @@ def _skill_tree_digest(skill_root: Path) -> str:
                 f"Project Expertise may not contain symlinks: {path}",
             )
         if not path.is_file():
+            continue
+        if path.relative_to(skill_root).as_posix() in {
+            "disposition.json",
+            "promotion-decision.json",
+        }:
             continue
         if len(files) >= MAX_PROJECT_PACK_FILES:
             raise MaestroError(
@@ -150,6 +229,196 @@ def _required_pack_file(skill_root: Path, relative_path: str) -> Path:
     return target
 
 
+def project_publication_snapshot(
+    pack: dict[str, Any],
+    *,
+    skill_root: Path,
+) -> dict[str, Any]:
+    """Return one digest-bound project publication and its source-shaped files."""
+
+    activation_path = safe_target(skill_root, "activation.json")
+    candidate_path = safe_target(
+        skill_root,
+        "evidence/candidate.json",
+    )
+    if (
+        activation_path.is_symlink()
+        or not activation_path.is_file()
+        or candidate_path.is_symlink()
+        or not candidate_path.is_file()
+    ):
+        raise MaestroError(
+            "PROJECT_EXPERTISE_PUBLICATION_INVALID",
+            "Project Expertise publication provenance is missing.",
+        )
+    activation = read_json(activation_path)
+    candidate = read_json(candidate_path)
+    activation_fields = {
+        "schema_version",
+        "action",
+        "candidate_id",
+        "candidate_digest",
+        "approval_ref",
+        "source_candidate_path",
+        "pack_version",
+        "previous_definition_digest",
+    }
+    candidate_id = activation.get("candidate_id")
+    if (
+        set(activation) != activation_fields
+        or activation.get("schema_version")
+        != "maestro_expertise_publication_v1"
+        or activation.get("action") not in {"activate", "update"}
+        or not isinstance(candidate_id, str)
+        or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", candidate_id)
+        is None
+        or activation.get("source_candidate_path")
+        != f".maestro/state/candidates/expertise/{candidate_id}"
+        or activation.get("pack_version") != pack.get("version")
+        or not isinstance(activation.get("candidate_digest"), str)
+        or DIGEST_PATTERN.fullmatch(activation["candidate_digest"])
+        is None
+        or candidate.get("candidate_id") != candidate_id
+        or candidate.get("expertise_pack_id")
+        != pack.get("expertise_pack_id")
+        or candidate.get("portability") not in {"project", "global"}
+    ):
+        raise MaestroError(
+            "PROJECT_EXPERTISE_PUBLICATION_INVALID",
+            "Project Expertise publication provenance does not match its Pack.",
+        )
+
+    source_to_published = {
+        f"draft/{PROJECT_PACK_FILENAME}": PROJECT_PACK_FILENAME,
+        "draft/SKILL.md": "SKILL.md",
+        "draft/agents/openai.yaml": "agents/openai.yaml",
+        "candidate.json": "evidence/candidate.json",
+        "evidence/sources.json": "evidence/sources.json",
+        "evals/cases.json": "evals/cases.json",
+    }
+    try:
+        suite = read_json(
+            _required_pack_file(skill_root, "evals/cases.json")
+        )
+        evaluation_artifact = suite.get(
+            "evaluation_artifact",
+            {},
+        ).get("path")
+        if isinstance(evaluation_artifact, str):
+            source_to_published[evaluation_artifact] = (
+                evaluation_artifact
+            )
+        quality_path = candidate["evaluation"]["quality_path"]
+        source_to_published[quality_path] = quality_path
+        quality = read_json(
+            _required_pack_file(skill_root, quality_path)
+        )
+        for result in quality.get("cases", []):
+            artifact_path = result.get("artifact", {}).get("path")
+            if isinstance(artifact_path, str):
+                source_to_published[artifact_path] = artifact_path
+        for guide in pack["guides"]:
+            source_path = f"draft/references/{guide['guide_id']}.md"
+            source_to_published[source_path] = (
+                f"references/{guide['guide_id']}.md"
+            )
+    except (KeyError, TypeError) as exc:
+        raise MaestroError(
+            "PROJECT_EXPERTISE_PUBLICATION_INVALID",
+            "Project Expertise publication evidence is malformed.",
+        ) from exc
+
+    files = {
+        source_path: _required_pack_file(
+            skill_root,
+            published_path,
+        ).read_text(encoding="utf-8")
+        for source_path, published_path in sorted(
+            source_to_published.items()
+        )
+    }
+    publication_digest = sha256_text(
+        canonical_json(
+            {
+                path: sha256_text(content)
+                for path, content in files.items()
+            }
+        )
+    )
+    if publication_digest != activation["candidate_digest"]:
+        raise MaestroError(
+            "PROJECT_EXPERTISE_PUBLICATION_STALE",
+            "Project Expertise files changed after project confirmation.",
+        )
+    return {
+        "activation": activation,
+        "candidate": candidate,
+        "files": files,
+        "publication_digest": publication_digest,
+    }
+
+
+def _project_pack_is_superseded_by_bundled_successor(
+    pack: dict[str, Any],
+    *,
+    skill_root: Path,
+    bundled_pack: dict[str, Any] | None,
+) -> bool:
+    pack_id = pack.get("expertise_pack_id")
+    local_skill_id = pack.get("skill_id")
+    bundled_skill_id = (
+        bundled_pack.get("skill_id")
+        if bundled_pack is not None
+        else None
+    )
+    if (
+        bundled_pack is None
+        or pack.get("portability") != "project"
+        or pack.get("extends") is not None
+        or pack_id != bundled_pack.get("expertise_pack_id")
+        or bundled_skill_id
+        not in {local_skill_id, f"maestro-{pack_id}"}
+    ):
+        return False
+    local_version = pack.get("version")
+    bundled_version = bundled_pack.get("version")
+    if (
+        not isinstance(local_version, int)
+        or isinstance(local_version, bool)
+        or not isinstance(bundled_version, int)
+        or isinstance(bundled_version, bool)
+        or local_version > bundled_version
+    ):
+        return False
+
+    try:
+        publication = project_publication_snapshot(
+            pack,
+            skill_root=skill_root,
+        )
+    except MaestroError:
+        return False
+    activation = publication["activation"]
+    candidate = publication["candidate"]
+    candidate_id = activation.get("candidate_id")
+    if (
+        not isinstance(candidate_id, str)
+        or not candidate_id
+        or candidate.get("candidate_id") != candidate_id
+        or candidate.get("expertise_pack_id")
+        != pack.get("expertise_pack_id")
+    ):
+        return False
+
+    if local_version < bundled_version:
+        return True
+    promoted_shape = copy.deepcopy(pack)
+    promoted_shape["portability"] = "global"
+    promoted_shape["status"] = bundled_pack.get("status")
+    promoted_shape["skill_id"] = bundled_skill_id
+    return promoted_shape == bundled_pack
+
+
 def _resolve_local_packs(
     repo: Path,
     bundled_registry: dict[str, list[dict[str, Any]]],
@@ -168,10 +437,24 @@ def _resolve_local_packs(
         pack["expertise_pack_id"]: pack
         for pack in bundled_registry["expertise_packs"]
     }
+    retained_packs = [
+        item
+        for item in raw_packs
+        if not (
+            item[3] == "project"
+            and _project_pack_is_superseded_by_bundled_successor(
+                item[0],
+                skill_root=item[2],
+                bundled_pack=bundled_by_id.get(
+                    item[0].get("expertise_pack_id")
+                ),
+            )
+        )
+    ]
 
     combined = copy.deepcopy(bundled_registry)
     combined["expertise_packs"].extend(
-        pack for pack, *_ in raw_packs
+        pack for pack, *_ in retained_packs
     )
     errors = validate_registry(combined)
     if errors:
@@ -185,7 +468,7 @@ def _resolve_local_packs(
         origin,
         candidate_id,
         definition_root,
-    ) in raw_packs:
+    ) in retained_packs:
         pack_id = pack["expertise_pack_id"]
         if pack["portability"] != "project":
             raise MaestroError(
@@ -405,6 +688,21 @@ def _load_project_packs(
     return _resolve_local_packs(repo, bundled_registry, raw_packs)
 
 
+def validate_project_expertise_against_registry(
+    repo_path: str | Path,
+    bundled_registry: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Validate active project publications against one explicit Registry."""
+
+    errors = validate_registry(bundled_registry)
+    if errors:
+        raise MaestroError("REGISTRY_INVALID", "; ".join(errors))
+    return _load_project_packs(
+        ensure_repo(repo_path),
+        bundled_registry,
+    )
+
+
 def candidate_expertise_statuses(
     repo_path: str | Path,
 ) -> dict[str, dict[str, Any]]:
@@ -415,7 +713,10 @@ def candidate_expertise_statuses(
     if root.is_symlink() or not root.is_dir():
         return {}
 
-    from .expertise_lifecycle import validate_expertise_candidate
+    from .expertise_lifecycle import (
+        read_candidate_disposition,
+        validate_expertise_candidate,
+    )
 
     published_candidate_ids: set[str] = set()
     active_versions: dict[str, int] = {}
@@ -481,6 +782,20 @@ def candidate_expertise_statuses(
     for path in paths:
         candidate_id = path.name
         try:
+            disposition = read_candidate_disposition(
+                repo,
+                candidate_id,
+            )
+        except MaestroError as exc:
+            statuses[candidate_id] = {
+                "candidate_id": candidate_id,
+                "validation_status": "FAIL",
+                "validation_issue_codes": [exc.code],
+                "runtime_status": "invalid",
+                "immediate_use_allowed": False,
+            }
+            continue
+        try:
             report = validate_expertise_candidate(repo, candidate_id)
         except (MaestroError, TypeError, ValueError) as exc:
             code = (
@@ -524,11 +839,18 @@ def candidate_expertise_statuses(
                     "skill_path": (
                         path.relative_to(repo) / "draft/SKILL.md"
                     ).as_posix(),
-                    "definition_digest": _skill_tree_digest(path),
+                    "definition_digest": (
+                        disposition["candidate_digest"]
+                        if disposition is not None
+                        else _skill_tree_digest(path)
+                    ),
                 }
             )
         except (KeyError, MaestroError, TypeError, ValueError):
             status["runtime_status"] = "invalid"
+            continue
+        if disposition is not None:
+            status["runtime_status"] = "rejected"
             continue
         if candidate_id in published_candidate_ids:
             status["runtime_status"] = "published"
@@ -563,6 +885,38 @@ def candidate_expertise_statuses(
             continue
         latest[0]["runtime_status"] = "available"
         latest[0]["immediate_use_allowed"] = True
+
+    for change_set_id, candidate_ids in candidate_change_set_groups(
+        repo
+    ).items():
+        if len(candidate_ids) < 2:
+            continue
+        member_states = [
+            statuses.get(candidate_id, {}).get(
+                "runtime_status",
+                "invalid",
+            )
+            for candidate_id in candidate_ids
+        ]
+        if all(state == "available" for state in member_states):
+            change_set_status = "available"
+        elif all(state == "published" for state in member_states):
+            change_set_status = "published"
+        else:
+            change_set_status = "paused"
+        for candidate_id in candidate_ids:
+            status = statuses.get(candidate_id)
+            if status is None:
+                continue
+            status["change_set_id"] = change_set_id
+            status["change_set_candidate_ids"] = candidate_ids
+            status["change_set_status"] = change_set_status
+            if (
+                change_set_status == "paused"
+                and status.get("runtime_status") == "available"
+            ):
+                status["runtime_status"] = "change_set_paused"
+                status["immediate_use_allowed"] = False
     return statuses
 
 
@@ -718,6 +1072,7 @@ def select_expertise(
     goal: str,
     *,
     intent: str,
+    route_hints: dict[str, Any] | None = None,
     research_evidence_digest: str | None = None,
     repo_path: str | Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -731,7 +1086,11 @@ def select_expertise(
             "RESEARCH_EVIDENCE_DIGEST_INVALID",
             "Research evidence digest must be a canonical SHA-256 digest.",
         )
-
+    normalized_hints = (
+        require_route_hints(route_hints)
+        if route_hints is not None
+        else None
+    )
     catalog = load_expertise_catalog(
         repo_path,
         include_candidates=repo_path is not None,
@@ -745,24 +1104,46 @@ def select_expertise(
         if pack["status"] in {"pilot", "active"}
     ]
     for pack in eligible_packs:
+        research_only_triggers = set(
+            pack["research_policy"]["contextualize_triggers"]
+        )
+        research_only_triggers.update(
+            pack["research_policy"]["refresh_triggers"]
+        )
         selectable_triggers = set(pack["triggers"])
         selectable_triggers.update(
             trigger
             for guide in pack["guides"]
             for trigger in guide["triggers"]
+            if trigger not in research_only_triggers
         )
-        selectable_triggers.update(
-            pack["research_policy"]["contextualize_triggers"]
-        )
-        selectable_triggers.update(
-            pack["research_policy"]["refresh_triggers"]
-        )
-        score = sum(
+        domain_score = sum(
             1
             for trigger in selectable_triggers
             if _matches(goal_terms, trigger)
         )
-        if score:
+        research_score = sum(
+            1
+            for trigger in research_only_triggers
+            if _matches(goal_terms, trigger)
+        )
+        generic_identity_terms = {
+            "product",
+            "software",
+            "technical",
+            "strategy",
+        }
+        identity_terms = [
+            term
+            for term in pack["expertise_pack_id"].split("-")
+            if term not in generic_identity_terms
+        ]
+        identity_match = any(
+            _matches(goal_terms, term)
+            for term in identity_terms
+        )
+        score = domain_score + research_score
+        if domain_score or (research_score and identity_match):
             dominance_score = sum(
                 1
                 for trigger in pack.get("dominance_triggers", [])
@@ -785,26 +1166,55 @@ def select_expertise(
     ranked.sort(
         key=lambda item: (-item[2], -item[0], -item[1], item[3])
     )
-    selected_packs = [item[4] for item in ranked[:MAX_SELECTED_PACKS]]
+    structured_pack_id: str | None = None
+    structured_warnings: list[dict[str, Any]] = []
+    structured_trace: dict[str, Any] | None = None
+    if normalized_hints is not None:
+        (
+            structured_pack_id,
+            structured_warnings,
+            structured_trace,
+        ) = resolve_structured_pack(
+            normalized_hints,
+            eligible_pack_ids={
+                pack["expertise_pack_id"]
+                for pack in eligible_packs
+            },
+            catalog_pack_ids={
+                pack["expertise_pack_id"]
+                for pack in catalog
+            },
+        )
+    if structured_pack_id is not None:
+        selected_packs = [
+            pack
+            for pack in eligible_packs
+            if pack["expertise_pack_id"] == structured_pack_id
+        ]
+    else:
+        selected_packs = [item[4] for item in ranked[:MAX_SELECTED_PACKS]]
 
     selected_guide_ids: list[str] = []
     pack_cards: list[dict[str, Any]] = []
     research_mode = "reuse"
     research_reasons: list[str] = []
-    warnings: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = list(structured_warnings)
     if (
-        len(ranked) > 1
+        structured_pack_id is None
+        and len(ranked) > 1
         and ranked[0][2] == ranked[1][2]
         and ranked[0][0] == ranked[1][0]
         and ranked[0][1] == ranked[1][1]
     ):
+        candidate_pack_ids = [ranked[0][3], ranked[1][3]]
         warnings.append(
             {
                 "code": "EXPERTISE_SELECTION_AMBIGUOUS",
-                "candidate_pack_ids": [ranked[0][3], ranked[1][3]],
+                "candidate_pack_ids": candidate_pack_ids,
+                "selected_pack_id": ranked[0][3],
                 "message": (
-                    "Two Expertise Packs have equal routing evidence; "
-                    "verify the selected decision domain before execution."
+                    "Two Expertise Packs have equal routing evidence; the "
+                    "stable lexical rank wins for this non-high-risk route."
                 ),
             }
         )
@@ -962,4 +1372,39 @@ def select_expertise(
             ],
         },
     }
+    if normalized_hints is not None:
+        selection["route_hints"] = normalized_hints
+        selection["selection_trace"]["structured_routing"] = {
+            **structured_trace,
+            "evidence": {
+                "goal": "lexical-ranking",
+                "work_kinds": list(normalized_hints["work_kinds"]),
+                "affected_paths": list(
+                    normalized_hints["affected_paths"]
+                ),
+                "explicit_pack_id": normalized_hints[
+                    "explicit_pack_id"
+                ],
+            },
+            "eligible_catalog_digest": sha256_text(
+                canonical_json(
+                    [
+                        {
+                            "expertise_pack_id": pack["expertise_pack_id"],
+                            "status": pack["status"],
+                            "origin": pack["_maestro"]["origin"],
+                            "candidate_id": pack["_maestro"]["candidate_id"],
+                            "definition_digest": pack["_maestro"][
+                                "definition_digest"
+                            ],
+                        }
+                        for pack in sorted(
+                            eligible_packs,
+                            key=lambda item: item["expertise_pack_id"],
+                        )
+                    ]
+                )
+            ),
+            "eligibility_replay_policy": "current-state-invalidates-old-plan",
+        }
     return selection, warnings

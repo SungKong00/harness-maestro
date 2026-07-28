@@ -1,0 +1,10 @@
+{
+  "action": "activate",
+  "approval_ref": "owner_decision:dashboard:data-engineering",
+  "candidate_digest": "fad91ac1c14e5c93ef3b40c4bcac01f9769ae836fd2533735904e50e7d5530c7",
+  "candidate_id": "data-engineering",
+  "pack_version": 1,
+  "previous_definition_digest": null,
+  "schema_version": "maestro_expertise_publication_v1",
+  "source_candidate_path": ".maestro/state/candidates/expertise/data-engineering"
+}

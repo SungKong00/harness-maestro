@@ -16,6 +16,15 @@ Choose a Pack only when all are true:
 - the Pack has a shared source and evaluation policy;
 - the Pack has a distinct trigger and result artifact boundary.
 
+Also assess integration when two or more existing Packs are plausible owners.
+Choose a `pack-merge` candidate only when the current top-1 Pack boundary
+repeatedly drops necessary criteria or causes handoff corrections, and the
+source Packs can share one trigger, result, source, evaluation, and lifecycle
+boundary. Keep separate Packs when the overlap is only vocabulary or when each
+Pack has an independent refresh cadence, owner, or output. A merge creates a
+new Pack identity; it is not a Guide addition and it never retires the source
+Packs in the producing run.
+
 Everything else is a handoff. In particular, a cross-task rejection boundary is
 a Lens candidate, execution authority is an Executor candidate, and
 project-specific policy is a Convention. Return `not admitted as expertise`

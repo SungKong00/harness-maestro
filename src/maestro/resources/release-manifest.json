@@ -1,50 +1,78 @@
 {
-  "framework_version": "0.3.0",
-  "registry": {
-    "sha256": "ac787410084c22e24a046938b88abae68edea3287ca30197d98eea81e33434f4"
-  },
-  "release_id": "afe5369cdea31e78cb5e0411ef162de22c5a2a18a92b28494ce936a14b0e57ba",
-  "runtime": {
-    "file_count": 84,
-    "sha256": "92eff114942594660c531061b01e3f0f16374274432ab8d60c3fa1b59776cbed"
-  },
   "schema_version": "maestro_release_manifest_v1",
+  "framework_version": "0.3.0",
+  "runtime": {
+    "sha256": "1fbbf5540432fc6c2ccc9c77687577833582850518d8798fb1f45c2ba08502f4",
+    "file_count": 105
+  },
+  "registry": {
+    "sha256": "bfc8a3eec2a2f95a3d2b233db320dc473e7179e7a6f4d34b834ba556421f6905"
+  },
   "skills": {
     "maestro": {
-      "file_count": 7,
-      "sha256": "a50f7df5a15ef86756c05515851db0137cb1a56c314cbf13bf562827802e3268"
+      "sha256": "58ecf477cf63d6ebdd59635493cac3d4a86665af5a7850cebd7da8778669408e",
+      "file_count": 8
     },
     "maestro-adapter-builder": {
-      "file_count": 4,
-      "sha256": "873f1cd67821746433abd1a30bc3dd87da5f91435663286b4ec78741bcbb34c5"
-    },
-    "maestro-expertise-builder": {
-      "file_count": 6,
-      "sha256": "474aaee94d216ca58c4e1223f715fe08c9dbf171b4cdea64e3436d9e71230bb6"
+      "sha256": "873f1cd67821746433abd1a30bc3dd87da5f91435663286b4ec78741bcbb34c5",
+      "file_count": 4
     },
     "maestro-govern": {
-      "file_count": 5,
-      "sha256": "bcb8f11384142a2bdc3cc53420bd7cb10af1bbbdda350393b2023404bf232787"
-    },
-    "maestro-marketing": {
-      "file_count": 12,
-      "sha256": "7f342cf9d510113c61ddb59e3e0dd0c881c08e21075bdae0e11c9744e17c5569"
-    },
-    "maestro-product-design": {
-      "file_count": 10,
-      "sha256": "32897ef261c72144290e7610394e09ccf12d6ba457008a5f59f9e444b33784bf"
-    },
-    "maestro-reference-research": {
-      "file_count": 5,
-      "sha256": "8c74d90e515343d94c69006e2f52cd9e28468a452819b4a605acf07897e0f001"
+      "sha256": "bcb8f11384142a2bdc3cc53420bd7cb10af1bbbdda350393b2023404bf232787",
+      "file_count": 5
     },
     "maestro-registry-builder": {
-      "file_count": 3,
-      "sha256": "480b5c8900a293fced84d519c3622ec7814cf57b612d8b45a291c1776c6c8a7c"
+      "sha256": "480b5c8900a293fced84d519c3622ec7814cf57b612d8b45a291c1776c6c8a7c",
+      "file_count": 3
+    },
+    "maestro-expertise-builder": {
+      "sha256": "1e26df23ee54679be5aefb2ea0e35b8d2d135d5ea5ab5e7f69ccadece4a710e9",
+      "file_count": 6
+    },
+    "maestro-reference-research": {
+      "sha256": "8ea8b838f1c4b38e0cdb8a82a4a526a6531743d1b2e89bb45f90a47dfa1656ab",
+      "file_count": 10
+    },
+    "maestro-data-engineering": {
+      "sha256": "9c19924b063300c99e9b8f25d1b461183e56b935f42d57ad4377d4688d5c7dad",
+      "file_count": 17
+    },
+    "maestro-devops-sre": {
+      "sha256": "527e0baa6f4e71103474b10abdb62f69ea51172a405091c83a5b85959917dff9",
+      "file_count": 17
+    },
+    "maestro-interactive-web-motion": {
+      "sha256": "007583d275768e42c17c8b0004e9e605a062269e6445ecff87ce173c03909fbd",
+      "file_count": 21
+    },
+    "maestro-marketing": {
+      "sha256": "7f342cf9d510113c61ddb59e3e0dd0c881c08e21075bdae0e11c9744e17c5569",
+      "file_count": 12
+    },
+    "maestro-mux-streaming-web": {
+      "sha256": "3467607f0be934ca2cacfa1a3f9795d5d341f4e1e352045cc19af127df311881",
+      "file_count": 18
+    },
+    "maestro-product-design": {
+      "sha256": "019b889ba008ff39e3c612bd662be5ad83cb4f5a1e86d4fad974b3a605bb6d05",
+      "file_count": 18
+    },
+    "maestro-security-engineering": {
+      "sha256": "92326c33ba3e296fa492516b4b945ad85d36d593e0d12bee714e7079d913d595",
+      "file_count": 17
+    },
+    "maestro-software-engineering": {
+      "sha256": "da09d09cab5ae68f44e0f32ddba10bc0dae7275b7a70f74f4886a6f1337384d5",
+      "file_count": 16
     },
     "maestro-software-qa": {
-      "file_count": 11,
-      "sha256": "5617ed97692cc28ebf8d085ce6aa5e3c1433fa3a666fac21f1eb591d164b97a8"
+      "sha256": "5617ed97692cc28ebf8d085ce6aa5e3c1433fa3a666fac21f1eb591d164b97a8",
+      "file_count": 11
+    },
+    "maestro-technical-seo": {
+      "sha256": "59e680e7bc31ef02f1e6727ae3c06f025832ea3a6828298806757662ae1e1a0f",
+      "file_count": 16
     }
-  }
+  },
+  "release_id": "b03b8ddb2c7096c81dc5bc11aa2dd3f92165935688aa205ada57e0f68f87ee40"
 }

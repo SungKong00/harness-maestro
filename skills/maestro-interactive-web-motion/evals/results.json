@@ -1,0 +1,81 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "interactive-web-motion",
+  "results": [
+    {
+      "case_id": "normal-scroll-triggered-reveal",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "scroll-triggered-reveal",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-scroll-storytelling",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "scroll-linked-storytelling",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-component-microinteraction",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "interaction-feedback-and-state",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-reduced-motion-performance",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "motion-accessibility-and-control",
+        "motion-performance-and-verification",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-motion-system",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "motion-system-and-choreography",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-current-scroll-support",
+      "observed_pack_id": "interactive-web-motion",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "scroll-linked-storytelling",
+        "motion-intent-and-ux-impact"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-cache",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-generic-product-layout",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

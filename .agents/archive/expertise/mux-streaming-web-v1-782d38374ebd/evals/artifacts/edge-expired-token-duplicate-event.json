@@ -1,0 +1,11 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-expired-token-duplicate-event",
+  "baseline_observation": "The bundled route exposed generic state and design criteria but no combined Mux token-expiry, live lifecycle, duplicate-event, or replay-safe boundary.",
+  "candidate_observation": "The frozen candidate route selected exactly four Guides covering live lifecycle, secure playback, webhook replay safety, and player integration.",
+  "evidence_refs": [
+    "route-replay:edge-expired-token-duplicate-event",
+    "research-claim:mux-signed-playback",
+    "research-claim:mux-webhook-delivery"
+  ]
+}

@@ -16,8 +16,9 @@ surface; it does not create a second orchestrator.
 
 An explicit short request such as “transaction expertise 만들어줘”, “add a
 Decision Guide”, or “refresh this Pack” is enough to enter the full authoring
-workflow. Do not ask the user to repeat the steps below and do not start by
-writing a new Pack.
+workflow. A Maestro management signal may also enter automatically when it
+sets `automatic_candidate_authoring_allowed=true`. Do not ask the user to
+repeat the steps below and do not start by writing a new Pack.
 
 1. Inspect the current Expertise inventory and source candidate evidence.
 2. Obtain the closed `$maestro-govern` surface classification.
@@ -34,6 +35,18 @@ writing a new Pack.
    the existing mutation owner.
 8. Stop before activation or update unless the user separately requested that
    reviewed publication action.
+
+Set `candidate.json.generation` from the entry path:
+
+- explicit authoring request: `mode=user-requested`,
+  `signal_fingerprint=null`;
+- management signal: `mode=automatic` and the exact 24-character signal
+  fingerprint.
+
+An automatic entry is allowed only once per Maestro mutation run and must be
+skipped when any retained candidate already binds that fingerprint. It may
+write only the ignored candidate directory. It cannot publish, update,
+deactivate, commit, push, or change active project authority.
 
 ## Admission gate
 
@@ -64,6 +77,12 @@ Prefer an existing Guide revision for the same trigger and decision family.
 Prefer a new Guide in an existing Pack when its source and evaluation family
 match. Create a Pack only for an independent domain with at least two
 selectable Guides and its own trigger, source, evaluation, and result boundary.
+When two or more existing Packs repeatedly compete for one task and the split
+causes lost criteria or handoff corrections, evaluate a Pack integration
+candidate as a distinct option. Integration requires one shared domain
+workflow, trigger/result boundary, source policy, evaluation policy, a frozen
+comparison against every source Pack, and a migration/rollback plan. Thematic
+similarity alone is not integration evidence.
 Trigger, source and evaluation changes that keep the same domain also remain
 changes to the owning Pack; do not create a parallel lifecycle for each file.
 
@@ -96,11 +115,14 @@ Read `references/compilation-format.md`, then create only:
 `candidate.json` must follow
 `src/maestro/resources/schemas/expertise-candidate.schema.json` when available.
 Set `component_change` to the smallest intended change:
-`new-pack`, `guide-addition`, `guide-revision`, `guide-deprecation`,
+`new-pack`, `pack-merge`, `guide-addition`, `guide-revision`, `guide-deprecation`,
 `trigger-adjustment`, `source-refresh`, or `evaluation-extension`. Guide
 changes name one `target_guide_id`; the other kinds use `null`. The draft is
 still a complete next Pack snapshot so source, routing and evaluation cannot be
 published at different versions.
+`pack-merge` additionally names two to four `source_pack_ids`. It creates a
+new Pack identity and never silently rewrites, deactivates, or deletes those
+source Packs.
 The directory is project-local runtime state and is excluded from normal
 document selection. Give every candidate a `review_after` date; an expired
 candidate must be revalidated, rejected, or removed instead of silently reused.

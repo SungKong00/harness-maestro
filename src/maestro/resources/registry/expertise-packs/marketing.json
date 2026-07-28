@@ -18,6 +18,10 @@
     "competitor messaging",
     "go to market",
     "conversion copy",
+    "content strategy",
+    "product claim",
+    "claim verification",
+    "claim substantiation",
     "마케팅",
     "마케팅 전략",
     "캠페인",
@@ -28,7 +32,11 @@
     "시장 조사",
     "경쟁사 메시지",
     "출시 전략",
-    "전환 카피"
+    "전환 카피",
+    "콘텐츠 전략",
+    "상품 주장",
+    "주장 검증",
+    "주장 입증"
   ],
   "skill_id": "maestro-marketing",
   "default_guides": [
@@ -41,10 +49,16 @@
     "messaging",
     "copywriting",
     "conversion copy",
+    "product claim",
+    "claim verification",
+    "claim substantiation",
     "포지셔닝",
     "메시지",
     "카피라이팅",
-    "전환 카피"
+    "전환 카피",
+    "상품 주장",
+    "주장 검증",
+    "주장 입증"
   ],
   "guides": [
     {
@@ -91,11 +105,18 @@
         "testimonial",
         "endorsement",
         "guarantee",
+        "product claim",
+        "claim verification",
+        "content claim",
         "광고 주장",
         "근거 입증",
         "비교 광고",
         "후기",
-        "보증"
+        "보증",
+        "상품 주장",
+        "주장 검증",
+        "주장 입증",
+        "콘텐츠 주장"
       ],
       "freshness": "versioned"
     },

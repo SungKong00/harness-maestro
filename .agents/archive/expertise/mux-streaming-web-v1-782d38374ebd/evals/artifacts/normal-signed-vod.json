@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-signed-vod",
+  "baseline_observation": "The bundled route selected product-design criteria and supplied no Mux signing, playback-policy, token-purpose, expiry, or refresh checks.",
+  "candidate_observation": "The frozen candidate route selected playback-integration and secure-playback, including the protected signing and token lifecycle boundary.",
+  "evidence_refs": [
+    "route-replay:normal-signed-vod",
+    "research-claim:mux-signed-playback"
+  ]
+}

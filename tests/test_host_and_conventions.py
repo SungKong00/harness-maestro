@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import subprocess
 import tempfile
 import unittest
@@ -428,6 +429,95 @@ class ConventionDraftTests(unittest.TestCase):
             with self.assertRaises(MaestroError) as stale:
                 apply_convention_lifecycle_plan(update_path, repo)
             self.assertEqual("PLAN_STALE", stale.exception.code)
+
+    def test_update_preserves_lifecycle_metadata_and_schema_operation_bounds(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            draft_path = Path(temporary) / "draft.json"
+            write_json(draft_path, self._plan(repo))
+            apply_convention_draft_plan(draft_path, repo)
+            evidence = repo / "docs/evidence/api-contract.json"
+            write_json(evidence, {"status": "pass"})
+            activation = build_convention_activation_plan(
+                repo,
+                topic="api-error-contract",
+                basis="owner_decision",
+                approval_ref="owner_decision:activate",
+                verification_artifact="docs/evidence/api-contract.json",
+                decision_summary="Activate the reviewed API rule.",
+            )
+            self.assertEqual(4, len(activation["operations"]))
+            activation_path = Path(temporary) / "activation.json"
+            write_json(activation_path, activation)
+            apply_convention_lifecycle_plan(activation_path, repo)
+
+            convention = (
+                repo / "docs/conventions/api-error-contract.md"
+            )
+            convention.write_text(
+                convention.read_text(encoding="utf-8")
+                .replace(
+                    "supersedes: []",
+                    "supersedes: [legacy-api-rule, HM-ADR-0001]",
+                )
+                .replace(
+                    "sensitivity: internal",
+                    "sensitivity: restricted",
+                ),
+                encoding="utf-8",
+            )
+            update = build_convention_update_plan(
+                repo,
+                topic="api-error-contract",
+                summary="API error contract with preserved lifecycle metadata.",
+                scopes=["src/api"],
+                owner="backend",
+                rule="Use the stable envelope.",
+                applies_when=["Changing APIs."],
+                does_not_apply=["Unrelated UI."],
+                evidence=["Contract evidence."],
+                verification=["Run contract tests."],
+                exceptions=[],
+                basis="owner_decision",
+                approval_ref="owner_decision:update",
+                verification_artifact="docs/evidence/api-contract.json",
+                decision_summary="Update the same Convention authority.",
+            )
+            target = next(
+                item
+                for item in update["operations"]
+                if item["path"]
+                == "docs/conventions/api-error-contract.md"
+            )
+            self.assertIn(
+                "supersedes: [\"legacy-api-rule\", \"HM-ADR-0001\"]",
+                target["content"],
+            )
+            self.assertIn(
+                "sensitivity: restricted",
+                target["content"],
+            )
+
+            schema = json.loads(
+                (
+                    ROOT
+                    / "src/maestro/resources/schemas/"
+                    "convention-lifecycle-plan.schema.json"
+                ).read_text(encoding="utf-8")
+            )
+            operation_schema = schema["properties"]["operations"]
+            self.assertEqual(
+                len(update["operations"]),
+                operation_schema["minItems"],
+            )
+            self.assertEqual(
+                len(update["operations"]),
+                operation_schema["maxItems"],
+            )
 
     def test_activation_rejects_a_changed_git_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -66,6 +66,39 @@ def file_snapshot(root: Path) -> dict[str, bytes]:
     }
 
 
+def application_work_span(
+    pack_id: str,
+    guide_ids: list[str],
+    *,
+    work_id: str = "implementation",
+) -> dict[str, object]:
+    from maestro.work import complete_work_span, new_work_span
+
+    started = new_work_span(
+        work_id=work_id,
+        kind="implementation",
+        role="implementation",
+        executor_id="implementation-engineer",
+        task_summary="Apply selected Expertise criteria.",
+        read_only=False,
+        source="current_host",
+        started_at="2026-07-24T00:00:00Z",
+        timing_evidence="current_host_clock",
+        expertise_pack_ids=[pack_id],
+        decision_guide_ids=guide_ids,
+        expertise_evidence="selection_only",
+    )
+    return complete_work_span(
+        started,
+        status="completed",
+        result_summary="Applied the selected Expertise criteria.",
+        ended_at="2026-07-24T00:00:01Z",
+        duration_ms=1000,
+        evidence_refs=["tests:expertise-application"],
+        expertise_evidence="application_observed",
+    )
+
+
 def event(
     project_id: str,
     checkout_id: str,

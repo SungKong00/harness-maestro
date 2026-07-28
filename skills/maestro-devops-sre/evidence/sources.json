@@ -1,0 +1,191 @@
+{
+  "expertise_pack_id": "devops-sre",
+  "schema_version": "maestro_expertise_sources_v1",
+  "sources": [
+    {
+      "authority": "Google Site Reliability Workbook: Implementing SLOs",
+      "freshness": "stable",
+      "source_id": "official-slo",
+      "supports": [
+        "Define user-centered service indicators, objectives, windows, measurement limits, and error-budget actions."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/workbook/implementing-slos/",
+      "used_by": [
+        "service-objectives-and-error-budgets"
+      ]
+    },
+    {
+      "authority": "Google Site Reliability Workbook: Example Error Budget Policy",
+      "freshness": "stable",
+      "source_id": "official-error-budget",
+      "supports": [
+        "Define user-centered service indicators, objectives, windows, measurement limits, and error-budget actions."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/workbook/error-budget-policy/",
+      "used_by": [
+        "service-objectives-and-error-budgets"
+      ]
+    },
+    {
+      "authority": "OpenTelemetry Specification: Overview",
+      "freshness": "versioned",
+      "source_id": "official-otel-overview",
+      "supports": [
+        "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions."
+      ],
+      "tier": 1,
+      "url": "https://opentelemetry.io/docs/specs/otel/overview/",
+      "used_by": [
+        "telemetry-architecture"
+      ]
+    },
+    {
+      "authority": "OpenTelemetry Semantic Conventions",
+      "freshness": "versioned",
+      "source_id": "official-otel-semconv",
+      "supports": [
+        "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions."
+      ],
+      "tier": 1,
+      "url": "https://opentelemetry.io/docs/specs/semconv/",
+      "used_by": [
+        "telemetry-architecture"
+      ]
+    },
+    {
+      "authority": "OpenTelemetry Collector",
+      "freshness": "volatile",
+      "source_id": "official-otel-collector",
+      "supports": [
+        "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions."
+      ],
+      "tier": 1,
+      "url": "https://opentelemetry.io/docs/collector/",
+      "used_by": [
+        "telemetry-architecture"
+      ]
+    },
+    {
+      "authority": "OpenTelemetry: Sampling",
+      "freshness": "volatile",
+      "source_id": "official-otel-sampling",
+      "supports": [
+        "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions."
+      ],
+      "tier": 1,
+      "url": "https://opentelemetry.io/docs/concepts/sampling/",
+      "used_by": [
+        "telemetry-architecture"
+      ]
+    },
+    {
+      "authority": "Google Site Reliability Workbook: Canarying Releases",
+      "freshness": "stable",
+      "source_id": "official-canary",
+      "supports": [
+        "Choose rollout mechanism, step size, readiness, promotion, stop, rollback, and irreversible-change controls from change risk."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/workbook/canarying-releases/",
+      "used_by": [
+        "progressive-delivery-and-change-control"
+      ]
+    },
+    {
+      "authority": "Kubernetes Documentation: Deployments",
+      "freshness": "volatile",
+      "source_id": "official-k8s-deployment",
+      "supports": [
+        "Choose rollout mechanism, step size, readiness, promotion, stop, rollback, and irreversible-change controls from change risk."
+      ],
+      "tier": 1,
+      "url": "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/",
+      "used_by": [
+        "progressive-delivery-and-change-control"
+      ]
+    },
+    {
+      "authority": "Kubernetes Documentation: Liveness, Readiness, and Startup Probes",
+      "freshness": "volatile",
+      "source_id": "official-k8s-probes",
+      "supports": [
+        "Choose rollout mechanism, step size, readiness, promotion, stop, rollback, and irreversible-change controls from change risk."
+      ],
+      "tier": 1,
+      "url": "https://kubernetes.io/docs/concepts/workloads/pods/probes/",
+      "used_by": [
+        "progressive-delivery-and-change-control"
+      ]
+    },
+    {
+      "authority": "Google Cloud Architecture Center: Disaster recovery planning guide",
+      "freshness": "versioned",
+      "source_id": "official-dr-planning",
+      "supports": [
+        "Choose RTO, RPO, degradation, failover, restore, rebuild, rollback or roll-forward, backup isolation, sequencing, and rehearsal."
+      ],
+      "tier": 1,
+      "url": "https://docs.cloud.google.com/architecture/dr-scenarios-planning-guide",
+      "used_by": [
+        "recovery-and-continuity"
+      ]
+    },
+    {
+      "authority": "Google Site Reliability Engineering: Data Integrity—What You Read Is What You Wrote",
+      "freshness": "stable",
+      "source_id": "official-data-recovery",
+      "supports": [
+        "Choose RTO, RPO, degradation, failover, restore, rebuild, rollback or roll-forward, backup isolation, sequencing, and rehearsal."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/sre-book/data-integrity/",
+      "used_by": [
+        "recovery-and-continuity"
+      ]
+    },
+    {
+      "authority": "Google Site Reliability Engineering: Handling Overload",
+      "freshness": "stable",
+      "source_id": "official-overload",
+      "supports": [
+        "Model limiting resources, demand, headroom, lead time, scaling, admission, queueing, quotas, load shedding, degradation, and bounded retry."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/sre-book/handling-overload/",
+      "used_by": [
+        "capacity-and-overload"
+      ]
+    },
+    {
+      "authority": "Kubernetes Enhancement Proposal Template: Production Readiness Review Questionnaire",
+      "freshness": "versioned",
+      "source_id": "maintainer-kep-prr",
+      "supports": [
+        "Assemble service objectives, telemetry, delivery, recovery, capacity, dependencies, runbooks, ownership, toil, and lifecycle into a risk-scaled readiness handoff."
+      ],
+      "tier": 2,
+      "url": "https://github.com/kubernetes/enhancements/blob/64765b4b02389318f2113119dd9e491479f978a0/keps/NNNN-kep-template/README.md#production-readiness-review-questionnaire",
+      "used_by": [
+        "production-readiness-and-ownership"
+      ]
+    },
+    {
+      "authority": "Google Site Reliability Engineering: Launch Coordination Checklist",
+      "freshness": "stable",
+      "source_id": "official-launch-checklist",
+      "supports": [
+        "Model limiting resources, demand, headroom, lead time, scaling, admission, queueing, quotas, load shedding, degradation, and bounded retry.",
+        "Assemble service objectives, telemetry, delivery, recovery, capacity, dependencies, runbooks, ownership, toil, and lifecycle into a risk-scaled readiness handoff."
+      ],
+      "tier": 1,
+      "url": "https://sre.google/sre-book/launch-checklist/",
+      "used_by": [
+        "capacity-and-overload",
+        "production-readiness-and-ownership"
+      ]
+    }
+  ],
+  "verified_on": "2026-07-27"
+}

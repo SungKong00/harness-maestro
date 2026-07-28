@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-motion-system",
+  "baseline_observation": "No existing Pack owns duration, easing, distance, stagger, interruption, or sequence as a reusable motion system.",
+  "candidate_observation": "The candidate selects the motion-system Guide and keeps token values tied to purpose and rendered evidence.",
+  "evidence_refs": [
+    "route-replay:edge-motion-system",
+    "research-bundle:.maestro/state/work/interactive-web-motion/research-bundle.json"
+  ]
+}

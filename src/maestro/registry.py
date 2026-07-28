@@ -936,13 +936,47 @@ def _goal_has(goal: str, terms: Iterable[str]) -> bool:
     return any(_trigger_matches(term, goal_terms) for term in terms)
 
 
-READ_ONLY_REQUEST_PATTERNS = (
+EXPLICIT_LOCAL_READ_ONLY_REQUEST_PATTERNS = (
+    r"\b(?:do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b[^.!?;\n]{0,32}\b(?:code|files?|project|repository)\b",
+    r"\b(?:code|files?|project|repository)\b[^.!?;\n]{0,32}\b(?:must\s+not|should\s+not|do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b",
+    r"(?:코드|파일|프로젝트|저장소)[^.!?;\n]{0,24}(?:작업|변경|수정|구현)\s*(?:은|는|을|를)?\s*(?:하지\s*마|하지\s*말|없이)",
+)
+GENERIC_READ_ONLY_REQUEST_PATTERNS = (
     r"\b(?:do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b",
     r"\bwithout\s+(?:any\s+)?(?:code\s+)?changes?\b",
     r"\bno\s+(?:code\s+)?changes?\b",
     r"\b(?:analysis|assessment|review)\s+only\b",
     r"(?:코드\s*)?(?:작업|변경|수정|구현)\s*(?:은|는|을|를)?\s*(?:하지\s*마|하지\s*말|없이)",
     r"(?:판단|검토|분석|평가)\s*만",
+)
+EXPLICIT_REVIEW_ONLY_PATTERNS = (
+    r"\b(?:analysis|assessment|review)\s+only\b",
+    r"(?:판단|검토|분석|평가)\s*만",
+)
+NEGATIVE_EFFECT_MARKERS = (
+    r"\b(?:do not|don't|dont|without|no)\b",
+    r"(?:하지\s*마|하지\s*말|하지\s*않|금지|없이)",
+)
+GIT_COMMIT_TERMS = (
+    "commit",
+    "git commit",
+    "커밋",
+)
+REMOTE_WRITE_TERMS = (
+    "push",
+    "remote change",
+    "remote changes",
+    "pull request",
+    "publish",
+    "release",
+    "deploy",
+    "푸시",
+    "원격 변경",
+    "원격 작업",
+    "풀 리퀘스트",
+    "배포",
+    "게시",
+    "릴리스",
 )
 STAGED_REQUEST_PATTERNS = (
     r"\b(?:review|assess|analy[sz]e|design|plan)\b.{0,40}\b(?:then|before)\b.{0,40}\b(?:implement|change|modify|build)\b",
@@ -957,30 +991,89 @@ def _matches_any_pattern(goal: str, patterns: Iterable[str]) -> bool:
     return any(re.search(pattern, folded) is not None for pattern in patterns)
 
 
+def _effect_clauses(goal: str) -> list[str]:
+    """Split contrastive phrases so one effect's negation cannot bind another."""
+
+    return [
+        clause.strip()
+        for clause in re.split(
+            r"[.!?;\n]+|\bbut\b|\bhowever\b|(?:하되|하지만|그러나|다만)",
+            goal,
+            flags=re.IGNORECASE,
+        )
+        if clause.strip()
+    ]
+
+
+def _forbidden_external_side_effects(goal: str) -> list[str]:
+    """Return explicit external-effect prohibitions without changing local write scope."""
+
+    clauses = _effect_clauses(goal)
+
+    def explicitly_forbidden(terms: Iterable[str]) -> bool:
+        return any(
+            _matches_any_pattern(clause, NEGATIVE_EFFECT_MARKERS)
+            and _goal_has(clause, terms)
+            for clause in clauses
+        )
+
+    forbidden: list[str] = []
+    if explicitly_forbidden(GIT_COMMIT_TERMS):
+        forbidden.append("git_commit")
+    if explicitly_forbidden(REMOTE_WRITE_TERMS):
+        forbidden.append("remote_write")
+    return forbidden
+
+
 def resolve_request_contract(
     goal: str,
     intent: str = "auto",
 ) -> dict[str, Any]:
     """Classify whether a request may reach a mutation owner.
 
-    Negative side-effect language intentionally wins over nearby mutation
-    keywords. A staged request is not an implementation authorization.
+    Local repository mutation and external effects are separate axes. A
+    prohibition on commits, pushes, releases, or other remote writes does not
+    revoke an otherwise explicit authorization to edit project files.
     """
 
     if intent not in {"auto", "implementation", "review", "research"}:
         raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
 
-    if _matches_any_pattern(goal, READ_ONLY_REQUEST_PATTERNS):
+    forbidden_side_effects = _forbidden_external_side_effects(goal)
+    effect_clauses = _effect_clauses(goal)
+    local_write_forbidden = (
+        any(
+            _matches_any_pattern(
+                clause,
+                EXPLICIT_LOCAL_READ_ONLY_REQUEST_PATTERNS,
+            )
+            for clause in effect_clauses
+        )
+        or _matches_any_pattern(goal, EXPLICIT_REVIEW_ONLY_PATTERNS)
+        or (
+            not forbidden_side_effects
+            and any(
+                _matches_any_pattern(
+                    clause,
+                    GENERIC_READ_ONLY_REQUEST_PATTERNS,
+                )
+                for clause in effect_clauses
+            )
+        )
+    )
+    if local_write_forbidden:
         return {
             "decision_mode": "direct",
             "side_effect_policy": "forbidden",
             "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
         }
     if intent in {"review", "research"}:
         return {
             "decision_mode": "direct",
             "side_effect_policy": "forbidden",
             "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
         }
     if _matches_any_pattern(goal, STAGED_REQUEST_PATTERNS):
         return {
@@ -989,12 +1082,14 @@ def resolve_request_contract(
             "authorization_source": (
                 "explicit_cli" if intent == "implementation" else None
             ),
+            "forbidden_side_effects": forbidden_side_effects,
         }
     if intent == "implementation":
         return {
             "decision_mode": "direct",
             "side_effect_policy": "direct",
             "authorization_source": "explicit_cli",
+            "forbidden_side_effects": forbidden_side_effects,
         }
 
     if _goal_has(
@@ -1027,11 +1122,13 @@ def resolve_request_contract(
             "decision_mode": "direct",
             "side_effect_policy": "direct",
             "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
         }
     return {
         "decision_mode": "direct",
         "side_effect_policy": "forbidden",
         "authorization_source": None,
+        "forbidden_side_effects": forbidden_side_effects,
     }
 
 

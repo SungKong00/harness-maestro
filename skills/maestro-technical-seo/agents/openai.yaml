@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Technical SEO"
+  short_description: "Apply technical search and web-performance criteria"
+  default_prompt: "Use $maestro-technical-seo with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false

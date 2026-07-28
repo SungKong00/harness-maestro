@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from .errors import MaestroError
 from .expertise import select_expertise
 from .planning import route_goal_v2
+from .research import require_completed_research_bundle
 from .registry import (
     registry_digest,
     resolve_request_contract,
@@ -250,10 +251,17 @@ def _product_design_specialists(
         if item
         in {
             "design-brief",
+            "information-architecture-and-user-flow",
             "interaction-responsive-accessibility",
             "reference-selection",
         }
     ]
+    assigned_guides = {*visual_guides, *ux_guides}
+    ux_guides.extend(
+        item
+        for item in selected_guides
+        if item not in assigned_guides
+    )
     return [
         _specialist(
             "visual-design",
@@ -793,7 +801,7 @@ def build_decision_plan(
     *,
     host_id: str = "codex",
     intent: str = "implementation",
-    research_evidence_digest: str | None = None,
+    research_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a read-only specialist decision plan.
 
@@ -811,6 +819,9 @@ def build_decision_plan(
             "authorization_source": (
                 "explicit_cli" if intent == "implementation" else None
             ),
+            "forbidden_side_effects": request_contract[
+                "forbidden_side_effects"
+            ],
         }
 
     expertise_intent = (
@@ -821,9 +832,21 @@ def build_decision_plan(
     expertise, _ = select_expertise(
         goal,
         intent=expertise_intent,
-        research_evidence_digest=research_evidence_digest,
         repo_path=repo_path,
     )
+    if research_evidence is not None:
+        validation = require_completed_research_bundle(
+            research_evidence,
+            goal=goal,
+            expertise=expertise,
+            repo_path=repo_path,
+        )
+        expertise, _ = select_expertise(
+            goal,
+            intent=expertise_intent,
+            research_evidence_digest=validation["artifact_digest"],
+            repo_path=repo_path,
+        )
     review_route = route_goal(
         goal,
         risk,
@@ -1155,6 +1178,7 @@ def _validate_request_contract(
         "decision_mode",
         "side_effect_policy",
         "authorization_source",
+        "forbidden_side_effects",
     }:
         issues.append(
             _error(
@@ -1194,6 +1218,23 @@ def _validate_request_contract(
                 "REQUEST_CONTRACT_INVALID",
                 f"{path}.authorization_source",
                 "Unknown authorization source.",
+            )
+        )
+    forbidden_side_effects = value.get("forbidden_side_effects")
+    if (
+        not isinstance(forbidden_side_effects, list)
+        or len(forbidden_side_effects) > 2
+        or len(set(forbidden_side_effects)) != len(forbidden_side_effects)
+        or any(
+            item not in {"git_commit", "remote_write"}
+            for item in forbidden_side_effects
+        )
+    ):
+        issues.append(
+            _error(
+                "REQUEST_CONTRACT_INVALID",
+                f"{path}.forbidden_side_effects",
+                "Forbidden side effects must use the closed external-effect vocabulary.",
             )
         )
 
@@ -1357,6 +1398,34 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                 specialist.get("decision_guide_ids", []),
                 f"{path}.expertise_load",
                 issues,
+            )
+        expertise = plan.get("expertise")
+        selected_guide_ids = (
+            expertise.get("selected_guide_ids", [])
+            if isinstance(expertise, dict)
+            else []
+        )
+        assigned_guide_ids = {
+            guide_id
+            for specialist in specialists
+            if isinstance(specialist, dict)
+            for guide_id in specialist.get("decision_guide_ids", [])
+            if isinstance(guide_id, str)
+        }
+        if (
+            isinstance(selected_guide_ids, list)
+            and set(selected_guide_ids) != assigned_guide_ids
+        ):
+            issues.append(
+                _error(
+                    "SPECIALIST_GUIDE_COVERAGE_INVALID",
+                    "specialist_contracts",
+                    (
+                        "Every selected Decision Guide must be assigned to "
+                        "at least one specialist, with no unselected Guide "
+                        "introduced."
+                    ),
+                )
             )
 
         assignments = plan.get("assignments")
@@ -2189,6 +2258,7 @@ def build_execution_plan(
     *,
     authorization_source: str,
     host_id: str | None = None,
+    research_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validation = validate_decision_bundle(
         bundle,
@@ -2222,12 +2292,34 @@ def build_execution_plan(
         if research_requirement["gate"] == "satisfied"
         else None
     )
+    if evidence_digest is not None:
+        if research_evidence is None:
+            raise MaestroError(
+                "RESEARCH_EVIDENCE_ARTIFACT_REQUIRED",
+                "Enactment requires the exact completed ResearchBundle, not only its digest.",
+            )
+        research_validation = require_completed_research_bundle(
+            research_evidence,
+            goal=bundle["goal"],
+            expertise=bundle["expertise"],
+            repo_path=repo_path,
+        )
+        if research_validation["artifact_digest"] != evidence_digest:
+            raise MaestroError(
+                "RESEARCH_EVIDENCE_DIGEST_MISMATCH",
+                "Enactment ResearchBundle does not match the decision bundle.",
+            )
+    elif research_evidence is not None:
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_NOT_APPLICABLE",
+            "This decision bundle has no satisfied research gate.",
+        )
     route_plan = route_goal_v2(
         bundle["goal"],
         bundle["risk"],
         host_id=host_id or plan["host"],
         intent="implementation",
-        research_evidence_digest=evidence_digest,
+        research_evidence=research_evidence,
         decision_authorized=True,
         repo_path=repo_path,
     )

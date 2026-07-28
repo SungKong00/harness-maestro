@@ -17,6 +17,7 @@ from maestro.assignment_contracts import (
     ENGINEERING_BASELINE_VERSION,
     FINDING_PACKET_VERSION,
     TERMINAL_PACKET_VERSION,
+    assignment_output_schema,
     project_assignment_input,
     validate_assignment_packet,
     validate_engineering_baseline,
@@ -24,6 +25,8 @@ from maestro.assignment_contracts import (
 from maestro.cli import main
 from maestro.planning import route_goal_v2
 from maestro.util import canonical_json, file_sha256, sha256_text
+from tests.test_research_workflow import GOAL as RESEARCH_GOAL
+from tests.test_research_workflow import _bundle as research_bundle
 
 
 CHECK_IDS = (
@@ -141,10 +144,257 @@ def completed_terminal_packet(
             }
             for item in selected
         ]
+    research = projected.get("research_context")
+    if assignment["mutation_owner"] and isinstance(research, dict):
+        packet["evidence_refs"].append(
+            f"research-bundle:{research['evidence_digest']}"
+        )
+        packet["research_dispositions"] = [
+            {
+                "claim_id": claim_id,
+                "disposition": "applied",
+                "reason": "Applied the bounded research criterion.",
+                "evidence_refs": [evidence_ref],
+            }
+            for claim_id in research["synthesis"]["adopted_claim_ids"]
+        ]
     return packet
 
 
 class AssignmentBoundaryContractTests(unittest.TestCase):
+    def test_assignment_output_schema_binds_exact_packet_contract(self) -> None:
+        review_plan = route_goal_v2(
+            "Review the README usage contract",
+            "medium",
+            ["contract"],
+            intent="review",
+            repo_path=ROOT,
+        )
+        review = project_assignment_input(
+            ROOT,
+            review_plan,
+            "review",
+            baseline_for(review_plan),
+        )
+        self.assertEqual("PASS", review["status"])
+
+        finding_schema = assignment_output_schema(review)
+        self.assertEqual(
+            [FINDING_PACKET_VERSION],
+            finding_schema["properties"]["schema_version"]["enum"],
+        )
+        self.assertEqual(
+            [review_plan["plan_id"]],
+            finding_schema["properties"]["plan_id"]["enum"],
+        )
+        self.assertEqual(
+            ["review"],
+            finding_schema["properties"]["assignment_id"]["enum"],
+        )
+        self.assertEqual(
+            ["contract"],
+            finding_schema["properties"]["lens_ids"]["items"]["enum"],
+        )
+        self.assertEqual(
+            ["contract"],
+            finding_schema["$defs"]["finding"]["properties"][
+                "owner_lens_id"
+            ]["enum"],
+        )
+        projected_refs = {
+            item["artifact_id"] for item in review["input"]["artifact_refs"]
+        } | {
+            item["ref_id"] for item in review["input"]["document_refs"]
+        }
+        self.assertEqual(
+            projected_refs,
+            set(
+                finding_schema["$defs"]["finding"]["properties"][
+                    "evidence_refs"
+                ]["items"]["enum"]
+            ),
+        )
+        coverage_properties = finding_schema["$defs"]["coverageGap"][
+            "properties"
+        ]
+        self.assertEqual(
+            {
+                item["artifact_id"]
+                for item in review["input"]["artifact_refs"]
+            },
+            set(coverage_properties["affected_artifact"]["enum"]),
+        )
+        suggested_lens = coverage_properties["suggested_lens"]["anyOf"]
+        self.assertIn({"type": "null"}, suggested_lens)
+        self.assertNotIn(
+            "contract",
+            next(
+                item["enum"]
+                for item in suggested_lens
+                if "enum" in item
+            ),
+        )
+        self.assertEqual(
+            projected_refs,
+            set(finding_schema["properties"]["inspected"]["items"]["enum"]),
+        )
+        self.assertFalse(finding_schema["additionalProperties"])
+        self.assertEqual(
+            set(finding_schema["required"]),
+            set(finding_schema["properties"]),
+        )
+        provider_schema = canonical_json(finding_schema)
+        for unsupported in (
+            '"$schema"',
+            '"const"',
+            '"format"',
+            '"maxItems"',
+            '"maxLength"',
+            '"minItems"',
+            '"minLength"',
+            '"oneOf"',
+            '"pattern"',
+            '"uniqueItems"',
+        ):
+            self.assertNotIn(unsupported, provider_schema)
+
+        implementation_plan = route_goal_v2(
+            "Implement one local CLI behavior",
+            "low",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+        implementation = project_assignment_input(
+            ROOT,
+            implementation_plan,
+            "implementation",
+            baseline_for(implementation_plan),
+        )
+        self.assertEqual("PASS", implementation["status"])
+
+        terminal_schema = assignment_output_schema(implementation)
+        self.assertEqual(
+            [TERMINAL_PACKET_VERSION],
+            terminal_schema["properties"]["schema_version"]["enum"],
+        )
+        self.assertEqual(
+            [implementation_plan["plan_id"]],
+            terminal_schema["properties"]["plan_id"]["enum"],
+        )
+        self.assertEqual(
+            ["implementation"],
+            terminal_schema["properties"]["assignment_id"]["enum"],
+        )
+        self.assertEqual(
+            ["ChangeReceipt"],
+            terminal_schema["properties"]["packet_type"]["enum"],
+        )
+        self.assertFalse(terminal_schema["additionalProperties"])
+        self.assertEqual(
+            set(terminal_schema["required"]),
+            set(terminal_schema["properties"]),
+        )
+
+    def test_open_research_gate_blocks_projection_and_completed_bundle_is_used(
+        self,
+    ) -> None:
+        open_plan = route_goal_v2(
+            RESEARCH_GOAL,
+            "medium",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+        blocked = project_assignment_input(
+            ROOT,
+            open_plan,
+            open_plan["assignments"][0]["assignment_id"],
+            baseline_for(open_plan),
+        )
+        self.assertEqual("BLOCKED", blocked["status"])
+        self.assertEqual("RESEARCH_REQUIRED", blocked["execution_status"])
+
+        bundle = research_bundle(RESEARCH_GOAL)
+        plan = route_goal_v2(
+            RESEARCH_GOAL,
+            "medium",
+            intent="implementation",
+            research_evidence=bundle,
+            repo_path=ROOT,
+        )
+        missing = project_assignment_input(
+            ROOT,
+            plan,
+            "implementation",
+            baseline_for(plan),
+        )
+        self.assertEqual("BLOCKED", missing["status"])
+        self.assertEqual("RESEARCH_REQUIRED", missing["execution_status"])
+        self.assertIn(
+            "PROJECTION_RESEARCH_REQUIRED",
+            {item["code"] for item in missing["issues"]},
+        )
+
+        implementation = project_assignment_input(
+            ROOT,
+            plan,
+            "implementation",
+            baseline_for(plan),
+            research_bundle=bundle,
+        )
+        self.assertEqual("PASS", implementation["status"])
+        context = implementation["input"]["research_context"]
+        self.assertEqual(bundle["source_plan"], context["source_plan"])
+        self.assertEqual(bundle["packets"][0]["claims"], context["claims"])
+        packet = completed_terminal_packet(
+            plan,
+            "implementation",
+            implementation,
+        )
+        accepted = validate_assignment_packet(
+            packet,
+            plan,
+            "implementation",
+            implementation,
+            repo_path=ROOT,
+            research_bundle=bundle,
+        )
+        self.assertEqual("PASS", accepted["status"])
+
+        missing_usage = copy.deepcopy(packet)
+        missing_usage.pop("research_dispositions")
+        missing_usage["evidence_refs"] = ["readme"]
+        rejected = validate_assignment_packet(
+            missing_usage,
+            plan,
+            "implementation",
+            implementation,
+            repo_path=ROOT,
+            research_bundle=bundle,
+        )
+        codes = {item["code"] for item in rejected["issues"]}
+        self.assertIn("PACKET_RESEARCH_EVIDENCE_REQUIRED", codes)
+        self.assertIn("PACKET_RESEARCH_DISPOSITIONS_REQUIRED", codes)
+
+        forged_projection = copy.deepcopy(implementation)
+        forged_projection["input"]["research_context"] = None
+        forged_payload = copy.deepcopy(forged_projection["input"])
+        forged_payload.pop("projection_digest")
+        forged_projection["input"]["projection_digest"] = sha256_text(
+            canonical_json(forged_payload)
+        )
+        forged = validate_assignment_packet(
+            packet,
+            plan,
+            "implementation",
+            forged_projection,
+            repo_path=ROOT,
+            research_bundle=bundle,
+        )
+        self.assertIn(
+            "PACKET_RESEARCH_CONTEXT_MISMATCH",
+            {item["code"] for item in forged["issues"]},
+        )
+
     def test_projection_is_a_bounded_allowlist_and_does_not_claim_host_proof(
         self,
     ) -> None:

@@ -1,0 +1,50 @@
+{
+  "expertise_pack_id": "data-engineering",
+  "results": [
+    {
+      "case_id": "normal-stream-semantics",
+      "observed_guides": [
+        "pipeline-execution-model"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "data-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-quality-lineage",
+      "observed_guides": [
+        "analytical-data-quality-gates",
+        "lineage-and-provenance"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "data-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-backfill-recovery",
+      "observed_guides": [
+        "pipeline-schema-contract-evolution",
+        "backfill-and-historical-correction",
+        "state-recovery-and-delivery-semantics"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "data-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-oltp-index",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-dashboard-design",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    }
+  ],
+  "schema_version": "maestro_expertise_eval_results_v1"
+}

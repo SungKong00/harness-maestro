@@ -1,0 +1,108 @@
+{
+  "schema_version": "maestro_expertise_candidate_v1",
+  "candidate_id": "mux-streaming-web",
+  "expertise_pack_id": "mux-streaming-web",
+  "status": "candidate",
+  "portability": "project",
+  "owner": "project-owner",
+  "review_after": "2026-10-27",
+  "problem": "Existing Expertise Packs can cover interface design and generic QA, but they do not encode Mux-specific playback policy, signed-token handling, live-stream lifecycle, webhook synchronization, or playback telemetry decisions.",
+  "reusable_when": [
+    "Implementing or reviewing Mux-backed VOD playback in a web application",
+    "Implementing Mux Live viewer states and recording continuity",
+    "Handling Mux webhook authenticity, retries, and state synchronization",
+    "Instrumenting Mux playback health and diagnosing viewer failures"
+  ],
+  "not_for": [
+    "Generic video presentation or visual layout without a Mux integration",
+    "Generic product design decisions already owned by product-design",
+    "General test strategy or release QA already owned by software-qa",
+    "Broadcaster ingest infrastructure unrelated to the web playback surface"
+  ],
+  "existing_coverage": "product-design owns screen hierarchy, interaction, responsive behavior, and accessibility; software-qa owns generic risk, test design, state exploration, and release evidence. Neither Pack owns Mux provider contracts.",
+  "evidence_refs": [
+    "classification:.maestro/state/work/mux-streaming-web/surface-signal.json",
+    "research-bundle:.maestro/state/work/mux-streaming-web/research-bundle.json#sha256=486d27e17802bdb6d17d06c60f2ea5c7520010a6a15db13ff7f09892016a6a41",
+    "baseline:signed-vod-route-lacked-mux-security-guide",
+    "baseline:live-webhook-route-lacked-mux-lifecycle-guide",
+    "baseline:playback-observability-route-lacked-mux-data-guide"
+  ],
+  "proposed_guides": [
+    {
+      "guide_id": "playback-integration",
+      "failure_prevented": "A web page wires playback through ad hoc URLs or incomplete player inputs and loses stream type, metadata, captions, preview, recovery, or accessibility behavior.",
+      "decision_checks": [
+        "Select the player package and rendering boundary that match the target framework",
+        "Pass playback ID, stream type, metadata, media assets, and purpose-specific tokens through one typed boundary",
+        "Preserve built-in player capabilities when adding custom controls or overlays",
+        "Verify the rendered player with real Mux media and reachable error states"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "secure-playback",
+      "failure_prevented": "Signing credentials leak to the client, token purpose or policy is mismatched, or valid viewers lose playback because token lifetime and refresh behavior are undefined.",
+      "decision_checks": [
+        "Match public, signed, or DRM policy to the playback ID and requested asset",
+        "Mint purpose-bound tokens only on a protected server after application authorization",
+        "Choose expiry and refresh behavior that cover the authorized playback window",
+        "Verify denial, expiry, refresh, and signing-key isolation paths"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "live-lifecycle",
+      "failure_prevented": "The viewer page infers live availability from local player behavior, exposes stream keys, or collapses multiple recording assets into an incorrect single-recording model.",
+      "decision_checks": [
+        "Keep stream keys and ingest credentials outside public client surfaces",
+        "Map Mux live states and events to explicit viewer-facing waiting, live, reconnecting, ended, and replay states",
+        "Preserve the one-live-stream-to-many-recording-assets relationship",
+        "Define authoritative recovery and reconciliation behavior for missed live events"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "webhook-state-sync",
+      "failure_prevented": "Forged, duplicated, retried, delayed, or reordered Mux webhooks corrupt durable application state.",
+      "decision_checks": [
+        "Verify mux-signature against the unmodified raw request body before accepting an event",
+        "Bind the endpoint signing secret and event scope to the correct Mux environment",
+        "Make event processing idempotent, replay-safe, and tolerant of delayed delivery",
+        "Persist enough event identity and state evidence to reconcile provider and application state"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "playback-observability",
+      "failure_prevented": "Playback failures, slow startup, and rebuffering remain invisible or are confused with product conversion outcomes.",
+      "decision_checks": [
+        "Attach stable viewer, video, and session metadata without leaking sensitive values",
+        "Observe startup, failure, rebuffering, and playback-success signals at the correct scope",
+        "Separate Mux delivery health from application authorization, UI, and business metrics",
+        "Verify telemetry in successful, denied, expired-token, offline, and fatal-player paths"
+      ],
+      "freshness": "versioned"
+    }
+  ],
+  "evaluation": {
+    "baseline": "existing-pack",
+    "cases_path": "evals/cases.json",
+    "quality_path": "evals/quality.json",
+    "pass_criteria": [
+      "Mux-specific implementation goals select the candidate and only the relevant Guides",
+      "Signed playback, webhook authenticity, retry safety, and live-state criteria remain explicit",
+      "Compatibility-sensitive requests open the contextual research gate",
+      "Every frozen case has exact route and quality evidence"
+    ],
+    "regression_criteria": [
+      "Generic video or landing-page design does not select the Mux Pack",
+      "Generic visual hierarchy remains routed to product-design",
+      "The Pack never grants repository or external write authority",
+      "No task selects more than four Mux Guides"
+    ]
+  },
+  "component_change": {
+    "kind": "new-pack",
+    "target_guide_id": null
+  }
+}

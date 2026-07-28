@@ -39,7 +39,8 @@
       "required": [
         "decision_mode",
         "side_effect_policy",
-        "authorization_source"
+        "authorization_source",
+        "forbidden_side_effects"
       ],
       "properties": {
         "decision_mode": {
@@ -61,6 +62,17 @@
             "explicit_cli",
             null
           ]
+        },
+        "forbidden_side_effects": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "git_commit",
+              "remote_write"
+            ]
+          }
         }
       }
     },

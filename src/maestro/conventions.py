@@ -104,7 +104,10 @@ def _render_draft(
     evidence: list[str],
     verification: list[str],
     exceptions: list[str],
+    supersedes: list[str] | None = None,
+    sensitivity: str = "internal",
 ) -> str:
+    preserved_supersedes = supersedes or []
     return (
         "---\n"
         "maestro_doc: 1\n"
@@ -117,8 +120,8 @@ def _render_draft(
         f"topic: {topic}\n"
         f"scope: {json.dumps(scopes, ensure_ascii=False)}\n"
         "last_verified: null\n"
-        "supersedes: []\n"
-        "sensitivity: internal\n"
+        f"supersedes: {json.dumps(preserved_supersedes, ensure_ascii=False)}\n"
+        f"sensitivity: {sensitivity}\n"
         "---\n\n"
         f"# Convention: {topic}\n\n"
         "## Rule\n\n"
@@ -441,9 +444,17 @@ def _validate_active_content(path: str, content: str) -> None:
         "type": "convention",
         "status": "active",
         "authority": "repository",
-        "supersedes": "[]",
-        "sensitivity": "internal",
     }
+    supersedes = frontmatter_list(metadata.get("supersedes"))
+    lifecycle_metadata_valid = (
+        "supersedes" in metadata
+        and all(
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value)
+            for value in supersedes
+        )
+        and metadata.get("sensitivity")
+        in {"public", "internal", "restricted"}
+    )
     if (
         not TOPIC_PATTERN.fullmatch(topic)
         or path != expected_path
@@ -451,6 +462,7 @@ def _validate_active_content(path: str, content: str) -> None:
             metadata.get(key) != value
             for key, value in required_metadata.items()
         )
+        or not lifecycle_metadata_valid
         or not metadata.get("owner", "").strip()
         or not metadata.get("summary", "").strip()
         or not frontmatter_list(metadata.get("scope"))
@@ -1009,6 +1021,7 @@ def build_convention_update_plan(
     current_scopes = set(
         frontmatter_list(frontmatter_fields(current).get("scope"))
     )
+    current_metadata = frontmatter_fields(current)
     added_scopes = sorted(set(normalized_scopes) - current_scopes)
     if added_scopes and not allow_scope_expansion:
         raise MaestroError(
@@ -1035,6 +1048,10 @@ def build_convention_update_plan(
                     for value in (exceptions or [])
                 )
             ),
+            supersedes=frontmatter_list(
+                current_metadata.get("supersedes")
+            ),
+            sensitivity=current_metadata["sensitivity"],
         )
     )
     _validate_active_content(target_path, updated)

@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-crawl-index",
+  "baseline_observation": "The current route selected product-design for an SEO-shaped page request and supplied no crawl, render, index, or search-specific verification procedure.",
+  "candidate_observation": "The frozen candidate replay selected crawlability and verification criteria and kept sitemap and site-query evidence below indexed-state proof.",
+  "evidence_refs": [
+    "baseline-route:technical-seo:2026-07-28",
+    "route-replay:technical-seo:normal-crawl-index"
+  ]
+}

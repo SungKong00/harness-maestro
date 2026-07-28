@@ -1,75 +1,145 @@
 {
-  "schema_version": "maestro_expertise_sources_v1",
   "expertise_pack_id": "product-design",
-  "verified_on": "2026-07-26",
+  "schema_version": "maestro_expertise_sources_v1",
   "sources": [
     {
-      "source_id": "w3c-klreq",
-      "tier": 1,
       "authority": "standardization working group note",
-      "url": "https://www.w3.org/TR/klreq/",
+      "freshness": "versioned",
+      "source_id": "w3c-klreq",
       "supports": [
         "Korean text layout and Hangul-specific typographic considerations"
       ],
+      "tier": 1,
+      "url": "https://www.w3.org/TR/klreq/",
       "used_by": [
         "typography-korean"
-      ],
-      "freshness": "versioned"
+      ]
     },
     {
-      "source_id": "w3c-wcag-22",
-      "tier": 1,
       "authority": "W3C Recommendation",
-      "url": "https://www.w3.org/TR/WCAG22/",
+      "freshness": "versioned",
+      "source_id": "w3c-wcag-22",
       "supports": [
-        "keyboard access, focus, target size, contrast, reflow, and accessible interaction criteria"
+        "keyboard access, focus, target size, contrast, reflow, and accessible interaction criteria",
+        "Meaningful sequence and predictable navigation",
+        "Consistent identification, reduced redundant entry, error correction, and disablement of non-essential interaction animation"
       ],
+      "tier": 1,
+      "url": "https://www.w3.org/TR/WCAG22/",
       "used_by": [
         "interaction-responsive-accessibility",
-        "visual-hierarchy-layout"
-      ],
-      "freshness": "versioned"
+        "visual-hierarchy-layout",
+        "information-architecture-and-user-flow"
+      ]
     },
     {
-      "source_id": "w3c-page-structure",
-      "tier": 1,
       "authority": "W3C Web Accessibility Initiative guidance",
-      "url": "https://www.w3.org/WAI/tutorials/page-structure/",
+      "freshness": "versioned",
+      "source_id": "w3c-page-structure",
       "supports": [
         "semantic headings, regions, and structural reading order"
       ],
+      "tier": 1,
+      "url": "https://www.w3.org/WAI/tutorials/page-structure/",
       "used_by": [
         "design-brief",
         "visual-hierarchy-layout"
-      ],
-      "freshness": "versioned"
+      ]
     },
     {
-      "source_id": "apple-typography",
-      "tier": 1,
       "authority": "platform design guidance",
-      "url": "https://developer.apple.com/design/human-interface-guidelines/typography",
+      "freshness": "volatile",
+      "source_id": "apple-typography",
       "supports": [
         "legibility, hierarchy, text scaling, and platform typography"
       ],
+      "tier": 1,
+      "url": "https://developer.apple.com/design/human-interface-guidelines/typography",
       "used_by": [
         "typography-korean",
         "visual-hierarchy-layout"
-      ],
-      "freshness": "volatile"
+      ]
     },
     {
-      "source_id": "material-accessibility",
-      "tier": 1,
       "authority": "platform design system guidance",
-      "url": "https://m3.material.io/foundations/accessible-design/overview",
+      "freshness": "volatile",
+      "source_id": "material-accessibility",
       "supports": [
         "accessible visual and interaction design considerations"
       ],
+      "tier": 1,
+      "url": "https://m3.material.io/foundations/accessible-design/overview",
       "used_by": [
         "interaction-responsive-accessibility"
+      ]
+    },
+    {
+      "authority": "W3C WAI WCAG 2.2 Understanding guidance",
+      "freshness": "versioned",
+      "source_id": "w3c-focus-order",
+      "supports": [
+        "Logical focus order that preserves meaning and reinforces the mental model implied by the visual layout"
       ],
-      "freshness": "volatile"
+      "tier": 1,
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html",
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ]
+    },
+    {
+      "authority": "United Kingdom Government Service Manual",
+      "freshness": "stable",
+      "source_id": "govuk-user-needs",
+      "supports": [
+        "Evidence-backed user needs framed by outcome, role, trigger, and constraints rather than proposed solutions"
+      ],
+      "tier": 1,
+      "url": "https://www.gov.uk/service-manual/user-research/start-by-learning-user-needs",
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ]
+    },
+    {
+      "authority": "United Kingdom Government Service Manual",
+      "freshness": "stable",
+      "source_id": "govuk-whole-journey",
+      "supports": [
+        "End-to-end journey and touchpoint mapping",
+        "Detection of dead ends, duplicate content, unclear transaction choice, and broken cross-channel continuity"
+      ],
+      "tier": 1,
+      "url": "https://www.gov.uk/service-manual/design/map-a-users-whole-problem",
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ]
+    },
+    {
+      "authority": "United Kingdom Government Service Manual",
+      "freshness": "stable",
+      "source_id": "govuk-role-context",
+      "supports": [
+        "Task, circumstance, frequency, switching, comparison, and realistic-data differences for internal and role-specific services",
+        "Limits of universal one-thing-per-page application"
+      ],
+      "tier": 1,
+      "url": "https://www.gov.uk/service-manual/design/services-for-government-users",
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ]
+    },
+    {
+      "authority": "United States Web Design System",
+      "freshness": "versioned",
+      "source_id": "uswds-design-principles",
+      "supports": [
+        "Real user needs, audience segments, prototypes, accessibility, continuity, and regular testing as design decision inputs"
+      ],
+      "tier": 1,
+      "url": "https://designsystem.digital.gov/design-principles/",
+      "used_by": [
+        "information-architecture-and-user-flow"
+      ]
     }
-  ]
+  ],
+  "verified_on": "2026-07-28"
 }

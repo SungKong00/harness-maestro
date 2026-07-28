@@ -1,94 +1,242 @@
 {
-  "schema_version": "maestro_expertise_eval_v2",
-  "expertise_pack_id": "product-design",
-  "evaluated_on": "2026-07-27",
-  "evaluation_artifact": {
-    "path": "evals/results.json",
-    "sha256": "e6a5d04c454df137824b9f8657eb4a1652578c8c616434a0674516739fb0b94f"
-  },
   "cases": [
     {
       "case_id": "routine-dashboard",
-      "stratum": "normal",
-      "goal": "Improve the product dashboard layout",
-      "expected_pack_id": "product-design",
-      "expected_mode": "reuse",
       "expected_guides": [
         "design-brief",
         "visual-hierarchy-layout",
         "interaction-responsive-accessibility"
       ],
-      "observable_criteria": ["Routes the dashboard task to product design criteria"],
-      "forbidden_behaviors": ["Treats the request as generic code styling"]
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Treats the request as generic code styling"
+      ],
+      "goal": "Improve the product dashboard layout",
+      "observable_criteria": [
+        "Routes the dashboard task to product design criteria"
+      ],
+      "stratum": "normal"
     },
     {
       "case_id": "korean-type",
-      "stratum": "edge",
-      "goal": "한글 웹 디자인의 폰트와 글자 위계를 개선해줘",
-      "expected_pack_id": "product-design",
-      "expected_mode": "reuse",
       "expected_guides": [
         "typography-korean",
         "visual-hierarchy-layout"
       ],
-      "observable_criteria": ["Loads Hangul typography and hierarchy criteria"],
-      "forbidden_behaviors": ["Uses a Latin-only typography rubric"]
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Uses a Latin-only typography rubric"
+      ],
+      "goal": "한글 웹 디자인의 폰트와 글자 위계를 개선해줘",
+      "observable_criteria": [
+        "Loads Hangul typography and hierarchy criteria"
+      ],
+      "stratum": "edge"
     },
     {
       "case_id": "current-references",
-      "stratum": "edge",
-      "goal": "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘",
-      "expected_pack_id": "product-design",
-      "expected_mode": "contextualize",
       "expected_guides": [
         "reference-selection"
       ],
-      "observable_criteria": ["Opens contextual reference research"],
-      "forbidden_behaviors": ["Claims current trends from static memory"]
+      "expected_mode": "contextualize",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Claims current trends from static memory"
+      ],
+      "goal": "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘",
+      "observable_criteria": [
+        "Opens contextual reference research"
+      ],
+      "stratum": "edge"
     },
     {
       "case_id": "responsive-accessibility",
-      "stratum": "normal",
-      "goal": "Review the mobile UI focus order and responsive accessibility",
-      "expected_pack_id": "product-design",
-      "expected_mode": "reuse",
       "expected_guides": [
         "interaction-responsive-accessibility"
       ],
-      "observable_criteria": ["Selects interaction and accessibility checks"],
-      "forbidden_behaviors": ["Reviews only visual appearance"]
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Reviews only visual appearance"
+      ],
+      "goal": "Review the mobile UI focus order and responsive accessibility",
+      "observable_criteria": [
+        "Selects interaction and accessibility checks"
+      ],
+      "stratum": "normal"
     },
     {
       "case_id": "refresh-pack",
-      "stratum": "edge",
-      "goal": "디자인 출처 갱신 후 웹 디자인 기준을 업데이트해줘",
-      "expected_pack_id": "product-design",
-      "expected_mode": "refresh",
       "expected_guides": [
         "design-brief"
       ],
-      "observable_criteria": ["Routes the request through refresh research"],
-      "forbidden_behaviors": ["Updates reusable guidance without refreshed evidence"]
+      "expected_mode": "refresh",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Updates reusable guidance without refreshed evidence"
+      ],
+      "goal": "디자인 출처 갱신 후 웹 디자인 기준을 업데이트해줘",
+      "observable_criteria": [
+        "Routes the request through refresh research"
+      ],
+      "stratum": "edge"
     },
     {
       "case_id": "operations-dashboard-verification",
-      "stratum": "non-trigger",
-      "goal": "Verify the dashboard backend and operations telemetry",
-      "expected_pack_id": null,
-      "expected_mode": "reuse",
       "expected_guides": [],
-      "observable_criteria": ["Keeps operational verification outside the product-design Pack"],
-      "forbidden_behaviors": ["Selects product design from the generic surface noun dashboard"]
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Selects product design from the generic surface noun dashboard"
+      ],
+      "goal": "Verify the dashboard backend and operations telemetry",
+      "observable_criteria": [
+        "Keeps operational verification outside the product-design Pack"
+      ],
+      "stratum": "non-trigger"
     },
     {
       "case_id": "unknown-expertise",
-      "stratum": "non-trigger",
-      "goal": "Select a technology stack using expert criteria and best practices",
-      "expected_pack_id": null,
-      "expected_mode": "discover",
       "expected_guides": [],
-      "observable_criteria": ["Does not force a design Pack onto architecture work"],
-      "forbidden_behaviors": ["Selects product design because expert criteria were requested"]
+      "expected_mode": "discover",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Selects product design because expert criteria were requested"
+      ],
+      "goal": "Select a technology stack using expert criteria and best practices",
+      "observable_criteria": [
+        "Does not force a design Pack onto architecture work"
+      ],
+      "stratum": "non-trigger"
+    },
+    {
+      "case_id": "normal-role-aware-onboarding",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Treats the organization chart or one default persona as the page information architecture",
+        "Assigns exact prominence or position without a traceable user need, journey step, or state"
+      ],
+      "goal": "신규 고객과 반복 운영자가 함께 쓰는 SaaS 온보딩 대시보드의 정보 구조와 페이지 흐름을 설계해줘. 첫 방문, 재방문, 권한 부족, 오류 상태에서 무엇을 어디에 두고 어떤 행동을 강조할지도 정해줘",
+      "observable_criteria": [
+        "Selects the information-architecture Guide together with the inherited brief, hierarchy, and interaction criteria",
+        "Requires role, situation, state, entry, exit, evidence, and action priorities before fixing element placement"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "normal-decision-support-page",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Makes every role-specific action equally prominent",
+        "Uses a fashionable layout pattern as sufficient evidence for the decision flow"
+      ],
+      "goal": "B2B 가격 비교 페이지에서 실무자, 구매 담당자, 관리자에게 필요한 증거와 CTA를 어떤 순서와 위치로 보여줄지, 비교에서 문의 또는 구매로 이어지는 흐름까지 설계해줘",
+      "observable_criteria": [
+        "Separates shared content from role- or situation-dependent evidence and actions",
+        "Defines page scope, decision sequence, continuity, and correction paths before visual emphasis"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "edge-high-frequency-operations",
+      "expected_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Applies one-thing-per-page as a universal rule despite high-frequency comparison and batch work",
+        "Hides consequential status or recovery behind progressive disclosure"
+      ],
+      "goal": "초보 검토자와 하루 수백 건을 처리하는 숙련 운영자가 함께 쓰는 승인 화면을 설계해줘. 대기, 빈 상태, 부분 실패, 재시도, 되돌리기, 일괄 작업에서 정보와 액션 우선순위를 역할과 상황별로 정해줘",
+      "observable_criteria": [
+        "Distinguishes novice comprehension from expert frequency and switching needs without forking unrelated products",
+        "Requires reachable loading, empty, failure, retry, undo, and permission states with a coherent next action"
+      ],
+      "stratum": "edge"
+    },
+    {
+      "case_id": "non-trigger-backend-orchestration",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Selects information architecture because the request contains flow or state concepts"
+      ],
+      "goal": "백엔드 작업 큐의 재시도, 지수 백오프, 멱등성 키와 dead-letter 처리 구조를 설계해줘",
+      "observable_criteria": [
+        "Keeps backend orchestration outside the product-design web-structure extension"
+      ],
+      "stratum": "non-trigger"
+    },
+    {
+      "case_id": "overlap-scroll-storytelling",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks a motion-specific request with generic information-architecture criteria",
+        "Treats the new Guide as a substitute for motion accessibility or runtime evidence"
+      ],
+      "goal": "제품 소개 랜딩페이지에 scroll-driven animation, pin, scrub, parallax 장면을 설계하고 reduced motion과 runtime performance를 검토해줘",
+      "observable_criteria": [
+        "Leaves explicit scroll-linked motion design and verification to interactive-web-motion"
+      ],
+      "stratum": "overlap"
+    },
+    {
+      "case_id": "korean-design-research-theme",
+      "expected_guides": [
+        "reference-selection"
+      ],
+      "expected_mode": "contextualize",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Treats a design research request as a style-only reuse request",
+        "Allows execution before a validated research artifact is attached"
+      ],
+      "goal": "전체적으로 모든 디자인과 색 테마 등이 너무 구려. 충분한 리서치를 하고 모던하고 심플하고 신뢰감 있는 테마/디자인으로 바꿔줘.",
+      "observable_criteria": [
+        "Selects reference-selection from the bounded 디자인 리서치 phrase",
+        "Opens contextual research and requires evidence before execution"
+      ],
+      "stratum": "edge"
+    },
+    {
+      "case_id": "adjective-only-ui-refresh",
+      "expected_guides": [
+        "design-brief",
+        "visual-hierarchy-layout",
+        "interaction-responsive-accessibility"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "product-design",
+      "forbidden_behaviors": [
+        "Selects reference-selection from modern or simple alone",
+        "Opens contextual research without an explicit research, reference, or example request"
+      ],
+      "goal": "Make this dashboard UI modern, simple, and trustworthy.",
+      "observable_criteria": [
+        "Keeps routine adjective-only UI refinement on the reuse path"
+      ],
+      "stratum": "non-trigger"
     }
-  ]
+  ],
+  "evaluated_on": "2026-07-28",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "eb9e9d479b6fa1674668d1302dcec54286f6c21e6271b41049de8ef24109072a"
+  },
+  "expertise_pack_id": "product-design",
+  "schema_version": "maestro_expertise_eval_v2"
 }

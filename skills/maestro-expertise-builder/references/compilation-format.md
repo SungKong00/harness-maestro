@@ -53,11 +53,42 @@ Declare the component-level intent in `candidate.json`:
 }
 ```
 
+Also declare how the candidate entered the queue:
+
+```json
+{
+  "generation": {
+    "mode": "automatic",
+    "signal_fingerprint": "0123456789abcdef01234567"
+  }
+}
+```
+
+Use `user-requested` with a null fingerprint for an explicit authoring
+request. Automatic candidates must bind the exact management signal so the
+Builder does not create duplicates.
+
 Use `guide-revision` when the same Guide's checks change and
 `guide-deprecation` only when the target Guide is absent from the complete next
 Pack snapshot. Use `trigger-adjustment`, `source-refresh` or
 `evaluation-extension` with `target_guide_id: null`. This field supports
 component-level inventory and review; it does not authorize an in-place edit.
+
+For a true integration candidate use:
+
+```json
+{
+  "component_change": {
+    "kind": "pack-merge",
+    "target_guide_id": null,
+    "source_pack_ids": ["pack-a", "pack-b"]
+  }
+}
+```
+
+The new Pack must include coexistence cases, a source-Pack comparison and a
+migration/rollback plan. Publication does not deactivate or delete either
+source Pack.
 
 Each Decision Guide must contain these Markdown sections:
 

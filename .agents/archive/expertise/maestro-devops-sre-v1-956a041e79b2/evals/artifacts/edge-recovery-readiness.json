@@ -1,0 +1,10 @@
+{
+  "baseline_observation": "The baseline selected software-qa for an operations-design request and omitted SRE decision procedures.",
+  "candidate_observation": "Fresh-context evaluation and deterministic route replay matched the frozen Pack, Guide, and coexistence expectation without granting authority.",
+  "case_id": "edge-recovery-readiness",
+  "evidence_refs": [
+    "route-replay:devops-sre:edge-recovery-readiness",
+    "fresh-evaluation:devops-sre:2026-07-27"
+  ],
+  "schema_version": "maestro_expertise_case_artifact_v1"
+}

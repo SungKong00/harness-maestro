@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Data Engineering"
+  short_description: "Apply analytical data pipeline decision criteria"
+  default_prompt: "Use $maestro-data-engineering with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false

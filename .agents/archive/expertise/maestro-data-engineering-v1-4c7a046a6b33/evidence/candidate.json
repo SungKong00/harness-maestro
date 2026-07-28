@@ -1,0 +1,114 @@
+{
+  "candidate_id": "data-engineering",
+  "component_change": {
+    "kind": "new-pack",
+    "target_guide_id": null
+  },
+  "evaluation": {
+    "baseline": "no-pack",
+    "cases_path": "evals/cases.json",
+    "pass_criteria": [
+      "Selects the candidate only for its independent decision family",
+      "Loads no more than four directly relevant Guides",
+      "Changes a named decision or catches a declared failure",
+      "Preserves advisory, evidence, and implementation-authority boundaries"
+    ],
+    "quality_path": "evals/quality.json",
+    "regression_criteria": [
+      "Does not hijack product-design, marketing, or software-qa requests",
+      "Does not claim evidence, execution, or policy authority it lacks"
+    ]
+  },
+  "evidence_refs": [
+    "research-bundle:sha256:85307372e4e10f2dd13f3ecf95d92e51ab020a3f1cd05d8c45ead40a223a754f",
+    "baseline-route:data-engineering:2026-07-27",
+    "govern-classification:data-engineering:expertise-pack",
+    "owner-request:four-general-engineering-packs"
+  ],
+  "existing_coverage": "The data-integrity Lens checks persisted meaning and recovery, while software-qa owns test strategy. No current Pack owns analytical pipeline execution, lineage, backfill, or end-to-end delivery semantics.",
+  "expertise_pack_id": "data-engineering",
+  "not_for": [
+    "Ordinary application OLTP schema, index, or transaction design",
+    "Dashboard visual design or product analytics presentation",
+    "Organization-wide data policy, privacy, retention, or legal decisions"
+  ],
+  "owner": "harness-maestro",
+  "portability": "global",
+  "problem": "Baseline pipeline routes had no data-engineering Pack and could falsely select product-design from generic design wording, leaving execution time, schema direction, quality, lineage, backfill, and recovery semantics unowned.",
+  "proposed_guides": [
+    {
+      "decision_checks": [
+        "Classify each input as bounded or unbounded and choose batch, streaming, or a deliberate hybrid.",
+        "Define event time, processing time, windows, triggers, watermarks, allowed lateness, and pane accumulation where applicable.",
+        "State update, correction, and finalization semantics visible to downstream consumers.",
+        "Verify the selected runner and connectors support the required model and guarantees."
+      ],
+      "failure_prevented": "Choose bounded or unbounded execution, event-time semantics, windows, triggers, watermarks, lateness, and runner capability.",
+      "freshness": "volatile",
+      "guide_id": "pipeline-execution-model"
+    },
+    {
+      "decision_checks": [
+        "Identify producer, stored writer schema, current and historical consumers, replay, and compatibility direction.",
+        "Define stable field identity, optionality, defaults, aliases, type promotion, and semantic meaning.",
+        "Separate format-level compatibility from semantic and consumer compatibility.",
+        "Plan producer, storage, consumer, and backfill rollout across mixed versions."
+      ],
+      "failure_prevented": "Choose directional writer-reader compatibility, field identity, schema preservation, defaults, promotion, rollout, and replay behavior.",
+      "freshness": "versioned",
+      "guide_id": "pipeline-schema-contract-evolution"
+    },
+    {
+      "decision_checks": [
+        "Name the consumer purpose and failure impact before selecting quality dimensions.",
+        "Define metric, population, sampling, expected value or range, threshold, and measurement time.",
+        "Choose warn, block, quarantine, degrade, or annotate behavior with an owner.",
+        "Preserve actual results, severity, affected dataset or columns, and remediation lifecycle."
+      ],
+      "failure_prevented": "Define fitness-for-purpose dimensions, metrics, measurements, thresholds, warn or block severity, quarantine, and quality ownership.",
+      "freshness": "stable",
+      "guide_id": "analytical-data-quality-gates"
+    },
+    {
+      "decision_checks": [
+        "Define stable namespaces and identities for datasets, jobs, runs, code, schema, and owners.",
+        "Capture input use, output generation, derivation, attribution, and relevant transformations.",
+        "Separate runtime run events from design-time job and dataset metadata.",
+        "Choose required granularity and retention from debugging, impact, audit, and cost needs."
+      ],
+      "failure_prevented": "Design stable dataset, job, and run identity plus input-output derivation, runtime and design lineage, versions, and transformation evidence.",
+      "freshness": "stable",
+      "guide_id": "lineage-and-provenance"
+    },
+    {
+      "decision_checks": [
+        "Bind the correction to explicit intervals, partitions, input versions, code, schema, and target datasets.",
+        "Define reprocess eligibility, ordering, concurrency, throttling, isolation, and interaction with live pipelines.",
+        "Require deterministic or intentionally versioned output and idempotent replacement behavior.",
+        "Provide dry run, self-check, reconciliation, staged publication, abort, and cleanup."
+      ],
+      "failure_prevented": "Plan interval or partition scope, reprocessing mode, deterministic output, concurrency, ordering, dry run, self-check, and publication for historical correction.",
+      "freshness": "versioned",
+      "guide_id": "backfill-and-historical-correction"
+    },
+    {
+      "decision_checks": [
+        "Define failure classes and replay behavior for source, operator state, offsets, timers, and sinks.",
+        "Choose checkpoint, savepoint, restart, and upgrade behavior and their consistency boundary.",
+        "State at-most-once, at-least-once, or exactly-once separately for each stage and external side effect.",
+        "Coordinate source position and output with transactions or idempotence where end-to-end guarantees require it."
+      ],
+      "failure_prevented": "Choose replayable sources, state and offset snapshots, checkpoint or savepoint use, delivery guarantee scope, and sink transaction or idempotence.",
+      "freshness": "versioned",
+      "guide_id": "state-recovery-and-delivery-semantics"
+    }
+  ],
+  "reusable_when": [
+    "Designing batch, streaming, ETL, ELT, or analytical pipelines",
+    "Choosing schema evolution, data quality, lineage, backfill, and recovery semantics",
+    "Defining event-time, replay, checkpoint, and sink guarantees"
+  ],
+  "review_after": "2026-10-27",
+  "schema_version": "maestro_expertise_candidate_v1",
+  "status": "candidate"
+}

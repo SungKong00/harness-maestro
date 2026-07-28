@@ -285,8 +285,134 @@
         },
         "selection_trace": {
           "type": "object"
+        },
+        "route_hints": {
+          "$ref": "#/$defs/expertiseRouteHints"
         }
       }
+    },
+    "expertiseRouteHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "policy_id",
+        "policy_digest",
+        "work_kinds",
+        "affected_paths",
+        "path_policy",
+        "explicit_pack_id",
+        "route_attempt",
+        "prior_plan_id",
+        "prior_source_route_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_expertise_route_hints_v1"
+        },
+        "policy_id": {
+          "const": "expertise-route-hints-v1"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "work_kinds": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "content-claim",
+              "data-change",
+              "delivery-operation",
+              "quality-verification",
+              "security-sensitive",
+              "software-structure",
+              "user-interface"
+            ]
+          }
+        },
+        "affected_paths": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "path_policy": {
+          "const": "audit-only"
+        },
+        "explicit_pack_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route_attempt": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "prior_plan_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prior_source_route_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "route_attempt": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "prior_plan_id": {
+                "type": "null"
+              },
+              "prior_source_route_digest": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "prior_plan_id": {
+                "$ref": "#/$defs/digest"
+              },
+              "prior_source_route_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      ]
     },
     "modelRoute": {
       "type": "object",
@@ -358,6 +484,7 @@
       "required": [
         "objective",
         "allowed_side_effects",
+        "forbidden_side_effects",
         "terminal_condition",
         "stop_conditions",
         "limits"
@@ -373,6 +500,17 @@
           "uniqueItems": true,
           "items": {
             "const": "repository_write"
+          }
+        },
+        "forbidden_side_effects": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "git_commit",
+              "remote_write"
+            ]
           }
         },
         "terminal_condition": {

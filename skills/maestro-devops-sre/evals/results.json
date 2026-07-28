@@ -1,0 +1,50 @@
+{
+  "expertise_pack_id": "devops-sre",
+  "results": [
+    {
+      "case_id": "normal-slo-delivery",
+      "observed_guides": [
+        "service-objectives-and-error-budgets",
+        "progressive-delivery-and-change-control"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "devops-sre",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-telemetry-capacity",
+      "observed_guides": [
+        "telemetry-architecture",
+        "capacity-and-overload"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "devops-sre",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-recovery-readiness",
+      "observed_guides": [
+        "recovery-and-continuity",
+        "production-readiness-and-ownership"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "devops-sre",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-unit-tests",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-release-regression",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    }
+  ],
+  "schema_version": "maestro_expertise_eval_results_v1"
+}

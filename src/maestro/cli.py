@@ -33,23 +33,54 @@ from .doctor import doctor_report
 from .dashboard import serve_dashboard
 from .documents import select_documents
 from .errors import MaestroError
+from .expertise import select_expertise
+from .expertise_routing import (
+    WORK_KIND_TO_PACK_ID,
+    normalize_route_hints,
+)
 from .expertise_lifecycle import (
     apply_expertise_activation_plan,
+    apply_expertise_archive_plan,
+    apply_expertise_change_set_plan,
+    apply_expertise_delete_plan,
     apply_expertise_deactivation_plan,
     apply_expertise_export_plan,
+    apply_expertise_global_promotion_plan,
+    apply_expertise_rejection_plan,
+    apply_expertise_restore_plan,
     apply_expertise_update_plan,
     build_expertise_activation_plan,
+    build_expertise_archive_plan,
+    build_expertise_change_set_plan,
+    build_expertise_delete_plan,
     build_expertise_deactivation_plan,
     build_expertise_export_plan,
+    build_expertise_global_promotion_plan,
+    build_expertise_rejection_plan,
+    build_expertise_restore_plan,
     build_expertise_update_plan,
     expertise_inventory,
     validate_expertise_contribution,
     validate_expertise_candidate,
 )
-from .governance import govern_report, record_run
+from .expertise_reconcile import (
+    apply_expertise_reconcile_plan,
+    build_expertise_reconcile_plan,
+)
+from .expertise_promotion import (
+    apply_expertise_promotion_decision_plan,
+    build_expertise_promotion_decision_plan,
+)
+from .governance import finalize_run, govern_report, record_run
+from .host import apply_host_sync_plan, build_host_sync_plan
 from .observations import (
+    attach_run_plan,
     import_codex_app_server_trace,
+    record_execution_fallback,
     record_host_observation,
+    record_stage_observation,
+    record_work_finish,
+    record_work_start,
     start_desktop_request_observation,
     start_run_observation,
 )
@@ -59,7 +90,11 @@ from .project import (
     build_upgrade_plan,
     inspect_adapter,
 )
-from .research import BUNDLE_VERSION, validate_research_artifact
+from .research import (
+    BUNDLE_VERSION,
+    expected_research_binding,
+    validate_research_artifact,
+)
 from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
@@ -76,7 +111,12 @@ from .verification import (
 def _research_evidence_digest(
     artifact_path: str | None,
     expected_digest: str | None,
-) -> str | None:
+    *,
+    repo_path: str,
+    goal: str,
+    intent: str,
+    route_hints: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     if artifact_path is None:
         if expected_digest is not None:
             raise MaestroError(
@@ -102,17 +142,44 @@ def _research_evidence_digest(
             "A research gate requires a synthesized Maestro ResearchBundle, "
             "not an individual lane packet.",
         )
-    validation = validate_research_artifact(artifact)
+    validation = validate_research_artifact(
+        artifact,
+        repo_path=repo_path,
+    )
     if validation["status"] != "PASS":
         first = validation["issues"][0]
         raise MaestroError(first["code"], first["message"])
+    if validation["evidence_status"] != "completed":
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_INSUFFICIENT",
+            "Only a completed ResearchBundle can satisfy an execution gate.",
+        )
+    expertise, _ = select_expertise(
+        goal,
+        intent=intent,
+        route_hints=route_hints,
+        repo_path=repo_path,
+    )
+    requirement = expertise["research_requirement"]
+    if requirement["mode"] == "reuse" or intent == "research":
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_NOT_APPLICABLE",
+            "The routed task has no external research gate to satisfy.",
+        )
+    expected_binding = expected_research_binding(goal, expertise)
+    if artifact["request_binding"] != expected_binding:
+        raise MaestroError(
+            "RESEARCH_EVIDENCE_BINDING_MISMATCH",
+            "The ResearchBundle does not match this goal, research mode, "
+            "selected Pack, Guides, and Pack definition digests.",
+        )
     digest = validation["artifact_digest"]
     if expected_digest is not None and expected_digest != digest:
         raise MaestroError(
             "RESEARCH_EVIDENCE_DIGEST_MISMATCH",
             "The supplied digest does not match the validated ResearchBundle.",
         )
-    return digest
+    return artifact
 
 
 def _emit(value: dict[str, Any], as_json: bool) -> None:
@@ -348,6 +415,79 @@ def parser() -> argparse.ArgumentParser:
     expertise_deactivate.add_argument("--pack")
     expertise_deactivate.add_argument("--apply-plan")
     expertise_deactivate.add_argument("--json", action="store_true")
+    expertise_reject = expertise_commands.add_parser(
+        "reject-candidate",
+        help="Preview or reversibly stop one retained candidate from routing",
+    )
+    expertise_reject.add_argument("--repo", default=".")
+    expertise_reject.add_argument("--candidate")
+    expertise_reject.add_argument("--reason")
+    expertise_reject.add_argument("--apply-plan")
+    expertise_reject.add_argument("--json", action="store_true")
+    expertise_archive = expertise_commands.add_parser(
+        "archive-candidate",
+        help="Preview or archive one retained candidate without rejecting it",
+    )
+    expertise_archive.add_argument("--repo", default=".")
+    expertise_archive.add_argument("--candidate")
+    expertise_archive.add_argument("--reason")
+    expertise_archive.add_argument("--apply-plan")
+    expertise_archive.add_argument("--json", action="store_true")
+    expertise_restore = expertise_commands.add_parser(
+        "restore-candidate",
+        help="Preview or restore one archived or rejected candidate",
+    )
+    expertise_restore.add_argument("--repo", default=".")
+    expertise_restore.add_argument("--candidate")
+    expertise_restore.add_argument("--apply-plan")
+    expertise_restore.add_argument("--json", action="store_true")
+    expertise_delete = expertise_commands.add_parser(
+        "delete-candidate",
+        help="Preview or permanently remove one archived candidate",
+    )
+    expertise_delete.add_argument("--repo", default=".")
+    expertise_delete.add_argument("--candidate")
+    expertise_delete.add_argument("--confirm")
+    expertise_delete.add_argument(
+        "--replacement-pack",
+        action="append",
+        default=[],
+    )
+    expertise_delete.add_argument("--apply-plan")
+    expertise_delete.add_argument("--json", action="store_true")
+    expertise_change_set = expertise_commands.add_parser(
+        "change-set",
+        help="Preview or apply one atomic multi-Pack Expertise change",
+    )
+    expertise_change_set.add_argument("--repo", default=".")
+    expertise_change_set.add_argument("--id")
+    expertise_change_set.add_argument(
+        "--action",
+        choices=["project-approve", "archive", "restore", "delete"],
+    )
+    expertise_change_set.add_argument("--approval-ref")
+    expertise_change_set.add_argument("--reason")
+    expertise_change_set.add_argument("--confirm")
+    expertise_change_set.add_argument(
+        "--replacement-pack",
+        action="append",
+        default=[],
+    )
+    expertise_change_set.add_argument("--apply-plan")
+    expertise_change_set.add_argument("--json", action="store_true")
+    expertise_promotion_decision = expertise_commands.add_parser(
+        "promotion-decision",
+        help="Decline or reconsider the global promotion of one candidate",
+    )
+    expertise_promotion_decision.add_argument("--repo", default=".")
+    expertise_promotion_decision.add_argument("--candidate")
+    expertise_promotion_decision.add_argument(
+        "--decision",
+        choices=["decline", "reconsider"],
+    )
+    expertise_promotion_decision.add_argument("--reason")
+    expertise_promotion_decision.add_argument("--apply-plan")
+    expertise_promotion_decision.add_argument("--json", action="store_true")
     expertise_export = expertise_commands.add_parser(
         "export",
         help="Preview or write one validated project-local promotion bundle",
@@ -356,12 +496,39 @@ def parser() -> argparse.ArgumentParser:
     expertise_export.add_argument("--candidate")
     expertise_export.add_argument("--apply-plan")
     expertise_export.add_argument("--json", action="store_true")
+    expertise_promote_global = expertise_commands.add_parser(
+        "promote-global",
+        help="Preview or apply a contribution to Harness global source",
+    )
+    expertise_promote_global.add_argument("--repo", default=".")
+    expertise_promote_global.add_argument("--candidate")
+    expertise_promote_global.add_argument("--pack")
+    expertise_promote_global.add_argument("--approval-ref")
+    expertise_promote_global.add_argument("--apply-plan")
+    expertise_promote_global.add_argument("--json", action="store_true")
     expertise_validate_contribution = expertise_commands.add_parser(
         "validate-contribution",
         help="Validate one exported Expertise contribution without importing it",
     )
     expertise_validate_contribution.add_argument("--bundle", required=True)
     expertise_validate_contribution.add_argument("--json", action="store_true")
+    expertise_reconcile = expertise_commands.add_parser(
+        "reconcile",
+        help=(
+            "Preview or archive inactive and globally superseded project "
+            "Expertise outside Host discovery"
+        ),
+    )
+    expertise_reconcile.add_argument("--repo", default=".")
+    expertise_reconcile.add_argument(
+        "--source-root",
+        help=(
+            "Harness source checkout providing the bundled global Pack; "
+            "defaults to --repo"
+        ),
+    )
+    expertise_reconcile.add_argument("--apply-plan")
+    expertise_reconcile.add_argument("--json", action="store_true")
 
     component = commands.add_parser(
         "component",
@@ -419,6 +586,36 @@ def parser() -> argparse.ArgumentParser:
             "--research-evidence"
         ),
     )
+    route.add_argument(
+        "--work-kind",
+        action="append",
+        default=[],
+        choices=sorted(WORK_KIND_TO_PACK_ID),
+        help=(
+            "Host-confirmed work kind; repeat at most twice. The first kind is "
+            "primary when a non-high-risk route warns and continues."
+        ),
+    )
+    route.add_argument(
+        "--affected-path",
+        action="append",
+        default=[],
+        help=(
+            "Repository-relative path recorded for audit only; a project "
+            "Adapter must translate paths into --work-kind when relevant."
+        ),
+    )
+    route.add_argument(
+        "--explicit-pack",
+        help="One eligible Expertise Pack explicitly selected by the user.",
+    )
+    route.add_argument(
+        "--prior-route-plan",
+        help=(
+            "Exact initial route v2 plan when producing the stage's one "
+            "corrected route. Attach only the final plan to an observation."
+        ),
+    )
     route.add_argument("--json", action="store_true")
 
     validate_plan = commands.add_parser(
@@ -430,6 +627,10 @@ def parser() -> argparse.ArgumentParser:
         "--repo",
         default=".",
         help="Repository used to re-resolve project Expertise.",
+    )
+    validate_plan.add_argument(
+        "--research-evidence",
+        help="Exact completed ResearchBundle required to revalidate a satisfied gate.",
     )
     validate_plan.add_argument("--json", action="store_true")
 
@@ -472,6 +673,13 @@ def parser() -> argparse.ArgumentParser:
             "dependency Packet"
         ),
     )
+    assignment_project.add_argument(
+        "--research-evidence",
+        help=(
+            "Validated completed ResearchBundle required by a satisfied "
+            "expertise research gate"
+        ),
+    )
     assignment_project.add_argument("--json", action="store_true")
 
     validate_packet = commands.add_parser(
@@ -486,11 +694,20 @@ def parser() -> argparse.ArgumentParser:
         "--projection",
         help="Optional Assignment projection used to enforce evidence scope",
     )
+    validate_packet.add_argument(
+        "--research-evidence",
+        help="Exact completed ResearchBundle bound into the Assignment projection.",
+    )
     validate_packet.add_argument("--json", action="store_true")
 
     validate_research = commands.add_parser(
         "validate-research",
         help="Validate one bounded ResearchPacket or synthesized ResearchBundle",
+    )
+    validate_research.add_argument(
+        "--repo",
+        default=".",
+        help="Repository used to resolve checked local evidence artifacts",
     )
     validate_research.add_argument("--artifact", required=True)
     validate_research.add_argument("--json", action="store_true")
@@ -556,6 +773,10 @@ def parser() -> argparse.ArgumentParser:
         required=True,
     )
     enact.add_argument("--host")
+    enact.add_argument(
+        "--research-evidence",
+        help="Exact completed ResearchBundle when the decision gate is satisfied.",
+    )
     enact.add_argument("--json", action="store_true")
 
     adapt = commands.add_parser("adapt", help="Inspect project adapter candidates without writing")
@@ -581,6 +802,26 @@ def parser() -> argparse.ArgumentParser:
         "--plan",
         help="Optional validated route v2 plan whose compact assignments are recorded",
     )
+    observe_start.add_argument(
+        "--fallback-reason",
+        choices=[
+            "interactive_required",
+            "network_required",
+            "app_connector_required",
+            "capability_unavailable",
+        ],
+        help=(
+            "Why the current Host must execute this run instead of the "
+            "Maestro-owned App Server"
+        ),
+    )
+    observe_start.add_argument(
+        "--fallback-evidence",
+        help=(
+            "One bounded factual line supporting --fallback-reason; use this "
+            "path when public Desktop request model metadata is unavailable"
+        ),
+    )
     observe_start.add_argument("--json", action="store_true")
     observe_desktop = observe_commands.add_parser(
         "desktop",
@@ -601,6 +842,189 @@ def parser() -> argparse.ArgumentParser:
         help="Optional validated route v2 plan whose compact assignments are recorded",
     )
     observe_desktop.add_argument("--json", action="store_true")
+    observe_fallback = observe_commands.add_parser(
+        "fallback",
+        help=(
+            "Record why an observed Desktop run cannot use the "
+            "Maestro-owned Codex App Server"
+        ),
+    )
+    observe_fallback.add_argument("--repo", default=".")
+    observe_fallback.add_argument("--observation", required=True)
+    observe_fallback.add_argument("--run-id", required=True)
+    observe_fallback.add_argument(
+        "--reason",
+        choices=[
+            "interactive_required",
+            "network_required",
+            "app_connector_required",
+            "capability_unavailable",
+        ],
+        required=True,
+    )
+    observe_fallback.add_argument(
+        "--evidence",
+        required=True,
+        help="One bounded factual line proving why current-Host execution is required.",
+    )
+    observe_fallback.add_argument("--json", action="store_true")
+    observe_plan = observe_commands.add_parser(
+        "plan",
+        help="Attach one validated route v2 plan to an already observed request",
+    )
+    observe_plan.add_argument("--repo", default=".")
+    observe_plan.add_argument("--observation", required=True)
+    observe_plan.add_argument("--run-id", required=True)
+    observe_plan.add_argument("--plan", required=True)
+    observe_plan.add_argument("--json", action="store_true")
+    observe_stage = observe_commands.add_parser(
+        "stage",
+        help="Record one immutable terminal Assignment result",
+    )
+    observe_stage.add_argument("--repo", default=".")
+    observe_stage.add_argument("--observation", required=True)
+    observe_stage.add_argument("--run-id", required=True)
+    observe_stage.add_argument("--assignment", required=True)
+    observe_stage.add_argument(
+        "--status",
+        choices=[
+            "completed",
+            "failed",
+            "blocked",
+            "skipped",
+            "interrupted",
+        ],
+        required=True,
+    )
+    observe_stage.add_argument(
+        "--evidence-source",
+        choices=[
+            "current_host",
+            "deterministic_command",
+        ],
+        required=True,
+        help=(
+            "Current Desktop/CLI assertion source. Codex App Server evidence "
+            "is written only by maestro host codex."
+        ),
+    )
+    observe_stage.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        required=True,
+        help="Bounded evidence reference; repeat up to three times",
+    )
+    observe_stage.add_argument("--duration-ms", type=float)
+    observe_stage.add_argument("--json", action="store_true")
+    observe_work_start = observe_commands.add_parser(
+        "work-start",
+        help="Record one bounded orchestrator or delegated work attempt",
+    )
+    observe_work_start.add_argument("--repo", default=".")
+    observe_work_start.add_argument("--observation", required=True)
+    observe_work_start.add_argument("--run-id", required=True)
+    observe_work_start.add_argument("--work-id", required=True)
+    observe_work_start.add_argument("--parent-work")
+    observe_work_start.add_argument("--assignment")
+    observe_work_start.add_argument(
+        "--kind",
+        choices=[
+            "orchestration",
+            "delegation",
+            "research",
+            "review",
+            "implementation",
+            "synthesis",
+            "verification",
+        ],
+        required=True,
+    )
+    observe_work_start.add_argument("--role", required=True)
+    observe_work_start.add_argument("--executor", required=True)
+    observe_work_start.add_argument("--summary", required=True)
+    work_access = observe_work_start.add_mutually_exclusive_group(
+        required=True,
+    )
+    work_access.add_argument(
+        "--read-only",
+        dest="work_read_only",
+        action="store_true",
+    )
+    work_access.add_argument(
+        "--mutation-owner",
+        dest="work_read_only",
+        action="store_false",
+    )
+    observe_work_start.add_argument("--attempt", type=int, default=1)
+    observe_work_start.add_argument("--followup-of")
+    observe_work_start.add_argument(
+        "--depends-on",
+        action="append",
+        default=[],
+    )
+    observe_work_start.add_argument(
+        "--joins",
+        action="append",
+        default=[],
+    )
+    observe_work_start.add_argument("--requested-model")
+    observe_work_start.add_argument("--requested-reasoning-effort")
+    observe_work_start.add_argument(
+        "--lens",
+        action="append",
+        default=[],
+    )
+    observe_work_start.add_argument(
+        "--expertise-pack",
+        action="append",
+        default=[],
+    )
+    observe_work_start.add_argument(
+        "--decision-guide",
+        action="append",
+        default=[],
+    )
+    observe_work_start.add_argument(
+        "--expertise-evidence",
+        choices=["unavailable", "selection_only"],
+        default="unavailable",
+    )
+    observe_work_start.add_argument("--json", action="store_true")
+    observe_work_finish = observe_commands.add_parser(
+        "work-finish",
+        help="Complete one observed work attempt with a bounded result",
+    )
+    observe_work_finish.add_argument("--repo", default=".")
+    observe_work_finish.add_argument("--observation", required=True)
+    observe_work_finish.add_argument("--run-id", required=True)
+    observe_work_finish.add_argument("--work-id", required=True)
+    observe_work_finish.add_argument(
+        "--status",
+        choices=[
+            "completed",
+            "failed",
+            "blocked",
+            "interrupted",
+        ],
+        required=True,
+    )
+    observe_work_finish.add_argument("--summary", required=True)
+    observe_work_finish.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+    )
+    observe_work_finish.add_argument(
+        "--expertise-evidence",
+        choices=[
+            "unavailable",
+            "selection_only",
+            "host_loaded",
+            "application_observed",
+        ],
+    )
+    observe_work_finish.add_argument("--json", action="store_true")
     observe_host = observe_commands.add_parser(
         "host",
         help="Attach explicit Host-reported model and token telemetry",
@@ -675,6 +1099,15 @@ def parser() -> argparse.ArgumentParser:
         dest="host_command",
         required=True,
     )
+    host_sync = host_commands.add_parser(
+        "sync",
+        help="Preview or create only missing bundled Host Skill links",
+    )
+    host_sync.add_argument("--host", default="codex", choices=["codex"])
+    host_sync.add_argument("--source-root", default=".")
+    host_sync.add_argument("--skill-root")
+    host_sync.add_argument("--apply-plan")
+    host_sync.add_argument("--json", action="store_true")
     host_codex = host_commands.add_parser(
         "codex",
         help=(
@@ -687,10 +1120,9 @@ def parser() -> argparse.ArgumentParser:
     host_codex.add_argument("--task-label", required=True)
     host_codex.add_argument(
         "--prompt-file",
-        required=True,
         help=(
-            "Regular UTF-8 request file; content is sent to Codex but is not "
-            "persisted in Maestro observations"
+            "Standalone-only regular UTF-8 request file; Assignment execution "
+            "derives its prompt from the exact validated projection"
         ),
     )
     host_codex.add_argument(
@@ -702,6 +1134,46 @@ def parser() -> argparse.ArgumentParser:
         help=(
             "Assignment in --plan; derives sandbox, model, and reasoning "
             "effort and rejects conflicting overrides"
+        ),
+    )
+    host_codex.add_argument(
+        "--projection",
+        help=(
+            "Exact Assignment projection previously emitted by "
+            "`maestro assignment project`; required with --assignment"
+        ),
+    )
+    host_codex.add_argument(
+        "--baseline",
+        help="Authoritative Engineering Baseline used to reconstruct the projection",
+    )
+    host_codex.add_argument(
+        "--document",
+        action="append",
+        default=[],
+        help="Additional repository document used when projecting the Assignment",
+    )
+    host_codex.add_argument(
+        "--dependency-packet",
+        action="append",
+        default=[],
+        help="Validated direct-dependency Packet; repeat in dependency order",
+    )
+    host_codex.add_argument(
+        "--dependency-projection",
+        action="append",
+        default=[],
+        help="Exact projection paired with each direct-dependency Packet",
+    )
+    host_codex.add_argument(
+        "--research-evidence",
+        help="Exact completed ResearchBundle bound to a satisfied research gate",
+    )
+    host_codex.add_argument(
+        "--observation",
+        help=(
+            "Existing parent observation for this plan. Assignment telemetry "
+            "is appended to that run instead of creating a separate run."
         ),
     )
     host_codex.add_argument(
@@ -740,11 +1212,48 @@ def parser() -> argparse.ArgumentParser:
     record.add_argument(
         "--observation",
         help=(
-            "Observation ID returned by observe start; fills the task label, "
-            "plan summary, and missing duration"
+            "Observation ID returned by observe start; when omitted, record "
+            "automatically attaches the matching run observation from this "
+            "project checkout"
         ),
     )
     record.add_argument("--json", action="store_true")
+    finalize = commands.add_parser(
+        "finalize",
+        help=(
+            "Derive one final RunReceipt from the observed plan and terminal "
+            "Assignment results"
+        ),
+    )
+    finalize.add_argument("--repo", default=".")
+    finalize.add_argument("--run-id", required=True)
+    finalize.add_argument("--observation")
+    finalize.add_argument(
+        "--outcome",
+        choices=["completed", "failed", "corrected", "blocked", "no_change"],
+        required=True,
+    )
+    finalize.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        required=True,
+    )
+    finalize.add_argument(
+        "--verifier-result",
+        choices=["passed", "failed", "not_run"],
+        required=True,
+    )
+    finalize.add_argument("--command-artifact-ref")
+    finalize.add_argument("--correction-count", type=int, default=0)
+    finalize.add_argument(
+        "--correction-summary",
+        action="append",
+        default=[],
+    )
+    finalize.add_argument("--human-fix-required", action="store_true")
+    finalize.add_argument("--decision-changed", action="store_true")
+    finalize.add_argument("--json", action="store_true")
 
     snapshot = commands.add_parser(
         "snapshot",
@@ -759,6 +1268,15 @@ def parser() -> argparse.ArgumentParser:
         help="Serve the read-only project operations viewer on localhost",
     )
     dashboard.add_argument("--repo", default=".")
+    dashboard.add_argument(
+        "--project",
+        action="append",
+        default=[],
+        help=(
+            "Additional initialized Maestro project to include in the local "
+            "project switcher; repeat as needed"
+        ),
+    )
     dashboard.add_argument("--window", type=int, default=20)
     dashboard.add_argument(
         "--port",
@@ -770,6 +1288,14 @@ def parser() -> argparse.ArgumentParser:
         "--no-open",
         action="store_true",
         help="Do not open the viewer in the default browser",
+    )
+    dashboard.add_argument(
+        "--no-saved-projects",
+        action="store_true",
+        help=(
+            "Start an isolated dashboard session without restoring projects "
+            "remembered by earlier dashboard launches"
+        ),
     )
 
     verification = commands.add_parser(
@@ -1000,6 +1526,143 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "reject-candidate"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_rejection_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.reason:
+                    raise MaestroError(
+                        "EXPERTISE_CANDIDATE_REJECTION_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --reason.",
+                    )
+                result = build_expertise_rejection_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    reason=args.reason,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "archive-candidate"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_archive_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.reason:
+                    raise MaestroError(
+                        "EXPERTISE_CANDIDATE_ARCHIVE_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --reason.",
+                    )
+                result = build_expertise_archive_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    reason=args.reason,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "restore-candidate"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_restore_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate:
+                    raise MaestroError(
+                        "EXPERTISE_CANDIDATE_RESTORE_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate.",
+                    )
+                result = build_expertise_restore_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "delete-candidate"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_delete_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.confirm:
+                    raise MaestroError(
+                        "EXPERTISE_CANDIDATE_DELETE_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --confirm.",
+                    )
+                result = build_expertise_delete_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    confirmation=args.confirm,
+                    replacement_pack_ids=args.replacement_pack,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "change-set"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_change_set_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.id or not args.action:
+                    raise MaestroError(
+                        "EXPERTISE_CHANGE_SET_ARGUMENTS_REQUIRED",
+                        "Preview requires --id and --action.",
+                    )
+                result = build_expertise_change_set_plan(
+                    args.repo,
+                    change_set_id=args.id,
+                    action=args.action,
+                    approval_ref=args.approval_ref,
+                    reason=args.reason,
+                    confirmation=args.confirm,
+                    replacement_pack_ids=args.replacement_pack,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "promotion-decision"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_promotion_decision_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if not args.candidate or not args.decision:
+                    raise MaestroError(
+                        "EXPERTISE_PROMOTION_DECISION_ARGUMENTS_REQUIRED",
+                        "Preview requires --candidate and --decision.",
+                    )
+                result = build_expertise_promotion_decision_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    decision=args.decision,
+                    reason=args.reason,
+                )
+            _emit(result, args.json)
+            return 0
         if args.command == "expertise" and args.expertise_command == "export":
             if args.apply_plan:
                 result = apply_expertise_export_plan(
@@ -1020,6 +1683,52 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if (
             args.command == "expertise"
+            and args.expertise_command == "promote-global"
+        ):
+            if args.apply_plan:
+                result = apply_expertise_global_promotion_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+            else:
+                if (
+                    (bool(args.candidate) == bool(args.pack))
+                    or not args.approval_ref
+                ):
+                    raise MaestroError(
+                        "EXPERTISE_GLOBAL_PROMOTION_ARGUMENTS_REQUIRED",
+                        (
+                            "Preview requires exactly one of --candidate or "
+                            "--pack, plus --approval-ref."
+                        ),
+                    )
+                result = build_expertise_global_promotion_plan(
+                    args.repo,
+                    candidate_id=args.candidate,
+                    expertise_pack_id=args.pack,
+                    approval_ref=args.approval_ref,
+                )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "reconcile"
+        ):
+            result = (
+                apply_expertise_reconcile_plan(
+                    args.apply_plan,
+                    args.repo,
+                )
+                if args.apply_plan
+                else build_expertise_reconcile_plan(
+                    args.repo,
+                    source_root=args.source_root,
+                )
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
             and args.expertise_command == "validate-contribution"
         ):
             result = validate_expertise_contribution(args.bundle)
@@ -1036,9 +1745,62 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
         if args.command == "route":
-            research_evidence_digest = _research_evidence_digest(
+            prior_route_plan = (
+                read_json(
+                    Path(args.prior_route_plan).expanduser().resolve()
+                )
+                if args.prior_route_plan
+                else None
+            )
+            if prior_route_plan is not None:
+                prior_validation = validate_route_v2(
+                    prior_route_plan,
+                    repo_path=args.repo,
+                )
+                if prior_validation["status"] != "PASS":
+                    first_issue = prior_validation["issues"][0]
+                    raise MaestroError(
+                        first_issue["code"],
+                        first_issue["message"],
+                    )
+            has_route_hints = bool(
+                args.work_kind
+                or args.affected_path
+                or args.explicit_pack
+                or prior_route_plan is not None
+            )
+            route_hints = (
+                normalize_route_hints(
+                    work_kinds=args.work_kind,
+                    affected_paths=args.affected_path,
+                    explicit_pack_id=args.explicit_pack,
+                    route_attempt=2 if prior_route_plan is not None else 1,
+                    prior_plan_id=(
+                        prior_route_plan.get("plan_id")
+                        if prior_route_plan is not None
+                        else None
+                    ),
+                    prior_source_route_digest=(
+                        prior_route_plan.get("source_route_digest")
+                        if prior_route_plan is not None
+                        else None
+                    ),
+                )
+                if has_route_hints
+                else None
+            )
+            if route_hints is not None and args.route_version != "v2":
+                raise MaestroError(
+                    "ROUTE_VERSION_REQUIRED",
+                    "Expertise route hints are supported only by route v2.",
+                )
+            research_evidence = _research_evidence_digest(
                 args.research_evidence,
                 args.research_evidence_digest,
+                repo_path=args.repo,
+                goal=args.goal,
+                intent=args.intent,
+                route_hints=route_hints,
             )
             if args.route_version == "v2":
                 result = route_goal_v2(
@@ -1049,11 +1811,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.conflict_evidence,
                     args.host,
                     args.intent,
-                    research_evidence_digest,
+                    research_evidence=research_evidence,
                     repo_path=args.repo,
+                    route_hints=route_hints,
+                    prior_route_plan=prior_route_plan,
                 )
             else:
-                if research_evidence_digest is not None:
+                if research_evidence is not None:
                     raise MaestroError(
                         "ROUTE_VERSION_REQUIRED",
                         "--research-evidence is supported only by route v2.",
@@ -1070,9 +1834,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "validate-plan":
+            research_bundle = (
+                read_json(
+                    Path(args.research_evidence).expanduser().resolve()
+                )
+                if args.research_evidence
+                else None
+            )
             result = validate_route_v2(
                 read_json(Path(args.plan).expanduser().resolve()),
                 repo_path=args.repo,
+                research_bundle=research_bundle,
             )
             _emit(result, args.json)
             if result["status"] != "PASS":
@@ -1096,6 +1868,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     read_json(Path(path).expanduser().resolve())
                     for path in args.dependency_projection
                 ],
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence).expanduser().resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
             )
             _emit(result, args.json)
             if result["status"] == "FAIL":
@@ -1107,25 +1886,37 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.projection
                 else None
             )
+            research_bundle = (
+                read_json(
+                    Path(args.research_evidence).expanduser().resolve()
+                )
+                if args.research_evidence
+                else None
+            )
             result = validate_assignment_packet(
                 read_json(Path(args.packet).expanduser().resolve()),
                 read_json(Path(args.plan).expanduser().resolve()),
                 args.assignment,
                 projection,
                 repo_path=args.repo,
+                research_bundle=research_bundle,
             )
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
         if args.command == "validate-research":
             result = validate_research_artifact(
-                read_json(Path(args.artifact).expanduser().resolve())
+                read_json(Path(args.artifact).expanduser().resolve()),
+                repo_path=args.repo,
             )
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
         if args.command == "decide":
-            research_evidence_digest = _research_evidence_digest(
+            research_evidence = _research_evidence_digest(
                 args.research_evidence,
                 args.research_evidence_digest,
+                repo_path=args.repo,
+                goal=args.goal,
+                intent=args.intent,
             )
             result = build_decision_plan(
                 args.repo,
@@ -1133,7 +1924,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.risk,
                 host_id=args.host,
                 intent=args.intent,
-                research_evidence_digest=research_evidence_digest,
+                research_evidence=research_evidence,
             )
             _emit(result, args.json)
             gate = result["expertise"]["research_requirement"]["gate"]
@@ -1157,6 +1948,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 read_json(Path(path).expanduser().resolve())
                 for path in args.packet
             ]
+            research_evidence = (
+                read_json(
+                    Path(args.research_evidence).expanduser().resolve()
+                )
+                if args.research_evidence
+                else None
+            )
             result = build_execution_plan(
                 args.repo,
                 plan,
@@ -1164,6 +1962,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 packets,
                 authorization_source=args.authorization_source,
                 host_id=args.host,
+                research_evidence=research_evidence,
             )
             _emit(result, args.json)
             return 0
@@ -1172,11 +1971,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "observe" and args.observe_command == "start":
+            if bool(args.fallback_reason) != bool(args.fallback_evidence):
+                raise MaestroError(
+                    "RUN_EXECUTION_FALLBACK_INVALID",
+                    "fallback-reason and fallback-evidence must be provided together.",
+                )
+            execution_binding = (
+                {
+                    "schema_version": "maestro_execution_binding_v1",
+                    "mode": "explicit_fallback",
+                    "reason": args.fallback_reason,
+                    "evidence": args.fallback_evidence,
+                }
+                if args.fallback_reason
+                else None
+            )
             result = start_run_observation(
                 args.repo,
                 run_id=args.run_id,
                 task_label=args.task_label,
                 plan_path=args.plan,
+                execution_binding=execution_binding,
             )
             _emit(result, args.json)
             return 0
@@ -1192,6 +2007,85 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.requested_reasoning_effort
                 ),
                 plan_path=args.plan,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "fallback":
+            result = record_execution_fallback(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                reason=args.reason,
+                evidence=args.evidence,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "plan":
+            result = attach_run_plan(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                plan_path=args.plan,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "stage":
+            result = record_stage_observation(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                assignment_id=args.assignment,
+                status=args.status,
+                evidence_source=args.evidence_source,
+                evidence_refs=args.evidence,
+                duration_ms=args.duration_ms,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "work-start":
+            model_evidence = (
+                "host_request"
+                if args.requested_model is not None
+                else "unavailable"
+            )
+            result = record_work_start(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                work_id=args.work_id,
+                parent_work_id=args.parent_work,
+                assignment_id=args.assignment,
+                kind=args.kind,
+                role=args.role,
+                executor_id=args.executor,
+                task_summary=args.summary,
+                read_only=args.work_read_only,
+                attempt=args.attempt,
+                followup_of_work_id=args.followup_of,
+                depends_on_work_ids=args.depends_on,
+                joins_work_ids=args.joins,
+                requested_model=args.requested_model,
+                requested_reasoning_effort=(
+                    args.requested_reasoning_effort
+                ),
+                model_evidence=model_evidence,
+                lens_ids=args.lens,
+                expertise_pack_ids=args.expertise_pack,
+                decision_guide_ids=args.decision_guide,
+                expertise_evidence=args.expertise_evidence,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "work-finish":
+            result = record_work_finish(
+                args.repo,
+                observation_id=args.observation,
+                run_id=args.run_id,
+                work_id=args.work_id,
+                status=args.status,
+                result_summary=args.summary,
+                evidence_refs=args.evidence,
+                expertise_evidence=args.expertise_evidence,
             )
             _emit(result, args.json)
             return 0
@@ -1228,6 +2122,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "host" and args.host_command == "sync":
+            result = (
+                apply_host_sync_plan(args.apply_plan)
+                if args.apply_plan
+                else build_host_sync_plan(
+                    args.host,
+                    args.source_root,
+                    skill_root=args.skill_root,
+                )
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "host" and args.host_command == "codex":
             result = run_codex_host(
                 args.repo,
@@ -1236,6 +2142,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 prompt_file=args.prompt_file,
                 plan_path=args.plan,
                 assignment_id=args.assignment,
+                projection_path=args.projection,
+                baseline_path=args.baseline,
+                document_paths=args.document,
+                dependency_packet_paths=args.dependency_packet,
+                dependency_projection_paths=args.dependency_projection,
+                research_evidence_path=args.research_evidence,
+                observation_id=args.observation,
                 sandbox=args.sandbox,
                 model=args.model,
                 reasoning_effort=args.reasoning_effort,
@@ -1253,6 +2166,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if args.command == "finalize":
+            result = finalize_run(
+                args.repo,
+                run_id=args.run_id,
+                observation_id=args.observation,
+                outcome=args.outcome,
+                evidence_refs=args.evidence,
+                verifier_result=args.verifier_result,
+                command_artifact_ref=args.command_artifact_ref,
+                correction_count=args.correction_count,
+                correction_summary=args.correction_summary,
+                human_fix_required=(
+                    True if args.human_fix_required else None
+                ),
+                decision_changed=args.decision_changed,
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "snapshot":
             result = snapshot_report(args.repo, window=args.window)
             _emit(result, args.json)
@@ -1260,9 +2191,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "dashboard":
             serve_dashboard(
                 args.repo,
+                project_paths=args.project,
                 port=args.port,
                 window=args.window,
                 open_browser=not args.no_open,
+                include_saved_projects=not args.no_saved_projects,
             )
             return 0
         if (

@@ -1,0 +1,179 @@
+{
+  "default_guides": [
+    "production-readiness-and-ownership"
+  ],
+  "dominance_triggers": [
+    "site reliability engineering",
+    "service level objective",
+    "error budget",
+    "telemetry architecture",
+    "production readiness design",
+    "production readiness review",
+    "사이트 신뢰성 엔지니어링",
+    "서비스 수준 목표",
+    "에러 버짓",
+    "텔레메트리 아키텍처",
+    "프로덕션 준비 설계",
+    "프로덕션 준비 검토"
+  ],
+  "evaluation_suite": "evals/cases.json",
+  "expertise_pack_id": "devops-sre",
+  "guides": [
+    {
+      "freshness": "stable",
+      "guide_id": "service-objectives-and-error-budgets",
+      "summary": "Define user-centered service indicators, objectives, windows, measurement limits, and error-budget actions.",
+      "triggers": [
+        "service level objective",
+        "slo",
+        "error budget",
+        "sli slo",
+        "reliability target",
+        "서비스 수준 목표",
+        "에러 버짓",
+        "신뢰성 목표"
+      ]
+    },
+    {
+      "freshness": "volatile",
+      "guide_id": "telemetry-architecture",
+      "summary": "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions.",
+      "triggers": [
+        "telemetry architecture",
+        "observability design",
+        "trace sampling",
+        "metric cardinality",
+        "텔레메트리 아키텍처",
+        "관측성 설계",
+        "트레이스 샘플링",
+        "메트릭 카디널리티"
+      ]
+    },
+    {
+      "freshness": "volatile",
+      "guide_id": "progressive-delivery-and-change-control",
+      "summary": "Choose rollout mechanism, step size, readiness, promotion, stop, rollback, and irreversible-change controls from change risk.",
+      "triggers": [
+        "progressive delivery",
+        "canary deployment",
+        "blue green deployment",
+        "rollout strategy",
+        "점진적 배포",
+        "카나리 배포",
+        "블루그린 배포",
+        "롤아웃 전략"
+      ]
+    },
+    {
+      "freshness": "stable",
+      "guide_id": "recovery-and-continuity",
+      "summary": "Choose RTO, RPO, degradation, failover, restore, rebuild, rollback or roll-forward, backup isolation, sequencing, and rehearsal.",
+      "triggers": [
+        "disaster recovery",
+        "regional failover",
+        "rto rpo",
+        "backup restore",
+        "continuity plan",
+        "재해 복구",
+        "리전 페일오버",
+        "리전 장애 복구",
+        "백업 복원",
+        "연속성 계획"
+      ]
+    },
+    {
+      "freshness": "stable",
+      "guide_id": "capacity-and-overload",
+      "summary": "Model limiting resources, demand, headroom, lead time, scaling, admission, queueing, quotas, load shedding, degradation, and bounded retry.",
+      "triggers": [
+        "capacity planning",
+        "autoscaling headroom",
+        "autoscaling",
+        "backpressure",
+        "overload control",
+        "load shedding",
+        "admission control",
+        "용량 계획",
+        "오토스케일링 헤드룸",
+        "오토스케일링",
+        "백프레셔",
+        "과부하 제어",
+        "로드 셰딩",
+        "어드미션 제어"
+      ]
+    },
+    {
+      "freshness": "stable",
+      "guide_id": "production-readiness-and-ownership",
+      "summary": "Assemble service objectives, telemetry, delivery, recovery, capacity, dependencies, runbooks, ownership, toil, and lifecycle into a risk-scaled readiness handoff.",
+      "triggers": [
+        "production readiness design",
+        "production readiness review",
+        "operational readiness design",
+        "production launch checklist",
+        "runbook ownership",
+        "프로덕션 준비 설계",
+        "프로덕션 준비 검토",
+        "운영 준비 설계",
+        "프로덕션 출시 체크리스트",
+        "런북 소유권"
+      ]
+    }
+  ],
+  "kind": "expertise-pack",
+  "portability": "project",
+  "research_policy": {
+    "contextualize_triggers": [
+      "current platform behavior",
+      "current telemetry support",
+      "current production incident",
+      "current load shape",
+      "현재 플랫폼 동작",
+      "현재 텔레메트리 지원",
+      "현재 프로덕션 사고",
+      "현재 부하 형태"
+    ],
+    "default_mode": "reuse",
+    "refresh_triggers": [
+      "refresh devops sre expertise",
+      "update devops sre sources",
+      "DevOps SRE 전문성 갱신",
+      "DevOps SRE 출처 갱신"
+    ]
+  },
+  "schema_version": "maestro_expertise_pack_v1",
+  "skill_id": "maestro-devops-sre",
+  "source_manifest": "evidence/sources.json",
+  "status": "pilot",
+  "summary": "Operational engineering criteria for service objectives, telemetry, progressive delivery, recovery, capacity, and production readiness.",
+  "triggers": [
+    "devops sre",
+    "site reliability engineering",
+    "service level objective",
+    "slo",
+    "error budget",
+    "telemetry architecture",
+    "progressive delivery",
+    "canary deployment",
+    "disaster recovery",
+    "regional failover",
+    "capacity planning",
+    "autoscaling headroom",
+    "production readiness design",
+    "production readiness review",
+    "데브옵스 SRE",
+    "사이트 신뢰성 엔지니어링",
+    "서비스 수준 목표",
+    "에러 버짓",
+    "텔레메트리 아키텍처",
+    "점진적 배포",
+    "카나리 배포",
+    "재해 복구",
+    "리전 페일오버",
+    "용량 계획",
+    "오토스케일링 헤드룸",
+    "프로덕션 준비 설계",
+    "프로덕션 준비 검토"
+  ],
+  "version": 1
+}

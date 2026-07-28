@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "case_id": "normal-slo-delivery",
+      "expected_guides": [
+        "service-objectives-and-error-budgets",
+        "progressive-delivery-and-change-control"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "devops-sre",
+      "forbidden_behaviors": [
+        "Copies a universal SLO or rollout percentage"
+      ],
+      "goal": "서비스 수준 목표와 에러 버짓에 맞는 점진적 배포 전략을 설계해줘",
+      "observable_criteria": [
+        "Selects SLO and progressive-delivery Guides",
+        "Requires user-centered indicators and rollout stop criteria"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "normal-telemetry-capacity",
+      "expected_guides": [
+        "telemetry-architecture",
+        "capacity-and-overload"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "devops-sre",
+      "forbidden_behaviors": [
+        "Collects every signal without cardinality or cost limits"
+      ],
+      "goal": "텔레메트리 아키텍처와 과부하 제어, 용량 계획을 설계해줘",
+      "observable_criteria": [
+        "Selects telemetry and capacity Guides",
+        "Requires signal cost and saturation behavior evidence"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "edge-recovery-readiness",
+      "expected_guides": [
+        "recovery-and-continuity",
+        "production-readiness-and-ownership"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "devops-sre",
+      "forbidden_behaviors": [
+        "Treats backup creation as restore proof"
+      ],
+      "goal": "리전 장애 시 RTO RPO, 데이터 복구, 프로덕션 준비와 운영 소유권을 설계해줘",
+      "observable_criteria": [
+        "Selects recovery and readiness Guides",
+        "Requires isolated backups and executed recovery evidence"
+      ],
+      "stratum": "edge"
+    },
+    {
+      "case_id": "non-trigger-unit-tests",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks software-qa routing"
+      ],
+      "goal": "파서 함수의 단위 테스트 케이스를 설계해줘",
+      "observable_criteria": [
+        "Does not select devops-sre for a unit-test request"
+      ],
+      "stratum": "non-trigger"
+    },
+    {
+      "case_id": "overlap-release-regression",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Replaces software-qa regression guidance"
+      ],
+      "goal": "이번 릴리스의 회귀 범위와 스모크 테스트 증거를 정리해줘",
+      "observable_criteria": [
+        "Does not select devops-sre when QA release evidence is dominant"
+      ],
+      "stratum": "overlap"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "d251e7d32ff523eed62233f21150c5529336887e8cba4dd992a04604cdae15b5"
+  },
+  "expertise_pack_id": "devops-sre",
+  "schema_version": "maestro_expertise_eval_v2"
+}

@@ -46,6 +46,10 @@ SIGNAL_FIELDS = {
     "typed_handoff_gap",
     "existing_packet_sufficient",
 }
+OPTIONAL_SIGNAL_FIELDS = {
+    "overlapping_pack_ids",
+    "pack_merge_boundary",
+}
 
 EXECUTION_BOUNDARIES = {
     "tools",
@@ -171,8 +175,20 @@ def _validate_request(value: Any) -> tuple[str, dict[str, Any], list[str]]:
     if not isinstance(request_id, str) or not request_id.strip():
         raise _invalid("request_id must be a non-empty string.")
     signals = value.get("signals")
-    if not isinstance(signals, dict) or set(signals) != SIGNAL_FIELDS:
-        raise _invalid("signals must contain the exact surface signal fields.")
+    if (
+        not isinstance(signals, dict)
+        or not SIGNAL_FIELDS.issubset(signals)
+        or set(signals) - SIGNAL_FIELDS - OPTIONAL_SIGNAL_FIELDS
+    ):
+        raise _invalid(
+            "signals must contain the exact surface signal fields plus only "
+            "supported optional fields."
+        )
+    signals = {
+        **signals,
+        "overlapping_pack_ids": signals.get("overlapping_pack_ids", []),
+        "pack_merge_boundary": signals.get("pack_merge_boundary", False),
+    }
     boolean_fields = SIGNAL_FIELDS - {
         "existing_pack_id",
         "existing_guide_id",
@@ -183,6 +199,19 @@ def _validate_request(value: Any) -> tuple[str, dict[str, Any], list[str]]:
         raise _invalid("Every boolean surface signal must be true or false.")
     _optional_slug(signals["existing_pack_id"], "existing_pack_id")
     _optional_slug(signals["existing_guide_id"], "existing_guide_id")
+    overlapping_pack_ids = signals["overlapping_pack_ids"]
+    if (
+        not isinstance(overlapping_pack_ids, list)
+        or len(overlapping_pack_ids) > 4
+        or len(overlapping_pack_ids) != len(set(overlapping_pack_ids))
+    ):
+        raise _invalid(
+            "overlapping_pack_ids must be at most four unique component IDs."
+        )
+    for pack_id in overlapping_pack_ids:
+        _optional_slug(pack_id, "overlapping_pack_ids item")
+    if not isinstance(signals["pack_merge_boundary"], bool):
+        raise _invalid("pack_merge_boundary must be true or false.")
     guide_count = signals["related_guide_count"]
     if (
         not isinstance(guide_count, int)
@@ -219,6 +248,16 @@ def _select_surface(signals: dict[str, Any]) -> tuple[str, str, list[str]]:
         return "convention", "project-rule", []
     if signals["existing_guide_id"] is not None:
         return "decision-guide", "existing-guide-revision", []
+    if (
+        signals["pack_merge_boundary"]
+        and signals["domain_workflow"]
+        and len(signals["overlapping_pack_ids"]) >= 2
+    ):
+        return (
+            "expertise-pack",
+            "pack-consolidation",
+            list(signals["overlapping_pack_ids"]),
+        )
     if (
         signals["existing_pack_id"] is not None
         and signals["same_decision_family"]
@@ -342,11 +381,46 @@ def classify_surface(value: dict[str, Any]) -> dict[str, Any]:
         )
     elif proposed == "none" and signals["durable"]:
         blocker = "No distinct reusable boundary was established."
+    elif signals["pack_merge_boundary"] and (
+        len(signals["overlapping_pack_ids"]) < 2
+        or not signals["domain_workflow"]
+    ):
+        blocker = (
+            "Pack integration requires at least two existing Pack IDs and one "
+            "shared domain workflow boundary."
+        )
     elif proposed != "none" and not evidence_refs:
         blocker = "At least one evidence reference is required before candidate handoff."
 
+    merge_recommended = (
+        proposed == "expertise-pack"
+        and boundary_kind == "pack-consolidation"
+        and blocker is None
+    )
+    overlapping_pack_ids = list(signals["overlapping_pack_ids"])
+    integration_considered = bool(
+        overlapping_pack_ids or signals["pack_merge_boundary"]
+    )
+    if merge_recommended:
+        integration_reason = (
+            "Two or more existing Packs share one domain workflow, trigger, "
+            "result, source, and evaluation boundary; evaluate a consolidated "
+            "new Pack against the source Packs."
+        )
+    elif len(overlapping_pack_ids) >= 2:
+        integration_reason = (
+            "Multiple Packs overlap, but no shared lifecycle boundary was "
+            "established; keep them separate or add/revise the owning Guide."
+        )
+    else:
+        integration_reason = (
+            "Pack integration was not indicated because fewer than two "
+            "existing Packs share the proposed boundary."
+        )
     existing_component = (
-        signals["existing_guide_id"] or signals["existing_pack_id"]
+        None
+        if merge_recommended
+        else signals["existing_guide_id"] or signals["existing_pack_id"]
     )
     rejected = [
         {
@@ -363,12 +437,29 @@ def classify_surface(value: dict[str, Any]) -> dict[str, Any]:
         "proposed_surface": proposed,
         "rejected_surfaces": rejected,
         "existing_component_to_extend": existing_component,
+        "pack_integration_assessment": {
+            "considered": integration_considered,
+            "recommended": merge_recommended,
+            "source_pack_ids": overlapping_pack_ids,
+            "reason": integration_reason,
+        },
         "distinct_failure_or_decision_boundary": {
             "kind": boundary_kind,
             "details": boundary_details,
             "verdict_impact": bool(signals["verdict_impact"]),
         },
-        "evidence_requirement": EVIDENCE_REQUIREMENTS[proposed],
+        "evidence_requirement": [
+            *EVIDENCE_REQUIREMENTS[proposed],
+            *(
+                [
+                    "source Pack inventory and overlap map",
+                    "frozen comparison against every source Pack",
+                    "migration, rollback, and coexistence plan",
+                ]
+                if merge_recommended
+                else []
+            ),
+        ],
         "candidate_builder": BUILDERS[proposed],
         "promotion_boundary": PROMOTION_BOUNDARIES[proposed],
         "classification_confidence": (

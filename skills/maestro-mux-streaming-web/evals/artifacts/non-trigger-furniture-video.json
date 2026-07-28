@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "non-trigger-furniture-video",
+  "baseline_observation": "A generic furniture landing-page video is a product-design task and supplies no Mux provider contract.",
+  "candidate_observation": "The frozen route kept the Mux candidate unselected and retained product-design as the owning Pack.",
+  "evidence_refs": [
+    "route-replay:non-trigger-furniture-video",
+    "registry:product-design"
+  ]
+}

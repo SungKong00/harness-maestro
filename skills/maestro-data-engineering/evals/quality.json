@@ -1,0 +1,137 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-stream-semantics.json",
+        "sha256": "4c590d7f385ef0e69cc54add8ce3b96bc441be6814bde796cf7d84ceab5d1f95"
+      },
+      "case_id": "normal-stream-semantics",
+      "criterion_results": [
+        {
+          "criterion": "Selects the data-engineering execution-model Guide",
+          "evidence_ref": "evals/artifacts/normal-stream-semantics.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires event-time and runner-capability evidence",
+          "evidence_ref": "evals/artifacts/normal-stream-semantics.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Assumes every runner implements the same semantics",
+          "evidence_ref": "evals/artifacts/normal-stream-semantics.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-quality-lineage.json",
+        "sha256": "d272595c43b225bc105dd34fdc9f02e3a64d732c822e99bf642201d440e3e554"
+      },
+      "case_id": "normal-quality-lineage",
+      "criterion_results": [
+        {
+          "criterion": "Selects quality and lineage Guides",
+          "evidence_ref": "evals/artifacts/normal-quality-lineage.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires purpose-specific metrics and stable run identity",
+          "evidence_ref": "evals/artifacts/normal-quality-lineage.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Uses one universal quality score",
+          "evidence_ref": "evals/artifacts/normal-quality-lineage.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-backfill-recovery.json",
+        "sha256": "defc71fef793e6864d43b1a4b5e483fcdb25921129f40c18f2aac707dcbf830b"
+      },
+      "case_id": "edge-backfill-recovery",
+      "criterion_results": [
+        {
+          "criterion": "Selects schema, backfill, and recovery Guides",
+          "evidence_ref": "evals/artifacts/edge-backfill-recovery.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Separates historical correction from crash recovery and external sink guarantees",
+          "evidence_ref": "evals/artifacts/edge-backfill-recovery.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Claims physical exactly-once execution",
+          "evidence_ref": "evals/artifacts/edge-backfill-recovery.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-oltp-index.json",
+        "sha256": "090639deaed09897ee631b9cda214b035fa31cdcf376fa9e9d4629fa96644a46"
+      },
+      "case_id": "non-trigger-oltp-index",
+      "criterion_results": [
+        {
+          "criterion": "Does not select data-engineering for ordinary application database design",
+          "evidence_ref": "evals/artifacts/non-trigger-oltp-index.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks software-engineering or data-integrity ownership",
+          "evidence_ref": "evals/artifacts/non-trigger-oltp-index.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/overlap-dashboard-design.json",
+        "sha256": "893e0d6cf1fb33e9e4e3ebbac073e925a9b6346c0b188d271fb0e5ec12dbd9ab"
+      },
+      "case_id": "overlap-dashboard-design",
+      "criterion_results": [
+        {
+          "criterion": "Does not select data-engineering for dashboard visual design",
+          "evidence_ref": "evals/artifacts/overlap-dashboard-design.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks product-design routing because the request mentions data",
+          "evidence_ref": "evals/artifacts/overlap-dashboard-design.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "authoring_run_ref": "desktop:expertise-four-packs-20260727:data-engineering",
+    "evaluation_run_ref": "subagent:accept-data:2026-07-27",
+    "kind": "fresh-context"
+  },
+  "expertise_pack_id": "data-engineering",
+  "schema_version": "maestro_expertise_quality_eval_v1"
+}

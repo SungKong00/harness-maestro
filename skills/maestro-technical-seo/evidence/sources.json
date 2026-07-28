@@ -1,0 +1,238 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "technical-seo",
+  "verified_on": "2026-07-28",
+  "sources": [
+    {
+      "source_id": "google-search-essentials",
+      "tier": 1,
+      "authority": "Google Search Central: Google Search Essentials",
+      "url": "https://developers.google.com/search/docs/essentials",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output."
+      ],
+      "used_by": [
+        "crawlability-and-indexability"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "google-developer-seo",
+      "tier": 1,
+      "authority": "Google Search Central: Get started with Search for developers",
+      "url": "https://developers.google.com/search/docs/fundamentals/get-started-developers",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output.",
+        "Align visible page meaning, titles, snippets, semantic HTML, and structured data without promising exact result text, rich-result display, or ranking."
+      ],
+      "used_by": [
+        "crawlability-and-indexability",
+        "search-appearance-and-structured-data"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "rfc-9309",
+      "tier": 1,
+      "authority": "IETF RFC 9309 Robots Exclusion Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc9309",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output."
+      ],
+      "used_by": [
+        "crawlability-and-indexability"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "google-robots-meta",
+      "tier": 1,
+      "authority": "Google Search Central: robots meta tag and X-Robots-Tag specifications",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output."
+      ],
+      "used_by": [
+        "crawlability-and-indexability"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "google-javascript-seo",
+      "tier": 1,
+      "authority": "Google Search Central: JavaScript SEO basics",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output."
+      ],
+      "used_by": [
+        "crawlability-and-indexability"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-sitemaps",
+      "tier": 1,
+      "authority": "Google Search Central: Learn about sitemaps",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview",
+      "supports": [
+        "Separate discovery, crawl, render, index, and serving states and verify that intended pages expose reachable, indexable rendered output.",
+        "Choose one coherent preferred-URL and migration contract across redirects, canonical annotations, internal links, sitemaps, parameters, and localized variants."
+      ],
+      "used_by": [
+        "crawlability-and-indexability",
+        "canonical-url-lifecycle"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "google-canonical",
+      "tier": 1,
+      "authority": "Google Search Central: canonical URL methods",
+      "url": "https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls",
+      "supports": [
+        "Choose one coherent preferred-URL and migration contract across redirects, canonical annotations, internal links, sitemaps, parameters, and localized variants."
+      ],
+      "used_by": [
+        "canonical-url-lifecycle"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "google-snippets",
+      "tier": 1,
+      "authority": "Google Search Central: Control snippets in search results",
+      "url": "https://developers.google.com/search/docs/appearance/snippet",
+      "supports": [
+        "Align visible page meaning, titles, snippets, semantic HTML, and structured data without promising exact result text, rich-result display, or ranking."
+      ],
+      "used_by": [
+        "search-appearance-and-structured-data"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-structured-data-intro",
+      "tier": 1,
+      "authority": "Google Search Central: structured data introduction",
+      "url": "https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data",
+      "supports": [
+        "Align visible page meaning, titles, snippets, semantic HTML, and structured data without promising exact result text, rich-result display, or ranking.",
+        "Bind technical SEO claims to reproducible rendered, indexed, and field evidence while respecting crawl delays, grouped reports, permissions, and causal limits."
+      ],
+      "used_by": [
+        "search-appearance-and-structured-data",
+        "seo-measurement-and-verification"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-structured-data-guidelines",
+      "tier": 1,
+      "authority": "Google Search Central: general structured data guidelines",
+      "url": "https://developers.google.com/search/docs/appearance/structured-data/sd-policies",
+      "supports": [
+        "Align visible page meaning, titles, snippets, semantic HTML, and structured data without promising exact result text, rich-result display, or ranking."
+      ],
+      "used_by": [
+        "search-appearance-and-structured-data"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-cwv-search",
+      "tier": 1,
+      "authority": "Google Search Central: Core Web Vitals and Google Search",
+      "url": "https://developers.google.com/search/docs/appearance/core-web-vitals",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-page-experience",
+      "tier": 1,
+      "authority": "Google Search Central: page experience in search results",
+      "url": "https://developers.google.com/search/docs/appearance/page-experience",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "webdev-vitals",
+      "tier": 1,
+      "authority": "web.dev: Web Vitals metrics and measurement",
+      "url": "https://web.dev/articles/vitals",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score.",
+        "Bind technical SEO claims to reproducible rendered, indexed, and field evidence while respecting crawl delays, grouped reports, permissions, and causal limits."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience",
+        "seo-measurement-and-verification"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "webdev-optimize-lcp",
+      "tier": 1,
+      "authority": "web.dev: Optimize Largest Contentful Paint",
+      "url": "https://web.dev/articles/optimize-lcp",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "webdev-optimize-cls",
+      "tier": 1,
+      "authority": "web.dev: Optimize Cumulative Layout Shift",
+      "url": "https://web.dev/articles/optimize-cls",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-url-inspection",
+      "tier": 1,
+      "authority": "Google Search Console Help: URL Inspection tool",
+      "url": "https://support.google.com/webmasters/answer/9012289?hl=en",
+      "supports": [
+        "Bind technical SEO claims to reproducible rendered, indexed, and field evidence while respecting crawl delays, grouped reports, permissions, and causal limits."
+      ],
+      "used_by": [
+        "seo-measurement-and-verification"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "search-console-cwv",
+      "tier": 1,
+      "authority": "Google Search Console Help: Core Web Vitals report",
+      "url": "https://support.google.com/webmasters/answer/9205520?hl=en",
+      "supports": [
+        "Diagnose loading, responsiveness, and visual-stability failures from field and lab evidence instead of applying generic speed tips or chasing a perfect score.",
+        "Bind technical SEO claims to reproducible rendered, indexed, and field evidence while respecting crawl delays, grouped reports, permissions, and causal limits."
+      ],
+      "used_by": [
+        "web-performance-and-page-experience",
+        "seo-measurement-and-verification"
+      ],
+      "freshness": "volatile"
+    }
+  ]
+}

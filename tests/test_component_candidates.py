@@ -171,6 +171,46 @@ def _write_lens_candidate(repo: Path, candidate_id: str = "indexability") -> Pat
 
 
 class SurfaceClassificationTests(unittest.TestCase):
+    def test_pack_integration_is_considered_separately_from_guide_addition(
+        self,
+    ) -> None:
+        result = classify_surface(
+            {
+                "schema_version": "maestro_surface_signal_v1",
+                "request_id": "consolidate-overlapping-packs",
+                "signals": {
+                    **_signals(
+                        domain_workflow=True,
+                        related_guide_count=4,
+                    ),
+                    "overlapping_pack_ids": [
+                        "product-design",
+                        "marketing",
+                    ],
+                    "pack_merge_boundary": True,
+                },
+                "evidence_refs": [
+                    "runs:handoff-correction",
+                    "eval:coexistence",
+                ],
+            }
+        )
+
+        self.assertEqual("classified", result["status"])
+        self.assertEqual("expertise-pack", result["proposed_surface"])
+        self.assertEqual(
+            "pack-consolidation",
+            result["distinct_failure_or_decision_boundary"]["kind"],
+        )
+        self.assertTrue(
+            result["pack_integration_assessment"]["recommended"]
+        )
+        self.assertEqual(
+            ["product-design", "marketing"],
+            result["pack_integration_assessment"]["source_pack_ids"],
+        )
+        self.assertIsNone(result["existing_component_to_extend"])
+
     def test_frozen_surface_cases_choose_the_expected_boundary(self) -> None:
         fixture = json.loads(
             (

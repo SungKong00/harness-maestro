@@ -147,6 +147,18 @@
             },
             "existing_packet_sufficient": {
               "type": "boolean"
+            },
+            "overlapping_pack_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "pack_merge_boundary": {
+              "type": "boolean"
             }
           }
         },
@@ -171,6 +183,7 @@
         "proposed_surface",
         "rejected_surfaces",
         "existing_component_to_extend",
+        "pack_integration_assessment",
         "distinct_failure_or_decision_boundary",
         "evidence_requirement",
         "candidate_builder",
@@ -222,6 +235,37 @@
             "string",
             "null"
           ]
+        },
+        "pack_integration_assessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "considered",
+            "recommended",
+            "source_pack_ids",
+            "reason"
+          ],
+          "properties": {
+            "considered": {
+              "type": "boolean"
+            },
+            "recommended": {
+              "type": "boolean"
+            },
+            "source_pack_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         },
         "distinct_failure_or_decision_boundary": {
           "type": "object",

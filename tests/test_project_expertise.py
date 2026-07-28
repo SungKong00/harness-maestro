@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -9,32 +10,67 @@ import urllib.request
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from tests.support import apply_fresh_init, check_by_id, write_json
+from tests.support import (
+    ROOT,
+    application_work_span,
+    apply_fresh_init,
+    check_by_id,
+    write_json,
+)
 
 from maestro.doctor import doctor_report
 from maestro.cli import main
 from maestro.dashboard import create_dashboard_server
 from maestro.decisions import build_decision_plan, validate_decision_plan
-from maestro.expertise import expertise_manifest_digest
+from maestro.errors import MaestroError
+from maestro.expertise import (
+    candidate_expertise_statuses,
+    expertise_manifest_digest,
+    load_expertise_catalog,
+)
 from maestro.expertise_health import expertise_component_health
 from maestro.expertise_lifecycle import (
     EXPERTISE_AUTHORITY_BLOCK,
     apply_expertise_activation_plan,
+    apply_expertise_archive_plan,
+    apply_expertise_change_set_plan,
+    apply_expertise_delete_plan,
     apply_expertise_deactivation_plan,
     apply_expertise_export_plan,
+    apply_expertise_global_promotion_plan,
+    apply_expertise_rejection_plan,
+    apply_expertise_restore_plan,
     apply_expertise_update_plan,
     build_expertise_activation_plan,
+    build_expertise_archive_plan,
+    build_expertise_change_set_plan,
+    build_expertise_delete_plan,
     build_expertise_deactivation_plan,
     build_expertise_export_plan,
+    build_expertise_global_promotion_plan,
+    build_expertise_rejection_plan,
+    build_expertise_restore_plan,
     build_expertise_update_plan,
     expertise_inventory,
     validate_expertise_contribution,
     validate_expertise_candidate,
 )
+from maestro.expertise_promotion import (
+    apply_expertise_promotion_decision_plan,
+    build_expertise_promotion_decision_plan,
+)
 from maestro.governance import govern_report, recent_run_events, record_run
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry
+from maestro.release import (
+    build_release_manifest,
+    load_source_release_manifest,
+    load_source_registry,
+    source_registry_digest,
+)
+from maestro.snapshot import snapshot_report
 from maestro.util import canonical_json, file_sha256, sha256_text
 
 
@@ -43,6 +79,7 @@ def _candidate(
     *,
     candidate_id: str = "project-design",
     pack_id: str = "project-design",
+    skill_id: str | None = None,
     version: int = 1,
     guide_id: str = "project-type-rules",
     guide_text: str = (
@@ -60,6 +97,8 @@ def _candidate(
     standalone: bool = False,
     portability: str = "project",
     component_change: dict[str, object] | None = None,
+    generation_mode: str = "user-requested",
+    signal_fingerprint: str | None = None,
 ) -> None:
     root = (
         repo
@@ -72,6 +111,7 @@ def _candidate(
         if pack["expertise_pack_id"] == "product-design"
     )
     digest = "0" * 64 if stale_base else expertise_manifest_digest(base)
+    resolved_skill_id = skill_id or pack_id
     candidate = {
         "schema_version": "maestro_expertise_candidate_v1",
         "candidate_id": candidate_id,
@@ -100,6 +140,10 @@ def _candidate(
             "pass_criteria": ["Catches the project font mismatch"],
             "regression_criteria": ["Does not trigger on backend work"],
         },
+        "generation": {
+            "mode": generation_mode,
+            "signal_fingerprint": signal_fingerprint,
+        },
     }
     if component_change is not None:
         candidate["component_change"] = component_change
@@ -112,7 +156,7 @@ def _candidate(
         "portability": "project",
         "version": version,
         "triggers": ["project typography", "프로젝트 타이포그래피"],
-        "skill_id": pack_id,
+        "skill_id": resolved_skill_id,
         "default_guides": [guide_id],
         "guides": [
             {
@@ -142,7 +186,7 @@ def _candidate(
     (root / "draft/agents").mkdir(parents=True, exist_ok=True)
     (root / "draft/SKILL.md").write_text(
         "---\n"
-        f"name: {pack_id}\n"
+        f"name: {resolved_skill_id}\n"
         f"description: Use only when Maestro selects the {pack_id} pack.\n"
         "---\n\n"
         "# Project design\n\n"
@@ -310,6 +354,404 @@ def _candidate(
 
 
 class ProjectExpertiseLifecycleTests(unittest.TestCase):
+    def test_atomic_change_set_is_the_only_management_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            for candidate_id, pack_id in (
+                ("layout-copy", "content-layout"),
+                ("layout-move", "frontend-layout"),
+            ):
+                _candidate(
+                    repo,
+                    candidate_id=candidate_id,
+                    pack_id=pack_id,
+                    skill_id=pack_id,
+                    standalone=True,
+                    component_change={
+                        "kind": "new-pack",
+                        "target_guide_id": None,
+                        "change_set_id": "layout-redistribution",
+                    },
+                )
+
+            with self.assertRaises(MaestroError) as raised:
+                build_expertise_activation_plan(
+                    repo,
+                    candidate_id="layout-copy",
+                    approval_ref="owner_decision:test:individual",
+                )
+            self.assertEqual(
+                "EXPERTISE_CHANGE_SET_ATOMIC_REQUIRED",
+                raised.exception.code,
+            )
+            with self.assertRaises(MaestroError):
+                build_expertise_archive_plan(
+                    repo,
+                    candidate_id="layout-move",
+                    reason="개별 우회 시도",
+                )
+
+            preview = build_expertise_change_set_plan(
+                repo,
+                change_set_id="layout-redistribution",
+                action="project-approve",
+                approval_ref="owner_decision:test:change-set",
+            )
+            self.assertEqual(
+                1,
+                sum(
+                    operation["path"] == ".maestro/project.json"
+                    for operation in preview["operations"]
+                ),
+            )
+            with patch(
+                "maestro.expertise_lifecycle.load_expertise_catalog",
+                side_effect=MaestroError(
+                    "TEST_CHANGE_SET_VALIDATION_FAILURE",
+                    "force rollback",
+                ),
+            ):
+                with self.assertRaises(MaestroError):
+                    apply_expertise_change_set_plan(preview, repo)
+            self.assertFalse(
+                (
+                    repo
+                    / ".agents/skills/content-layout/maestro-pack.json"
+                ).exists()
+            )
+            self.assertFalse(
+                (
+                    repo
+                    / ".agents/skills/frontend-layout/maestro-pack.json"
+                ).exists()
+            )
+            self.assertEqual(
+                [],
+                json.loads(
+                    (repo / ".maestro/project.json").read_text(
+                        encoding="utf-8"
+                    )
+                )["expertise"]["active_pack_paths"],
+            )
+            result = apply_expertise_change_set_plan(preview, repo)
+            self.assertEqual("project_approved", result["status"])
+            self.assertEqual(
+                {"content-layout", "frontend-layout"},
+                {
+                    pack["expertise_pack_id"]
+                    for pack in load_expertise_catalog(repo)
+                    if pack["_maestro"]["origin"] == "project"
+                },
+            )
+
+    def test_change_set_pauses_valid_siblings_and_deletes_as_one_unit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            for candidate_id, pack_id in (
+                ("claims-copy", "content-claims"),
+                ("claims-move", "product-claims"),
+            ):
+                _candidate(
+                    repo,
+                    candidate_id=candidate_id,
+                    pack_id=pack_id,
+                    skill_id=pack_id,
+                    standalone=True,
+                    component_change={
+                        "kind": "new-pack",
+                        "target_guide_id": None,
+                        "change_set_id": "claims-redistribution",
+                    },
+                )
+            invalid_path = (
+                repo
+                / ".maestro/state/candidates/expertise/"
+                "claims-move/candidate.json"
+            )
+            invalid = json.loads(invalid_path.read_text(encoding="utf-8"))
+            invalid["review_after"] = "2020-01-01"
+            write_json(invalid_path, invalid)
+
+            statuses = candidate_expertise_statuses(repo)
+            self.assertEqual(
+                "change_set_paused",
+                statuses["claims-copy"]["runtime_status"],
+            )
+            self.assertFalse(
+                statuses["claims-copy"]["immediate_use_allowed"],
+            )
+            self.assertEqual(
+                "expired",
+                statuses["claims-move"]["runtime_status"],
+            )
+            with self.assertRaises(MaestroError):
+                build_expertise_change_set_plan(
+                    repo,
+                    change_set_id="claims-redistribution",
+                    action="project-approve",
+                    approval_ref="owner_decision:test:paused",
+                )
+
+            invalid["review_after"] = "2026-08-31"
+            write_json(invalid_path, invalid)
+            archive = build_expertise_change_set_plan(
+                repo,
+                change_set_id="claims-redistribution",
+                action="archive",
+                reason="변경안 전체를 보관",
+            )
+            apply_expertise_change_set_plan(archive, repo)
+            deletion = build_expertise_change_set_plan(
+                repo,
+                change_set_id="claims-redistribution",
+                action="delete",
+                confirmation="claims-redistribution",
+                replacement_pack_ids=["marketing"],
+            )
+            deleted = apply_expertise_change_set_plan(deletion, repo)
+            self.assertEqual("deleted", deleted["status"])
+            for candidate_id in ("claims-copy", "claims-move"):
+                self.assertFalse(
+                    (
+                        repo
+                        / ".maestro/state/candidates/expertise"
+                        / candidate_id
+                    ).exists()
+                )
+                self.assertTrue(
+                    (
+                        repo
+                        / ".maestro/state/candidates/"
+                        "expertise-tombstones"
+                        / f"{candidate_id}.json"
+                    ).is_file()
+                )
+
+    def test_archive_restore_and_confirmed_permanent_removal_are_distinct(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+
+            archive = build_expertise_archive_plan(
+                repo,
+                candidate_id="project-design",
+                reason="후속 검토 전까지 보관",
+            )
+            archived = apply_expertise_archive_plan(archive, repo)
+            candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual("archived", archived["status"])
+            self.assertEqual("archived", candidate["runtime_status"])
+            self.assertFalse(candidate["immediate_use_allowed"])
+
+            restore = build_expertise_restore_plan(
+                repo,
+                candidate_id="project-design",
+            )
+            apply_expertise_restore_plan(restore, repo)
+            self.assertEqual(
+                "available",
+                expertise_inventory(repo)["candidates"][0][
+                    "runtime_status"
+                ],
+            )
+
+            archive = build_expertise_archive_plan(
+                repo,
+                candidate_id="project-design",
+                reason="영구 제거 전 보관",
+            )
+            apply_expertise_archive_plan(archive, repo)
+            with self.assertRaises(MaestroError) as raised:
+                build_expertise_delete_plan(
+                    repo,
+                    candidate_id="project-design",
+                    confirmation="wrong-id",
+                )
+            self.assertEqual(
+                "EXPERTISE_CANDIDATE_DELETE_CONFIRMATION_INVALID",
+                raised.exception.code,
+            )
+
+            deletion = build_expertise_delete_plan(
+                repo,
+                candidate_id="project-design",
+                confirmation="project-design",
+                replacement_pack_ids=["product-design"],
+            )
+            deleted = apply_expertise_delete_plan(deletion, repo)
+            inventory = expertise_inventory(repo)
+            self.assertEqual("deleted", deleted["status"])
+            self.assertFalse(
+                (
+                    repo
+                    / ".maestro/state/candidates/expertise/"
+                    "project-design"
+                ).exists()
+            )
+            self.assertEqual([], inventory["candidates"])
+            self.assertEqual(
+                ["product-design"],
+                inventory["deleted_candidates"][0][
+                    "replacement_pack_ids"
+                ],
+            )
+
+    def test_automatic_candidate_is_marked_reviewed_by_component_and_reversible(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                portability="global",
+                generation_mode="automatic",
+                signal_fingerprint="a" * 24,
+                component_change={
+                    "kind": "guide-addition",
+                    "target_guide_id": "project-type-rules",
+                },
+            )
+            inventory = expertise_inventory(repo)
+            candidate = inventory["candidates"][0]
+            digest = candidate["definition_digest"]
+            events = [
+                {
+                    "run_id": f"candidate-use-{index}",
+                    "timestamp": f"2026-07-{20 + index:02d}T00:00:00Z",
+                    "selected_expertise_packs": ["project-design"],
+                    "selected_decision_guides": ["project-type-rules"],
+                    "expertise_pack_definition_digests": {
+                        "project-design": digest,
+                    },
+                    "work_spans": [
+                        application_work_span(
+                            "project-design",
+                            ["project-type-rules"],
+                            work_id=f"candidate-use-{index}",
+                        )
+                    ],
+                    "expertise_observations": [],
+                    "verifier_result": "passed",
+                    "correction_count": 0,
+                }
+                for index in range(1, 6)
+            ]
+            health = expertise_component_health(inventory, events)
+            candidate_health = health["candidates"][0]
+
+            self.assertEqual(
+                "automatic",
+                candidate["generation"]["mode"],
+            )
+            preview = candidate["pack_preview"]
+            self.assertEqual(
+                "Project-specific product design criteria.",
+                preview["summary"],
+            )
+            self.assertEqual(
+                ["Use approved families", "Verify hierarchy"],
+                preview["guides"][0]["decision_checks"],
+            )
+            self.assertEqual(
+                "Wrong project font hierarchy",
+                preview["guides"][0]["failure_prevented"],
+            )
+            self.assertEqual(
+                "project-design-system",
+                preview["guides"][0]["sources"][0]["source_id"],
+            )
+            self.assertEqual(4, preview["evaluation"]["case_count"])
+            self.assertEqual(
+                4,
+                preview["evaluation"]["passed_case_count"],
+            )
+            self.assertEqual(
+                ["project-type-rules"],
+                preview["evaluation"]["cases"][0]["expected_guides"],
+            )
+            self.assertNotIn("guide_markdown", preview)
+            self.assertNotIn(
+                "Rendered before and after screenshots.",
+                canonical_json(preview),
+            )
+            self.assertEqual(5, candidate_health["component_usage_count"])
+            self.assertEqual("review_due", candidate_health["utility_verdict"])
+            self.assertTrue(candidate_health["review_due"])
+            promotion = candidate_health["global_promotion"]
+            self.assertEqual("ask_owner", promotion["status"])
+            self.assertEqual(5, promotion["required_usage_count"])
+            self.assertEqual(5, promotion["observed_usage_count"])
+            self.assertEqual(0, promotion["remaining_usage_count"])
+            self.assertTrue(promotion["request_available"])
+            self.assertTrue(promotion["eligible"])
+            self.assertTrue(promotion["owner_prompt_due"])
+            self.assertFalse(promotion["problem_review_required"])
+            self.assertFalse(promotion["automatic_promotion_allowed"])
+
+            events[0]["expertise_observations"] = [
+                {
+                    "pack_id": "project-design",
+                    "guide_id": "project-type-rules",
+                    "kind": "unsafe_recommendation",
+                    "severity": "critical",
+                }
+            ]
+            warned_promotion = expertise_component_health(
+                inventory,
+                events,
+            )["candidates"][0]["global_promotion"]
+            self.assertEqual(
+                "ask_owner",
+                warned_promotion["status"],
+            )
+            self.assertTrue(warned_promotion["request_available"])
+            self.assertTrue(warned_promotion["eligible"])
+            self.assertTrue(warned_promotion["owner_prompt_due"])
+            self.assertTrue(warned_promotion["problem_review_required"])
+
+            rejection = build_expertise_rejection_plan(
+                repo,
+                candidate_id="project-design",
+                reason="Repeated use did not improve the target outcome.",
+            )
+            rejected = apply_expertise_rejection_plan(rejection, repo)
+            rejected_candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual("rejected", rejected["runtime_status"])
+            self.assertEqual(
+                "rejected",
+                rejected_candidate["runtime_status"],
+            )
+            self.assertFalse(
+                rejected_candidate["immediate_use_allowed"]
+            )
+            self.assertEqual(
+                "Repeated use did not improve the target outcome.",
+                rejected_candidate["disposition"]["reason"],
+            )
+
+            restore = build_expertise_restore_plan(
+                repo,
+                candidate_id="project-design",
+            )
+            restored = apply_expertise_restore_plan(restore, repo)
+            restored_candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual("restored", restored["status"])
+            self.assertEqual("available", restored["runtime_status"])
+            self.assertTrue(restored["immediate_use_allowed"])
+            self.assertIsNone(restored_candidate["disposition"])
+
     def test_component_change_is_visible_and_exports_as_a_review_bundle(
         self,
     ) -> None:
@@ -334,6 +776,21 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 },
                 candidate["component_change"],
             )
+            self.assertEqual(
+                "not_created",
+                candidate["global_request"]["status"],
+            )
+            self.assertEqual(
+                "not_tracked",
+                candidate["global_request"][
+                    "repository_submission_status"
+                ],
+            )
+            self.assertFalse(
+                candidate["global_request"][
+                    "automatic_push_performed"
+                ]
+            )
             preview = build_expertise_export_plan(
                 repo,
                 candidate_id="project-design",
@@ -347,11 +804,43 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             validation = validate_expertise_contribution(bundle)
 
             self.assertEqual("exported", result["status"])
+            self.assertEqual(
+                "local_review_bundle_created",
+                result["review_bundle_status"],
+            )
             self.assertFalse(result["promotion_performed"])
+            self.assertFalse(result["commit_performed"])
+            self.assertFalse(result["push_performed"])
+            self.assertFalse(result["pull_request_performed"])
+            self.assertFalse(result["release_performed"])
             self.assertEqual("PASS", validation["status"])
             self.assertEqual(
                 "guide-addition",
                 validation["component_change"]["kind"],
+            )
+            exported_candidate = expertise_inventory(repo)[
+                "candidates"
+            ][0]
+            global_request = exported_candidate["global_request"]
+            self.assertEqual(
+                "local_review_bundle_created",
+                global_request["status"],
+            )
+            self.assertEqual("PASS", global_request["validation_status"])
+            self.assertTrue(
+                global_request["matches_current_candidate"]
+            )
+            self.assertEqual(
+                preview["output_path"],
+                global_request["output_path"],
+            )
+            self.assertEqual(
+                "not_tracked",
+                global_request["repository_submission_status"],
+            )
+            self.assertEqual(
+                "not_tracked",
+                global_request["release_status"],
             )
             value = json.loads(bundle.read_text(encoding="utf-8"))
             exported_paths = {
@@ -370,6 +859,13 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "EXPERTISE_CONTRIBUTION_PROMOTION_INVALID",
                 {issue["code"] for issue in invalid["issues"]},
             )
+            invalid_candidate = expertise_inventory(repo)[
+                "candidates"
+            ][0]
+            self.assertEqual(
+                "local_review_bundle_invalid",
+                invalid_candidate["global_request"]["status"],
+            )
 
     def test_contribution_rejects_rehashed_invalid_quality_artifact(
         self,
@@ -378,7 +874,7 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             repo = Path(temporary) / "project"
             repo.mkdir()
             apply_fresh_init(repo)
-            _candidate(repo)
+            _candidate(repo, portability="global")
             preview = build_expertise_export_plan(
                 repo,
                 candidate_id="project-design",
@@ -424,6 +920,858 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "EXPERTISE_CONTRIBUTION_QUALITY_CASE_INVALID",
                 {issue["code"] for issue in validation["issues"]},
             )
+
+    def test_global_promotion_requires_a_second_preview_and_never_pushes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            before = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual(
+                "ready_for_harness_source",
+                before["global_adoption"]["status"],
+            )
+            self.assertTrue(
+                before["global_adoption"]["action_available"]
+            )
+            self.assertFalse(
+                (
+                    repo
+                    / ".maestro/exports/expertise/"
+                    "global-design.maestro-contribution.json"
+                ).exists()
+            )
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design",
+                approval_ref="owner_decision:test:global-design",
+            )
+            registry_path = (
+                repo
+                / "src/maestro/resources/registry/expertise-packs"
+                / "global-design.json"
+            )
+            skill_path = repo / "skills/maestro-global-design/SKILL.md"
+            lock_path = repo / ".maestro/lock.json"
+            lock_before = lock_path.read_bytes()
+            self.assertFalse(preview["writes_performed"])
+            self.assertFalse(registry_path.exists())
+            self.assertFalse(skill_path.exists())
+            self.assertIn(
+                ".maestro/lock.json",
+                {
+                    operation["path"]
+                    for operation in preview["operations"]
+                },
+            )
+
+            result = apply_expertise_global_promotion_plan(
+                preview,
+                repo,
+            )
+
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            self.assertTrue(registry_path.is_file())
+            self.assertTrue(skill_path.is_file())
+            self.assertFalse(result["commit_performed"])
+            self.assertFalse(result["push_performed"])
+            self.assertFalse(result["pull_request_performed"])
+            self.assertFalse(result["release_performed"])
+            promoted_pack = json.loads(
+                registry_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual("global", promoted_pack["portability"])
+            self.assertEqual("pilot", promoted_pack["status"])
+            self.assertNotEqual(lock_before, lock_path.read_bytes())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            release_manifest = build_release_manifest(repo)
+            self.assertEqual(
+                release_manifest["registry"]["sha256"],
+                lock["registry"]["sha256"],
+            )
+            self.assertIn(
+                ".maestro/lock.json",
+                result["git_stage_paths"],
+            )
+            self.assertIn(
+                "maestro-global-design",
+                release_manifest["skills"],
+            )
+            self.assertIn(
+                "maestro-global-design",
+                load_source_release_manifest(repo)["skills"],
+            )
+            after = expertise_inventory(repo)["candidates"][0]
+            self.assertEqual(
+                "harness_source_applied",
+                after["global_adoption"]["status"],
+            )
+            self.assertEqual("PASS", after["validation_status"])
+            self.assertEqual(
+                "globally_promoted",
+                after["runtime_status"],
+            )
+            self.assertFalse(
+                after["global_adoption"]["action_available"]
+            )
+
+    def test_global_guide_addition_updates_the_bundled_base_directly(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            base_pack = json.loads(
+                (
+                    repo
+                    / "src/maestro/resources/registry/"
+                    "expertise-packs/product-design.json"
+                ).read_text(encoding="utf-8")
+            )
+            _candidate(
+                repo,
+                candidate_id="design-flow-extension",
+                pack_id="design-flow-extension",
+                skill_id="design-flow-extension",
+                guide_id="project-type-rules",
+                portability="global",
+                component_change={
+                    "kind": "guide-addition",
+                    "target_guide_id": "project-type-rules",
+                },
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="design-flow-extension",
+                approval_ref="owner_decision:test:guide-project-copy",
+            )
+            apply_expertise_activation_plan(activation, repo)
+
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="design-flow-extension",
+                approval_ref="owner_decision:test:guide-global",
+            )
+
+            self.assertEqual("candidate_snapshot", preview["source_kind"])
+            self.assertIsNone(preview["bundle_path"])
+            self.assertEqual("product-design", preview["expertise_pack_id"])
+            self.assertFalse(
+                (
+                    repo
+                    / ".maestro/exports/expertise/"
+                    "design-flow-extension.maestro-contribution.json"
+                ).exists()
+            )
+            self.assertIn(
+                ".maestro/project.json",
+                {
+                    operation["path"]
+                    for operation in preview["operations"]
+                },
+            )
+
+            result = apply_expertise_global_promotion_plan(
+                preview,
+                repo,
+            )
+
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            promoted = json.loads(
+                (
+                    repo
+                    / "src/maestro/resources/registry/"
+                    "expertise-packs/product-design.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(base_pack["version"] + 1, promoted["version"])
+            self.assertIn(
+                "project-type-rules",
+                {
+                    guide["guide_id"]
+                    for guide in promoted["guides"]
+                },
+            )
+            self.assertTrue(
+                (
+                    repo
+                    / "skills/maestro-product-design/references/"
+                    "project-type-rules.md"
+                ).is_file()
+            )
+            self.assertEqual(
+                json.loads(
+                    (
+                        repo
+                        / "skills/maestro-product-design/evidence/sources.json"
+                    ).read_text(encoding="utf-8")
+                ),
+                json.loads(
+                    (
+                        repo
+                        / "src/maestro/resources/expertise-sources/"
+                        "product-design.json"
+                    ).read_text(encoding="utf-8")
+                ),
+            )
+            skill = (
+                repo / "skills/maestro-product-design/SKILL.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                "`project-type-rules`",
+                skill,
+            )
+            cases = json.loads(
+                (
+                    repo / "skills/maestro-product-design/evals/cases.json"
+                ).read_text(encoding="utf-8")
+            )
+            added_case = next(
+                case
+                for case in cases["cases"]
+                if case["case_id"] == "normal-project-type"
+            )
+            self.assertEqual(
+                "product-design",
+                added_case["expected_pack_id"],
+            )
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertNotIn(
+                (
+                    ".agents/skills/design-flow-extension/"
+                    "maestro-pack.json"
+                ),
+                project["expertise"]["active_pack_paths"],
+            )
+            self.assertTrue(
+                (
+                    repo
+                    / ".agents/skills/design-flow-extension/"
+                    "maestro-pack.json"
+                ).is_file()
+            )
+            candidate = next(
+                item
+                for item in expertise_inventory(repo)["candidates"]
+                if item["candidate_id"] == "design-flow-extension"
+            )
+            self.assertEqual(
+                "globally_promoted",
+                candidate["runtime_status"],
+            )
+            self.assertEqual(
+                "harness_source_applied",
+                candidate["global_adoption"]["status"],
+            )
+
+    def test_global_promotion_updates_manifest_before_catalog_validation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            export = build_expertise_export_plan(
+                repo,
+                candidate_id="global-design",
+            )
+            apply_expertise_export_plan(export, repo)
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design",
+                approval_ref="owner_decision:test:manifest-order",
+            )
+
+            with patch(
+                "maestro.expertise_lifecycle.load_expertise_catalog",
+                side_effect=lambda repo_path: [
+                    load_source_release_manifest(repo_path)
+                ],
+            ):
+                result = apply_expertise_global_promotion_plan(
+                    preview,
+                    repo,
+                )
+
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            self.assertIn(
+                "maestro-global-design",
+                load_source_release_manifest(repo)["skills"],
+            )
+
+    def test_global_promotion_supersedes_matching_active_project_copy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="global-design",
+                approval_ref="owner_decision:test:project-copy",
+            )
+            apply_expertise_activation_plan(activation, repo)
+            export = build_expertise_export_plan(
+                repo,
+                candidate_id="global-design",
+            )
+            apply_expertise_export_plan(export, repo)
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design",
+                approval_ref="owner_decision:test:global-copy",
+            )
+
+            with (
+                patch(
+                    "maestro.expertise.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+                patch(
+                    "maestro.expertise.load_packaged_release_manifest",
+                    side_effect=lambda: load_source_release_manifest(repo),
+                ),
+                patch(
+                    "maestro.expertise_lifecycle.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+            ):
+                result = apply_expertise_global_promotion_plan(
+                    preview,
+                    repo,
+                )
+                catalog = load_expertise_catalog(repo)
+                promoted_candidate = next(
+                    item
+                    for item in expertise_inventory(repo)["candidates"]
+                    if item["candidate_id"] == "global-design"
+                )
+
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            matching = [
+                pack
+                for pack in catalog
+                if pack["expertise_pack_id"] == "global-design"
+            ]
+            self.assertEqual(1, len(matching))
+            self.assertEqual(
+                "bundled",
+                matching[0]["_maestro"]["origin"],
+            )
+            self.assertEqual(
+                "harness_source_applied",
+                promoted_candidate["global_adoption"]["status"],
+            )
+            project_pack = (
+                repo
+                / ".agents/skills/maestro-global-design"
+                / "maestro-pack.json"
+            )
+            self.assertTrue(project_pack.is_file())
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn(
+                (
+                    ".agents/skills/maestro-global-design/"
+                    "maestro-pack.json"
+                ),
+                project["expertise"]["active_pack_paths"],
+            )
+
+            snapshot_path = (
+                repo
+                / ".agents/skills/maestro-global-design"
+                / "evidence/candidate.json"
+            )
+            snapshot = json.loads(
+                snapshot_path.read_text(encoding="utf-8")
+            )
+            snapshot["portability"] = "project"
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "maestro.expertise.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+                patch(
+                    "maestro.expertise.load_packaged_release_manifest",
+                    side_effect=lambda: load_source_release_manifest(repo),
+                ),
+                self.assertRaisesRegex(
+                    MaestroError,
+                    "duplicate expertise_pack_id",
+                ),
+            ):
+                load_expertise_catalog(repo)
+
+    def test_project_confirmed_pack_promotes_without_candidate_bundle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="project-design",
+                pack_id="project-design",
+                skill_id="project-design",
+                standalone=True,
+                portability="project",
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:test:project-confirmed",
+            )
+            apply_expertise_activation_plan(activation, repo)
+            rejection = build_expertise_rejection_plan(
+                repo,
+                candidate_id="project-design",
+                reason="The project publication is the retained source.",
+            )
+            apply_expertise_rejection_plan(rejection, repo)
+
+            inventory = expertise_inventory(repo)
+            project_pack = next(
+                pack
+                for pack in inventory["packs"]
+                if pack["expertise_pack_id"] == "project-design"
+            )
+            self.assertEqual("project", project_pack["origin"])
+            self.assertEqual(
+                "ready_for_harness_source",
+                project_pack["global_adoption"]["status"],
+            )
+            self.assertTrue(
+                project_pack["global_adoption"]["action_available"]
+            )
+            self.assertFalse(
+                (
+                    repo
+                    / ".maestro/exports/expertise/"
+                    "project-design.maestro-contribution.json"
+                ).exists()
+            )
+
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                expertise_pack_id="project-design",
+                approval_ref="owner_decision:test:project-to-global",
+            )
+
+            self.assertEqual(
+                "project_publication",
+                preview["source_kind"],
+            )
+            self.assertEqual(
+                (
+                    ".agents/skills/project-design/"
+                    "maestro-pack.json"
+                ),
+                preview["source_ref"],
+            )
+            self.assertIsNone(preview["bundle_path"])
+            self.assertEqual(
+                "maestro-project-design",
+                preview["skill_id"],
+            )
+
+            result = apply_expertise_global_promotion_plan(
+                preview,
+                repo,
+            )
+
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            self.assertEqual(
+                "project_publication",
+                result["source_kind"],
+            )
+            promoted_pack = json.loads(
+                (
+                    repo
+                    / "src/maestro/resources/registry/"
+                    "expertise-packs/project-design.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual("global", promoted_pack["portability"])
+            self.assertEqual(
+                "maestro-project-design",
+                promoted_pack["skill_id"],
+            )
+            promoted_skill = (
+                repo / "skills/maestro-project-design/SKILL.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                "name: maestro-project-design",
+                promoted_skill,
+            )
+            self.assertIn(
+                "maestro-project-design",
+                load_source_release_manifest(repo)["skills"],
+            )
+            self.assertFalse(result["commit_performed"])
+            self.assertFalse(result["push_performed"])
+            with (
+                patch(
+                    "maestro.expertise.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+                patch(
+                    "maestro.expertise.load_packaged_release_manifest",
+                    side_effect=lambda: load_source_release_manifest(repo),
+                ),
+                patch(
+                    "maestro.expertise_lifecycle.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+                patch(
+                    "maestro.governance.registry_digest",
+                    side_effect=lambda: source_registry_digest(repo),
+                ),
+            ):
+                catalog = load_expertise_catalog(repo)
+                snapshot = snapshot_report(repo)
+                candidate_after = next(
+                    item
+                    for item in expertise_inventory(repo)["candidates"]
+                    if item["candidate_id"] == "project-design"
+                )
+
+            matching = [
+                item
+                for item in catalog
+                if item["expertise_pack_id"] == "project-design"
+            ]
+            self.assertEqual(1, len(matching))
+            self.assertEqual(
+                "bundled",
+                matching[0]["_maestro"]["origin"],
+            )
+            self.assertEqual(
+                "maestro_snapshot_v1",
+                snapshot["schema_version"],
+            )
+            self.assertEqual(
+                "harness_source_applied",
+                candidate_after["global_adoption"]["status"],
+            )
+            self.assertEqual(
+                "PASS",
+                candidate_after["validation_status"],
+            )
+            self.assertEqual(
+                "rejected",
+                candidate_after["runtime_status"],
+            )
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn(
+                ".agents/skills/project-design/maestro-pack.json",
+                project["expertise"]["active_pack_paths"],
+            )
+            self.assertTrue(
+                (
+                    repo
+                    / ".agents/skills/project-design/"
+                    "maestro-pack.json"
+                ).is_file()
+            )
+
+            snapshot_path = (
+                repo
+                / ".agents/skills/project-design/"
+                "evidence/candidate.json"
+            )
+            project_candidate = json.loads(
+                snapshot_path.read_text(encoding="utf-8")
+            )
+            project_candidate["problem"] = "Unreviewed change."
+            snapshot_path.write_text(
+                json.dumps(project_candidate, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "maestro.expertise.load_registry",
+                    side_effect=lambda: load_source_registry(repo),
+                ),
+                patch(
+                    "maestro.expertise.load_packaged_release_manifest",
+                    side_effect=lambda: load_source_release_manifest(repo),
+                ),
+                self.assertRaisesRegex(
+                    MaestroError,
+                    "duplicate expertise_pack_id",
+                ),
+            ):
+                load_expertise_catalog(repo)
+
+    def test_project_promotion_rejects_changed_publication_snapshot(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="project-design",
+                pack_id="project-design",
+                standalone=True,
+                portability="project",
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:test:project-confirmed",
+            )
+            apply_expertise_activation_plan(activation, repo)
+            skill_path = (
+                repo / ".agents/skills/project-design/SKILL.md"
+            )
+            skill_path.write_text(
+                skill_path.read_text(encoding="utf-8")
+                + "\nUnreviewed change.\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                MaestroError,
+                "changed after activation",
+            ) as raised:
+                build_expertise_global_promotion_plan(
+                    repo,
+                    expertise_pack_id="project-design",
+                    approval_ref=(
+                        "owner_decision:test:tampered-project"
+                    ),
+                )
+
+            self.assertEqual(
+                "EXPERTISE_PROJECT_PROMOTION_SOURCE_STALE",
+                raised.exception.code,
+            )
+
+    def test_global_promotion_rolls_back_source_when_manifest_fails(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            export = build_expertise_export_plan(
+                repo,
+                candidate_id="global-design",
+            )
+            apply_expertise_export_plan(export, repo)
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design",
+                approval_ref="owner_decision:test:rollback",
+            )
+            registry_path = (
+                repo
+                / "src/maestro/resources/registry/expertise-packs"
+                / "global-design.json"
+            )
+            skill_root = repo / "skills/maestro-global-design"
+            manifest_path = (
+                repo
+                / "src/maestro/resources/release-manifest.json"
+            )
+            manifest_before = manifest_path.read_bytes()
+            lock_path = repo / ".maestro/lock.json"
+            lock_before = lock_path.read_bytes()
+
+            with patch(
+                "maestro.expertise_lifecycle.build_release_manifest",
+                side_effect=RuntimeError("manifest generation failed"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "manifest generation failed",
+                ):
+                    apply_expertise_global_promotion_plan(preview, repo)
+
+            self.assertFalse(registry_path.exists())
+            self.assertFalse(skill_root.exists())
+            self.assertEqual(manifest_before, manifest_path.read_bytes())
+            self.assertEqual(lock_before, lock_path.read_bytes())
+            adoption = expertise_inventory(repo)["candidates"][0][
+                "global_adoption"
+            ]
+            self.assertEqual(
+                "ready_for_harness_source",
+                adoption["status"],
+            )
+
+    def test_global_promotion_rolls_back_when_project_catalog_fails(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="project-design",
+                pack_id="project-design",
+                standalone=True,
+                portability="project",
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:test:project-catalog",
+            )
+            apply_expertise_activation_plan(activation, repo)
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                expertise_pack_id="project-design",
+                approval_ref="owner_decision:test:project-catalog",
+            )
+            registry_path = (
+                repo
+                / "src/maestro/resources/registry/expertise-packs/"
+                "project-design.json"
+            )
+            skill_root = repo / "skills/maestro-project-design"
+            manifest_path = (
+                repo
+                / "src/maestro/resources/release-manifest.json"
+            )
+            lock_path = repo / ".maestro/lock.json"
+            manifest_before = manifest_path.read_bytes()
+            lock_before = lock_path.read_bytes()
+
+            with patch(
+                (
+                    "maestro.expertise_lifecycle."
+                    "validate_project_expertise_against_registry"
+                ),
+                side_effect=MaestroError(
+                    "PROJECT_EXPERTISE_INVALID",
+                    "duplicate expertise_pack_id: project-design",
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    MaestroError,
+                    "duplicate expertise_pack_id",
+                ):
+                    apply_expertise_global_promotion_plan(
+                        preview,
+                        repo,
+                    )
+
+            self.assertFalse(registry_path.exists())
+            self.assertFalse(skill_root.exists())
+            self.assertEqual(manifest_before, manifest_path.read_bytes())
+            self.assertEqual(lock_before, lock_path.read_bytes())
 
     def test_component_change_must_match_the_candidate_guide_set(
         self,
@@ -505,13 +1853,298 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 )
 
                 self.assertEqual("exported", result["status"])
+                self.assertEqual(
+                    "local_review_bundle_created",
+                    result["review_bundle_status"],
+                )
+                self.assertFalse(result["commit_performed"])
+                self.assertFalse(result["push_performed"])
+                self.assertFalse(result["pull_request_performed"])
+                self.assertFalse(result["release_performed"])
                 self.assertTrue(
                     (repo / result["output_path"]).is_file()
+                )
+
+                rejection = post(
+                    "/api/expertise-actions/preview",
+                    {
+                        "action": "reject",
+                        "candidate_id": "project-design",
+                        "pack_id": None,
+                    },
+                )
+                disposition = (
+                    repo
+                    / ".maestro/state/candidates/expertise/project-design"
+                    / "disposition.json"
+                )
+                self.assertFalse(rejection["writes_performed"])
+                self.assertFalse(disposition.exists())
+                rejected = post(
+                    "/api/expertise-actions/apply",
+                    {
+                        "plan_id": rejection["plan_id"],
+                        "plan_digest": rejection["plan_digest"],
+                    },
+                )
+                self.assertEqual("rejected", rejected["status"])
+                self.assertTrue(disposition.is_file())
+
+                restoration = post(
+                    "/api/expertise-actions/preview",
+                    {
+                        "action": "restore",
+                        "candidate_id": "project-design",
+                        "pack_id": None,
+                    },
+                )
+                restored = post(
+                    "/api/expertise-actions/apply",
+                    {
+                        "plan_id": restoration["plan_id"],
+                        "plan_digest": restoration["plan_digest"],
+                    },
+                )
+                self.assertEqual("restored", restored["status"])
+                self.assertFalse(disposition.exists())
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_dashboard_previews_project_confirmed_global_promotion(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="project-design",
+                pack_id="project-design",
+                standalone=True,
+                portability="project",
+            )
+            activation = build_expertise_activation_plan(
+                repo,
+                candidate_id="project-design",
+                approval_ref="owner_decision:test:dashboard-project",
+            )
+            apply_expertise_activation_plan(activation, repo)
+            server, token, url = create_dashboard_server(repo)
+            thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+            )
+            thread.start()
+            base = url.split("/#token=", 1)[0]
+            try:
+                request = urllib.request.Request(
+                    f"{base}/api/expertise-actions/preview",
+                    method="POST",
+                    data=json.dumps(
+                        {
+                            "action": "promote_global",
+                            "candidate_id": None,
+                            "pack_id": "project-design",
+                        }
+                    ).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Maestro-Token": token,
+                        "Origin": base,
+                    },
+                )
+                with urllib.request.urlopen(
+                    request,
+                    timeout=5,
+                ) as response:
+                    preview = json.loads(response.read())
+
+                self.assertEqual(
+                    "promote_global",
+                    preview["action"],
+                )
+                self.assertEqual(
+                    "project-design",
+                    preview["pack_id"],
+                )
+                self.assertFalse(preview["writes_performed"])
+                self.assertIn(
+                    (
+                        "src/maestro/resources/registry/"
+                        "expertise-packs/project-design.json"
+                    ),
+                    preview["changed_paths"],
+                )
+                self.assertFalse(
+                    (
+                        repo
+                        / "src/maestro/resources/registry/"
+                        "expertise-packs/project-design.json"
+                    ).exists()
                 )
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=5)
+
+    def test_fifth_candidate_use_prompts_owner_without_auto_export(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo, portability="global")
+
+            results = []
+            for index in range(6):
+                receipt_path = Path(temporary) / f"receipt-{index}.json"
+                write_json(
+                    receipt_path,
+                    {
+                        "run_id": f"global-promotion-{index}",
+                        "risk": "low",
+                        "route_depth": "fast",
+                        "selected_lenses": [],
+                        "selected_expertise_packs": ["project-design"],
+                        "selected_decision_guides": [
+                            "project-type-rules"
+                        ],
+                        "expertise_research_mode": "reuse",
+                        "expertise_research_gate": "not-required",
+                        "executor_runs": 1,
+                        "primary_executor_id": (
+                            "implementation-engineer"
+                        ),
+                        "executor_ids": [
+                            "implementation-engineer"
+                        ],
+                        "outcome": "completed",
+                        "evidence_refs": ["artifact:screen"],
+                        "duration_ms": 100,
+                        "tokens": None,
+                        "correction_count": 0,
+                        "agent_calls": 1,
+                        "work_spans": [
+                            application_work_span(
+                                "project-design",
+                                ["project-type-rules"],
+                                work_id=(
+                                    f"global-promotion-{index}"
+                                ),
+                            )
+                        ],
+                        "verifier_result": "not_run",
+                        "command_artifact_ref": None,
+                    },
+                )
+                results.append(record_run(repo, receipt_path))
+
+            for result in results[:4]:
+                management = result["management_check"]
+                self.assertFalse(management["owner_prompt_due"])
+                self.assertEqual(
+                    [],
+                    management["global_promotion_prompts"],
+                )
+
+            management = results[4]["management_check"]
+            self.assertTrue(management["review_due"])
+            self.assertTrue(management["owner_prompt_due"])
+            self.assertFalse(management["automatic_mutation_allowed"])
+            self.assertEqual(
+                [
+                    {
+                        "candidate_id": "project-design",
+                        "pack_id": "project-design",
+                        "observed_usage_count": 5,
+                        "required_usage_count": 5,
+                        "problem_review_required": False,
+                        "question": (
+                            "project-design 후보가 서로 다른 작업에서 "
+                            "5회 적용이 확인됐습니다. Harness 기본 Pack에 "
+                            "반영할까요?"
+                        ),
+                    }
+                ],
+                management["global_promotion_prompts"],
+            )
+
+            snapshot = snapshot_report(repo)
+            prompt_attention = [
+                item
+                for item in snapshot["attention"]
+                if item["id"] == "ask_global_expertise_promotion"
+            ]
+            self.assertEqual(1, len(prompt_attention))
+            self.assertEqual(
+                "project-design",
+                prompt_attention[0]["candidate_id"],
+            )
+            self.assertFalse(
+                (
+                    repo / ".maestro/exports/expertise"
+                ).exists()
+            )
+
+            sixth_management = results[5]["management_check"]
+            self.assertTrue(sixth_management["owner_prompt_due"])
+            self.assertEqual(
+                6,
+                sixth_management["global_promotion_prompts"][0][
+                    "observed_usage_count"
+                ],
+            )
+
+            decline = build_expertise_promotion_decision_plan(
+                repo,
+                candidate_id="project-design",
+                decision="decline",
+                reason="이 후보 버전은 전역 기본값으로 사용하지 않음",
+            )
+            apply_expertise_promotion_decision_plan(decline, repo)
+            declined_snapshot = snapshot_report(repo)
+            declined_health = next(
+                item
+                for item in declined_snapshot["expertise"][
+                    "component_health"
+                ]["candidates"]
+                if item["candidate_id"] == "project-design"
+            )
+            self.assertEqual(
+                "declined",
+                declined_health["global_promotion"]["status"],
+            )
+            self.assertNotIn(
+                "project-design",
+                [
+                    item.get("candidate_id")
+                    for item in declined_snapshot["attention"]
+                    if item["id"] == "ask_global_expertise_promotion"
+                ],
+            )
+
+            reconsider = build_expertise_promotion_decision_plan(
+                repo,
+                candidate_id="project-design",
+                decision="reconsider",
+            )
+            apply_expertise_promotion_decision_plan(reconsider, repo)
+            reconsidered_snapshot = snapshot_report(repo)
+            self.assertIn(
+                "project-design",
+                [
+                    item.get("candidate_id")
+                    for item in reconsidered_snapshot["attention"]
+                    if item["id"] == "ask_global_expertise_promotion"
+                ],
+            )
 
     def test_candidate_bundle_validation_checks_semantic_links_and_receipt(
         self,
@@ -643,13 +2276,41 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             repo = Path(temporary) / "project"
             repo.mkdir()
             apply_fresh_init(repo)
-            _candidate(repo)
+            _candidate(repo, portability="global")
 
             before = route_goal_v2(
                 "Apply our project typography to the product design",
                 "medium",
                 intent="review",
                 repo_path=repo,
+            )
+            draft_candidate = expertise_inventory(repo)["candidates"][0]
+            self.assertTrue(
+                draft_candidate["ready_for_activation_review"]
+            )
+            self.assertTrue(
+                draft_candidate["ready_for_export_review"]
+            )
+            draft_health = expertise_component_health(
+                expertise_inventory(repo),
+                [],
+            )["candidates"][0]
+            self.assertEqual(
+                "request_available",
+                draft_health["global_promotion"]["status"],
+            )
+            self.assertEqual(
+                5,
+                draft_health["global_promotion"]["remaining_usage_count"],
+            )
+            self.assertTrue(
+                draft_health["global_promotion"]["request_available"],
+            )
+            self.assertTrue(
+                draft_health["global_promotion"]["eligible"],
+            )
+            self.assertFalse(
+                draft_health["global_promotion"]["owner_prompt_due"],
             )
             self.assertEqual(
                 ["project-design"],
@@ -782,6 +2443,17 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             )
             inventory = expertise_inventory(repo)
             self.assertEqual(1, len(inventory["candidates"]))
+            published_candidate = inventory["candidates"][0]
+            self.assertEqual(
+                "published",
+                published_candidate["runtime_status"],
+            )
+            self.assertFalse(
+                published_candidate["ready_for_activation_review"]
+            )
+            self.assertTrue(
+                published_candidate["ready_for_export_review"]
+            )
             self.assertIn(
                 "project-design",
                 {
@@ -1042,6 +2714,13 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                     "tokens": None,
                     "correction_count": 0,
                     "agent_calls": 1,
+                    "work_spans": [
+                        application_work_span(
+                            "project-design",
+                            ["project-type-rules"],
+                            work_id="candidate-project-design-run",
+                        )
+                    ],
                     "verifier_result": "not_run",
                     "command_artifact_ref": None,
                 },
@@ -1092,6 +2771,13 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                     "tokens": None,
                     "correction_count": 0,
                     "agent_calls": 1,
+                    "work_spans": [
+                        application_work_span(
+                            "project-design",
+                            ["project-type-rules"],
+                            work_id="candidate-project-design-run",
+                        )
+                    ],
                     "verifier_result": "not_run",
                     "command_artifact_ref": None,
                 },

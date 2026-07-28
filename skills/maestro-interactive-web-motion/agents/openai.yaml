@@ -1,0 +1,6 @@
+interface:
+  display_name: "Interactive Web Motion"
+  short_description: "Apply routed interactive web motion criteria"
+  default_prompt: "Use $maestro-interactive-web-motion with only the Decision Guides selected by the validated Maestro route."
+policy:
+  allow_implicit_invocation: false

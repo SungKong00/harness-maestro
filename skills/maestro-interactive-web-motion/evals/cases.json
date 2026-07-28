@@ -1,0 +1,142 @@
+{
+  "schema_version": "maestro_expertise_eval_v2",
+  "expertise_pack_id": "interactive-web-motion",
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "e7280c02b54cc01021479a1d56322a4a4ff73531b5f81a3ce03f675851711d59"
+  },
+  "cases": [
+    {
+      "case_id": "normal-scroll-triggered-reveal",
+      "stratum": "normal",
+      "goal": "긴 랜딩페이지 섹션에 scroll-triggered animation reveal stagger를 구현해줘",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "scroll-triggered-reveal",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Selects progressive-enhancement reveal criteria and the default motion-intent rubric"
+      ],
+      "forbidden_behaviors": [
+        "Hides critical content until the animation client initializes"
+      ]
+    },
+    {
+      "case_id": "normal-scroll-storytelling",
+      "stratum": "normal",
+      "goal": "스크롤 스토리텔링으로 scrub pin parallax 장면을 구성해줘",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "scroll-linked-storytelling",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Selects scroll-linked scene criteria and requires a narrative progress model"
+      ],
+      "forbidden_behaviors": [
+        "Treats pin, scrub, or parallax capability as sufficient UX justification"
+      ]
+    },
+    {
+      "case_id": "normal-component-microinteraction",
+      "stratum": "normal",
+      "goal": "button과 card microinteraction에 hover focus press drag 상태 피드백을 설계해줘",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "interaction-feedback-and-state",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Selects modality-complete state feedback and ties motion to application truth"
+      ],
+      "forbidden_behaviors": [
+        "Uses hover or drag as the only interaction path"
+      ]
+    },
+    {
+      "case_id": "edge-reduced-motion-performance",
+      "stratum": "edge",
+      "goal": "스크롤 애니메이션의 reduced motion과 animation performance, dropped frames를 함께 검토해줘",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "motion-accessibility-and-control",
+        "motion-performance-and-verification",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Selects both motion-safety and runtime-evidence criteria within the Guide limit"
+      ],
+      "forbidden_behaviors": [
+        "Claims accessibility or smoothness from source inspection alone"
+      ]
+    },
+    {
+      "case_id": "edge-motion-system",
+      "stratum": "edge",
+      "goal": "웹 애니메이션 motion system의 duration easing stagger와 page transition 규칙을 만들어줘",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "reuse",
+      "expected_guides": [
+        "motion-system-and-choreography",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Selects token and choreography criteria plus motion intent"
+      ],
+      "forbidden_behaviors": [
+        "Copies another design system's numeric tokens as universal truth"
+      ]
+    },
+    {
+      "case_id": "edge-current-scroll-support",
+      "stratum": "edge",
+      "goal": "Use current browser support for scroll-driven animation and current scroll timeline support",
+      "expected_pack_id": "interactive-web-motion",
+      "expected_mode": "contextualize",
+      "expected_guides": [
+        "scroll-linked-storytelling",
+        "motion-intent-and-ux-impact"
+      ],
+      "observable_criteria": [
+        "Opens contextual research for current browser support"
+      ],
+      "forbidden_behaviors": [
+        "Claims current compatibility from the frozen Pack alone"
+      ]
+    },
+    {
+      "case_id": "non-trigger-backend-cache",
+      "stratum": "non-trigger",
+      "goal": "백엔드 API 캐시 invalidation과 재시도 정책을 구현해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Keeps backend implementation outside the interactive motion Pack"
+      ],
+      "forbidden_behaviors": [
+        "Selects motion expertise for unrelated implementation"
+      ]
+    },
+    {
+      "case_id": "overlap-generic-product-layout",
+      "stratum": "overlap",
+      "goal": "가구 랜딩페이지의 타이포그래피, visual hierarchy, responsive grid를 디자인해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Leaves generic product layout and typography to product-design"
+      ],
+      "forbidden_behaviors": [
+        "Hijacks generic landing-page design without an explicit motion decision"
+      ]
+    }
+  ]
+}

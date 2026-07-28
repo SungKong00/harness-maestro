@@ -38,6 +38,8 @@ Load only the route-selected guides:
 - `interaction-responsive-accessibility` →
   `references/interaction-responsive-accessibility.md`
 - `reference-selection` → `references/reference-selection.md`
+- `information-architecture-and-user-flow` →
+  `references/information-architecture-and-user-flow.md`
 
 Do not open every reference by default. The route selects at most four.
 
@@ -49,13 +51,21 @@ Read `expertise.research_requirement`.
   general design research.
 - `open`: stop implementation. Run the host-approved reference research
   workflow through `$maestro-reference-research` for the exact screen pattern,
-  save a validated compact ResearchBundle, and reroute with its artifact path.
+  save a validated bound v2 ResearchBundle without dropping source-plan or
+  claim semantics, and reroute with its artifact path.
 - `satisfied`: use the artifact as contextual evidence, not as permission to
   copy a reference.
 - `in-plan`: the current read-only research Assignment produces the evidence.
 
 Never mark an open gate satisfied with a URL list, fabricated digest, search
 snippet, or the same model's unsupported preference.
+
+When `reference-selection` is selected, the research evidence must include
+exact-screen shipped-product examples for the target task, one adjacent example,
+and one counterexample. Record screenshot or observed-state evidence for each;
+mark missing state or responsive evidence `unverified`. State which decisions
+transfer and which do not. Foundation, token, and standards documents may
+constrain the work but never substitute for a shipped-screen reference.
 
 ## Advisory sequence
 

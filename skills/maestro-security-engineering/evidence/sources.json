@@ -1,0 +1,160 @@
+{
+  "expertise_pack_id": "security-engineering",
+  "schema_version": "maestro_expertise_sources_v1",
+  "sources": [
+    {
+      "authority": "NIST SP 800-218, Secure Software Development Framework (SSDF) Version 1.1",
+      "freshness": "versioned",
+      "source_id": "nist-ssdf-1-1",
+      "supports": [
+        "Turn assets, trust boundaries, attackers, and abuse paths into scoped security requirements and residual-risk decisions.",
+        "Choose supplier, dependency, integrity, isolated-build, provenance, vulnerability-response, and rollback requirements proportionate to risk."
+      ],
+      "tier": 1,
+      "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
+      "used_by": [
+        "threat-model-and-security-requirements",
+        "dependency-and-build-supply-chain"
+      ]
+    },
+    {
+      "authority": "OWASP Threat Modeling Project",
+      "freshness": "volatile",
+      "source_id": "owasp-threat-modeling",
+      "supports": [
+        "Turn assets, trust boundaries, attackers, and abuse paths into scoped security requirements and residual-risk decisions."
+      ],
+      "tier": 1,
+      "url": "https://owasp.org/www-project-threat-modeling/",
+      "used_by": [
+        "threat-model-and-security-requirements"
+      ]
+    },
+    {
+      "authority": "OWASP Application Security Verification Standard 5.0.0",
+      "freshness": "versioned",
+      "source_id": "owasp-asvs-5-0-0",
+      "supports": [
+        "Turn assets, trust boundaries, attackers, and abuse paths into scoped security requirements and residual-risk decisions.",
+        "Choose authentication assurance, recovery, federation, session binding, timeout, reauthentication, and revocation from risk.",
+        "Define subject-resource-action policy, ownership, tenant context, enforcement points, isolation, and privileged overrides.",
+        "Choose parsing, canonicalization, schema and semantic validation, parameterization, sanitization, and context-specific encoding at trust boundaries.",
+        "Design secret and key classification, generation, storage, delivery, identity, scope, rotation, revocation, break-glass, and audit."
+      ],
+      "tier": 1,
+      "url": "https://github.com/OWASP/ASVS/tree/v5.0.0",
+      "used_by": [
+        "threat-model-and-security-requirements",
+        "authentication-and-session-lifecycle",
+        "authorization-and-tenant-isolation",
+        "untrusted-data-and-output-controls",
+        "secrets-and-key-lifecycle"
+      ]
+    },
+    {
+      "authority": "NIST SP 800-63B-4, Authentication and Authenticator Management",
+      "freshness": "versioned",
+      "source_id": "nist-sp-800-63b-4",
+      "supports": [
+        "Choose authentication assurance, recovery, federation, session binding, timeout, reauthentication, and revocation from risk."
+      ],
+      "tier": 1,
+      "url": "https://pages.nist.gov/800-63-4/sp800-63b.html",
+      "used_by": [
+        "authentication-and-session-lifecycle"
+      ]
+    },
+    {
+      "authority": "RFC 9700 / BCP 240, Best Current Practice for OAuth 2.0 Security",
+      "freshness": "versioned",
+      "source_id": "ietf-rfc-9700",
+      "supports": [
+        "Choose authentication assurance, recovery, federation, session binding, timeout, reauthentication, and revocation from risk."
+      ],
+      "tier": 1,
+      "url": "https://www.rfc-editor.org/rfc/rfc9700.html",
+      "used_by": [
+        "authentication-and-session-lifecycle"
+      ]
+    },
+    {
+      "authority": "OWASP Authorization Cheat Sheet",
+      "freshness": "volatile",
+      "source_id": "owasp-authorization",
+      "supports": [
+        "Define subject-resource-action policy, ownership, tenant context, enforcement points, isolation, and privileged overrides."
+      ],
+      "tier": 1,
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "used_by": [
+        "authorization-and-tenant-isolation"
+      ]
+    },
+    {
+      "authority": "OWASP Multi-Tenant Application Security Cheat Sheet",
+      "freshness": "volatile",
+      "source_id": "owasp-multi-tenant",
+      "supports": [
+        "Define subject-resource-action policy, ownership, tenant context, enforcement points, isolation, and privileged overrides."
+      ],
+      "tier": 1,
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html",
+      "used_by": [
+        "authorization-and-tenant-isolation"
+      ]
+    },
+    {
+      "authority": "OWASP Input Validation Cheat Sheet",
+      "freshness": "volatile",
+      "source_id": "owasp-input-validation",
+      "supports": [
+        "Choose parsing, canonicalization, schema and semantic validation, parameterization, sanitization, and context-specific encoding at trust boundaries."
+      ],
+      "tier": 1,
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html",
+      "used_by": [
+        "untrusted-data-and-output-controls"
+      ]
+    },
+    {
+      "authority": "OWASP Secrets Management Cheat Sheet",
+      "freshness": "volatile",
+      "source_id": "owasp-secrets-management",
+      "supports": [
+        "Design secret and key classification, generation, storage, delivery, identity, scope, rotation, revocation, break-glass, and audit."
+      ],
+      "tier": 1,
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html",
+      "used_by": [
+        "secrets-and-key-lifecycle"
+      ]
+    },
+    {
+      "authority": "NIST SP 1326, Cybersecurity Supply Chain Risk Management: Due Diligence Assessment Quick-Start Guide",
+      "freshness": "versioned",
+      "source_id": "nist-sp-1326",
+      "supports": [
+        "Choose supplier, dependency, integrity, isolated-build, provenance, vulnerability-response, and rollback requirements proportionate to risk."
+      ],
+      "tier": 1,
+      "url": "https://csrc.nist.gov/pubs/sp/1326/final",
+      "used_by": [
+        "dependency-and-build-supply-chain"
+      ]
+    },
+    {
+      "authority": "SLSA Specification Version 1.2",
+      "freshness": "versioned",
+      "source_id": "slsa-1-2",
+      "supports": [
+        "Choose supplier, dependency, integrity, isolated-build, provenance, vulnerability-response, and rollback requirements proportionate to risk."
+      ],
+      "tier": 1,
+      "url": "https://slsa.dev/spec/v1.2/",
+      "used_by": [
+        "dependency-and-build-supply-chain"
+      ]
+    }
+  ],
+  "verified_on": "2026-07-27"
+}

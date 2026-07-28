@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-scroll-triggered-reveal",
+  "baseline_observation": "The baseline scroll-storytelling probe selected no Expertise Pack and supplied no progressive-enhancement reveal criteria.",
+  "candidate_observation": "The candidate route selects the scroll-triggered reveal Guide with motion intent and requires content availability before enhancement.",
+  "evidence_refs": [
+    "route-replay:normal-scroll-triggered-reveal",
+    "baseline:.maestro/state/work/interactive-web-motion/baseline.json"
+  ]
+}

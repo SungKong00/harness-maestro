@@ -6,23 +6,44 @@ from typing import Any, Callable, Iterable
 
 from . import __version__
 from .errors import MaestroError
-from .registry import registry_digest
-from .util import canonical_json, file_sha256, read_json, sha256_text
+from .registry import load_registry, registry_digest
+from .util import (
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_bytes,
+    sha256_text,
+)
 
 RELEASE_MANIFEST_SCHEMA = "maestro_release_manifest_v1"
 RELEASE_MANIFEST_RESOURCE = "release-manifest.json"
-CODEX_SKILLS = (
+CORE_CODEX_SKILLS = (
     "maestro",
     "maestro-adapter-builder",
     "maestro-govern",
     "maestro-registry-builder",
-    "maestro-product-design",
     "maestro-expertise-builder",
     "maestro-reference-research",
-    "maestro-marketing",
-    "maestro-software-qa",
 )
 _HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def codex_skill_ids(
+    registry: dict[str, list[dict[str, Any]]] | None = None,
+) -> tuple[str, ...]:
+    active_registry = load_registry() if registry is None else registry
+    expertise_skill_ids = sorted(
+        {
+            pack["skill_id"]
+            for pack in active_registry.get("expertise_packs", [])
+            if isinstance(pack, dict)
+            and isinstance(pack.get("skill_id"), str)
+        }
+    )
+    return tuple((*CORE_CODEX_SKILLS, *expertise_skill_ids))
+
+
+CODEX_SKILLS = codex_skill_ids()
 
 
 def _is_sha256(value: Any) -> bool:
@@ -106,6 +127,93 @@ def skill_record(skill_root: Path) -> dict[str, Any]:
     return _tree_record(skill_root.resolve(), include=lambda _relative: True)
 
 
+PROJECT_SKILL_LIFECYCLE_FILES = frozenset(
+    {
+        "activation.json",
+        "maestro-pack.json",
+        "evidence/candidate.json",
+    }
+)
+
+
+def skill_execution_record(skill_root: Path) -> dict[str, Any]:
+    """Hash Host-executable Skill content without project publication metadata."""
+
+    return _tree_record(
+        skill_root.resolve(),
+        include=lambda relative: (
+            relative.as_posix() not in PROJECT_SKILL_LIFECYCLE_FILES
+        ),
+    )
+
+
+def canonical_skill_execution_record(
+    skill_root: Path,
+    *,
+    source_skill_id: str,
+    canonical_skill_id: str,
+) -> dict[str, Any]:
+    """Hash execution content after the two allowed global ID rewrites."""
+
+    root = skill_root.resolve()
+    entries: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if (
+            "__pycache__" in relative.parts
+            or path.name == ".DS_Store"
+            or relative.as_posix() in PROJECT_SKILL_LIFECYCLE_FILES
+        ):
+            continue
+        if path.is_symlink():
+            raise MaestroError(
+                "RELEASE_SOURCE_INVALID",
+                f"Release trees may not contain symlinks: {path}",
+            )
+        if not path.is_file():
+            continue
+        content = path.read_bytes()
+        if source_skill_id != canonical_skill_id and relative.as_posix() in {
+            "SKILL.md",
+            "agents/openai.yaml",
+        }:
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise MaestroError(
+                    "RELEASE_SOURCE_INVALID",
+                    f"Skill identity file is not UTF-8: {path}",
+                ) from exc
+            if relative.as_posix() == "SKILL.md":
+                text = text.replace(
+                    f"name: {source_skill_id}\n",
+                    f"name: {canonical_skill_id}\n",
+                    1,
+                )
+            else:
+                text = text.replace(
+                    f"${source_skill_id}",
+                    f"${canonical_skill_id}",
+                )
+            content = text.encode("utf-8")
+        entries.append(
+            {
+                "path": relative.as_posix(),
+                "bytes": len(content),
+                "sha256": sha256_bytes(content),
+            }
+        )
+    if not entries:
+        raise MaestroError(
+            "RELEASE_SOURCE_INVALID",
+            f"Release tree is empty: {root}",
+        )
+    return {
+        "sha256": sha256_text(canonical_json(entries)),
+        "file_count": len(entries),
+    }
+
+
 def _manifest_identity_payload(value: dict[str, Any]) -> dict[str, Any]:
     return {
         key: item
@@ -118,18 +226,81 @@ def release_id(value: dict[str, Any]) -> str:
     return sha256_text(canonical_json(_manifest_identity_payload(value)))
 
 
+def _source_registry_payload(source_root: Path) -> dict[str, Any]:
+    resources_root = (
+        source_root / "src" / "maestro" / "resources"
+    )
+    registry_root = (
+        resources_root / "registry"
+    )
+
+    def load_group(root: Path) -> list[dict[str, Any]]:
+        if not root.is_dir():
+            raise MaestroError(
+                "RELEASE_SOURCE_INVALID",
+                f"Missing Registry directory: {root}",
+            )
+        return [
+            read_json(path)
+            for path in sorted(root.glob("*.json"))
+            if path.is_file() and not path.is_symlink()
+        ]
+
+    domain_index = read_json(registry_root / "lens-domains.json")
+    registry = {
+        "lenses": load_group(registry_root / "lenses"),
+        "executors": load_group(registry_root / "executors"),
+        "departments": load_group(registry_root / "departments"),
+        "adapters": load_group(registry_root / "adapters"),
+        "expertise_packs": load_group(
+            registry_root / "expertise-packs"
+        ),
+    }
+    return {
+        "domain_index": domain_index,
+        "host_profiles": load_group(resources_root / "hosts"),
+        "registry": registry,
+    }
+
+
+def load_source_registry(
+    source_root: str | Path,
+) -> dict[str, list[dict[str, Any]]]:
+    root = Path(source_root).expanduser().resolve()
+    return _source_registry_payload(root)["registry"]
+
+
+def source_registry_digest(
+    source_root: str | Path,
+    *,
+    registry: dict[str, list[dict[str, Any]]] | None = None,
+) -> str:
+    root = Path(source_root).expanduser().resolve()
+    payload = _source_registry_payload(root)
+    if registry is not None:
+        payload["registry"] = registry
+    return sha256_text(canonical_json(payload))
+
+
 def build_release_manifest(source_root: str | Path) -> dict[str, Any]:
     root = Path(source_root).expanduser().resolve()
     package_root = root / "src" / "maestro"
     skills_root = root / "skills"
+    registry_payload = _source_registry_payload(root)
+    skill_ids = codex_skill_ids(registry_payload["registry"])
     manifest: dict[str, Any] = {
         "schema_version": RELEASE_MANIFEST_SCHEMA,
         "framework_version": __version__,
         "runtime": runtime_record(package_root),
-        "registry": {"sha256": registry_digest()},
+        "registry": {
+            "sha256": source_registry_digest(
+                root,
+                registry=registry_payload["registry"],
+            )
+        },
         "skills": {
             skill_id: skill_record(skills_root / skill_id)
-            for skill_id in CODEX_SKILLS
+            for skill_id in skill_ids
         },
     }
     manifest["release_id"] = release_id(manifest)
@@ -146,7 +317,11 @@ def release_manifest_path(source_root: str | Path) -> Path:
     )
 
 
-def validate_release_manifest(value: Any) -> list[str]:
+def validate_release_manifest(
+    value: Any,
+    *,
+    registry: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[str]:
     if not isinstance(value, dict):
         return ["release manifest must be an object"]
     errors: list[str] = []
@@ -185,7 +360,9 @@ def validate_release_manifest(value: Any) -> list[str]:
             errors.append("release manifest runtime file_count is invalid")
 
     skills = value.get("skills")
-    if not isinstance(skills, dict) or set(skills) != set(CODEX_SKILLS):
+    if not isinstance(skills, dict) or set(skills) != set(
+        codex_skill_ids(registry)
+    ):
         errors.append("release manifest skill set is invalid")
     else:
         for skill_id, record in skills.items():
@@ -220,9 +397,13 @@ def load_packaged_release_manifest() -> dict[str, Any]:
 
 
 def load_source_release_manifest(source_root: str | Path) -> dict[str, Any]:
-    path = release_manifest_path(source_root)
+    root = Path(source_root).expanduser().resolve()
+    path = release_manifest_path(root)
     value = read_json(path)
-    errors = validate_release_manifest(value)
+    errors = validate_release_manifest(
+        value,
+        registry=load_source_registry(root),
+    )
     if errors:
         raise MaestroError("RELEASE_MANIFEST_INVALID", "; ".join(errors))
     return value

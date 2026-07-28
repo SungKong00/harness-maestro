@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-role-aware-onboarding",
+  "baseline_observation": "The current route selected design-brief, visual-hierarchy-layout, and interaction-responsive-accessibility but no Guide required journey entry and exit conditions or a role-situation-state action map.",
+  "candidate_observation": "The candidate adds the information-architecture Guide to the three inherited Guides and requires role, situation, state, evidence, action, entry, exit, recovery, and placement traceability before composition.",
+  "evidence_refs": [
+    "baseline:.maestro/state/work/web-design-expertise/baseline.json",
+    "evaluation:normal-role-aware-onboarding"
+  ]
+}

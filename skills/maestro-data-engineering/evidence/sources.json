@@ -1,0 +1,189 @@
+{
+  "expertise_pack_id": "data-engineering",
+  "schema_version": "maestro_expertise_sources_v1",
+  "sources": [
+    {
+      "authority": "NIST Big Data Interoperability Framework: Volume 6, Reference Architecture",
+      "freshness": "stable",
+      "source_id": "official-nist-nbdra",
+      "supports": [
+        "Choose bounded or unbounded execution, event-time semantics, windows, triggers, watermarks, lateness, and runner capability."
+      ],
+      "tier": 1,
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.1500-6r2.pdf",
+      "used_by": [
+        "pipeline-execution-model"
+      ]
+    },
+    {
+      "authority": "Apache Beam Programming Guide",
+      "freshness": "volatile",
+      "source_id": "official-beam-programming-guide",
+      "supports": [
+        "Choose bounded or unbounded execution, event-time semantics, windows, triggers, watermarks, lateness, and runner capability."
+      ],
+      "tier": 1,
+      "url": "https://beam.apache.org/documentation/programming-guide/",
+      "used_by": [
+        "pipeline-execution-model"
+      ]
+    },
+    {
+      "authority": "Apache Beam Capability Matrix",
+      "freshness": "volatile",
+      "source_id": "official-beam-capability-matrix",
+      "supports": [
+        "Choose bounded or unbounded execution, event-time semantics, windows, triggers, watermarks, lateness, and runner capability."
+      ],
+      "tier": 1,
+      "url": "https://beam.apache.org/documentation/runners/capability-matrix/",
+      "used_by": [
+        "pipeline-execution-model"
+      ]
+    },
+    {
+      "authority": "Apache Avro 1.12.0 Specification",
+      "freshness": "versioned",
+      "source_id": "official-avro-spec",
+      "supports": [
+        "Choose directional writer-reader compatibility, field identity, schema preservation, defaults, promotion, rollout, and replay behavior."
+      ],
+      "tier": 1,
+      "url": "https://avro.apache.org/docs/1.12.0/specification/",
+      "used_by": [
+        "pipeline-schema-contract-evolution"
+      ]
+    },
+    {
+      "authority": "Apache Iceberg Table Specification",
+      "freshness": "versioned",
+      "source_id": "official-iceberg-spec",
+      "supports": [
+        "Choose directional writer-reader compatibility, field identity, schema preservation, defaults, promotion, rollout, and replay behavior."
+      ],
+      "tier": 1,
+      "url": "https://iceberg.apache.org/spec/",
+      "used_by": [
+        "pipeline-schema-contract-evolution"
+      ]
+    },
+    {
+      "authority": "Data on the Web Best Practices: Data Quality Vocabulary",
+      "freshness": "stable",
+      "source_id": "official-w3c-dqv",
+      "supports": [
+        "Define fitness-for-purpose dimensions, metrics, measurements, thresholds, warn or block severity, quarantine, and quality ownership."
+      ],
+      "tier": 1,
+      "url": "https://www.w3.org/TR/vocab-dqv/",
+      "used_by": [
+        "analytical-data-quality-gates"
+      ]
+    },
+    {
+      "authority": "OpenLineage Data Quality Assertions Facet",
+      "freshness": "volatile",
+      "source_id": "official-openlineage-quality",
+      "supports": [
+        "Define fitness-for-purpose dimensions, metrics, measurements, thresholds, warn or block severity, quarantine, and quality ownership."
+      ],
+      "tier": 1,
+      "url": "https://openlineage.io/docs/spec/facets/dataset-facets/data_quality_assertions/",
+      "used_by": [
+        "analytical-data-quality-gates"
+      ]
+    },
+    {
+      "authority": "PROV-O: The PROV Ontology",
+      "freshness": "stable",
+      "source_id": "official-w3c-prov-o",
+      "supports": [
+        "Design stable dataset, job, and run identity plus input-output derivation, runtime and design lineage, versions, and transformation evidence."
+      ],
+      "tier": 1,
+      "url": "https://www.w3.org/TR/prov-o/",
+      "used_by": [
+        "lineage-and-provenance"
+      ]
+    },
+    {
+      "authority": "OpenLineage Object Model",
+      "freshness": "volatile",
+      "source_id": "official-openlineage-object-model",
+      "supports": [
+        "Design stable dataset, job, and run identity plus input-output derivation, runtime and design lineage, versions, and transformation evidence."
+      ],
+      "tier": 1,
+      "url": "https://openlineage.io/docs/spec/object-model/",
+      "used_by": [
+        "lineage-and-provenance"
+      ]
+    },
+    {
+      "authority": "OpenLineage Naming Conventions",
+      "freshness": "volatile",
+      "source_id": "official-openlineage-naming",
+      "supports": [
+        "Design stable dataset, job, and run identity plus input-output derivation, runtime and design lineage, versions, and transformation evidence."
+      ],
+      "tier": 1,
+      "url": "https://openlineage.io/docs/spec/naming/",
+      "used_by": [
+        "lineage-and-provenance"
+      ]
+    },
+    {
+      "authority": "Apache Airflow Backfill",
+      "freshness": "versioned",
+      "source_id": "official-airflow-backfill",
+      "supports": [
+        "Plan interval or partition scope, reprocessing mode, deterministic output, concurrency, ordering, dry run, self-check, and publication for historical correction."
+      ],
+      "tier": 1,
+      "url": "https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/backfill.html",
+      "used_by": [
+        "backfill-and-historical-correction"
+      ]
+    },
+    {
+      "authority": "Apache Airflow Best Practices",
+      "freshness": "versioned",
+      "source_id": "official-airflow-best-practices",
+      "supports": [
+        "Plan interval or partition scope, reprocessing mode, deterministic output, concurrency, ordering, dry run, self-check, and publication for historical correction."
+      ],
+      "tier": 1,
+      "url": "https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html",
+      "used_by": [
+        "backfill-and-historical-correction"
+      ]
+    },
+    {
+      "authority": "Apache Flink 2.3 Fault Tolerance via State Snapshots",
+      "freshness": "versioned",
+      "source_id": "official-flink-fault-tolerance",
+      "supports": [
+        "Choose replayable sources, state and offset snapshots, checkpoint or savepoint use, delivery guarantee scope, and sink transaction or idempotence."
+      ],
+      "tier": 1,
+      "url": "https://nightlies.apache.org/flink/flink-docs-release-2.3/docs/learn-flink/fault_tolerance/",
+      "used_by": [
+        "state-recovery-and-delivery-semantics"
+      ]
+    },
+    {
+      "authority": "Apache Kafka 4.2 Design: Message Delivery Semantics",
+      "freshness": "versioned",
+      "source_id": "official-kafka-semantics",
+      "supports": [
+        "Choose replayable sources, state and offset snapshots, checkpoint or savepoint use, delivery guarantee scope, and sink transaction or idempotence."
+      ],
+      "tier": 1,
+      "url": "https://kafka.apache.org/42/design/design/",
+      "used_by": [
+        "state-recovery-and-delivery-semantics"
+      ]
+    }
+  ],
+  "verified_on": "2026-07-27"
+}

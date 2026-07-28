@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "case_id": "normal-tenant-authorization",
+      "expected_guides": [
+        "threat-model-and-security-requirements",
+        "authorization-and-tenant-isolation"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "security-engineering",
+      "forbidden_behaviors": [
+        "Treats client-supplied tenant IDs as trusted policy context"
+      ],
+      "goal": "멀티테넌트 API의 인가와 테넌트 격리 구조를 설계해줘",
+      "observable_criteria": [
+        "Selects threat and tenant-authorization Guides",
+        "Requires server-bound tenant context across data paths"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "normal-session-secrets",
+      "expected_guides": [
+        "authentication-and-session-lifecycle",
+        "secrets-and-key-lifecycle"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "security-engineering",
+      "forbidden_behaviors": [
+        "Treats authentication as authorization proof"
+      ],
+      "goal": "OAuth 로그인 세션의 재인증, 폐기, 비밀정보 교체 정책을 설계해줘",
+      "observable_criteria": [
+        "Selects session and secret lifecycle Guides",
+        "Requires current protocol and secret-store evidence"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "edge-untrusted-upload",
+      "expected_guides": [
+        "threat-model-and-security-requirements",
+        "untrusted-data-and-output-controls"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "security-engineering",
+      "forbidden_behaviors": [
+        "Presents a denylist as universal input protection"
+      ],
+      "goal": "사용자 파일 업로드와 압축 해제 경계의 위협 모델과 입력 보안을 설계해줘",
+      "observable_criteria": [
+        "Selects threat and untrusted-data Guides",
+        "Names parser, sink, size, recursion, and resource limits"
+      ],
+      "stratum": "edge"
+    },
+    {
+      "case_id": "non-trigger-visual-design",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks product-design routing"
+      ],
+      "goal": "랜딩 페이지의 타이포그래피와 시각적 위계를 개선해줘",
+      "observable_criteria": [
+        "Does not select the security-engineering Pack for product design"
+      ],
+      "stratum": "non-trigger"
+    },
+    {
+      "case_id": "overlap-security-test-plan",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks software-qa routing for test planning"
+      ],
+      "goal": "인증 기능의 보안 테스트 전략과 회귀 계획을 작성해줘",
+      "observable_criteria": [
+        "Does not select the security-engineering Pack when test strategy is the dominant request"
+      ],
+      "stratum": "overlap"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "221c8d2f7337e1158681e4241a17732830a486c53a6ca959db829ffe9611a7fa"
+  },
+  "expertise_pack_id": "security-engineering",
+  "schema_version": "maestro_expertise_eval_v2"
+}

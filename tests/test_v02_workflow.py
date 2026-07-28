@@ -354,6 +354,55 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             write_json(receipt_path, receipt)
             self.assertEqual("recorded", record_run(repo, receipt_path)["status"])
 
+    def test_stale_project_baseline_defers_management_but_keeps_audit_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            lock_path = repo / ".maestro/lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["registry"]["sha256"] = "0" * 64
+            write_json(lock_path, lock)
+            receipt_path = Path(temporary) / "receipt.json"
+            write_json(
+                receipt_path,
+                {
+                    "run_id": "stale-baseline-receipt",
+                    "risk": "low",
+                    "route_depth": "fast",
+                    "selected_lenses": [],
+                    "executor_runs": 2,
+                    "primary_executor_id": "implementation-engineer",
+                    "executor_ids": [
+                        "implementation-engineer",
+                        "verifier",
+                    ],
+                    "outcome": "completed",
+                    "evidence_refs": ["tests:stale-baseline"],
+                    "duration_ms": 25,
+                    "tokens": None,
+                    "correction_count": 0,
+                    "agent_calls": 2,
+                    "verifier_result": "passed",
+                    "command_artifact_ref": "tests:stale-baseline",
+                },
+            )
+
+            result = record_run(repo, receipt_path)
+
+            self.assertEqual("recorded", result["status"])
+            self.assertEqual("stale", result["recording_baseline"]["status"])
+            self.assertEqual(
+                "deferred",
+                result["management_check"]["status"],
+            )
+            self.assertEqual(
+                "project_baseline_stale",
+                result["management_check"]["deferred_reason"],
+            )
+
     def test_active_convention_requires_content_addressed_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

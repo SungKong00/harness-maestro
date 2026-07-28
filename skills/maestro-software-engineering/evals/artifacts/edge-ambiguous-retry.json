@@ -1,0 +1,10 @@
+{
+  "baseline_observation": "The baseline selected only generic Lenses and no Expertise Pack for the target engineering decisions.",
+  "candidate_observation": "Fresh-context evaluation and deterministic route replay matched the frozen Pack, Guide, and coexistence expectation without granting authority.",
+  "case_id": "edge-ambiguous-retry",
+  "evidence_refs": [
+    "route-replay:software-engineering:edge-ambiguous-retry",
+    "fresh-evaluation:software-engineering:2026-07-27"
+  ],
+  "schema_version": "maestro_expertise_case_artifact_v1"
+}

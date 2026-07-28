@@ -23,7 +23,8 @@ from maestro.decisions import (
     validate_specialist_packet,
 )
 from maestro.errors import MaestroError
-from maestro.registry import route_goal
+from maestro.planning import route_goal_v2
+from maestro.registry import resolve_request_contract, route_goal
 from maestro.util import canonical_json, sha256_text
 
 
@@ -157,6 +158,71 @@ class RequestBoundaryTests(unittest.TestCase):
                     route["binding"]["executor"],
                 )
 
+    def test_external_write_prohibition_does_not_revoke_local_implementation(
+        self,
+    ) -> None:
+        goal = (
+            "로컬 코드에서 대시보드 전환 기능을 구현해줘. "
+            "커밋·푸시·원격 변경은 하지 마."
+        )
+
+        route = route_goal(
+            goal,
+            "low",
+            intent="implementation",
+        )
+        plan = route_goal_v2(
+            goal,
+            "low",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+
+        self.assertEqual("implementation", route["intent"])
+        self.assertEqual(
+            ["repository_write"],
+            plan["task_contract"]["allowed_side_effects"],
+        )
+        self.assertEqual(
+            ["git_commit", "remote_write"],
+            plan["task_contract"]["forbidden_side_effects"],
+        )
+
+    def test_external_prohibition_does_not_cross_sentence_boundary(
+        self,
+    ) -> None:
+        request_contract = resolve_request_contract(
+            "코드는 수정하지 마. 기존 커밋 기록을 검토해줘.",
+            "auto",
+        )
+
+        self.assertEqual(
+            "forbidden",
+            request_contract["side_effect_policy"],
+        )
+        self.assertEqual([], request_contract["forbidden_side_effects"])
+
+    def test_contrastive_external_prohibition_keeps_local_write_open(
+        self,
+    ) -> None:
+        for goal in (
+            "코드는 수정하되 커밋과 푸시는 하지 마.",
+            "Modify the local files, but do not commit or push.",
+        ):
+            with self.subTest(goal=goal):
+                request_contract = resolve_request_contract(
+                    goal,
+                    "implementation",
+                )
+                self.assertEqual(
+                    "direct",
+                    request_contract["side_effect_policy"],
+                )
+                self.assertEqual(
+                    ["git_commit", "remote_write"],
+                    request_contract["forbidden_side_effects"],
+                )
+
     def test_english_staged_request_requires_decision_workflow(self) -> None:
         with self.assertRaises(MaestroError) as raised:
             route_goal(
@@ -179,6 +245,36 @@ class RequestBoundaryTests(unittest.TestCase):
 
 
 class DecisionPlanTests(unittest.TestCase):
+    def test_every_selected_product_design_guide_is_assigned(self) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 정보 구조와 사용자 흐름을 판단한 후 구현해줘",
+            "medium",
+        )
+
+        selected = set(plan["expertise"]["selected_guide_ids"])
+        assigned = {
+            guide_id
+            for specialist in plan["specialist_contracts"]
+            for guide_id in specialist["decision_guide_ids"]
+        }
+        ux = next(
+            specialist
+            for specialist in plan["specialist_contracts"]
+            if specialist["specialist_id"] == "ux-product"
+        )
+
+        self.assertIn(
+            "information-architecture-and-user-flow",
+            selected,
+        )
+        self.assertIn(
+            "information-architecture-and-user-flow",
+            ux["decision_guide_ids"],
+        )
+        self.assertEqual(selected, assigned)
+        self.assertEqual("PASS", validate_decision_plan(plan)["status"])
+
     def test_published_schema_and_product_skill_keep_decision_read_only(self) -> None:
         schema = json.loads(
             (

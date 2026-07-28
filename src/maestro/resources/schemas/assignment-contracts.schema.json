@@ -318,6 +318,8 @@
         "selected_lens_cards",
         "decision_guide_ids",
         "expertise_load",
+        "convention_selection",
+        "research_context",
         "document_refs",
         "artifact_refs",
         "dependency_packets",
@@ -480,6 +482,103 @@
         "convention_selection": {
           "$ref": "#/$defs/conventionSelection"
         },
+        "research_context": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "schema_version",
+                "evidence_digest",
+                "request_binding",
+                "question",
+                "decision_needed",
+                "target_context",
+                "date_checked",
+                "depth",
+                "source_plan",
+                "lanes",
+                "artifacts_checked",
+                "sources",
+                "claims",
+                "synthesis"
+              ],
+              "properties": {
+                "schema_version": {
+                  "const": "maestro_assignment_research_context_v1"
+                },
+                "evidence_digest": {
+                  "$ref": "#/$defs/digest"
+                },
+                "request_binding": {
+                  "type": "object"
+                },
+                "question": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "decision_needed": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "target_context": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "date_checked": {
+                  "$ref": "#/$defs/line"
+                },
+                "depth": {
+                  "enum": [
+                    "quick",
+                    "normal",
+                    "deep"
+                  ]
+                },
+                "source_plan": {
+                  "type": "object"
+                },
+                "lanes": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "artifacts_checked": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "sources": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "claims": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "synthesis": {
+                  "type": "object"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "document_refs": {
           "type": "array",
           "maxItems": 8,
@@ -503,6 +602,7 @@
             "required": [
               "ref_id",
               "assignment_id",
+              "projection_digest",
               "packet"
             ],
             "properties": {
@@ -511,6 +611,9 @@
               },
               "assignment_id": {
                 "$ref": "#/$defs/id"
+              },
+              "projection_digest": {
+                "$ref": "#/$defs/digest"
               },
               "packet": {
                 "type": "object"
@@ -794,6 +897,13 @@
           "items": {
             "$ref": "#/$defs/conventionDisposition"
           }
+        },
+        "research_dispositions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/researchDisposition"
+          }
         }
       }
     },
@@ -939,6 +1049,34 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "researchDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "disposition",
+        "reason",
+        "evidence_refs"
+      ],
+      "properties": {
+        "claim_id": {
+          "$ref": "#/$defs/line"
+        },
+        "disposition": {
+          "enum": [
+            "applied",
+            "not_applicable",
+            "conflict"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
         }
       }
     }

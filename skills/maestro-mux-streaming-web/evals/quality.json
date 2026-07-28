@@ -1,0 +1,166 @@
+{
+  "schema_version": "maestro_expertise_quality_eval_v1",
+  "expertise_pack_id": "mux-streaming-web",
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "kind": "fresh-context",
+    "authoring_run_ref": "authoring:mux-streaming-web:2026-07-27",
+    "evaluation_run_ref": "route-replay:mux-streaming-web:2026-07-27"
+  },
+  "cases": [
+    {
+      "case_id": "normal-signed-vod",
+      "artifact": {
+        "path": "evals/artifacts/normal-signed-vod.json",
+        "sha256": "0eaec9d0d4195cf6570fa29cb15b76e9c3b09da776c13270472a00047b201119"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects Mux playback and secure-playback criteria for signed VOD",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-signed-vod.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Routes signed playback as visual design without a protected token boundary",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-signed-vod.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-live-webhook",
+      "artifact": {
+        "path": "evals/artifacts/normal-live-webhook.json",
+        "sha256": "2d7607e639b8242217857efa5ae58a4e45eb141670824f7908ff36af4fcd2869"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects live lifecycle and webhook synchronization with the playback boundary",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-live-webhook.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Infers authoritative live state only from browser player events",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-live-webhook.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-expired-token-duplicate-event",
+      "artifact": {
+        "path": "evals/artifacts/edge-expired-token-duplicate-event.json",
+        "sha256": "a9d04cb865a4465736d0e7fcd188d26b941c69523d9d4b0507665b67620d60de"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects the four bounded Guides needed for concurrent token and live-event failures",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-expired-token-duplicate-event.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects more than four Guides or omits token and webhook safety",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-expired-token-duplicate-event.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-playback-observability",
+      "artifact": {
+        "path": "evals/artifacts/normal-playback-observability.json",
+        "sha256": "2053f2aa8f8d628e769d956f7b970784602661c837e63b8daadb37d6b3629615"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects playback observability and its player integration boundary",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-playback-observability.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats provider playback health as a generic business conversion metric",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-playback-observability.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-current-react-api",
+      "artifact": {
+        "path": "evals/artifacts/edge-current-react-api.json",
+        "sha256": "5c5360b7fbd849b9e2575318890c3f426211e8a4056e2af84382925d1691252c"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Opens contextual research for current Mux React compatibility",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-current-react-api.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Claims current SDK compatibility from the frozen Pack alone",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-current-react-api.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-furniture-video",
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-furniture-video.json",
+        "sha256": "61bd8fa8fe45ce2876201959c5f0daba742b570b45d0011e177e7176b1db2e4e"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Keeps generic landing-page video work outside the Mux Pack",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/non-trigger-furniture-video.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects Mux expertise from the generic word video",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/non-trigger-furniture-video.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-player-visual-layout",
+      "artifact": {
+        "path": "evals/artifacts/overlap-player-visual-layout.json",
+        "sha256": "4e5bb0df31891995d3dbbf002633c7f17b2befc97c2fd3e79c622f49ade5fd7f"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Lets product-design own a visual-only request around an already integrated player",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/overlap-player-visual-layout.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Lets the vendor noun Mux override the explicit visual design decision family",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/overlap-player-visual-layout.json"
+        }
+      ],
+      "verdict": "pass"
+    }
+  ]
+}

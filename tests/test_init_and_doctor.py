@@ -439,6 +439,61 @@ class InitSafetyTests(unittest.TestCase):
 
 
 class DoctorTests(unittest.TestCase):
+    def test_plan_directory_and_status_lifecycle_is_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            active = repo / "docs/plans/active/work.md"
+            completed = repo / "docs/plans/completed/history.md"
+            active.parent.mkdir(parents=True)
+            completed.parent.mkdir(parents=True)
+            active.write_text(
+                canonical_document(
+                    "active-work-plan",
+                    status="active",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+            completed.write_text(
+                canonical_document(
+                    "completed-work-plan",
+                    status="archived",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+
+            valid = check_by_id(
+                doctor_report(repo),
+                "DOC_PLAN_LIFECYCLE",
+            )
+            self.assertEqual("PASS", valid["status"])
+
+            active.write_text(
+                active.read_text(encoding="utf-8").replace(
+                    "status: active",
+                    "status: archived",
+                ),
+                encoding="utf-8",
+            )
+            completed.write_text(
+                completed.read_text(encoding="utf-8").replace(
+                    "type: plan",
+                    "type: analysis",
+                ),
+                encoding="utf-8",
+            )
+            invalid = check_by_id(
+                doctor_report(repo),
+                "DOC_PLAN_LIFECYCLE",
+            )
+            self.assertEqual("FAIL", invalid["status"])
+            self.assertIn("docs/plans/active/work.md", invalid["evidence"])
+            self.assertIn(
+                "docs/plans/completed/history.md",
+                invalid["evidence"],
+            )
+
     def test_fresh_initialization_passes_doctor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"

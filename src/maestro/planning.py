@@ -8,10 +8,16 @@ from typing import Any
 
 from .errors import MaestroError
 from .expertise import select_expertise
+from .expertise_routing import (
+    enforce_conflict_policy,
+    require_reroute_lineage,
+)
+from .research import require_completed_research_bundle
 from .registry import (
     _model_route,
     load_registry,
     registry_digest,
+    resolve_request_contract,
     route_goal,
     validate_registry,
 )
@@ -105,6 +111,7 @@ MODEL_ROUTE_FIELDS = {
 TASK_CONTRACT_FIELDS = {
     "objective",
     "allowed_side_effects",
+    "forbidden_side_effects",
     "terminal_condition",
     "stop_conditions",
     "limits",
@@ -505,7 +512,9 @@ def _review_assignments(
 def compile_route_v2(
     route_v1: dict[str, Any],
     *,
-    research_evidence_digest: str | None = None,
+    route_hints: dict[str, Any] | None = None,
+    prior_route_plan: dict[str, Any] | None = None,
+    research_evidence: dict[str, Any] | None = None,
     repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Normalize a v1 route into a bounded, host-executed Assignment DAG."""
@@ -519,12 +528,29 @@ def compile_route_v2(
     expertise, _ = select_expertise(
         route_v1["goal"],
         intent=route_v1["intent"],
-        research_evidence_digest=research_evidence_digest,
+        route_hints=route_hints,
         repo_path=repo_path,
     )
+    enforce_conflict_policy(expertise, risk=route_v1["risk"])
+    if research_evidence is not None:
+        validation = require_completed_research_bundle(
+            research_evidence,
+            goal=route_v1["goal"],
+            expertise=expertise,
+            repo_path=repo_path,
+        )
+        expertise, _ = select_expertise(
+            route_v1["goal"],
+            intent=route_v1["intent"],
+            route_hints=route_hints,
+            research_evidence_digest=validation["artifact_digest"],
+            repo_path=repo_path,
+        )
+        enforce_conflict_policy(expertise, risk=route_v1["risk"])
     route_context = copy.deepcopy(route_v1)
     if (
-        expertise["selected_pack_ids"]
+        route_hints is not None
+        or expertise["selected_pack_ids"]
         or expertise["research_requirement"]["mode"] != "reuse"
     ):
         route_context["expertise"] = expertise
@@ -656,6 +682,10 @@ def compile_route_v2(
             if mutation_owner is not None
             else []
         ),
+        "forbidden_side_effects": resolve_request_contract(
+            route_v1["goal"],
+            route_v1["intent"],
+        )["forbidden_side_effects"],
         "terminal_condition": "all_terminal_assignments_complete",
         "stop_conditions": [
             "required_gate_failed",
@@ -681,6 +711,11 @@ def compile_route_v2(
     plan["mutation_owner_assignment_id"] = mutation_owner
     plan["plan_id"] = _plan_id(plan)
 
+    require_reroute_lineage(
+        route_hints,
+        prior_plan=prior_route_plan,
+        current_plan=plan,
+    )
     require_valid_route_v2(plan, repo_path=repo_path)
     return plan
 
@@ -693,9 +728,11 @@ def route_goal_v2(
     conflict_evidence: str | None = None,
     host_id: str = "codex",
     intent: str = "auto",
-    research_evidence_digest: str | None = None,
+    research_evidence: dict[str, Any] | None = None,
     decision_authorized: bool = False,
     repo_path: str | Path | None = None,
+    route_hints: dict[str, Any] | None = None,
+    prior_route_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     route = route_goal(
         goal,
@@ -709,7 +746,9 @@ def route_goal_v2(
     )
     return compile_route_v2(
         route,
-        research_evidence_digest=research_evidence_digest,
+        route_hints=route_hints,
+        prior_route_plan=prior_route_plan,
+        research_evidence=research_evidence,
         repo_path=repo_path,
     )
 
@@ -718,6 +757,7 @@ def validate_route_v2(
     plan: Any,
     *,
     repo_path: str | Path | None = None,
+    research_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return deterministic structural and cross-contract diagnostics."""
 
@@ -905,6 +945,7 @@ def validate_route_v2(
         )
     expertise = plan.get("expertise")
     expertise_gate: str | None = "not-required"
+    research_evidence_ready = False
     if "expertise" in plan and not isinstance(expertise, dict):
         diagnostics.append(
             _diagnostic(
@@ -927,11 +968,17 @@ def validate_route_v2(
             else None
         )
         try:
+            route_hints = expertise.get("route_hints")
             expected_expertise, _ = select_expertise(
                 plan.get("goal", ""),
                 intent=plan.get("intent", ""),
+                route_hints=route_hints,
                 research_evidence_digest=evidence_digest,
                 repo_path=repo_path,
+            )
+            enforce_conflict_policy(
+                expected_expertise,
+                risk=plan.get("risk", ""),
             )
         except MaestroError:
             expected_expertise = None
@@ -946,6 +993,56 @@ def validate_route_v2(
                     ),
                 )
             )
+        if expertise_gate == "satisfied":
+            if research_bundle is not None:
+                try:
+                    research_validation = require_completed_research_bundle(
+                        research_bundle,
+                        goal=plan.get("goal", ""),
+                        expertise=expertise,
+                        repo_path=repo_path,
+                    )
+                except (MaestroError, OSError, TypeError, ValueError) as exc:
+                    diagnostics.append(
+                        _diagnostic(
+                            "ADAG_RESEARCH_EVIDENCE_INVALID",
+                            "expertise.research_requirement",
+                            str(exc),
+                        )
+                    )
+                else:
+                    if evidence_digest != research_validation["artifact_digest"]:
+                        diagnostics.append(
+                            _diagnostic(
+                                "ADAG_RESEARCH_EVIDENCE_DIGEST_MISMATCH",
+                                "expertise.research_requirement.evidence_digest",
+                                (
+                                    "The satisfied research gate must bind the "
+                                    "exact validated ResearchBundle digest."
+                                ),
+                            )
+                        )
+                    else:
+                        research_evidence_ready = True
+        elif research_bundle is not None:
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_RESEARCH_EVIDENCE_UNEXPECTED",
+                    "research_bundle",
+                    (
+                        "ResearchBundle input is accepted only for a plan "
+                        "whose research gate is already satisfied."
+                    ),
+                )
+            )
+    elif research_bundle is not None:
+        diagnostics.append(
+            _diagnostic(
+                "ADAG_RESEARCH_EVIDENCE_UNEXPECTED",
+                "research_bundle",
+                "ResearchBundle input requires a selected Expertise research gate.",
+            )
+        )
     expected_source = _reconstruct_source_route(plan)
     preserved_source = _source_route_projection(plan)
     if expected_source is None:
@@ -1692,7 +1789,20 @@ def validate_route_v2(
             )
         limits = task_contract.get("limits")
         allowed = task_contract.get("allowed_side_effects")
+        forbidden = task_contract.get("forbidden_side_effects")
         expected_allowed = ["repository_write"] if expected_owner else []
+        expected_forbidden = (
+            resolve_request_contract(
+                plan["goal"],
+                plan["intent"],
+            )["forbidden_side_effects"]
+            if (
+                isinstance(plan.get("goal"), str)
+                and isinstance(plan.get("intent"), str)
+                and plan["intent"] in {"implementation", "review", "research"}
+            )
+            else None
+        )
         if task_contract.get("objective") != plan.get("goal"):
             diagnostics.append(
                 _diagnostic(
@@ -1728,6 +1838,17 @@ def validate_route_v2(
                     "task_contract.allowed_side_effects",
                     "Task side effects must match the unique mutation owner.",
                     owners,
+                )
+            )
+        if (
+            expected_forbidden is not None
+            and forbidden != expected_forbidden
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_TASK_CONTRACT_INVALID",
+                    "task_contract.forbidden_side_effects",
+                    "External-effect prohibitions must match the routed request.",
                 )
             )
         if not isinstance(limits, dict):
@@ -1835,7 +1956,16 @@ def validate_route_v2(
         "status": "PASS" if not diagnostics else "FAIL",
         "execution_status": (
             "RESEARCH_REQUIRED"
-            if not diagnostics and expertise_gate == "open"
+            if (
+                not diagnostics
+                and (
+                    expertise_gate == "open"
+                    or (
+                        expertise_gate == "satisfied"
+                        and not research_evidence_ready
+                    )
+                )
+            )
             else "READY"
             if not diagnostics
             else "INVALID"

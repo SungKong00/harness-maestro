@@ -15,7 +15,10 @@ from .documents import (
     scan_document_paths,
 )
 from .errors import MaestroError
-from .expertise import load_expertise_catalog
+from .expertise import (
+    load_expertise_catalog,
+    project_expertise_storage_status,
+)
 from .host import host_installation_checks
 from .project import (
     AGENTS_BEGIN,
@@ -545,6 +548,40 @@ def doctor_report(
             )
         )
         try:
+            storage = project_expertise_storage_status(repo)
+            storage_status = (
+                "FAIL"
+                if storage["active_conflicts"]
+                else (
+                    "WARN"
+                    if (
+                        storage["globally_superseded"]
+                        or storage["inactive_publications"]
+                    )
+                    else "PASS"
+                )
+            )
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_STORAGE",
+                    storage_status,
+                    (
+                        "active_conflicts="
+                        f"{storage['active_conflicts']} "
+                        "globally_superseded="
+                        f"{storage['globally_superseded']} "
+                        "inactive_publications="
+                        f"{storage['inactive_publications']}"
+                    ),
+                    (
+                        "Preview `maestro expertise reconcile`; archive only "
+                        "safe entries and request an owner decision for active "
+                        "content that differs from global Expertise."
+                    )
+                    if storage_status != "PASS"
+                    else "",
+                )
+            )
             catalog = load_expertise_catalog(repo)
             project_packs = [
                 pack
@@ -800,6 +837,36 @@ def doctor_report(
             f"invalid={invalid_values}",
             "Use the documented status and authority vocabulary."
             if invalid_values
+            else "",
+        )
+    )
+    plan_lifecycle_issues: dict[str, list[str]] = {}
+    for path, metadata in indexed_metadata:
+        expected: tuple[str, str] | None = None
+        if path.startswith("docs/plans/active/"):
+            expected = ("plan", "active")
+        elif path.startswith("docs/plans/completed/"):
+            expected = ("plan", "archived")
+        if expected is None:
+            continue
+        expected_type, expected_status = expected
+        problems = []
+        if metadata.get("type") != expected_type:
+            problems.append(f"type must equal {expected_type!r}")
+        if metadata.get("status") != expected_status:
+            problems.append(f"status must equal {expected_status!r}")
+        if problems:
+            plan_lifecycle_issues[path] = problems
+    checks.append(
+        _check(
+            "DOC_PLAN_LIFECYCLE",
+            "FAIL" if plan_lifecycle_issues else "PASS",
+            f"issues={plan_lifecycle_issues}",
+            (
+                "Keep active plans typed active under docs/plans/active and "
+                "move completed plans to docs/plans/completed with archived status."
+            )
+            if plan_lifecycle_issues
             else "",
         )
     )

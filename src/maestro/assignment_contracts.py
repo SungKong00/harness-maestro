@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
+from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -9,6 +12,12 @@ from .documents import select_documents
 from .errors import MaestroError
 from .planning import validate_route_v2
 from .registry import load_registry
+from .research import (
+    expected_research_binding,
+    project_research_context,
+    require_completed_research_bundle,
+    validate_research_bundle,
+)
 from .util import (
     canonical_json,
     ensure_repo,
@@ -23,6 +32,17 @@ FINDING_PACKET_VERSION = "maestro_finding_packet_v2"
 TERMINAL_PACKET_VERSION = "maestro_terminal_packet_v1"
 VALIDATION_VERSION = "maestro_assignment_contract_validation_v1"
 CONVENTION_SELECTION_VERSION = "maestro_convention_selection_v1"
+_ASSIGNMENT_SCHEMA_RESOURCE = "schemas/assignment-contracts.schema.json"
+_OUTPUT_SCHEMA_UNSUPPORTED_KEYWORDS = {
+    "$schema",
+    "format",
+    "maxItems",
+    "maxLength",
+    "minItems",
+    "minLength",
+    "pattern",
+    "uniqueItems",
+}
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
@@ -114,6 +134,235 @@ def _validation(
         "packet_digest": _digest(value),
         "writes_performed": False,
     }
+
+
+@lru_cache(maxsize=1)
+def _assignment_schema_document() -> dict[str, Any]:
+    """Load the packaged wire schema that the runtime validators implement."""
+
+    try:
+        item = resources.files("maestro.resources").joinpath(
+            _ASSIGNMENT_SCHEMA_RESOURCE
+        )
+        value = json.loads(item.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_UNAVAILABLE",
+            "The packaged Assignment Packet schema cannot be loaded.",
+        ) from exc
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("$defs"), dict)
+    ):
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_INVALID",
+            "The packaged Assignment Packet schema has no usable definitions.",
+        )
+    return value
+
+
+def _schema_definition_refs(value: Any) -> set[str]:
+    refs: set[str] = set()
+    if isinstance(value, dict):
+        ref = value.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            refs.add(ref.removeprefix("#/$defs/"))
+        for item in value.values():
+            refs.update(_schema_definition_refs(item))
+    elif isinstance(value, list):
+        for item in value:
+            refs.update(_schema_definition_refs(item))
+    return refs
+
+
+def _closed_packet_output_schema(definition_id: str) -> dict[str, Any]:
+    document = _assignment_schema_document()
+    available = document["$defs"]
+    pending = [definition_id]
+    selected: dict[str, Any] = {}
+    while pending:
+        current = pending.pop()
+        if current in selected:
+            continue
+        definition = available.get(current)
+        if not isinstance(definition, dict):
+            raise MaestroError(
+                "PACKET_OUTPUT_SCHEMA_INVALID",
+                f"Missing packaged Assignment Packet definition: {current}.",
+            )
+        selected[current] = copy.deepcopy(definition)
+        pending.extend(
+            sorted(
+                _schema_definition_refs(definition) - set(selected),
+                reverse=True,
+            )
+        )
+    root = selected.pop(definition_id)
+    return _provider_output_schema(
+        {
+            "$schema": document.get(
+                "$schema",
+                "https://json-schema.org/draft/2020-12/schema",
+            ),
+            "title": "Harness Maestro Assignment final-answer Packet",
+            "description": (
+                "Return exactly one JSON object. Markdown fences, commentary, "
+                "and fields outside this closed schema are not allowed."
+            ),
+            **root,
+            "$defs": selected,
+        }
+    )
+
+
+def _provider_output_schema(value: Any) -> Any:
+    """Compile the wire schema to the App Server structured-output subset."""
+
+    if isinstance(value, list):
+        return [_provider_output_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return copy.deepcopy(value)
+    compiled: dict[str, Any] = {}
+    for key, item in value.items():
+        if key in _OUTPUT_SCHEMA_UNSUPPORTED_KEYWORDS:
+            continue
+        if key == "const":
+            compiled["enum"] = [copy.deepcopy(item)]
+            continue
+        if key == "oneOf":
+            compiled["anyOf"] = _provider_output_schema(item)
+            continue
+        compiled[key] = _provider_output_schema(item)
+    return compiled
+
+
+def assignment_output_schema(projection: Any) -> dict[str, Any]:
+    """Derive the exact final-answer JSON Schema for one AssignmentInput."""
+
+    projected = _projection_value(projection)
+    if (
+        not isinstance(projected, dict)
+        or projected.get("schema_version") != ASSIGNMENT_INPUT_VERSION
+        or not isinstance(projected.get("plan_id"), str)
+        or not isinstance(projected.get("assignment_id"), str)
+        or not isinstance(projected.get("assignment_contract"), dict)
+    ):
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_INVALID",
+            "A valid AssignmentInput is required to derive its output schema.",
+        )
+    assignment = projected["assignment_contract"]
+    output_packet = assignment.get("output_packet")
+    if output_packet == "FindingPacket":
+        definition_id = "findingPacket"
+    elif isinstance(output_packet, str) and output_packet.strip():
+        definition_id = "terminalPacket"
+    else:
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_INVALID",
+            "The Assignment output Packet ID is missing.",
+        )
+
+    schema = _closed_packet_output_schema(definition_id)
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_INVALID",
+            "The packaged Assignment Packet definition has no properties.",
+        )
+    properties["plan_id"] = {"enum": [projected["plan_id"]]}
+    properties["assignment_id"] = {
+        "enum": [projected["assignment_id"]],
+    }
+    if definition_id == "findingPacket":
+        lens_ids = assignment.get("lens_ids")
+        if (
+            not isinstance(lens_ids, list)
+            or not lens_ids
+            or not all(isinstance(item, str) for item in lens_ids)
+        ):
+            raise MaestroError(
+                "PACKET_OUTPUT_SCHEMA_INVALID",
+                "A FindingPacket output schema requires the exact Assignment Lens set.",
+            )
+        properties["lens_ids"] = {
+            "type": "array",
+            "items": {"enum": copy.deepcopy(lens_ids)},
+        }
+        projected_refs, _ = _projection_refs(projected)
+        projected_artifacts, _ = _projection_artifacts(projected)
+        finding = schema["$defs"].get("finding")
+        if isinstance(finding, dict) and isinstance(
+            finding.get("properties"),
+            dict,
+        ):
+            finding["properties"]["owner_lens_id"] = {
+                "enum": copy.deepcopy(lens_ids),
+            }
+            if projected_refs:
+                finding["properties"]["evidence_refs"] = {
+                    "type": "array",
+                    "items": {"enum": sorted(projected_refs)},
+                }
+        coverage_gap = schema["$defs"].get("coverageGap")
+        if isinstance(coverage_gap, dict) and isinstance(
+            coverage_gap.get("properties"),
+            dict,
+        ):
+            coverage_properties = coverage_gap["properties"]
+            if projected_artifacts:
+                coverage_properties["affected_artifact"] = {
+                    "enum": sorted(projected_artifacts),
+                }
+            if projected_refs:
+                coverage_properties["evidence_refs"] = {
+                    "type": "array",
+                    "items": {"enum": sorted(projected_refs)},
+                }
+            registered_lenses = {
+                item["lens_id"] for item in load_registry()["lenses"]
+            }
+            unselected_lenses = sorted(registered_lenses - set(lens_ids))
+            suggested_options: list[dict[str, Any]] = [{"type": "null"}]
+            if unselected_lenses:
+                suggested_options.insert(
+                    0,
+                    {"enum": unselected_lenses},
+                )
+            coverage_properties["suggested_lens"] = {
+                "anyOf": suggested_options,
+            }
+        if projected_refs:
+            properties["inspected"] = {
+                "type": "array",
+                "items": {"enum": sorted(projected_refs)},
+            }
+    else:
+        properties["packet_type"] = {"enum": [output_packet]}
+        mutation_owner = assignment.get("mutation_owner") is True
+        selection = projected.get("convention_selection")
+        selected_conventions = (
+            selection.get("selected_conventions")
+            if isinstance(selection, dict)
+            and isinstance(selection.get("selected_conventions"), list)
+            else []
+        )
+        research_context = projected.get("research_context")
+        required = schema.get("required")
+        if not isinstance(required, list):
+            raise MaestroError(
+                "PACKET_OUTPUT_SCHEMA_INVALID",
+                "The terminal Packet output schema has no required field set.",
+            )
+        if mutation_owner and selected_conventions:
+            required.append("convention_dispositions")
+        else:
+            properties.pop("convention_dispositions", None)
+        if mutation_owner and isinstance(research_context, dict):
+            required.append("research_dispositions")
+        else:
+            properties.pop("research_dispositions", None)
+    return schema
 
 
 def _project_document_selection(
@@ -376,9 +625,14 @@ def _assignments(plan: Any) -> dict[str, dict[str, Any]]:
 def _plan_issues(
     plan: Any,
     repo_path: str | Path | None = None,
+    research_bundle: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     try:
-        result = validate_route_v2(plan, repo_path=repo_path)
+        result = validate_route_v2(
+            plan,
+            repo_path=repo_path,
+            research_bundle=research_bundle,
+        )
     except (MaestroError, OSError, TypeError, ValueError) as exc:
         return [_issue("ASSIGNMENT_PLAN_INVALID", "plan", str(exc))]
     if result["status"] == "PASS":
@@ -391,6 +645,209 @@ def _plan_issues(
         )
         for item in result["issues"]
     ]
+
+
+def _research_context(
+    plan: dict[str, Any],
+    research_bundle: dict[str, Any] | None,
+    repo: Path,
+) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
+    """Validate and bind optional preflight research to one route plan."""
+
+    issues: list[dict[str, str]] = []
+    expertise = plan.get("expertise")
+    requirement = (
+        expertise.get("research_requirement")
+        if isinstance(expertise, dict)
+        else None
+    )
+    gate = requirement.get("gate") if isinstance(requirement, dict) else None
+    if gate != "satisfied":
+        if research_bundle is not None:
+            issues.append(
+                _issue(
+                    "PROJECTION_RESEARCH_NOT_APPLICABLE",
+                    "research_bundle",
+                    "Research evidence is accepted only for a satisfied route research gate.",
+                )
+            )
+        return None, issues
+    if research_bundle is None:
+        issues.append(
+            _issue(
+                "PROJECTION_RESEARCH_REQUIRED",
+                "research_bundle",
+                "The satisfied route gate requires its completed bound ResearchBundle.",
+            )
+        )
+        return None, issues
+
+    validation = validate_research_bundle(
+        research_bundle,
+        repo_path=repo,
+    )
+    if validation["status"] != "PASS":
+        issues.extend(
+            _issue(
+                "PROJECTION_RESEARCH_INVALID",
+                f"research_bundle.{item['path']}",
+                item["message"],
+            )
+            for item in validation["issues"]
+        )
+        return None, issues
+    if validation["evidence_status"] != "completed":
+        issues.append(
+            _issue(
+                "PROJECTION_RESEARCH_INSUFFICIENT",
+                "research_bundle.status",
+                "Only completed research evidence may enter an executable Assignment.",
+            )
+        )
+    expected_digest = requirement.get("evidence_digest")
+    if validation["artifact_digest"] != expected_digest:
+        issues.append(
+            _issue(
+                "PROJECTION_RESEARCH_DIGEST_MISMATCH",
+                "research_bundle",
+                "ResearchBundle digest does not match the satisfied route gate.",
+            )
+        )
+    goal = plan.get("goal")
+    if not isinstance(goal, str):
+        issues.append(
+            _issue(
+                "PROJECTION_RESEARCH_BINDING_UNAVAILABLE",
+                "goal",
+                "A valid route goal is required before research evidence can be bound.",
+            )
+        )
+    elif research_bundle.get("request_binding") != expected_research_binding(
+        goal,
+        expertise,
+    ):
+        issues.append(
+            _issue(
+                "PROJECTION_RESEARCH_BINDING_MISMATCH",
+                "research_bundle.request_binding",
+                "ResearchBundle binding does not match this goal and selected expertise.",
+            )
+        )
+    if issues:
+        return None, issues
+    try:
+        return project_research_context(
+            research_bundle,
+            repo_path=repo,
+        ), []
+    except MaestroError as exc:
+        return None, [
+            _issue(
+                "PROJECTION_RESEARCH_INVALID",
+                "research_bundle",
+                exc.message,
+            )
+        ]
+
+
+def _projection_research_issues(
+    plan: Any,
+    projection: Any,
+    research_bundle: dict[str, Any] | None,
+    *,
+    repo_path: str | Path | None,
+) -> list[dict[str, str]]:
+    """Bind packet validation to the exact ResearchBundle, not a self-digest."""
+
+    issues: list[dict[str, str]] = []
+    plan_value = plan if isinstance(plan, dict) else {}
+    expertise = plan_value.get("expertise")
+    requirement = (
+        expertise.get("research_requirement")
+        if isinstance(expertise, dict)
+        else None
+    )
+    gate = requirement.get("gate") if isinstance(requirement, dict) else None
+    projected = _projection_value(projection)
+    context = (
+        projected.get("research_context")
+        if isinstance(projected, dict)
+        else None
+    )
+    if gate != "satisfied":
+        if research_bundle is not None:
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_BUNDLE_UNEXPECTED",
+                    "research_bundle",
+                    "ResearchBundle is accepted only for a satisfied plan gate.",
+                )
+            )
+        if context is not None:
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_CONTEXT_UNEXPECTED",
+                    "projection.research_context",
+                    "Projection research context is not allowed without a satisfied gate.",
+                )
+            )
+        return issues
+    if research_bundle is None:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_BUNDLE_REQUIRED",
+                "research_bundle",
+                "Packet validation requires the exact ResearchBundle for a satisfied gate.",
+            )
+        )
+        return issues
+    goal = plan_value.get("goal")
+    if not isinstance(goal, str) or not isinstance(expertise, dict):
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_BINDING_UNAVAILABLE",
+                "plan",
+                "A valid plan goal and expertise selection are required.",
+            )
+        )
+        return issues
+    try:
+        validation = require_completed_research_bundle(
+            research_bundle,
+            goal=goal,
+            expertise=expertise,
+            repo_path=repo_path,
+        )
+        expected_context = project_research_context(
+            research_bundle,
+            repo_path=repo_path,
+        )
+    except MaestroError as exc:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_BUNDLE_INVALID",
+                "research_bundle",
+                exc.message,
+            )
+        )
+        return issues
+    if validation["artifact_digest"] != requirement.get("evidence_digest"):
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_DIGEST_MISMATCH",
+                "research_bundle",
+                "ResearchBundle digest does not match the satisfied plan gate.",
+            )
+        )
+    if context != expected_context:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_CONTEXT_MISMATCH",
+                "projection.research_context",
+                "Projection must preserve the exact validated ResearchBundle context.",
+            )
+        )
+    return issues
 
 
 def _regular_file(repo: Path, relative_path: str) -> Path | None:
@@ -889,6 +1346,20 @@ def _projection_refs(
     for item in _dict_items(value.get("dependency_packets")):
         if isinstance(item.get("ref_id"), str):
             identifiers.add(item["ref_id"])
+    research = value.get("research_context")
+    if isinstance(research, dict):
+        digest = research.get("evidence_digest")
+        if isinstance(digest, str) and _DIGEST.fullmatch(digest) is not None:
+            identifiers.add(f"research-bundle:{digest}")
+        for item in _dict_items(research.get("artifacts_checked")):
+            if isinstance(item.get("artifact_id"), str):
+                identifiers.add(f"research-artifact:{item['artifact_id']}")
+        for item in _dict_items(research.get("sources")):
+            if isinstance(item.get("source_id"), str):
+                identifiers.add(f"research-source:{item['source_id']}")
+        for item in _dict_items(research.get("claims")):
+            if isinstance(item.get("claim_id"), str):
+                identifiers.add(f"research-claim:{item['claim_id']}")
     return identifiers, locations
 
 
@@ -935,6 +1406,148 @@ def _evidence(
                 )
             )
     return refs
+
+
+def _research_disposition_issues(
+    dispositions: Any,
+    *,
+    projection: Any,
+    completed: bool,
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    projected = _projection_value(projection)
+    context = (
+        projected.get("research_context")
+        if isinstance(projected, dict)
+        else None
+    )
+    synthesis = (
+        context.get("synthesis")
+        if isinstance(context, dict)
+        else None
+    )
+    adopted = (
+        synthesis.get("adopted_claim_ids")
+        if isinstance(synthesis, dict)
+        and isinstance(synthesis.get("adopted_claim_ids"), list)
+        else []
+    )
+    if not isinstance(context, dict):
+        if dispositions is not None:
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_DISPOSITIONS_UNEXPECTED",
+                    "research_dispositions",
+                    "Research dispositions require a bound research projection.",
+                )
+            )
+        return issues
+    if completed and dispositions is None:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_DISPOSITIONS_REQUIRED",
+                "research_dispositions",
+                "A completed writer must disposition every adopted research claim.",
+            )
+        )
+        return issues
+    if dispositions is None:
+        return issues
+    if (
+        not isinstance(dispositions, list)
+        or len(dispositions) != len(adopted)
+        or len(dispositions) > 32
+    ):
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_DISPOSITIONS_INVALID",
+                "research_dispositions",
+                "Research dispositions must exactly match the bounded adopted claim set.",
+            )
+        )
+        return issues
+
+    allowed_refs, _ = _projection_refs(projection)
+    project_refs = {
+        ref for ref in allowed_refs if not ref.startswith("research-")
+    }
+    seen: set[str] = set()
+    has_conflict = False
+    expected = {
+        claim_id for claim_id in adopted if isinstance(claim_id, str)
+    }
+    for index, item in enumerate(dispositions):
+        path = f"research_dispositions[{index}]"
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {"claim_id", "disposition", "reason", "evidence_refs"}
+            or not _line(item.get("claim_id"), 128)
+            or not _line(item.get("reason"), 1_000)
+            or item.get("disposition")
+            not in {"applied", "not_applicable", "conflict"}
+            or not _lines(
+                item.get("evidence_refs"),
+                5,
+                allow_empty=True,
+            )
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_DISPOSITION_INVALID",
+                    path,
+                    "Research disposition does not satisfy the closed implementation-use contract.",
+                )
+            )
+            continue
+        claim_id = item["claim_id"]
+        item_refs = set(item["evidence_refs"])
+        if claim_id not in expected or claim_id in seen:
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_DISPOSITION_MISMATCH",
+                    f"{path}.claim_id",
+                    "Research claim is duplicated or outside the adopted claim set.",
+                )
+            )
+        seen.add(claim_id)
+        if not item_refs.issubset(allowed_refs):
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_EVIDENCE_OUT_OF_PROJECTION",
+                    f"{path}.evidence_refs",
+                    "Research-use evidence contains a reference outside the projection.",
+                )
+            )
+        if (
+            item["disposition"] == "applied"
+            and not item_refs.intersection(project_refs)
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_APPLICATION_EVIDENCE_REQUIRED",
+                    f"{path}.evidence_refs",
+                    "Applied research needs at least one projected project or verification evidence reference.",
+                )
+            )
+        has_conflict = has_conflict or item["disposition"] == "conflict"
+    if seen != expected:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_DISPOSITION_SET_MISMATCH",
+                "research_dispositions",
+                "Research dispositions must cover the exact adopted claim set.",
+            )
+        )
+    if completed and has_conflict:
+        issues.append(
+            _issue(
+                "PACKET_RESEARCH_CONFLICT_UNRESOLVED",
+                "research_dispositions",
+                "A writer cannot complete with an unresolved research conflict.",
+            )
+        )
+    return issues
 
 
 def validate_finding_packet(
@@ -1335,6 +1948,8 @@ def validate_terminal_packet(
     }
     if isinstance(packet, dict) and "convention_dispositions" in packet:
         fields.add("convention_dispositions")
+    if isinstance(packet, dict) and "research_dispositions" in packet:
+        fields.add("research_dispositions")
     if not _exact(packet, fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != TERMINAL_PACKET_VERSION:
@@ -1450,6 +2065,28 @@ def validate_terminal_packet(
             )
         )
     projected_value = _projection_value(projection)
+    research_context = (
+        projected_value.get("research_context")
+        if isinstance(projected_value, dict)
+        else None
+    )
+    if (
+        packet["status"] == "completed"
+        and assignment is not None
+        and assignment["mutation_owner"]
+        and isinstance(research_context, dict)
+    ):
+        required_research_ref = (
+            f"research-bundle:{research_context.get('evidence_digest')}"
+        )
+        if required_research_ref not in refs:
+            issues.append(
+                _issue(
+                    "PACKET_RESEARCH_EVIDENCE_REQUIRED",
+                    "evidence_refs",
+                    "A completed writer must cite the bound ResearchBundle.",
+                )
+            )
     selection = (
         projected_value.get("convention_selection")
         if isinstance(projected_value, dict)
@@ -1591,6 +2228,14 @@ def validate_terminal_packet(
                         "A writer cannot complete while a selected Convention conflict remains open.",
                     )
                 )
+    if assignment is not None and assignment["mutation_owner"]:
+        issues.extend(
+            _research_disposition_issues(
+                packet.get("research_dispositions"),
+                projection=projection,
+                completed=packet["status"] == "completed",
+            )
+        )
     return _validation(packet, issues)
 
 
@@ -1601,33 +2246,47 @@ def validate_assignment_packet(
     projection: dict[str, Any] | None = None,
     *,
     repo_path: str | Path | None = None,
+    research_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     version = packet.get("schema_version") if isinstance(packet, dict) else None
     if version == FINDING_PACKET_VERSION:
-        return validate_finding_packet(
+        result = validate_finding_packet(
             packet,
             plan,
             assignment_id,
             projection,
             repo_path=repo_path,
         )
-    if version == TERMINAL_PACKET_VERSION:
-        return validate_terminal_packet(
+    elif version == TERMINAL_PACKET_VERSION:
+        result = validate_terminal_packet(
             packet,
             plan,
             assignment_id,
             projection,
             repo_path=repo_path,
         )
+    else:
+        result = _validation(
+            packet,
+            [
+                _issue(
+                    "PACKET_VERSION_UNSUPPORTED",
+                    "schema_version",
+                    "Supported versions are FindingPacket v2 and terminal Packet v1.",
+                )
+            ],
+        )
+    research_issues = _projection_research_issues(
+        plan,
+        projection,
+        research_bundle,
+        repo_path=repo_path,
+    )
+    if not research_issues:
+        return result
     return _validation(
         packet,
-        [
-            _issue(
-                "PACKET_VERSION_UNSUPPORTED",
-                "schema_version",
-                "Supported versions are FindingPacket v2 and terminal Packet v1.",
-            )
-        ],
+        [*result["issues"], *research_issues],
     )
 
 
@@ -1640,11 +2299,43 @@ def project_assignment_input(
     document_paths: Iterable[str] = (),
     dependency_packets: Iterable[dict[str, Any]] = (),
     dependency_projections: Iterable[dict[str, Any]] = (),
+    research_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project the explicit allowlist for one Host-executed Assignment."""
 
     repo = ensure_repo(repo_path)
-    issues = _plan_issues(plan, repo)
+    try:
+        route_validation = validate_route_v2(
+            plan,
+            repo_path=repo,
+            research_bundle=research_bundle,
+        )
+    except (MaestroError, OSError, TypeError, ValueError):
+        route_validation = None
+    if (
+        isinstance(route_validation, dict)
+        and route_validation.get("status") == "PASS"
+        and route_validation.get("execution_status") != "READY"
+    ):
+        return {
+            "schema_version": "maestro_assignment_projection_result_v1",
+            "status": "BLOCKED",
+            "execution_status": "RESEARCH_REQUIRED",
+            "issues": [
+                _issue(
+                    "PROJECTION_RESEARCH_REQUIRED",
+                    "plan.expertise.research_requirement",
+                    "Complete and bind the required research before projecting an executable Assignment.",
+                )
+            ],
+            "input": None,
+            "writes_performed": False,
+        }
+    issues = _plan_issues(
+        plan,
+        repo,
+        research_bundle=research_bundle,
+    )
     plan_value = plan if isinstance(plan, dict) else {}
     assignment = _assignments(plan).get(assignment_id)
     if assignment is None:
@@ -1661,6 +2352,12 @@ def project_assignment_input(
         plan=plan,
     )
     issues.extend(baseline_result["issues"])
+    research_context, research_issues = _research_context(
+        plan_value,
+        research_bundle,
+        repo,
+    )
+    issues.extend(research_issues)
 
     surface_artifacts = (
         baseline.get("surface_map", {}).get("artifacts", [])
@@ -1828,6 +2525,7 @@ def project_assignment_input(
             packet_assignment_id,
             dependency_projection,
             repo_path=repo,
+            research_bundle=research_bundle,
         )
         if validation["status"] != "PASS":
             issues.append(
@@ -2004,6 +2702,7 @@ def project_assignment_input(
             },
         },
         "convention_selection": convention_selection,
+        "research_context": research_context,
         "document_refs": documents,
         "artifact_refs": artifacts,
         "dependency_packets": [

@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-playback-observability",
+  "baseline_observation": "The bundled route provided no Mux Data metadata, playback-startup, rebuffering, failure, or Playback Success interpretation criteria.",
+  "candidate_observation": "The frozen candidate route selected playback-observability with the player boundary and kept provider health distinct from business outcomes.",
+  "evidence_refs": [
+    "route-replay:normal-playback-observability",
+    "research-claim:mux-playback-observability"
+  ]
+}

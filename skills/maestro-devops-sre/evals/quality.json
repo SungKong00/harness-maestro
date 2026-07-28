@@ -1,0 +1,137 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-slo-delivery.json",
+        "sha256": "6d8f334848f41691e85102d4d3b9e78db1f070ef21aa9421779f53a817925366"
+      },
+      "case_id": "normal-slo-delivery",
+      "criterion_results": [
+        {
+          "criterion": "Selects SLO and progressive-delivery Guides",
+          "evidence_ref": "evals/artifacts/normal-slo-delivery.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires user-centered indicators and rollout stop criteria",
+          "evidence_ref": "evals/artifacts/normal-slo-delivery.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Copies a universal SLO or rollout percentage",
+          "evidence_ref": "evals/artifacts/normal-slo-delivery.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-telemetry-capacity.json",
+        "sha256": "b42e49bd569f71f33f54db9de2ee8e164aff9987680a51c1747172d4b5d7e4f5"
+      },
+      "case_id": "normal-telemetry-capacity",
+      "criterion_results": [
+        {
+          "criterion": "Selects telemetry and capacity Guides",
+          "evidence_ref": "evals/artifacts/normal-telemetry-capacity.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires signal cost and saturation behavior evidence",
+          "evidence_ref": "evals/artifacts/normal-telemetry-capacity.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Collects every signal without cardinality or cost limits",
+          "evidence_ref": "evals/artifacts/normal-telemetry-capacity.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-recovery-readiness.json",
+        "sha256": "8cfba7feedbda6c9dafb9fe7a1e2054e7148225bd32f92b8a919993d1931697d"
+      },
+      "case_id": "edge-recovery-readiness",
+      "criterion_results": [
+        {
+          "criterion": "Selects recovery and readiness Guides",
+          "evidence_ref": "evals/artifacts/edge-recovery-readiness.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires isolated backups and executed recovery evidence",
+          "evidence_ref": "evals/artifacts/edge-recovery-readiness.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats backup creation as restore proof",
+          "evidence_ref": "evals/artifacts/edge-recovery-readiness.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-unit-tests.json",
+        "sha256": "160c24d4650440c80e9078c579336e9056c1b9e54b71691e2048f001c6666b2b"
+      },
+      "case_id": "non-trigger-unit-tests",
+      "criterion_results": [
+        {
+          "criterion": "Does not select devops-sre for a unit-test request",
+          "evidence_ref": "evals/artifacts/non-trigger-unit-tests.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks software-qa routing",
+          "evidence_ref": "evals/artifacts/non-trigger-unit-tests.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/overlap-release-regression.json",
+        "sha256": "1fa560a0100935e36ffc974d33064f3abcd7006d86d4f0cb7aec5d70f4667f4c"
+      },
+      "case_id": "overlap-release-regression",
+      "criterion_results": [
+        {
+          "criterion": "Does not select devops-sre when QA release evidence is dominant",
+          "evidence_ref": "evals/artifacts/overlap-release-regression.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Replaces software-qa regression guidance",
+          "evidence_ref": "evals/artifacts/overlap-release-regression.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "authoring_run_ref": "desktop:expertise-four-packs-20260727:devops-sre",
+    "evaluation_run_ref": "subagent:accept-devops:2026-07-27",
+    "kind": "fresh-context"
+  },
+  "expertise_pack_id": "devops-sre",
+  "schema_version": "maestro_expertise_quality_eval_v1"
+}

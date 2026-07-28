@@ -16,9 +16,13 @@ from . import __version__
 from .conventions import validate_held_out_evaluation
 from .errors import MaestroError
 from .expertise import expertise_definition_map, load_expertise_catalog
+from .expertise_health import expertise_component_health
+from .expertise_lifecycle import expertise_inventory
 from .observations import (
+    _valid_execution_binding,
     _valid_host_observation,
     complete_run_observation,
+    observation_id_for_run,
     observation_receipt_fields,
 )
 from .project import checkout_id
@@ -31,6 +35,7 @@ from .util import (
     safe_target,
     sha256_text,
 )
+from .work import validate_work_spans
 
 MAX_GOVERN_WINDOW = 1_000
 MAX_FINGERPRINTS_PER_RUN = 1_000
@@ -59,6 +64,7 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "outcome",
     "evidence_refs",
     "duration_ms",
+    "planning_duration_ms",
     "tokens",
     "experiment_id",
     "experiment_arm",
@@ -77,8 +83,10 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "task_label",
     "plan_summary",
     "stage_results",
+    "work_spans",
     "expertise_observations",
     "host_observation",
+    "execution_binding",
 }
 
 
@@ -375,14 +383,20 @@ def _valid_token_summary(value: Any) -> bool:
 def _valid_plan_summary(value: Any) -> bool:
     if value is None:
         return True
-    if not isinstance(value, dict) or set(value) != {
+    required_fields = {
         "schema_version",
         "plan_id",
         "intent",
         "department",
         "assignments",
         "research",
-    }:
+    }
+    optional_fields = {"risk", "depth", "selected_lenses"}
+    if (
+        not isinstance(value, dict)
+        or not required_fields.issubset(value)
+        or set(value) - required_fields - optional_fields
+    ):
         return False
     if (
         value.get("schema_version") != "maestro_plan_summary_v1"
@@ -393,6 +407,22 @@ def _valid_plan_summary(value: Any) -> bool:
         or not value["intent"]
         or not isinstance(value.get("department"), str)
         or not value["department"]
+        or (
+            value.get("risk") is not None
+            and value.get("risk") not in {"low", "medium", "high", "critical"}
+        )
+        or (
+            value.get("depth") is not None
+            and value.get("depth") not in {"fast", "standard", "deep"}
+        )
+    ):
+        return False
+    selected_lenses = value.get("selected_lenses")
+    if selected_lenses is not None and (
+        not isinstance(selected_lenses, list)
+        or len(selected_lenses) > 3
+        or len(set(selected_lenses)) != len(selected_lenses)
+        or not all(isinstance(item, str) and item for item in selected_lenses)
     ):
         return False
     assignments = value.get("assignments")
@@ -400,7 +430,7 @@ def _valid_plan_summary(value: Any) -> bool:
         return False
     assignment_ids: set[str] = set()
     for assignment in assignments:
-        if not isinstance(assignment, dict) or set(assignment) != {
+        assignment_required = {
             "assignment_id",
             "kind",
             "executor_id",
@@ -409,7 +439,14 @@ def _valid_plan_summary(value: Any) -> bool:
             "reasoning_effort",
             "expertise_pack_ids",
             "decision_guide_ids",
-        }:
+        }
+        if (
+            not isinstance(assignment, dict)
+            or not assignment_required.issubset(assignment)
+            or set(assignment)
+            - assignment_required
+            - {"lens_ids", "mutation_owner", "read_only"}
+        ):
             return False
         assignment_id = assignment.get("assignment_id")
         if (
@@ -425,15 +462,24 @@ def _valid_plan_summary(value: Any) -> bool:
             or len(assignment["planned_model"]) > 128
             or assignment.get("reasoning_effort")
             not in {"low", "medium", "high", "xhigh", "max", "ultra"}
+            or (
+                assignment.get("mutation_owner") is not None
+                and not isinstance(assignment.get("mutation_owner"), bool)
+            )
+            or (
+                assignment.get("read_only") is not None
+                and not isinstance(assignment.get("read_only"), bool)
+            )
         ):
             return False
         assignment_ids.add(assignment_id)
         for field, maximum in (
             ("depends_on", 5),
+            ("lens_ids", 3),
             ("expertise_pack_ids", 1),
             ("decision_guide_ids", 4),
         ):
-            items = assignment.get(field)
+            items = assignment.get(field, [])
             if (
                 not isinstance(items, list)
                 or len(items) > maximum
@@ -458,7 +504,12 @@ def _valid_plan_summary(value: Any) -> bool:
     )
 
 
-def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
+def _valid_stage_results(
+    value: Any,
+    plan_summary: Any,
+    *,
+    require_evidence_source: bool = False,
+) -> bool:
     if value is None:
         return True
     if not isinstance(value, list) or len(value) > 5:
@@ -485,7 +536,18 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
         if (
             not isinstance(result, dict)
             or not required_fields.issubset(result)
-            or set(result) - (required_fields | {"model_evidence"})
+            or set(result)
+            - (
+                required_fields
+                | {
+                    "model_evidence",
+                    "evidence_source",
+                    "observed_at",
+                    "requested_model",
+                    "requested_reasoning_effort",
+                    "reroutes",
+                }
+            )
         ):
             return False
         assignment_id = result.get("assignment_id")
@@ -493,13 +555,24 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
         model_evidence = result.get("model_evidence")
         duration = result.get("duration_ms")
         evidence_refs = result.get("evidence_refs")
+        evidence_source = result.get("evidence_source")
+        observed_at = result.get("observed_at")
+        requested_model = result.get("requested_model")
+        requested_effort = result.get("requested_reasoning_effort")
+        reroutes = result.get("reroutes", [])
         if (
             not isinstance(assignment_id, str)
             or not assignment_id
             or assignment_id in seen
             or (plan_ids and assignment_id not in plan_ids)
             or result.get("status")
-            not in {"completed", "failed", "blocked", "skipped"}
+            not in {
+                "completed",
+                "failed",
+                "blocked",
+                "skipped",
+                "interrupted",
+            }
             or (
                 actual_model is not None
                 and (
@@ -510,6 +583,24 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
                 )
             )
             or model_evidence not in {None, "unavailable", "complete"}
+            or (
+                requested_model is not None
+                and (
+                    not isinstance(requested_model, str)
+                    or not requested_model
+                    or len(requested_model) > 128
+                )
+            )
+            or (
+                requested_effort is not None
+                and (
+                    not isinstance(requested_effort, str)
+                    or not requested_effort
+                    or len(requested_effort) > 40
+                )
+            )
+            or not isinstance(reroutes, list)
+            or len(reroutes) > 4
             or (
                 model_evidence == "unavailable"
                 and actual_model is not None
@@ -534,10 +625,84 @@ def _valid_stage_results(value: Any, plan_summary: Any) -> bool:
                 isinstance(item, str) and bool(item.strip())
                 for item in evidence_refs
             )
+            or (
+                require_evidence_source
+                and evidence_source
+                not in {
+                    "codex_app_server",
+                    "current_host",
+                    "deterministic_command",
+                }
+            )
+            or (
+                evidence_source is not None
+                and evidence_source
+                not in {
+                    "codex_app_server",
+                    "current_host",
+                    "deterministic_command",
+                }
+            )
+            or (
+                require_evidence_source
+                and (
+                    not isinstance(observed_at, str)
+                    or not observed_at
+                )
+            )
+            or (
+                evidence_source in {"current_host", "deterministic_command"}
+                and (
+                    requested_model is not None
+                    or requested_effort is not None
+                    or reroutes
+                    or actual_model is not None
+                    or result.get("tokens") is not None
+                    or model_evidence != "unavailable"
+                )
+            )
+            or (
+                evidence_source == "codex_app_server"
+                and (
+                    requested_model is None
+                    or actual_model is None
+                    or model_evidence != "complete"
+                    or duration is None
+                )
+            )
         ):
             return False
         seen.add(assignment_id)
     return True
+
+
+def _valid_work_observations(
+    value: Any,
+    plan_summary: Any,
+    *,
+    require_terminal: bool = False,
+) -> bool:
+    if value is None:
+        return True
+    if not validate_work_spans(value):
+        return False
+    assignment_ids = (
+        {
+            assignment["assignment_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        if isinstance(plan_summary, dict)
+        and _valid_plan_summary(plan_summary)
+        else set()
+    )
+    return all(
+        (
+            span["assignment_id"] is None
+            or span["assignment_id"] in assignment_ids
+        )
+        and (not require_terminal or span["status"] != "running")
+        for span in value
+    )
 
 
 def _valid_expertise_observations(
@@ -588,6 +753,7 @@ def _valid_expertise_observations(
                 "trigger_miss",
                 "trigger_false_positive",
                 "guide_not_loaded",
+                "guide_unassigned",
                 "guide_ineffective",
                 "pack_conflict",
                 "unnecessary_research",
@@ -623,6 +789,7 @@ def _valid_expertise_observations(
                 "research",
                 "manual_correction",
                 "unresolved",
+                "author_candidate",
             }
             or not isinstance(evidence_ref, str)
             or evidence_ref not in evidence_refs
@@ -633,7 +800,7 @@ def _valid_expertise_observations(
 
 def record_run(
     repo_path: str | Path,
-    receipt_path: str | Path,
+    receipt_path: str | Path | dict[str, Any],
     *,
     observation_id: str | None = None,
 ) -> dict[str, Any]:
@@ -647,25 +814,58 @@ def record_run(
         )
     project = read_json(project_path)
     lock = read_json(lock_path)
+    baseline_issues: list[str] = []
     if lock.get("framework", {}).get("version") != __version__:
-        raise MaestroError(
-            "PROJECT_STATE_STALE",
-            "Review and apply a fresh upgrade plan before recording.",
-        )
+        baseline_issues.append("framework_version")
     if lock.get("registry", {}).get("sha256") != registry_digest():
-        raise MaestroError(
-            "PROJECT_STATE_STALE",
-            "Registry lock differs from the installed registry.",
-        )
-    receipt = read_json(Path(receipt_path))
+        baseline_issues.append("registry_digest")
+    recording_baseline = {
+        "status": "current" if not baseline_issues else "stale",
+        "issues": baseline_issues,
+        "receipt_recording_allowed": True,
+        "management_projection_allowed": not baseline_issues,
+    }
+    receipt = (
+        dict(receipt_path)
+        if isinstance(receipt_path, dict)
+        else read_json(Path(receipt_path))
+    )
     observed: dict[str, Any] | None = None
+    receipt_run_id = receipt.get("run_id")
+    if (
+        observation_id is None
+        and isinstance(receipt_run_id, str)
+        and receipt_run_id.strip()
+    ):
+        candidate_observation_id = observation_id_for_run(
+            repo,
+            run_id=receipt_run_id,
+        )
+        candidate_observation_path = safe_target(
+            repo,
+            (
+                ".maestro/state/inflight/"
+                f"{candidate_observation_id}.json"
+            ),
+        )
+        if (
+            candidate_observation_path.exists()
+            or candidate_observation_path.is_symlink()
+        ):
+            observation_id = candidate_observation_id
     if observation_id is not None:
         observed = observation_receipt_fields(
             repo,
             observation_id=observation_id,
             run_id=receipt.get("run_id"),
         )
-        for field in ("task_label", "plan_summary"):
+        for field in (
+            "task_label",
+            "plan_summary",
+            "planning_duration_ms",
+            "stage_results",
+            "work_spans",
+        ):
             if field in receipt and receipt[field] != observed[field]:
                 raise MaestroError(
                     "RUN_OBSERVATION_CONFLICT",
@@ -696,6 +896,27 @@ def record_run(
                     "RUN_OBSERVATION_CONFLICT",
                     "RunReceipt tokens differ from Host-reported telemetry.",
                 )
+        elif (
+            isinstance(observed.get("plan_summary"), dict)
+            and receipt.get("tokens") is not None
+        ):
+            raise MaestroError(
+                "RUN_OBSERVATION_CONFLICT",
+                "RunReceipt tokens cannot be supplied without matching Host telemetry.",
+            )
+        elif isinstance(observed.get("plan_summary"), dict):
+            receipt["tokens"] = None
+        execution_binding = observed.get("execution_binding")
+        if execution_binding is not None:
+            if (
+                receipt.get("execution_binding") is not None
+                and receipt["execution_binding"] != execution_binding
+            ):
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    "RunReceipt execution binding differs from the in-flight observation.",
+                )
+            receipt["execution_binding"] = execution_binding
     unexpected = sorted(set(receipt) - RUN_RECEIPT_ALLOWED_FIELDS)
     if unexpected:
         raise MaestroError(
@@ -818,11 +1039,100 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "stage_results do not satisfy the bounded Host observation contract.",
         )
+    if not _valid_work_observations(
+        receipt.get("work_spans"),
+        plan_summary,
+        require_terminal=True,
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "work_spans must contain bounded terminal observed work for this plan.",
+        )
+    if isinstance(plan_summary, dict):
+        planned_stage_ids = {
+            assignment["assignment_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        observed_stage_ids = {
+            result["assignment_id"]
+            for result in receipt.get("stage_results", [])
+            if isinstance(result, dict)
+        }
+        if (
+            receipt.get("outcome")
+            in {"completed", "corrected", "failed", "blocked", "no_change"}
+            and observed_stage_ids != planned_stage_ids
+        ):
+            missing_stages = sorted(planned_stage_ids - observed_stage_ids)
+            raise MaestroError(
+                "RUN_STAGE_EVIDENCE_REQUIRED",
+                "A finalized route-v2 run requires one terminal observation "
+                "for every planned Assignment; missing="
+                + ",".join(missing_stages),
+            )
+        if not _valid_stage_results(
+            receipt.get("stage_results"),
+            plan_summary,
+            require_evidence_source=True,
+        ):
+            raise MaestroError(
+                "RUN_STAGE_EVIDENCE_REQUIRED",
+                "Finalized stage results must come from the bound observation "
+                "with an explicit evidence source.",
+            )
     if not _valid_host_observation(receipt.get("host_observation")):
         raise MaestroError(
             "RUN_RECEIPT_INVALID",
             "host_observation does not satisfy the bounded Host telemetry contract.",
         )
+    execution_binding = receipt.get("execution_binding")
+    if not _valid_execution_binding(execution_binding):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "execution_binding does not satisfy the managed execution contract.",
+        )
+    if (
+        execution_binding is not None
+        and (
+            observed is None
+            or observed.get("execution_binding") != execution_binding
+        )
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            "A RunReceipt execution binding must match the observed execution path.",
+        )
+    implementation_plan = (
+        isinstance(plan_summary, dict)
+        and plan_summary.get("intent") == "implementation"
+        and any(
+            assignment.get("kind") == "implementation"
+            for assignment in plan_summary.get("assignments", [])
+            if isinstance(assignment, dict)
+        )
+    )
+    if (
+        implementation_plan
+        and receipt.get("outcome") in {"completed", "corrected"}
+        and execution_binding is None
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            "A completed implementation plan requires an observed Desktop "
+            "request, a Maestro-owned Codex App Server binding, or explicit "
+            "evidence-bearing fallback.",
+        )
+    if execution_binding is not None and execution_binding["mode"] == "maestro_owned_codex_app_server":
+        host_observation = receipt.get("host_observation")
+        if (
+            not isinstance(host_observation, dict)
+            or host_observation.get("source") != "codex-app-server"
+            or host_observation.get("model_event_evidence") != "complete"
+        ):
+            raise MaestroError(
+                "RUN_EXECUTION_EVIDENCE_REQUIRED",
+                "A Maestro-owned App Server binding requires complete Codex App Server Host telemetry.",
+            )
     if not _valid_expertise_observations(
         receipt.get("expertise_observations"),
         evidence_refs=receipt.get("evidence_refs", []),
@@ -1070,6 +1380,7 @@ def record_run(
         "fingerprint": fingerprint,
         "evidence_refs": receipt.get("evidence_refs"),
         "duration_ms": receipt.get("duration_ms"),
+        "planning_duration_ms": receipt.get("planning_duration_ms"),
         "tokens": receipt.get("tokens"),
         "correction_count": receipt.get("correction_count"),
         "correction_summary": receipt.get("correction_summary", []),
@@ -1090,9 +1401,11 @@ def record_run(
         "task_label",
         "plan_summary",
         "stage_results",
+        "work_spans",
         "expertise_observations",
         "host_observation",
         "convention_usage",
+        "execution_binding",
     ):
         if receipt.get(field) is not None:
             event[field] = receipt[field]
@@ -1143,7 +1456,12 @@ def record_run(
             "run_id": event["run_id"],
             "event_id": existing_event["event_id"],
             "event_path": existing_path,
-            "management_check": _post_record_management_check(repo),
+            "management_check": _post_record_management_check(
+                repo,
+                recorded_event=existing_event,
+                recording_baseline=recording_baseline,
+            ),
+            "recording_baseline": recording_baseline,
             "writes_performed": False,
         }
     date = timestamp[:10]
@@ -1179,9 +1497,147 @@ def record_run(
         "run_id": event["run_id"],
         "event_id": event_id,
         "event_path": relative_path,
-        "management_check": _post_record_management_check(repo),
+        "management_check": _post_record_management_check(
+            repo,
+            recorded_event=event,
+            recording_baseline=recording_baseline,
+        ),
+        "recording_baseline": recording_baseline,
         "writes_performed": True,
     }
+
+
+def finalize_run(
+    repo_path: str | Path,
+    *,
+    run_id: str,
+    outcome: str,
+    evidence_refs: list[str],
+    verifier_result: str,
+    command_artifact_ref: str | None = None,
+    observation_id: str | None = None,
+    correction_count: int = 0,
+    correction_summary: list[str] | None = None,
+    human_fix_required: bool | None = None,
+    decision_changed: bool = False,
+) -> dict[str, Any]:
+    """Build the compact receipt from observed plan and stage facts."""
+
+    repo = ensure_repo(repo_path)
+    resolved_observation_id = observation_id or observation_id_for_run(
+        repo,
+        run_id=run_id,
+    )
+    observed = observation_receipt_fields(
+        repo,
+        observation_id=resolved_observation_id,
+        run_id=run_id,
+    )
+    plan = observed.get("plan_summary")
+    if not isinstance(plan, dict):
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "Finalization requires a validated plan attached to the observation.",
+        )
+    assignments = plan.get("assignments", [])
+    if not assignments:
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "The attached plan contains no Assignments.",
+        )
+    stage_results = observed.get("stage_results", [])
+    planned_stage_ids = {
+        assignment["assignment_id"]
+        for assignment in assignments
+    }
+    observed_stage_ids = {
+        result["assignment_id"]
+        for result in stage_results
+        if isinstance(result, dict)
+        and isinstance(result.get("assignment_id"), str)
+    }
+    if observed_stage_ids != planned_stage_ids:
+        missing = sorted(planned_stage_ids - observed_stage_ids)
+        raise MaestroError(
+            "RUN_STAGE_EVIDENCE_REQUIRED",
+            "Finalization requires one terminal observation for every "
+            "planned Assignment; missing=" + ",".join(missing),
+        )
+    executor_ids = list(
+        dict.fromkeys(
+            assignment["executor_id"]
+            for assignment in assignments
+        )
+    )
+    primary = next(
+        (
+            assignment["executor_id"]
+            for assignment in assignments
+            if assignment.get("mutation_owner")
+        ),
+        assignments[0]["executor_id"],
+    )
+    selected_lenses = list(plan.get("selected_lenses", []))
+    if not selected_lenses:
+        selected_lenses = list(
+            dict.fromkeys(
+                lens_id
+                for assignment in assignments
+                for lens_id in assignment.get("lens_ids", [])
+            )
+        )
+    selected_packs = list(
+        dict.fromkeys(
+            pack_id
+            for assignment in assignments
+            for pack_id in assignment.get("expertise_pack_ids", [])
+        )
+    )
+    selected_guides = list(
+        dict.fromkeys(
+            guide_id
+            for assignment in assignments
+            for guide_id in assignment.get("decision_guide_ids", [])
+        )
+    )
+    research = plan.get(
+        "research",
+        {"mode": "reuse", "gate": "not-required"},
+    )
+    receipt: dict[str, Any] = {
+        "run_id": run_id,
+        "risk": plan.get("risk"),
+        "route_depth": plan.get("depth"),
+        "selected_lenses": selected_lenses,
+        "selected_expertise_packs": selected_packs,
+        "selected_decision_guides": selected_guides,
+        "expertise_research_mode": research.get("mode"),
+        "expertise_research_gate": research.get("gate"),
+        "executor_runs": len(stage_results),
+        "primary_executor_id": primary,
+        "executor_ids": executor_ids,
+        "outcome": outcome,
+        "evidence_refs": list(evidence_refs),
+        "duration_ms": None,
+        "tokens": None,
+        "correction_count": correction_count,
+        "correction_summary": list(correction_summary or []),
+        "agent_calls": len(stage_results),
+        "human_fix_required": human_fix_required,
+        "decision_changed": decision_changed,
+        "verifier_result": verifier_result,
+        "command_artifact_ref": command_artifact_ref,
+    }
+    if receipt["risk"] is None or receipt["route_depth"] is None:
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "The observed plan predates typed risk/depth finalization metadata.",
+        )
+    return record_run(
+        repo,
+        receipt,
+        observation_id=resolved_observation_id,
+    )
 
 
 def _valid_event(event: dict[str, Any]) -> bool:
@@ -1212,6 +1668,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "fingerprint",
         "evidence_refs",
         "duration_ms",
+        "planning_duration_ms",
         "tokens",
         "experiment_id",
         "experiment_arm",
@@ -1230,9 +1687,11 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "task_label",
         "plan_summary",
         "stage_results",
+        "work_spans",
         "expertise_observations",
         "host_observation",
         "convention_usage",
+        "execution_binding",
     }
     if set(event) - allowed_fields:
         return False
@@ -1405,7 +1864,15 @@ def _valid_event(event: dict[str, Any]) -> bool:
             return False
     if not _valid_stage_results(event.get("stage_results"), plan_summary):
         return False
+    if not _valid_work_observations(
+        event.get("work_spans"),
+        plan_summary,
+        require_terminal=True,
+    ):
+        return False
     if not _valid_host_observation(event.get("host_observation")):
+        return False
+    if not _valid_execution_binding(event.get("execution_binding")):
         return False
     if not _valid_expertise_observations(
         event.get("expertise_observations"),
@@ -1425,6 +1892,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or isinstance(duration, bool)
         or not math.isfinite(duration)
         or duration < 0
+    ):
+        return False
+    planning_duration = event.get("planning_duration_ms")
+    if planning_duration is not None and (
+        not isinstance(planning_duration, (int, float))
+        or isinstance(planning_duration, bool)
+        or not math.isfinite(planning_duration)
+        or planning_duration < 0
     ):
         return False
     tokens = event.get("tokens")
@@ -1794,6 +2269,7 @@ def recent_run_events(
         return {
             "schema_version": "maestro_run_history_v1",
             "runs": [],
+            "recorded_run_ids": [],
             "evidence_status": "empty",
             "invalid_records": 0,
             "scan_truncated": False,
@@ -1808,6 +2284,7 @@ def recent_run_events(
     definitions["expertise_packs"] = expertise_definition_map(repo)
     paths, overflow, directory_truncated = _event_paths(events_directory)
     latest: dict[str, tuple[datetime, dict[str, Any]]] = {}
+    recorded_run_ids: set[str] = set()
     invalid_records = 0
     scan_truncated = bool(overflow or directory_truncated)
     total_bytes = 0
@@ -1848,6 +2325,20 @@ def recent_run_events(
                 except json.JSONDecodeError:
                     invalid_records += 1
                     continue
+                if (
+                    isinstance(event, dict)
+                    and event.get("project_id") == project_id
+                    and event.get("checkout_id") == current_checkout
+                    and isinstance(event.get("run_id"), str)
+                    and event["run_id"].strip()
+                    and _valid_event(event)
+                ):
+                    # A definition digest mismatch excludes an old receipt
+                    # from current governance evidence, but it does not make
+                    # the recorded run unfinished. Keep this bounded identity
+                    # projection so the viewer can reconcile legacy
+                    # observations without reusing stale definitions.
+                    recorded_run_ids.add(event["run_id"])
                 status, timestamp = _classify_event(
                     event,
                     project_id=project_id,
@@ -1877,6 +2368,7 @@ def recent_run_events(
     return {
         "schema_version": "maestro_run_history_v1",
         "runs": ordered,
+        "recorded_run_ids": sorted(recorded_run_ids),
         "evidence_status": "truncated" if scan_truncated else "sufficient",
         "invalid_records": invalid_records,
         "scan_truncated": scan_truncated,
@@ -1913,6 +2405,7 @@ def expertise_management_signals(
                     "pack_id": item["pack_id"],
                     "guide_id": item["guide_id"],
                     "severity": item["severity"],
+                    "resolution": item["resolution"],
                     "run_ids": set(),
                     "latest_timestamp": event["timestamp"],
                     "evidence_refs": [],
@@ -1924,6 +2417,8 @@ def expertise_management_signals(
             severity_order = {"medium": 1, "high": 2, "critical": 3}
             if severity_order[item["severity"]] > severity_order[record["severity"]]:
                 record["severity"] = item["severity"]
+            if item["resolution"] == "author_candidate":
+                record["resolution"] = "author_candidate"
             if (
                 item["evidence_ref"] not in record["evidence_refs"]
                 and len(record["evidence_refs"]) < 3
@@ -1932,13 +2427,25 @@ def expertise_management_signals(
     signals: list[dict[str, Any]] = []
     for record in observations.values():
         occurrences = len(record.pop("run_ids"))
-        if occurrences < threshold and record["severity"] != "critical":
+        immediate_authoring = (
+            record["severity"] == "critical"
+            or record["resolution"] == "author_candidate"
+        )
+        if occurrences < threshold and not immediate_authoring:
             continue
         signals.append(
             {
                 **record,
                 "occurrences": occurrences,
                 "status": "review_recommended",
+                "admission_basis": (
+                    "explicit_clear_missing_expertise"
+                    if record["resolution"] == "author_candidate"
+                    else "critical_signal"
+                    if record["severity"] == "critical"
+                    else "repeated_signal"
+                ),
+                "automatic_candidate_authoring_allowed": True,
                 "automatic_change_allowed": False,
             }
         )
@@ -1953,11 +2460,40 @@ def expertise_management_signals(
     )
 
 
-def _post_record_management_check(repo: Path) -> dict[str, Any]:
+def _post_record_management_check(
+    repo: Path,
+    *,
+    recorded_event: dict[str, Any] | None = None,
+    recording_baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if (
+        isinstance(recording_baseline, dict)
+        and recording_baseline.get("status") == "stale"
+    ):
+        return {
+            "schema_version": "maestro_management_check_v1",
+            "status": "deferred",
+            "review_due": False,
+            "expertise_signals": [],
+            "governance_candidate_count": 0,
+            "global_promotion_prompts": [],
+            "owner_prompt_due": False,
+            "automatic_candidate_authoring_allowed": False,
+            "automatic_mutation_allowed": False,
+            "deferred_reason": "project_baseline_stale",
+            "baseline_issues": list(
+                recording_baseline.get("issues", [])
+            ),
+        }
     try:
         history = recent_run_events(repo, window=20)
         expertise_signals = expertise_management_signals(history["runs"])
         governance = govern_report(repo, window=20, threshold=3)
+        inventory = expertise_inventory(repo)
+        component_health = expertise_component_health(
+            inventory,
+            history["runs"],
+        )
     except MaestroError as exc:
         return {
             "schema_version": "maestro_management_check_v1",
@@ -1965,18 +2501,95 @@ def _post_record_management_check(repo: Path) -> dict[str, Any]:
             "review_due": False,
             "expertise_signals": [],
             "governance_candidate_count": 0,
+            "global_promotion_prompts": [],
+            "owner_prompt_due": False,
+            "automatic_candidate_authoring_allowed": False,
             "automatic_mutation_allowed": False,
             "error": {"code": exc.code, "message": exc.message},
         }
+    inventory_candidates = {
+        item.get("candidate_id"): item
+        for item in inventory.get("candidates", [])
+        if isinstance(item.get("candidate_id"), str)
+    }
+    selected_packs = (
+        set(recorded_event.get("selected_expertise_packs", []))
+        if isinstance(recorded_event, dict)
+        else set()
+    )
+    selected_guides = (
+        set(recorded_event.get("selected_decision_guides", []))
+        if isinstance(recorded_event, dict)
+        else set()
+    )
+    recorded_digests = (
+        recorded_event.get("expertise_pack_definition_digests", {})
+        if isinstance(recorded_event, dict)
+        else {}
+    )
+    global_promotion_prompts: list[dict[str, Any]] = []
+    for health in component_health.get("candidates", []):
+        promotion = health.get("global_promotion", {})
+        required_count = promotion.get("required_usage_count")
+        observed_count = promotion.get("observed_usage_count")
+        candidate = inventory_candidates.get(health.get("candidate_id"))
+        pack_id = health.get("pack_id")
+        component_change = health.get("component_change")
+        target_guide_id = (
+            component_change.get("target_guide_id")
+            if isinstance(component_change, dict)
+            else None
+        )
+        if (
+            not promotion.get("owner_prompt_due")
+            or not isinstance(observed_count, int)
+            or not isinstance(required_count, int)
+            or observed_count < required_count
+            or not isinstance(candidate, dict)
+            or not isinstance(pack_id, str)
+            or pack_id not in selected_packs
+            or recorded_digests.get(pack_id)
+            != candidate.get("definition_digest")
+            or (
+                isinstance(target_guide_id, str)
+                and target_guide_id not in selected_guides
+            )
+        ):
+            continue
+        global_promotion_prompts.append(
+            {
+                "candidate_id": health["candidate_id"],
+                "pack_id": pack_id,
+                "observed_usage_count": observed_count,
+                "required_usage_count": required_count,
+                "problem_review_required": promotion.get(
+                    "problem_review_required",
+                    False,
+                ),
+                "question": (
+                    f"{pack_id} 후보가 서로 다른 작업에서 "
+                    f"{observed_count}회 적용이 확인됐습니다. "
+                    "Harness 기본 Pack에 반영할까요?"
+                ),
+            }
+        )
+        break
     return {
         "schema_version": "maestro_management_check_v1",
         "status": "available",
         "review_due": bool(
-            expertise_signals or governance["candidates_for_review"]
+            expertise_signals
+            or governance["candidates_for_review"]
+            or global_promotion_prompts
         ),
         "expertise_signals": expertise_signals,
         "governance_candidate_count": len(
             governance["candidates_for_review"]
+        ),
+        "global_promotion_prompts": global_promotion_prompts,
+        "owner_prompt_due": bool(global_promotion_prompts),
+        "automatic_candidate_authoring_allowed": bool(
+            expertise_signals
         ),
         "automatic_mutation_allowed": False,
     }

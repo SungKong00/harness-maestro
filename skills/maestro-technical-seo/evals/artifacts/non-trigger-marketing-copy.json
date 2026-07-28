@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "non-trigger-marketing-copy",
+  "baseline_observation": "Marketing already owns audience language, positioning, keyword-shaped message decisions, and conversion copy.",
+  "candidate_observation": "The candidate scope and frozen replay left keyword research and conversion copy with marketing and selected no technical-seo Guide.",
+  "evidence_refs": [
+    "inventory:marketing-existing-coverage",
+    "route-replay:technical-seo:non-trigger-marketing-copy"
+  ]
+}
