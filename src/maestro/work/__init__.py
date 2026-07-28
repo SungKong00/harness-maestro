@@ -8,7 +8,7 @@ from .contracts import (
     validate_work_span,
     validate_work_spans,
 )
-from .graph import build_work_graph
+from .graph import build_display_edge_groups, build_work_graph
 from .lifecycle import append_work_span, finish_work_span
 from .projection import project_observed_work
 
@@ -16,6 +16,7 @@ __all__ = [
     "MAX_WORK_SPANS",
     "WORK_SPAN_VERSION",
     "append_work_span",
+    "build_display_edge_groups",
     "build_work_graph",
     "complete_work_span",
     "finish_work_span",

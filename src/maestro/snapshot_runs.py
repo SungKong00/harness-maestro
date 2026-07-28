@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .work import project_observed_work
+from .work import build_display_edge_groups, project_observed_work
 
 
 _STAGE_PRESENTATION = {
@@ -298,6 +298,17 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
         run.get("work_spans"),
         flow,
     )
+    plan_edges = list(graph.get("edges", []))
+    plan_display = build_display_edge_groups(
+        [
+            stage["stage_id"]
+            for stage in stages
+            if isinstance(stage.get("stage_id"), str)
+        ],
+        ranks,
+        plan_edges,
+        default_type="depends_on",
+    )
     return {
         "schema_version": "maestro_work_detail_v2",
         "header": {
@@ -367,7 +378,13 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
         "stages": stages,
         "execution": observed_work,
         "graph": {
-            "edges": list(graph.get("edges", [])),
+            "edges": plan_edges,
+            "display_edge_groups": plan_display[
+                "display_edge_groups"
+            ],
+            "detail_only_edge_indexes": plan_display[
+                "detail_only_edge_indexes"
+            ],
             "entry_stage_ids": list(
                 graph.get("entry_assignment_ids", [])
             ),

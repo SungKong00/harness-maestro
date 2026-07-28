@@ -530,6 +530,13 @@ class OperationsViewerTests(unittest.TestCase):
                 run["flow_graph"]["edges"],
                 work_detail["graph"]["edges"],
             )
+            self.assertTrue(
+                work_detail["graph"]["display_edge_groups"]
+            )
+            self.assertEqual(
+                [],
+                work_detail["graph"]["detail_only_edge_indexes"],
+            )
             self.assertEqual(
                 "planned_dependency",
                 work_detail["graph"]["ordering_semantics"],
@@ -656,6 +663,10 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertEqual(
             "unavailable",
             historical["limitations"]["actual_order"],
+        )
+        self.assertEqual(
+            [],
+            historical["graph"]["display_edge_groups"],
         )
 
     def test_receipt_projection_keeps_convention_decision_evidence(

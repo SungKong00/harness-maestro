@@ -6,6 +6,14 @@ from typing import Any
 from .contracts import validate_work_spans
 
 
+_ORDERING_EDGE_TYPES = {
+    "delegates_to",
+    "depends_on",
+    "followup_of",
+    "joins_into",
+}
+
+
 def _ranks(
     node_ids: list[str],
     edges: list[dict[str, str]],
@@ -45,6 +53,157 @@ def _ranks(
     return ranks
 
 
+def build_display_edge_groups(
+    node_ids: list[str],
+    ranks: dict[str, int],
+    edges: list[dict[str, Any]],
+    *,
+    default_type: str | None = None,
+) -> dict[str, Any]:
+    """Derive bounded display geometry without changing raw edge semantics."""
+
+    known = set(node_ids)
+    node_position = {
+        node_id: index
+        for index, node_id in enumerate(node_ids)
+    }
+    links_by_pair: dict[tuple[str, str], dict[str, Any]] = {}
+    detail_only_indexes: set[int] = set()
+    report_edges: list[tuple[int, dict[str, Any]]] = []
+
+    for index, edge in enumerate(edges):
+        source = edge.get("from")
+        target = edge.get("to")
+        relation_type = edge.get("type", default_type)
+        if (
+            not isinstance(source, str)
+            or not isinstance(target, str)
+            or source not in known
+            or target not in known
+            or not isinstance(relation_type, str)
+        ):
+            detail_only_indexes.add(index)
+            continue
+        if relation_type == "reports_to":
+            report_edges.append((index, edge))
+            continue
+        if (
+            relation_type not in _ORDERING_EDGE_TYPES
+            or ranks.get(target) != ranks.get(source, -2) + 1
+        ):
+            detail_only_indexes.add(index)
+            continue
+        link = links_by_pair.setdefault(
+            (source, target),
+            {
+                "from": source,
+                "to": target,
+                "relation_types": [],
+                "raw_edge_indexes": [],
+            },
+        )
+        if relation_type not in link["relation_types"]:
+            link["relation_types"].append(relation_type)
+        link["raw_edge_indexes"].append(index)
+
+    for index, edge in report_edges:
+        pair = (edge["to"], edge["from"])
+        link = links_by_pair.get(pair)
+        if link is None:
+            detail_only_indexes.add(index)
+            continue
+        if "reports_to" not in link["relation_types"]:
+            link["relation_types"].append("reports_to")
+        link["raw_edge_indexes"].append(index)
+
+    links_by_boundary: dict[
+        tuple[int, int],
+        list[dict[str, Any]],
+    ] = {}
+    for link in links_by_pair.values():
+        boundary = (ranks[link["from"]], ranks[link["to"]])
+        link["relation_types"].sort()
+        link["raw_edge_indexes"].sort()
+        links_by_boundary.setdefault(boundary, []).append(link)
+
+    groups: list[dict[str, Any]] = []
+    for boundary in sorted(links_by_boundary):
+        remaining = sorted(
+            links_by_boundary[boundary],
+            key=lambda link: (
+                node_position[link["from"]],
+                node_position[link["to"]],
+            ),
+        )
+        boundary_groups: list[list[dict[str, Any]]] = []
+        while remaining:
+            component = [remaining.pop(0)]
+            component_nodes = {
+                component[0]["from"],
+                component[0]["to"],
+            }
+            changed = True
+            while changed:
+                changed = False
+                unmatched: list[dict[str, Any]] = []
+                for link in remaining:
+                    if (
+                        link["from"] in component_nodes
+                        or link["to"] in component_nodes
+                    ):
+                        component.append(link)
+                        component_nodes.update(
+                            (link["from"], link["to"])
+                        )
+                        changed = True
+                    else:
+                        unmatched.append(link)
+                remaining = unmatched
+            boundary_groups.append(component)
+
+        for component_index, component in enumerate(boundary_groups, 1):
+            source_node_ids = sorted(
+                {link["from"] for link in component},
+                key=node_position.__getitem__,
+            )
+            target_node_ids = sorted(
+                {link["to"] for link in component},
+                key=node_position.__getitem__,
+            )
+            complete_bipartite = (
+                len(component)
+                == len(source_node_ids) * len(target_node_ids)
+            )
+            shared_trunk = (
+                len(source_node_ids) == 1
+                or len(target_node_ids) == 1
+                or complete_bipartite
+            )
+            groups.append(
+                {
+                    "group_id": (
+                        f"wave-{boundary[0]}-{boundary[1]}"
+                        f"-{component_index}"
+                    ),
+                    "from_rank": boundary[0],
+                    "to_rank": boundary[1],
+                    "source_node_ids": source_node_ids,
+                    "target_node_ids": target_node_ids,
+                    "links": component,
+                    "routing": (
+                        "shared_trunk"
+                        if shared_trunk
+                        else "individual"
+                    ),
+                }
+            )
+
+    return {
+        "display_edge_groups": groups,
+        "detail_only_edge_indexes": sorted(detail_only_indexes),
+    }
+
+
 def _plan_graph(stages: list[dict[str, Any]]) -> dict[str, Any]:
     node_ids = [
         stage["assignment_id"]
@@ -66,6 +225,7 @@ def _plan_graph(stages: list[dict[str, Any]]) -> dict[str, Any]:
         if dependency in known
     ]
     ranks = _ranks(node_ids, edges)
+    display = build_display_edge_groups(node_ids, ranks, edges)
     return {
         "nodes": [
             {
@@ -89,6 +249,7 @@ def _plan_graph(stages: list[dict[str, Any]]) -> dict[str, Any]:
             if not any(edge["from"] == node_id for edge in edges)
         ],
         "max_rank": max(ranks.values(), default=0),
+        **display,
     }
 
 
@@ -266,10 +427,15 @@ def build_work_graph(
     ordering_edges = [
         edge
         for edge in execution_edges
-        if edge["type"] != "reports_to"
+        if edge["type"] in _ORDERING_EDGE_TYPES
     ]
     ranks = _ranks(node_ids, ordering_edges)
     actual_concurrency, concurrent_pairs = _actual_concurrency(spans)
+    display = build_display_edge_groups(
+        node_ids,
+        ranks,
+        execution_edges,
+    )
     execution = {
         "nodes": [
             {
@@ -303,6 +469,7 @@ def build_work_graph(
         "completeness": completeness,
         "actual_concurrency": actual_concurrency,
         "concurrent_work_pairs": concurrent_pairs,
+        **display,
     }
     bindings = [
         {

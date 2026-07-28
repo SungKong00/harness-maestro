@@ -6,6 +6,7 @@ import unittest
 from maestro.errors import MaestroError
 from maestro.work import (
     append_work_span,
+    build_display_edge_groups,
     build_work_graph,
     complete_work_span,
     finish_work_span,
@@ -538,6 +539,122 @@ class WorkGraphTests(unittest.TestCase):
         self.assertEqual(
             "unavailable",
             graph["execution"]["actual_concurrency"],
+        )
+
+    def test_display_groups_fold_adjacent_fork_and_join_losslessly(
+        self,
+    ) -> None:
+        root = _span("root", kind="orchestration")
+        review = complete_work_span(
+            _span("review", parent_work_id="root"),
+            status="completed",
+            result_summary="검토 완료",
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
+            evidence_refs=["fixture:review"],
+        )
+        research = complete_work_span(
+            _span("research", parent_work_id="root", kind="research"),
+            status="completed",
+            result_summary="조사 완료",
+            ended_at="2026-07-28T01:00:04Z",
+            duration_ms=4000,
+            evidence_refs=["fixture:research"],
+        )
+        synthesis = _span(
+            "synthesis",
+            parent_work_id="root",
+            kind="synthesis",
+            joins_work_ids=["review", "research"],
+        )
+
+        execution = build_work_graph(
+            [],
+            [root, review, research, synthesis],
+        )["execution"]
+
+        self.assertEqual(
+            [
+                (["root"], ["review", "research"], "shared_trunk"),
+                (
+                    ["review", "research"],
+                    ["synthesis"],
+                    "shared_trunk",
+                ),
+            ],
+            [
+                (
+                    group["source_node_ids"],
+                    group["target_node_ids"],
+                    group["routing"],
+                )
+                for group in execution["display_edge_groups"]
+            ],
+        )
+        review_link = next(
+            link
+            for link in execution["display_edge_groups"][0]["links"]
+            if link["to"] == "review"
+        )
+        self.assertEqual(
+            ["delegates_to", "reports_to"],
+            review_link["relation_types"],
+        )
+        detail_edges = [
+            execution["edges"][index]
+            for index in execution["detail_only_edge_indexes"]
+        ]
+        self.assertIn(
+            {
+                "from": "root",
+                "to": "synthesis",
+                "type": "delegates_to",
+                "provenance": "observed_work",
+                "source": "current_host",
+                "coverage": "unavailable",
+            },
+            detail_edges,
+        )
+        represented_indexes = {
+            index
+            for group in execution["display_edge_groups"]
+            for link in group["links"]
+            for index in link["raw_edge_indexes"]
+        }
+        self.assertEqual(
+            set(range(len(execution["edges"]))),
+            represented_indexes
+            | set(execution["detail_only_edge_indexes"]),
+        )
+
+    def test_display_groups_do_not_join_unrelated_or_partial_components(
+        self,
+    ) -> None:
+        nodes = ["a", "b", "c", "d"]
+        ranks = {"a": 0, "b": 0, "c": 1, "d": 1}
+        unrelated = build_display_edge_groups(
+            nodes,
+            ranks,
+            [
+                {"from": "a", "to": "c", "type": "depends_on"},
+                {"from": "b", "to": "d", "type": "depends_on"},
+            ],
+        )
+        self.assertEqual(2, len(unrelated["display_edge_groups"]))
+
+        partial = build_display_edge_groups(
+            nodes,
+            ranks,
+            [
+                {"from": "a", "to": "c", "type": "depends_on"},
+                {"from": "a", "to": "d", "type": "depends_on"},
+                {"from": "b", "to": "d", "type": "depends_on"},
+            ],
+        )
+        self.assertEqual(1, len(partial["display_edge_groups"]))
+        self.assertEqual(
+            "individual",
+            partial["display_edge_groups"][0]["routing"],
         )
 
     def test_followup_attempt_is_a_separate_node(self) -> None:

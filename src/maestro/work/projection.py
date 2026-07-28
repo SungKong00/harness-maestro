@@ -373,6 +373,12 @@ def project_observed_work(
         "lanes": lanes,
         "graph": {
             "edges": list(execution["edges"]),
+            "display_edge_groups": list(
+                execution["display_edge_groups"]
+            ),
+            "detail_only_edge_indexes": list(
+                execution["detail_only_edge_indexes"]
+            ),
             "entry_work_ids": list(execution["entry_node_ids"]),
             "terminal_work_ids": list(execution["terminal_node_ids"]),
             "max_rank": execution["max_rank"],
