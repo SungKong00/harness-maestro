@@ -28,7 +28,7 @@ Desktop 화면 scraping, 비공개 API와 rollout/transcript 추측 파싱은 �
 제외했다.
 
 이 문서는 실행·UI 구현을 승인하지 않는다. 채택한 구현 순서의 권위는
-[대시보드 UI 개편 계획](../plans/active/dashboard-ui-roadmap.md)의 단계 4다.
+[완료된 대시보드 UI 개편 계획](../plans/completed/dashboard-ui-roadmap.md)의 단계 4다.
 
 ## 결론
 

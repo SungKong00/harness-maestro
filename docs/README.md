@@ -33,12 +33,10 @@ sensitivity: internal
    Specialist 역할 경계, DecisionBundle과 실행 승인
 8. [통합 운영 뷰어](architecture/operations-viewer.md) — 작업 흐름, 측정값,
    Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
-9. [대시보드 UI 개편 계획](plans/active/dashboard-ui-roadmap.md) — 작업 중심 GUI,
-   회사형 단계 표현, 데이터·증거 경계와 단계별 구현 순서
-10. [최소 Expertise 라우팅 개선 계획](plans/active/minimal-expertise-routing.md) —
+9. [최소 Expertise 라우팅 개선 계획](plans/active/minimal-expertise-routing.md) —
     top-1 Pack 계약을 유지하면서 자연어 누락을 작업 종류·상대 경로·명시 선택으로
     보완하는 단계별 체크리스트
-11. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+10. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
    릴리스·실사용 Pilot TODO만 관리
 ## 거버넌스
 
@@ -53,6 +51,8 @@ sensitivity: internal
 
 - [이름 있는 작업 히스토리 구현](plans/completed/named-goal-history.md) — 기존
   JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶은 historical plan
+- [대시보드 UI 개편 계획](plans/completed/dashboard-ui-roadmap.md) — 작업 중심 GUI,
+  회사형 단계 표현과 데이터·증거 경계를 구현·검증하고 종료한 로드맵
 
 ## 설계 근거
 

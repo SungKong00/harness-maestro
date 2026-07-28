@@ -2,7 +2,7 @@
 maestro_doc: 1
 id: HM-PLAN-003
 type: plan
-status: active
+status: archived
 authority: repository
 owner: harness-maestro
 summary: Maestro 대시보드를 보고서가 아닌 작업 중심 운영 GUI로 개편하는 목표, 정보 구조, 데이터 경계와 단계별 구현 계획.
@@ -12,12 +12,12 @@ supersedes: []
 sensitivity: internal
 ---
 
-# Maestro 대시보드 UI 개편 계획
+# Maestro 대시보드 UI 개편 완료 계획
 
 ## 이 문서의 역할
 
-이 문서는 대시보드 개편 과정에서 최초 요청과 후속 판단을 잃지 않기 위한 활성
-로드맵이다. 한 번의 작업 보고서나 구현 로그가 아니며, 다음 내용을 지속해서 관리한다.
+이 문서는 대시보드 개편 과정에서 최초 요청과 후속 판단을 잃지 않기 위해 사용한
+완료 로드맵이다. 한 번의 작업 보고서나 구현 로그가 아니며, 다음 내용을 관리했다.
 
 - 사용자가 이루려는 최종 경험
 - 현재 채택한 정보 구조와 시각 참조
@@ -893,26 +893,54 @@ UI 작업:
 
 ### 단계 5 — 전체 품질 검증과 계획 종료
 
-상태: 예정
+상태: 완료 — 2026-07-28
 
-- [ ] representative fixture에서 완료·수정 후 완료·실패·진행 불가·생략·중단을
+- [x] representative fixture에서 완료·수정 후 완료·실패·진행 불가·생략·중단을
       검증한다.
-- [ ] 실제 브라우저에서 `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 →
+- [x] 실제 브라우저에서 `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 →
       최종 판단`이 왼쪽에서 오른쪽으로 진행되고 독립 작업만 같은 파동에 놓이는지
       검증한다.
-- [ ] 결과를 소비한 뒤 재위임하는 카드와 관계가 하나라도 누락되면 단계 4를
+- [x] 결과를 소비한 뒤 재위임하는 카드와 관계가 하나라도 누락되면 단계 4를
       완료로 처리하지 않는다.
-- [ ] 모델 기록 없음·요청 설정만 있음·실제 모델 기록됨을 각각 검증한다.
-- [ ] 접힌 카드의 정보 위계, 인라인 확장, Pack→Guide·Lens disclosure와 하단
+- [x] 모델 기록 없음·요청 설정만 있음·실제 모델 기록됨을 각각 검증한다.
+- [x] 접힌 카드의 정보 위계, 인라인 확장, Pack→Guide·Lens disclosure와 하단
       실행값을 complete·partial·plan-only fixture에서 실제 브라우저로 검증한다.
-- [ ] 화면에 계속 노출하는 설명과 `i` disclosure로 옮긴 설명을 inventory로
+- [x] 화면에 계속 노출하는 설명과 `i` disclosure로 옮긴 설명을 inventory로
       검토하고, 같은 안내 문단이 카드마다 반복되지 않는지 확인한다.
-- [ ] keyboard, focus, zoom, 긴 한국어와 reduced motion을 확인한다.
-- [ ] 390×844, 800px와 일반 데스크톱에서 overflow와 정보 순서를 확인한다.
-- [ ] snapshot action과 프로젝트 전환의 보안·stale plan 계약이 유지된다.
-- [ ] 전체 unit test와 strict Doctor가 통과한다.
-- [ ] 기존 작업을 찾고 전문 지식을 관리하는 핵심 흐름을 실제 브라우저에서 점검한다.
-- [ ] 남은 항목을 새 계획이나 제외 문서로 옮기고 이 계획을 completed로 전환한다.
+- [x] keyboard, focus, zoom, 긴 한국어와 reduced motion을 확인한다.
+- [x] 390×844, 800px와 일반 데스크톱에서 overflow와 정보 순서를 확인한다.
+- [x] snapshot action과 프로젝트 전환의 보안·stale plan 계약이 유지된다.
+- [x] 전체 unit test와 strict Doctor가 통과한다.
+- [x] 기존 작업을 찾고 전문 지식을 관리하는 핵심 흐름을 실제 브라우저에서 점검한다.
+- [x] 남은 항목을 새 계획이나 제외 문서로 옮기고 이 계획을 completed로 전환한다.
+
+완료 검증 메모:
+
+- 상태 범위는 Run 결과 `completed·corrected·failed·blocked·no_change`와 단계 상태
+  `completed·failed·blocked·skipped·interrupted`를 분리한 fixture로 검증했다.
+- 실제 Run `dashboard-stage5-20260728T124917Z`의 관측 카드 15개는 파동 열
+  `1 → 2(독립 3개) → 3 → 4 → 5(독립 2개) → 6 → 7 →
+  8(독립 2개) → 9 → 10 → 11`로 투영됐다. 검토 결과를 소비한 synthesis,
+  수정, 후속 재검토, 최종 verification과 종료 판단이 모두 별도 카드·관계로 남았다.
+- 접힌 상태에서 카드가 시작되고 같은 카드 재선택과 Escape로 접히며 포커스가
+  trigger로 복귀했다. Pack disclosure는 단계 카드와 독립적으로 열리고
+  `소프트웨어 QA → 품질 위험과 추적성 Guide → 입력·출력 계약 Lens`를 구분했다.
+- 지속 노출은 Run 결과·검증·관측 범위, 카드의 주제·짧은 결과, 관계, 실행값 하단과
+  상태 범례로 한정했다. 흐름 해석, 증거 경계, provenance와 기술 기록은 공통
+  `i` 또는 중첩 disclosure에 두어 같은 안내 문단을 카드마다 반복하지 않았다.
+- 일반 데스크톱, 800px, 390×844와 720px의 200% zoom 상당 reflow에서 페이지
+  overflow와 정보 순서를 확인했다. 모바일 메뉴의 Tab·Shift+Tab 순환, Escape
+  복귀, 카드·Pack의 중첩 Escape, loading·empty·인증 오류·프로젝트 전환도
+  실제 브라우저에서 확인했다. reduced-motion media query와 긴 한국어 reflow는
+  DOM·CSS 계약 테스트와 좁은 viewport에서 함께 검증했다.
+- 모델 기록 없음, 요청 설정만 있음과 완전한 Host 관측 모델·token이 최근 작업에서
+  서로 다른 문구로 표시됐다. 현재 Desktop 상위 작업의 실제 모델은 계측되지 않아
+  `unavailable`로 유지했고, 독립 검토 카드에는 요청값
+  `gpt-5.6-terra / medium`만 표시했다.
+- `python3 -m unittest discover -s tests -v`는 422개를 통과했고, strict Doctor는
+  32 PASS·0 WARN·0 FAIL, bundled validator는 Skill 16개를 통과했다.
+- 남은 SDK, `codex exec --json`, trusted project Hook과 experimental recovery
+  producer는 같은 v2 계약을 재사용하되 현재 완료 범위에서는 보류했다.
 
 ## 커밋 계획
 

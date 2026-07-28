@@ -71,6 +71,7 @@ sensitivity: internal
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
 | research wave 자동 scheduler·fan-out | deferred | lane·artifact 계약과 validator는 구현했지만 CLI가 researcher 실행·cancel·retry를 runtime에서 강제하지 않음 | host capability 계약, bounded cancel, 실제 비용·품질 forward test |
+| 추가 work graph producer: SDK·`codex exec --json`·trusted project Hook·experimental recovery adapter | deferred | Maestro-owned App Server producer와 v2 source·coverage 계약으로 현재 대시보드 요구를 검증했으며, 생산자를 한꺼번에 늘리면 버전·완전성·상관·중복 수집 경계가 넓어짐 | producer별 공식 version/schema pin, complete·partial·recovery fixture, 중복 event 상관 규칙과 개인정보 review |
 | 전체 Packet 의미·참조 validator와 계약 catalog | deferred | FindingPacket v2와 공통 terminal Packet은 plan binding을 검사하지만 Research·Implementation·Verification payload의 도메인 의미 전체를 catalog화하지 않음 | 두 번째 구체 Packet의 미검증 내부 의미가 반복 병목이 되는 실제 사례 |
 | 범용 SurfaceMap ontology·상주 generalist | deferred | 현재 bounded Engineering Baseline이면 artifact·boundary·lifecycle gap을 표현할 수 있고, 더 큰 ontology는 Fast token과 추정 사실을 늘림 | 간단 baseline이 놓친 Lens 밖 defect가 서로 다른 실행에서 반복 |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
