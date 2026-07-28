@@ -841,6 +841,18 @@ def _process_notification(
     params = value.get("params")
     if method not in _RELEVANT_NOTIFICATIONS or not isinstance(params, dict):
         return
+    tracker = state.get("work_tracker")
+    action_sink = state.get("work_action_sink")
+    if (
+        method in {"item/started", "item/completed"}
+        and isinstance(tracker, CodexCollaborationTracker)
+        and callable(action_sink)
+        and tracker.accepts(params)
+    ):
+        actions = tracker.consume(method=method, params=params)
+        for action in actions:
+            action_sink(action)
+        return
     if params.get("threadId") != state["thread_id"]:
         return
     if method == "turn/completed":
@@ -885,16 +897,6 @@ def _process_notification(
             state["token_updates"] += 1
         return
     item = params.get("item")
-    tracker = state.get("work_tracker")
-    action_sink = state.get("work_action_sink")
-    if (
-        method in {"item/started", "item/completed"}
-        and isinstance(tracker, CodexCollaborationTracker)
-        and callable(action_sink)
-    ):
-        actions = tracker.consume(method=method, params=params)
-        for action in actions:
-            action_sink(action)
     if (
         method == "item/completed"
         and isinstance(item, dict)
@@ -983,6 +985,8 @@ def _record_codex_work_action(
             source=action["source"],
             attempt=action["attempt"],
             followup_of_work_id=action["followup_of_work_id"],
+            depends_on_work_ids=action["depends_on_work_ids"],
+            joins_work_ids=action["joins_work_ids"],
             requested_model=action["requested_model"],
             requested_reasoning_effort=action[
                 "requested_reasoning_effort"
@@ -1001,6 +1005,7 @@ def _record_codex_work_action(
             result_summary=action["result_summary"],
             evidence_refs=action["evidence_refs"],
             event_ended_at=action["ended_at"],
+            event_duration_ms=action.get("duration_ms"),
         )
         return
     raise MaestroError(
@@ -1339,15 +1344,35 @@ def _run_codex_host_locked(
         state["work_tracker"] = CodexCollaborationTracker(
             root_work_id=root_work_id,
             root_thread_id=state["thread_id"],
+            root_turn_id=state["turn_id"],
             assignment_id=contract["assignment_id"],
             read_only=contract["sandbox"] == "read-only",
         )
-        state["work_action_sink"] = lambda action: _record_codex_work_action(
-            repo,
-            observation_id=observation["observation_id"],
-            run_id=run_id,
-            action=action,
-        )
+        def record_action(action: dict[str, Any]) -> None:
+            recorded_action = action
+            if (
+                action["action"] == "finish"
+                and action["work_id"] == root_work_id
+                and root_event_started_at is None
+            ):
+                recorded_action = {
+                    **action,
+                    "ended_at": None,
+                    "duration_ms": None,
+                }
+            _record_codex_work_action(
+                repo,
+                observation_id=observation["observation_id"],
+                run_id=run_id,
+                action=recorded_action,
+            )
+            if (
+                action["action"] == "finish"
+                and action["work_id"] == root_work_id
+            ):
+                state["root_work_terminal"] = True
+
+        state["work_action_sink"] = record_action
         pending_notifications = server.notifications
         server.notifications = []
         for notification in pending_notifications:
@@ -1408,31 +1433,25 @@ def _run_codex_host_locked(
             )
             else None
         )
-        record_work_finish(
-            repo,
-            observation_id=observation["observation_id"],
-            run_id=run_id,
-            work_id=root_work_id,
-            status=completion["status"],
-            result_summary={
-                "completed": "Codex 실행과 위임 결과 수집이 완료되었습니다.",
-                "failed": "Codex 실행이 실패했습니다.",
-                "interrupted": "Codex 실행이 중단되었습니다.",
-            }[completion["status"]],
-            evidence_refs=[
-                "codex-turn:"
-                + sha256_text(
-                    canonical_json(
-                        [state["thread_id"], state["turn_id"]]
-                    )
-                )[:32]
-            ],
-            event_ended_at=root_event_ended_at,
-            event_duration_ms=duration,
-        )
-        state["root_work_terminal"] = True
         tracker = state["work_tracker"]
         assert isinstance(tracker, CodexCollaborationTracker)
+        action_sink = state["work_action_sink"]
+        assert callable(action_sink)
+        terminal_actions = tracker.finish_turn(
+            status=completion["status"],
+            observed_at=(
+                root_event_ended_at
+                or codex_event_timestamp(int(time.time() * 1000))
+            ),
+            duration_ms=duration,
+            evidence_identity=(
+                str(state["thread_id"]),
+                str(state["turn_id"]),
+                "turn-terminal",
+            ),
+        )
+        for action in terminal_actions:
+            action_sink(action)
         if tracker.running_work_ids:
             raise MaestroError(
                 "CODEX_HOST_WORK_INCOMPLETE",
@@ -1571,6 +1590,7 @@ def _run_codex_host_locked(
                 "root_work_id": root_work_id,
                 "delegation_count": tracker.observed_work_count,
                 "terminal_delegation_count": tracker.terminal_work_count,
+                "decision_count": tracker.decision_work_count,
                 "incomplete_delegation_count": len(
                     tracker.running_work_ids
                 ),

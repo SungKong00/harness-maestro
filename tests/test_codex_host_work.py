@@ -84,6 +84,123 @@ COLLAB_EVENTS = r'''
                         },
                     }
                 )
+        if mode == "collab-wave":
+            def emit_collab(item_id, tool, targets, states, timestamp):
+                emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": (
+                            "item/started"
+                            if tool == "spawnAgent"
+                            else "item/completed"
+                        ),
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            (
+                                "startedAtMs"
+                                if tool == "spawnAgent"
+                                else "completedAtMs"
+                            ): timestamp,
+                            "item": {
+                                "id": item_id,
+                                "type": "collabAgentToolCall",
+                                "tool": tool,
+                                "status": (
+                                    "inProgress"
+                                    if tool == "spawnAgent"
+                                    else "completed"
+                                ),
+                                "senderThreadId": "thread-1",
+                                "receiverThreadIds": targets,
+                                "model": "gpt-5.6-terra",
+                                "reasoningEffort": "medium",
+                                "agentsStates": {
+                                    target: {"status": states[target]}
+                                    for target in targets
+                                },
+                            },
+                        },
+                    }
+                )
+
+            emit_collab(
+                "spawn-a",
+                "spawnAgent",
+                ["child-a"],
+                {"child-a": "running"},
+                1785217057000,
+            )
+            emit_collab(
+                "spawn-a",
+                "spawnAgent",
+                ["child-a"],
+                {"child-a": "running"},
+                1785217057000,
+            )
+            emit_collab(
+                "spawn-b",
+                "spawnAgent",
+                ["child-b"],
+                {"child-b": "running"},
+                1785217057100,
+            )
+            emit_collab(
+                "spawn-c",
+                "spawnAgent",
+                ["child-c"],
+                {"child-c": "running"},
+                1785217057200,
+            )
+            emit_collab(
+                "wait-abc",
+                "wait",
+                ["child-a", "child-b", "child-c"],
+                {
+                    "child-a": "completed",
+                    "child-b": "completed",
+                    "child-c": "completed",
+                },
+                1785217058000,
+            )
+            emit_collab(
+                "spawn-d",
+                "spawnAgent",
+                ["child-d"],
+                {"child-d": "running"},
+                1785217059000,
+            )
+            emit_collab(
+                "spawn-e",
+                "spawnAgent",
+                ["child-e"],
+                {"child-e": "running"},
+                1785217059100,
+            )
+            emit_collab(
+                "wait-de",
+                "wait",
+                ["child-d", "child-e"],
+                {
+                    "child-d": "completed",
+                    "child-e": "completed",
+                },
+                1785217060000,
+            )
+            emit_collab(
+                "spawn-verification",
+                "spawnAgent",
+                ["child-verification"],
+                {"child-verification": "running"},
+                1785217061000,
+            )
+            emit_collab(
+                "wait-verification",
+                "wait",
+                ["child-verification"],
+                {"child-verification": "completed"},
+                1785217062000,
+            )
 '''
 
 
@@ -120,6 +237,7 @@ class CodexHostWorkTests(unittest.TestCase):
                     "root_work_id": result["work_capture"]["root_work_id"],
                     "delegation_count": 1,
                     "terminal_delegation_count": 1,
+                    "decision_count": 1,
                     "incomplete_delegation_count": 0,
                 },
                 result["work_capture"],
@@ -133,8 +251,8 @@ class CodexHostWorkTests(unittest.TestCase):
                     ),
                 ).read_text(encoding="utf-8")
             )
-            self.assertEqual(2, len(observation["work_spans"]))
-            root_span, child_span = observation["work_spans"]
+            self.assertEqual(3, len(observation["work_spans"]))
+            root_span, child_span, decision_span = observation["work_spans"]
             self.assertEqual("orchestration", root_span["kind"])
             self.assertEqual("completed", root_span["status"])
             self.assertEqual(root_span["work_id"], child_span["parent_work_id"])
@@ -144,6 +262,11 @@ class CodexHostWorkTests(unittest.TestCase):
             self.assertEqual(1_000, child_span["duration_ms"])
             self.assertEqual("gpt-5.6-terra", child_span["requested_model"])
             self.assertIsNone(child_span["applied_model"])
+            self.assertEqual("synthesis", decision_span["kind"])
+            self.assertEqual(
+                [child_span["work_id"]],
+                decision_span["joins_work_ids"],
+            )
             serialized = json.dumps(observation, ensure_ascii=False)
             self.assertNotIn("SECRET-DELEGATION-PROMPT", serialized)
             self.assertNotIn("SECRET-CHILD-MESSAGE", serialized)
@@ -154,9 +277,9 @@ class CodexHostWorkTests(unittest.TestCase):
                 [],
             )
             self.assertEqual("observed", work["mode"])
-            self.assertEqual(2, len(work["cards"]))
+            self.assertEqual(3, len(work["cards"]))
             self.assertEqual(
-                {"delegates_to", "reports_to"},
+                {"delegates_to", "reports_to", "joins_into", "depends_on"},
                 {edge["type"] for edge in work["graph"]["edges"]},
             )
 
@@ -192,6 +315,81 @@ class CodexHostWorkTests(unittest.TestCase):
                 ["completed", "running"],
                 [item["status"] for item in observation["work_spans"]],
             )
+
+    def test_full_wave_fixture_projects_join_and_redelegation_ranks(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, prompt, server = self._project(root)
+            result = run_codex_host(
+                repo,
+                run_id="collab-wave",
+                task_label="결과 종합과 재위임 파동",
+                prompt_file=prompt,
+                sandbox="read-only",
+                timeout_seconds=5,
+                command=[
+                    sys.executable,
+                    str(server),
+                    "collab-wave",
+                ],
+            )
+            observation = json.loads(
+                safe_target(
+                    repo,
+                    (
+                        ".maestro/state/inflight/"
+                        f"{result['observation_id']}.json"
+                    ),
+                ).read_text(encoding="utf-8")
+            )
+            work = project_observed_work(
+                observation["work_spans"],
+                [],
+            )
+            cards = work["cards"]
+            by_rank: dict[int, list[dict[str, object]]] = {}
+            for card in cards:
+                by_rank.setdefault(card["rank"], []).append(card)
+
+            self.assertEqual(10, len(cards))
+            self.assertEqual(
+                [1, 3, 1, 2, 1, 1, 1],
+                [len(by_rank[rank]) for rank in range(7)],
+            )
+            self.assertTrue(
+                all(
+                    card["kind"] == "delegation"
+                    for card in by_rank[1]
+                )
+            )
+            self.assertTrue(
+                all(
+                    card["kind"] == "delegation"
+                    for card in by_rank[3]
+                )
+            )
+            self.assertEqual(
+                ["synthesis"],
+                [card["kind"] for card in by_rank[2]],
+            )
+            self.assertEqual(
+                ["synthesis"],
+                [card["kind"] for card in by_rank[4]],
+            )
+            self.assertEqual(
+                ["synthesis"],
+                [card["kind"] for card in by_rank[6]],
+            )
+            self.assertEqual(6, work["summary"]["join_count"])
+            self.assertEqual(6, work["summary"]["delegation_count"])
+            self.assertEqual(6, work["summary"]["report_count"])
+            self.assertEqual(
+                "unavailable",
+                work["graph"]["actual_concurrency"],
+            )
+            self.assertEqual(3, result["work_capture"]["decision_count"])
 
 
 if __name__ == "__main__":
