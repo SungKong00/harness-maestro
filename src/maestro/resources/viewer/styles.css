@@ -2412,18 +2412,16 @@ footer {
 }
 
 .work-data-notice {
-  display: grid;
-  gap: 3px;
-  margin-top: 16px;
-  padding: 11px 14px;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 8px;
   border: 1px solid;
-  border-left-width: 3px;
-}
-
-.work-data-notice p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .work-detail-layout {
@@ -2469,13 +2467,12 @@ footer {
 
 .work-map-scroll {
   max-width: 100%;
-  overflow: auto;
-  overscroll-behavior-inline: contain;
+  overflow: visible;
 }
 
 .work-map-canvas {
   position: relative;
-  min-width: var(--work-canvas-width, 452px);
+  min-width: 0;
 }
 
 .work-edge-layer {
@@ -2492,71 +2489,75 @@ footer {
   vector-effect: non-scaling-stroke;
 }
 
-.work-lanes {
+.work-waves {
   position: relative;
   z-index: 1;
-}
-
-.work-lane {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr);
-  min-height: 156px;
-  border-top: 1px solid;
+  gap: 48px;
+  padding: 20px 18px 24px;
 }
 
-.work-lane:first-child {
-  border-top: 0;
-}
-
-.work-lane-header {
-  display: grid;
-  align-content: start;
-  gap: 3px;
-  padding: 18px 16px;
-  border-right: 1px solid;
-}
-
-.work-lane-header strong {
-  font-size: 13px;
-}
-
-.work-lane-header span,
-.work-lane-header small {
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.work-lane-track {
-  display: grid;
-  grid-template-columns: repeat(var(--work-rank-count), 224px);
-  gap: 52px;
-  align-items: start;
-  min-width: 0;
-  padding: 18px 20px;
-}
-
-.work-stage-column {
+.work-wave {
   display: grid;
   gap: 10px;
+  min-width: 0;
+}
+
+.work-wave-header {
+  display: flex;
+  width: min(100%, 1120px);
+  align-items: baseline;
+  justify-content: space-between;
+  justify-self: center;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.work-wave-index {
+  font: 650 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.06em;
+}
+
+.work-wave-header small {
+  font-size: 10px;
+}
+
+.work-wave-cards {
+  display: grid;
+  width: min(100%, 1120px);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(260px, 100%), 1fr)
+  );
+  justify-content: center;
+  gap: 14px;
+  justify-self: center;
   min-width: 0;
 }
 
 .work-stage-card {
   position: relative;
   display: grid;
-  width: 224px;
-  min-height: 124px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+  min-height: 132px;
   gap: 0;
   align-content: start;
   padding: 0;
   border: 1px solid;
   border-radius: 0;
   text-align: left;
-  transition: width 150ms ease;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
 }
 
 .work-stage-card.expanded {
-  width: min(520px, calc(100vw - 300px));
+  width: min(100%, 760px);
+  max-width: 760px;
+  grid-column: 1 / -1;
+  justify-self: center;
 }
 
 .work-card-toggle {
@@ -2572,6 +2573,7 @@ footer {
   background: transparent;
   box-shadow: none;
   text-align: left;
+  scroll-margin-top: 124px;
 }
 
 .work-card-toggle:hover {
@@ -2589,8 +2591,7 @@ footer {
 }
 
 .work-stage-topline,
-.work-stage-responsibility,
-.work-stage-footer {
+.work-stage-responsibility {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2639,37 +2640,20 @@ footer {
 }
 
 .work-stage-footer {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px 10px;
-  justify-content: stretch;
-  margin-top: auto;
-  padding-top: 9px;
-  border-top: 1px solid;
-}
-
-.work-stage-footer-fact {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 1px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid;
+  font-variant-numeric: tabular-nums;
 }
 
-.work-stage-footer-fact small,
-.work-stage-footer-fact strong {
+.work-stage-footer-summary {
+  display: block;
   overflow: hidden;
+  font: 600 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.work-stage-footer-fact small {
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.work-stage-footer-fact strong {
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.35;
 }
 
 .work-card-expertise {
@@ -2799,6 +2783,97 @@ footer {
   border-top: 1px solid;
 }
 
+.work-card-detail-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--color-surface);
+}
+
+.work-card-detail[hidden] {
+  display: none;
+}
+
+.work-card-detail-heading {
+  grid-column: 1 / -1;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid;
+}
+
+.work-card-detail-heading h3 {
+  max-width: 34ch;
+  margin: 3px 0 5px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.work-card-detail-heading > p:last-child {
+  max-width: 68ch;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.work-card-detail-section {
+  min-width: 0;
+  padding: 16px 18px;
+  border-bottom: 1px solid;
+}
+
+.work-card-detail-section:nth-of-type(even) {
+  border-left: 1px solid;
+}
+
+.work-card-detail-section h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+}
+
+.work-card-detail-facts {
+  display: grid;
+  margin: 0;
+}
+
+.work-card-detail-fact {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid;
+}
+
+.work-card-detail-fact:first-child {
+  border-top: 0;
+}
+
+.work-card-detail-fact dt {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.work-card-detail-fact dd {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+}
+
+.work-card-detail-fact strong {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.work-card-detail-fact small {
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.work-card-detail-content > .work-technical-details {
+  grid-column: 1 / -1;
+}
+
 .work-inspector {
   position: sticky;
   top: 104px;
@@ -2809,8 +2884,13 @@ footer {
 }
 
 .work-card-detail.work-inspector {
+  position: static;
+  top: auto;
   width: 100%;
   min-width: 0;
+  max-height: none;
+  overflow: visible;
+  border: 0;
 }
 
 .work-inspector-heading {
@@ -2928,7 +3008,8 @@ footer {
   font-weight: 700;
 }
 
-.work-technical-details > .work-inspector-facts {
+.work-technical-details > .work-inspector-facts,
+.work-technical-details > .work-card-detail-facts {
   padding: 0 16px 14px;
 }
 
@@ -3004,26 +3085,13 @@ footer {
     display: none;
   }
 
-  .work-lane {
-    display: block;
-    min-height: 0;
+  .work-waves {
+    gap: 28px;
+    padding: 14px 12px 18px;
   }
 
-  .work-lane-header {
-    padding: 12px 14px;
-    border-right: 0;
-    border-bottom: 1px solid;
-  }
-
-  .work-lane-track {
-    display: grid;
-    grid-template-columns: 1fr !important;
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .work-stage-column {
-    grid-column: 1 !important;
+  .work-wave-cards {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .work-stage-card {
@@ -3032,7 +3100,16 @@ footer {
   }
 
   .work-stage-card.expanded {
+    grid-column: auto;
     width: 100%;
+  }
+
+  .work-card-detail-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .work-card-detail-section:nth-of-type(even) {
+    border-left: 0;
   }
 
   .work-stage-dependencies {
@@ -3081,7 +3158,8 @@ footer {
     border-top: 0;
   }
 
-  .work-inspector-fact {
+  .work-inspector-fact,
+  .work-card-detail-fact {
     grid-template-columns: 1fr;
     gap: 3px;
   }
@@ -3679,12 +3757,14 @@ th {
 .work-summary-item,
 .work-map-panel,
 .work-map-heading,
-.work-lane,
-.work-lane-header,
+.work-wave-header,
 .work-inspector,
 .work-inspector-heading,
 .work-inspector-section,
 .work-inspector-fact,
+.work-card-detail-heading,
+.work-card-detail-section,
+.work-card-detail-fact,
 .work-context-panel {
   border-color: var(--color-divider);
 }
@@ -3709,15 +3789,17 @@ th {
 .work-summary-item > span,
 .work-summary-item > small,
 .work-map-legend,
-.work-lane-header span,
-.work-lane-header small,
+.work-wave-header,
 .work-stage-responsibility,
 .work-stage-footer,
 .work-stage-dependencies,
 .work-inspector-heading p:last-of-type,
 .work-stage-source-note,
 .work-inspector-fact dt,
-.work-inspector-fact dd small {
+.work-inspector-fact dd small,
+.work-card-detail-heading > p:last-child,
+.work-card-detail-fact dt,
+.work-card-detail-fact small {
   color: var(--color-muted);
 }
 
@@ -3741,14 +3823,8 @@ th {
   background: var(--color-warning-soft);
 }
 
-.work-map-heading,
-.work-lane-header {
+.work-map-heading {
   background: var(--color-surface-raised);
-}
-
-.work-map-scroll:focus-visible {
-  outline: 3px solid var(--color-blue);
-  outline-offset: -3px;
 }
 
 .work-edge {
@@ -3837,7 +3913,6 @@ th {
   border-color: var(--color-divider);
 }
 
-.work-stage-footer-fact small,
 .work-pack-toggle > small {
   color: var(--color-muted);
 }
@@ -3848,6 +3923,7 @@ th {
 }
 
 .work-inspector-heading,
+.work-card-detail-heading,
 .work-unavailable-note,
 .work-technical-details > summary {
   background: var(--color-surface-raised);

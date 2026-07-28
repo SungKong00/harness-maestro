@@ -1892,8 +1892,11 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn('text: "작업 열기"', viewer_source)
         self.assertIn("renderRunWorkspace(snapshot", viewer_source)
         self.assertIn("buildStageMap(", viewer_source)
-        self.assertIn("buildStageInspector(", viewer_source)
+        self.assertIn("appendWorkWaves(", viewer_source)
+        self.assertIn("buildStageCardDetail(", viewer_source)
+        self.assertIn("buildObservedWorkCardDetail(", viewer_source)
         self.assertIn("drawWorkEdges(", viewer_source)
+        self.assertIn("displayEdgeGroups(", viewer_source)
         self.assertIn('button.setAttribute("aria-expanded"', viewer_source)
         self.assertIn('className: "work-card-toggle"', viewer_source)
         self.assertIn("workExecutionFooterFromProjection(", viewer_source)
@@ -1923,14 +1926,39 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn(".work-detail-layout", viewer_styles)
         self.assertIn(".work-stage-card.expanded", viewer_styles)
         self.assertIn(".work-card-detail", viewer_styles)
+        self.assertIn(".work-wave-cards", viewer_styles)
+        self.assertIn(".work-card-detail-content", viewer_styles)
+        self.assertIn(".work-card-detail[hidden]", viewer_styles)
+        self.assertIn(".work-card-detail.work-inspector", viewer_styles)
+        self.assertIn("overflow: visible;", viewer_styles)
+        self.assertIn("scroll-margin-top: 124px;", viewer_styles)
         self.assertIn("관계상 독립 가능", viewer_source)
         self.assertIn("실제 병렬 실행", viewer_source)
-        self.assertIn("구조화된 문제와 결론 기록 없음", viewer_source)
-        self.assertIn("선택·전달 기록이며", viewer_source)
+        self.assertIn(
+            'observed.graph.actual_concurrency === "observed"',
+            viewer_source,
+        )
+        self.assertNotIn(
+            'observed.graph.actual_concurrency === "measured"',
+            viewer_source,
+        )
+        self.assertIn("구조화된 결정 기록 없음", viewer_source)
+        self.assertIn("계획·상태에서 결정을 추론하지 않습니다.", viewer_source)
         self.assertIn("실제 모델 확인 불가", viewer_source)
+        self.assertIn("모델 기록 없음", viewer_source)
+        self.assertIn("토큰 기록 없음", viewer_source)
+        self.assertIn("compactWorkDuration(", viewer_source)
+        self.assertIn(
+            'facts.reasoning.value.replaceAll("_", " ")',
+            viewer_source,
+        )
+        self.assertIn(
+            'facts.model?.kind === "actual"',
+            viewer_source,
+        )
         self.assertIn('"완료 상태"', viewer_source)
         self.assertIn('"기록된 수정"', viewer_source)
-        self.assertIn('text: "계획 단계"', viewer_source)
+        self.assertIn("`계획 단계 ${String(stage.rank + 1)", viewer_source)
         self.assertIn("pendingWorkFocusRestore", viewer_source)
         self.assertIn(
             'input[name="run_display_name"]',
@@ -1942,6 +1970,15 @@ class OperationsViewerTests(unittest.TestCase):
         )
         self.assertNotIn(
             'inspector.setAttribute("aria-live"',
+            viewer_source,
+        )
+        self.assertNotIn("scroll.tabIndex = 0", viewer_source)
+        self.assertNotIn(
+            "selected ? buildStageInspector(",
+            viewer_source,
+        )
+        self.assertNotIn(
+            "selected\n                ? buildObservedWorkInspector(",
             viewer_source,
         )
         self.assertNotIn(
@@ -2021,6 +2058,44 @@ assert.equal(
   "라우터 확인 결과 선택 없음 · 최초 선택 · 충돌 없음",
 );
 assert.equal(expertiseRoutingText(legacy), "선택 방식 기록 없음");
+"""
+        )
+        completed = subprocess.run(
+            [node, "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
+
+    def test_compact_work_footer_formats_measured_and_missing_values(
+        self,
+    ) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is required for the viewer helper test")
+        viewer_source = (
+            ROOT / "src/maestro/resources/viewer/app.js"
+        ).read_text(encoding="utf-8")
+        helper_start = viewer_source.index("function compactTokenValue(")
+        helper_end = viewer_source.index(
+            "function workExecutionFooter(",
+            helper_start,
+        )
+        script = (
+            'const assert = require("node:assert/strict");\n'
+            + viewer_source[helper_start:helper_end]
+            + r"""
+assert.equal(compactModelName("gpt-5.6-terra"), "5.6 terra");
+assert.equal(compactTokenValue({total: 55550}), "55,550");
+assert.equal(compactTokenValue(null), "토큰 기록 없음");
+assert.equal(compactWorkDuration(1656000), "27.6m");
+assert.equal(compactWorkDuration(null), "시간 기록 없음");
 """
         )
         completed = subprocess.run(

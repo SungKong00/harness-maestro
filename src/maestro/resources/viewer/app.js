@@ -7,8 +7,9 @@ const state = {
   currentView: "overview",
   selectedRun: null,
   selectedStage: null,
-  activeWorkEdges: [],
+  activeWorkEdgeGroups: [],
   activeWorkEdgeMode: "plan",
+  workResizeObserver: null,
   pendingWorkFocus: null,
   pendingWorkFocusRestore: null,
   selectedPack: null,
@@ -716,13 +717,18 @@ function applyWorkFocus(options = {}) {
   }
   const target = document.getElementById("run-workspace");
   if (options.focusStageId) {
-    [...target.querySelectorAll(".work-stage-card")]
-      .find((card) => (
-        card.dataset.stageId === options.focusStageId
-        || card.dataset.workId === options.focusStageId
-      ))
-      ?.querySelector(".work-card-toggle")
-      ?.focus({ preventScroll: true });
+    const card = [...target.querySelectorAll(".work-stage-card")]
+      .find((item) => (
+        item.dataset.stageId === options.focusStageId
+        || item.dataset.workId === options.focusStageId
+      ));
+    const toggle = card?.querySelector(".work-card-toggle");
+    toggle?.focus({
+      preventScroll: true,
+    });
+    if (card?.classList.contains("expanded")) {
+      toggle?.scrollIntoView({ block: "start" });
+    }
     return;
   }
   if (options.focusInspectorTechnical) {
@@ -732,7 +738,7 @@ function applyWorkFocus(options = {}) {
     return;
   }
   if (options.focusInspector) {
-    target.querySelector(".work-inspector-heading h3")?.focus({
+    target.querySelector(".work-card-detail-heading h3")?.focus({
       preventScroll: true,
     });
     return;
@@ -2583,23 +2589,27 @@ function buildWorkTelemetryNotice(run) {
   const notice = element("aside", {
     className: "work-data-notice",
   });
-  notice.append(element("strong", {
-    text: (
-      `단계 상태 ${run.stage_coverage.recorded}/${run.stage_coverage.planned}개, `
-      + `실제 모델 계측 ${telemetry.model_measured}/${telemetry.model_expected}개`
-    ),
-  }));
   const binding = run.execution_binding || {};
-  notice.append(element("p", {
-    text: binding.mode === "explicit_fallback"
+  const explanation = binding.mode === "explicit_fallback"
       ? (
         `${fallbackReasonLabel(binding.reason)} 사유로 현재 실행 환경을 사용했습니다. `
         + "단계 종료는 기록할 수 있지만 실제 모델·토큰은 이 경로에서 증명하지 않습니다."
       )
       : (
         "단계별 실행 이벤트가 완전하지 않습니다. 요청 모델이나 권장 모델을 실제 실행값으로 대신 표시하지 않습니다."
+      );
+  notice.append(
+    element("span", {
+      text: (
+        `실행 계측 ${telemetry.model_measured}/${telemetry.model_expected}`
       ),
-  }));
+    }),
+    workInfoDisclosure(
+      "work-telemetry",
+      "실행 계측 범위",
+      explanation,
+    ),
+  );
   return notice;
 }
 
@@ -2704,55 +2714,399 @@ function workPackDisclosure(expertise, id) {
 
 function compactTokenValue(tokens) {
   const total = tokens?.total;
-  if (typeof total === "number") return `${total.toLocaleString("ko-KR")} token`;
+  if (typeof total === "number") return total.toLocaleString("ko-KR");
   if (typeof tokens?.total?.total === "number") {
-    return `${tokens.total.total.toLocaleString("ko-KR")} token`;
+    return tokens.total.total.toLocaleString("ko-KR");
   }
-  return "token 기록 없음";
+  return "토큰 기록 없음";
 }
 
-function workExecutionFooter(facts) {
+function compactModelName(value) {
+  if (!value) return "모델 기록 없음";
+  return value
+    .replace(/^gpt-/i, "")
+    .replaceAll("-", " ");
+}
+
+function compactWorkDuration(value) {
+  if (typeof value !== "number") return "시간 기록 없음";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) {
+    return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}s`;
+  }
+  if (value < 3_600_000) {
+    return `${(value / 60_000).toFixed(1)}m`;
+  }
+  return `${(value / 3_600_000).toFixed(1)}h`;
+}
+
+function workExecutionFooter(facts, provenance = "") {
   const footer = element("footer", { className: "work-stage-footer" });
-  [
-    ["모델", facts.model],
-    ["추론", facts.reasoning],
-    ["사용량", facts.tokens],
-    ["시간", facts.duration],
-  ].forEach(([label, value]) => {
-    const item = element("span", { className: "work-stage-footer-fact" });
-    item.append(
-      element("small", { text: label }),
-      element("strong", { text: value }),
-    );
-    footer.append(item);
-  });
+  const summary = `${facts.model} - ${facts.reasoning}, `
+    + `${facts.tokens}, ${facts.duration}`;
+  footer.append(element("span", {
+    className: "work-stage-footer-summary",
+    text: summary,
+  }));
+  footer.setAttribute("aria-label", provenance || summary);
+  if (provenance) footer.title = provenance;
   return footer;
 }
 
 function workExecutionFooterFromProjection(facts) {
   if (!facts) return null;
-  const modelPrefix = {
-    actual: "실제",
-    hook_point: "Hook",
-    requested: "요청",
-    recommended: "권장",
-  }[facts.model?.kind];
-  return workExecutionFooter({
-    model: modelPrefix && facts.model?.value
-      ? `${modelPrefix} ${facts.model.value}`
-      : "기록 없음",
-    reasoning: facts.reasoning?.kind === "requested"
-      && facts.reasoning.value
-      ? `요청 ${displayReasoningEffort(facts.reasoning.value)}`
-      : "기록 없음",
-    tokens: compactTokenValue({
-      total: facts.tokens?.value,
-    }),
-    duration: facts.duration?.value_ms === null
-      || facts.duration?.value_ms === undefined
-      ? facts.duration?.state === "running" ? "실행 중" : "기록 없음"
-      : formatDuration(facts.duration.value_ms),
+  const modelKind = {
+    actual: "실제 적용 모델",
+    hook_point: "Hook 시점 모델",
+    requested: "요청 모델",
+    recommended: "권장 모델",
+    unavailable: "모델",
+  }[facts.model?.kind] || "모델";
+  const model = facts.model?.kind === "actual"
+    ? compactModelName(facts.model.value)
+    : "모델 기록 없음";
+  const reasoning = facts.reasoning?.kind === "requested"
+    && facts.reasoning.value
+    ? facts.reasoning.value.replaceAll("_", " ")
+    : "추론 기록 없음";
+  const tokens = compactTokenValue({
+    total: facts.tokens?.value,
   });
+  const duration = facts.duration?.value_ms === null
+    || facts.duration?.value_ms === undefined
+    ? facts.duration?.state === "running"
+      ? "실행 중"
+      : "시간 기록 없음"
+    : compactWorkDuration(facts.duration.value_ms);
+  const provenance = [
+    `${modelKind}: ${facts.model?.value || "기록 없음"} `
+      + `(coverage ${facts.model?.coverage || "unavailable"})`,
+    `요청 추론 강도: ${facts.reasoning?.value || "기록 없음"}`,
+    `토큰: ${tokens} (scope ${facts.tokens?.scope || "unavailable"})`,
+    `시간: ${duration} (coverage ${
+      facts.duration?.coverage || "unavailable"
+    })`,
+  ].join(". ");
+  return workExecutionFooter({
+    model,
+    reasoning,
+    tokens,
+    duration,
+  }, provenance);
+}
+
+function workCardDetailFact(target, label, value, note = "") {
+  const item = element("div", { className: "work-card-detail-fact" });
+  item.append(element("dt", { text: label }));
+  const description = element("dd");
+  description.append(element("strong", {
+    text: value || "기록 없음",
+  }));
+  if (note) description.append(element("small", { text: note }));
+  item.append(description);
+  target.append(item);
+}
+
+function workCardDetailSection(title, facts) {
+  const section = element("section", {
+    className: "work-card-detail-section",
+  });
+  section.append(element("h4", { text: title }));
+  const list = element("dl", { className: "work-card-detail-facts" });
+  facts.forEach(([label, value, note = ""]) => {
+    workCardDetailFact(list, label, value, note);
+  });
+  section.append(list);
+  return section;
+}
+
+function appendWorkCardEvidence(section, references) {
+  if (!references?.length) return;
+  const list = element("ul", { className: "work-evidence-list" });
+  references.forEach((reference) => {
+    list.append(element("li", { text: reference }));
+  });
+  section.append(list);
+}
+
+function buildStageCardDetail(run, work, stage) {
+  const detail = element("div", {
+    className: "work-card-detail-content",
+  });
+  const lane = work.lanes.find((item) => item.lane_id === stage.lane_id);
+  const heading = element("header", {
+    className: "work-card-detail-heading",
+  });
+  heading.append(
+    element("p", { className: "eyebrow", text: "단계 판단" }),
+    element("h3", {
+      text: (
+        stage.summary?.decision
+        || stage.summary?.result
+        || displayStatus(stage.status.value)
+      ),
+    }),
+    element("p", { text: stage.purpose }),
+  );
+  heading.querySelector("h3").tabIndex = -1;
+  detail.append(heading);
+
+  detail.append(workCardDetailSection("담당과 전달", [
+    [
+      "담당",
+      lane?.label || "담당 영역 기록 없음",
+      executorLabel(stage.responsibility.executor_id),
+    ],
+    [
+      "선행 단계",
+      stage.depends_on.length
+        ? stage.depends_on.map((stageId) => (
+          work.stages.find((item) => item.stage_id === stageId)?.title
+          || stageId
+        )).join(", ")
+        : "계획상 시작 단계",
+      "plan의 depends_on이며 실제 실행 순서 증거는 아닙니다.",
+    ],
+    [
+      "상태",
+      displayStatus(stage.status.value),
+      stage.status.observed_at
+        ? formatDate(stage.status.observed_at)
+        : stageStatusSourceLabel(stage),
+    ],
+  ]));
+
+  const evidence = workCardDetailSection("결론과 확인 근거", [
+    [
+      "결정",
+      stage.summary?.decision || "구조화된 결정 기록 없음",
+      stage.summary?.decision_evidence === "structured_work_outcome"
+        ? "구조화된 작업 결과"
+        : "계획·상태에서 결정을 추론하지 않습니다.",
+    ],
+    [
+      "결과",
+      stage.summary?.result || "구조화된 결과 기록 없음",
+    ],
+    [
+      "확인 상태",
+      stage.evidence.refs.length
+        ? `${stage.evidence.refs.length}개 근거 연결`
+        : "확인 근거 기록 없음",
+    ],
+  ]);
+  appendWorkCardEvidence(evidence, stage.evidence.refs);
+  detail.append(evidence);
+
+  detail.append(workCardDetailSection("담당 전문지식", [
+    [
+      "Pack",
+      stage.expertise.pack_ids.length
+        ? stage.expertise.pack_ids.map(packName).join(", ")
+        : "Pack 기록 없음",
+    ],
+    [
+      "Guide",
+      stage.expertise.guide_ids.length
+        ? stage.expertise.guide_ids.map(guideName).join(", ")
+        : "Guide 기록 없음",
+    ],
+    [
+      "Lens",
+      stage.responsibility.lens_ids.length
+        ? stage.responsibility.lens_ids.map(lensLabel).join(", ")
+        : "Lens 기록 없음",
+      expertiseEvidenceLabel(stage.expertise.evidence),
+    ],
+  ]));
+
+  const technical = element("details", {
+    className: "work-technical-details",
+  });
+  technical.append(element("summary", { text: "기술 기록" }));
+  const technicalFacts = element("dl", {
+    className: "work-card-detail-facts",
+  });
+  const model = stageModelSummary(stage);
+  [
+    ["Assignment ID", stage.stage_id],
+    ["실행 모델 근거", model.value, model.note],
+    [
+      "시간",
+      compactWorkDuration(stage.measurements.duration_ms),
+      stage.execution_facts?.duration?.coverage || "unavailable",
+    ],
+    [
+      "토큰",
+      compactTokenValue({ total: stage.measurements.tokens }),
+      stage.execution_facts?.tokens?.scope || "unavailable",
+    ],
+  ].forEach(([label, value, note = ""]) => {
+    workCardDetailFact(technicalFacts, label, value, note);
+  });
+  technical.append(technicalFacts);
+  detail.append(technical);
+  return detail;
+}
+
+function buildObservedWorkCardDetail(run, work, card) {
+  const detail = element("div", {
+    className: "work-card-detail-content",
+  });
+  const observed = work.execution;
+  const cardsById = new Map(
+    observed.cards.map((item) => [item.work_id, item]),
+  );
+  const parent = cardsById.get(card.relationships.parent_work_id);
+  const followups = observed.cards.filter(
+    (item) => item.relationships.followup_of_work_id === card.work_id,
+  );
+  const heading = element("header", {
+    className: "work-card-detail-heading",
+  });
+  heading.append(
+    element("p", { className: "eyebrow", text: "결정과 결과" }),
+    element("h3", {
+      text: (
+        card.detail?.decision
+        || card.detail?.conclusion
+        || card.result_summary
+        || (card.status.value === "running"
+          ? "진행 중"
+          : "결정·결과 기록 없음")
+      ),
+    }),
+    element("p", { text: card.detail?.finding || card.task_summary }),
+  );
+  heading.querySelector("h3").tabIndex = -1;
+  detail.append(heading);
+
+  detail.append(workCardDetailSection("지시·보고·다음 판단", [
+    [
+      "지시·보고 대상",
+      parent?.role || "최상위 실행 담당",
+      card.assignment.assignment_id
+        ? `계획 ${card.assignment.assignment_id}에 연결`
+        : "계획 단계 binding 없음",
+    ],
+    [
+      "선행·합류",
+      [
+        ...card.relationships.depends_on_work_ids,
+        ...card.relationships.joins_work_ids,
+      ].length
+        ? [
+          ...card.relationships.depends_on_work_ids,
+          ...card.relationships.joins_work_ids,
+        ].map((workId) => cardsById.get(workId)?.role || workId)
+          .join(", ")
+        : "없음",
+    ],
+    [
+      "다음 행동",
+      workNextActionLabel(card.detail?.next_action),
+      card.detail?.handoff
+        ? `${card.detail.handoff.purpose} · ${
+          card.detail.handoff.completion_criteria
+        }`
+        : followups.length
+          ? followups.map((item) => `${item.role} ${item.attempt}차`)
+            .join(", ")
+          : "후속·재위임 기록 없음",
+    ],
+  ]));
+
+  const evidenceFacts = [
+    [
+      "발견",
+      card.detail?.finding || "구조화된 finding 기록 없음",
+    ],
+    [
+      "결론",
+      card.detail?.conclusion || "구조화된 결론 기록 없음",
+    ],
+    [
+      "완료 조건",
+      card.detail?.completion_criteria || "완료 조건 기록 없음",
+    ],
+  ];
+  if (card.detail?.verification) {
+    evidenceFacts.push([
+      "검증",
+      `${card.detail.verification.command_result} · ${
+        card.detail.verification.assertion
+      }`,
+      `${card.detail.verification.target} · ${
+        card.detail.verification.basis
+      }`,
+    ]);
+  }
+  if (card.detail?.artifacts?.length) {
+    evidenceFacts.push([
+      "산출물",
+      card.detail.artifacts.map(
+        (artifact) => (
+          `${artifact.artifact_id} · ${artifact.verification}`
+        ),
+      ).join(", "),
+    ]);
+  }
+  const evidence = workCardDetailSection("근거와 검증", evidenceFacts);
+  appendWorkCardEvidence(evidence, card.evidence.refs);
+  detail.append(evidence);
+
+  detail.append(workCardDetailSection("담당 전문지식", [
+    [
+      "Pack",
+      card.expertise.pack_ids.length
+        ? card.expertise.pack_ids.map(packName).join(", ")
+        : "Pack 기록 없음",
+    ],
+    [
+      "Guide",
+      card.expertise.guide_ids.length
+        ? card.expertise.guide_ids.map(guideName).join(", ")
+        : "Guide 기록 없음",
+    ],
+    [
+      "Lens",
+      card.expertise.lens_ids.length
+        ? card.expertise.lens_ids.map(lensLabel).join(", ")
+        : "Lens 기록 없음",
+      expertiseEvidenceLabel(card.expertise.evidence),
+    ],
+  ]));
+
+  const technical = element("details", {
+    className: "work-technical-details",
+  });
+  technical.append(element("summary", { text: "기술 기록" }));
+  const technicalFacts = element("dl", {
+    className: "work-card-detail-facts",
+  });
+  [
+    ["Work ID", card.work_id],
+    [
+      "모델 근거",
+      `${card.models.evidence} · ${card.models.coverage}`,
+    ],
+    [
+      "이벤트 범위",
+      `${card.coverage?.source?.interface || "unavailable"} · ${
+        card.coverage?.event || "unavailable"
+      }`,
+    ],
+    [
+      "토큰 귀속",
+      card.measurements.tokens?.scope || "unavailable",
+      card.measurements.tokens?.attribution || "unavailable",
+    ],
+  ].forEach(([label, value, note = ""]) => {
+    workCardDetailFact(technicalFacts, label, value, note);
+  });
+  technical.append(technicalFacts);
+  detail.append(technical);
+  return detail;
 }
 
 function stageCard(stage, selected, onSelect, stagesById, detail) {
@@ -2772,7 +3126,7 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
   top.append(
     element("span", {
       className: "work-stage-sequence",
-      text: "계획 단계",
+      text: `계획 단계 ${String(stage.rank + 1).padStart(2, "0")}`,
     }),
     element("span", {
       className: "work-stage-kind",
@@ -2819,10 +3173,10 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
   button.append(
     workExecutionFooterFromProjection(stage.execution_facts)
     || workExecutionFooter({
-      model: "기록 없음",
-      reasoning: "기록 없음",
-      tokens: "token 기록 없음",
-      duration: "기록 없음",
+      model: "모델 기록 없음",
+      reasoning: "추론 기록 없음",
+      tokens: "토큰 기록 없음",
+      duration: "시간 기록 없음",
     }),
   );
   card.append(button);
@@ -2840,9 +3194,51 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
   return card;
 }
 
+function legacyDisplayEdgeGroups(graph, cards, idKey) {
+  const rankById = new Map(
+    cards.map((card) => [card[idKey], card.rank]),
+  );
+  return (graph.edges || [])
+    .filter((edge) => (
+      edge.type !== "reports_to"
+      && rankById.get(edge.to) === rankById.get(edge.from) + 1
+    ))
+    .map((edge, index) => ({
+      group_id: `legacy-${index}`,
+      source_node_ids: [edge.from],
+      target_node_ids: [edge.to],
+      links: [{
+        from: edge.from,
+        to: edge.to,
+        relation_types: [edge.type || "depends_on"],
+        raw_edge_indexes: [index],
+      }],
+      routing: "individual",
+    }));
+}
+
+function displayEdgeGroups(graph, cards, idKey) {
+  if (Array.isArray(graph.display_edge_groups)) {
+    return graph.display_edge_groups;
+  }
+  return legacyDisplayEdgeGroups(graph, cards, idKey);
+}
+
+function appendWorkEdgePath(svg, pathData, className, marker = false) {
+  const path = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path",
+  );
+  path.setAttribute("d", pathData);
+  path.setAttribute("class", className);
+  if (marker) path.setAttribute("marker-end", "url(#work-edge-arrow)");
+  svg.append(path);
+  return path;
+}
+
 function drawWorkEdges(
   canvas,
-  edges,
+  groups,
   selector = ".work-stage-card",
   dataKey = "stageId",
 ) {
@@ -2855,7 +3251,7 @@ function drawWorkEdges(
     ),
   );
   const canvasRect = canvas.getBoundingClientRect();
-  const width = canvas.scrollWidth;
+  const width = canvas.clientWidth;
   const height = canvas.scrollHeight;
   clear(svg);
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -2879,24 +3275,101 @@ function drawWorkEdges(
   definitions.append(marker);
   svg.append(definitions);
 
-  edges.forEach((edge) => {
-    const sourceRect = cards.get(edge.from);
-    const targetRect = cards.get(edge.to);
-    if (!sourceRect || !targetRect) return;
-    const x1 = sourceRect.right - canvasRect.left;
-    const y1 = sourceRect.top + sourceRect.height / 2 - canvasRect.top;
-    const x2 = targetRect.left - canvasRect.left;
-    const y2 = targetRect.top + targetRect.height / 2 - canvasRect.top;
-    const bend = x1 + Math.max(24, (x2 - x1) / 2);
-    const path = document.createElementNS(namespace, "path");
-    path.setAttribute(
-      "d",
-      `M ${x1} ${y1} H ${bend} V ${y2} H ${x2}`,
+  groups.forEach((group) => {
+    const sources = group.source_node_ids
+      .map((nodeId) => cards.get(nodeId))
+      .filter(Boolean);
+    const targets = group.target_node_ids
+      .map((nodeId) => cards.get(nodeId))
+      .filter(Boolean);
+    if (!sources.length || !targets.length) return;
+
+    if (group.routing !== "shared_trunk") {
+      group.links.forEach((link) => {
+        const source = cards.get(link.from);
+        const target = cards.get(link.to);
+        if (!source || !target) return;
+        const x1 = source.left + source.width / 2 - canvasRect.left;
+        const y1 = source.bottom - canvasRect.top;
+        const x2 = target.left + target.width / 2 - canvasRect.left;
+        const y2 = target.top - canvasRect.top;
+        const bend = y1 + Math.max(18, (y2 - y1) / 2);
+        const path = appendWorkEdgePath(
+          svg,
+          `M ${x1} ${y1} V ${bend} H ${x2} V ${y2}`,
+          "work-edge work-edge-individual",
+          true,
+        );
+        path.dataset.edgeType = link.relation_types.join(" ");
+      });
+      return;
+    }
+
+    const sourceAnchors = sources.map((rect) => ({
+      x: rect.left + rect.width / 2 - canvasRect.left,
+      y: rect.bottom - canvasRect.top,
+    }));
+    const targetAnchors = targets.map((rect) => ({
+      x: rect.left + rect.width / 2 - canvasRect.left,
+      y: rect.top - canvasRect.top,
+    }));
+    const sourceBottom = Math.max(
+      ...sourceAnchors.map((anchor) => anchor.y),
     );
-    path.setAttribute("class", "work-edge");
-    path.dataset.edgeType = edge.type || "depends_on";
-    path.setAttribute("marker-end", "url(#work-edge-arrow)");
-    svg.append(path);
+    const targetTop = Math.min(
+      ...targetAnchors.map((anchor) => anchor.y),
+    );
+    const trunkY = sourceBottom
+      + Math.max(18, (targetTop - sourceBottom) / 2);
+    const allX = [
+      ...sourceAnchors.map((anchor) => anchor.x),
+      ...targetAnchors.map((anchor) => anchor.x),
+    ];
+    sourceAnchors.forEach((anchor) => {
+      appendWorkEdgePath(
+        svg,
+        `M ${anchor.x} ${anchor.y} V ${trunkY}`,
+        "work-edge work-edge-stem",
+      );
+    });
+    appendWorkEdgePath(
+      svg,
+      `M ${Math.min(...allX)} ${trunkY} H ${Math.max(...allX)}`,
+      "work-edge work-edge-trunk",
+    );
+    targetAnchors.forEach((anchor) => {
+      appendWorkEdgePath(
+        svg,
+        `M ${anchor.x} ${trunkY} V ${anchor.y}`,
+        "work-edge work-edge-stem",
+        true,
+      );
+    });
+  });
+}
+
+function redrawActiveWorkEdges() {
+  if (!state.activeWorkEdgeGroups.length) return;
+  drawWorkEdges(
+    document.querySelector(".work-map-canvas"),
+    state.activeWorkEdgeGroups,
+    state.activeWorkEdgeMode === "observed"
+      ? ".work-attempt-card"
+      : ".work-stage-card",
+    state.activeWorkEdgeMode === "observed" ? "workId" : "stageId",
+  );
+}
+
+function observeWorkCanvas(canvas) {
+  state.workResizeObserver?.disconnect();
+  if (typeof ResizeObserver === "function") {
+    state.workResizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(redrawActiveWorkEdges);
+    });
+    state.workResizeObserver.observe(canvas);
+  }
+  document.fonts?.ready?.then(() => {
+    window.requestAnimationFrame(redrawActiveWorkEdges);
   });
 }
 
@@ -2954,7 +3427,10 @@ function observedWorkCard(
   top.append(
     element("span", {
       className: "work-stage-sequence",
-      text: `실제 작업 · ${card.attempt}차`,
+      text: (
+        `실행 단계 ${String(card.rank + 1).padStart(2, "0")}`
+        + ` · ${card.attempt}차`
+      ),
     }),
     element("span", {
       className: "work-stage-kind",
@@ -2998,10 +3474,12 @@ function observedWorkCard(
   button.append(
     workExecutionFooterFromProjection(card.execution_facts)
     || workExecutionFooter({
-      model: "기록 없음",
-      reasoning: "기록 없음",
-      tokens: "token 기록 없음",
-      duration: card.status.value === "running" ? "실행 중" : "기록 없음",
+      model: "모델 기록 없음",
+      reasoning: "추론 기록 없음",
+      tokens: "토큰 기록 없음",
+      duration: card.status.value === "running"
+        ? "실행 중"
+        : "시간 기록 없음",
     }),
   );
   article.append(button);
@@ -3016,15 +3494,36 @@ function observedWorkCard(
   return article;
 }
 
-function workTrackColumns(rankCount, selectedRank) {
-  return Array.from(
-    { length: rankCount },
-    (_, rank) => (
-      rank === selectedRank
-        ? "min(520px, calc(100vw - 300px))"
-        : "224px"
-    ),
-  ).join(" ");
+function appendWorkWaves(target, items, renderCard) {
+  const byRank = new Map();
+  items.forEach((item) => {
+    if (!byRank.has(item.rank)) byRank.set(item.rank, []);
+    byRank.get(item.rank).push(item);
+  });
+  [...byRank.entries()]
+    .sort(([left], [right]) => left - right)
+    .forEach(([rank, waveItems]) => {
+      const wave = element("section", { className: "work-wave" });
+      wave.dataset.rank = String(rank);
+      const header = element("header", { className: "work-wave-header" });
+      header.append(
+        element("span", {
+          className: "work-wave-index",
+          text: `단계 ${String(rank + 1).padStart(2, "0")}`,
+        }),
+        element("small", {
+          text: waveItems.length > 1
+            ? `${waveItems.length}개 독립 분기`
+            : "1개 작업",
+        }),
+      );
+      const cards = element("div", { className: "work-wave-cards" });
+      waveItems
+        .sort((left, right) => left.position - right.position)
+        .forEach((item) => cards.append(renderCard(item)));
+      wave.append(header, cards);
+      target.append(wave);
+    });
 }
 
 function buildObservedWorkMap(run, work, onSelect) {
@@ -3033,19 +3532,19 @@ function buildObservedWorkMap(run, work, onSelect) {
   const heading = element("div", { className: "work-map-heading" });
   const copy = element("div");
   copy.append(
-    element("p", { className: "eyebrow", text: "실제 작업 지도" }),
-    element("h3", { text: "지시 → 실행 → 보고 → 합류 흐름" }),
+    element("p", { className: "eyebrow", text: "실제 작업 흐름" }),
+    element("h3", { text: "오래된 단계부터 최종 결과까지" }),
   );
   const legend = element("div", { className: "work-map-legend" });
   legend.append(
-    element("span", { text: "실선 위임·의존" }),
-    element("span", { text: "점선 보고·합류·후속 작업" }),
+    element("span", { text: "위→아래 관계 순서" }),
+    element("span", { text: "같은 행 독립 분기" }),
     workInfoDisclosure(
       "observed-map",
-      "작업 지도 표시 기준",
-      observed.graph.actual_concurrency === "measured"
-        ? "같은 source·schema·clock domain의 완전한 시간 구간이 겹친 작업만 실제 병렬 실행으로 봅니다."
-        : "같은 열은 관계상 독립 가능하다는 뜻입니다. 완전한 시간 구간이 없으면 실제 병렬 실행으로 단정하지 않습니다.",
+      "작업 흐름 표시 기준",
+      observed.graph.actual_concurrency === "observed"
+        ? "같은 source·schema·clock domain의 완전한 시간 구간이 겹친 작업만 실제 병렬 실행으로 확인했습니다. 선은 인접 단계의 검증된 관계만 단순화해 표시하며 원본 관계는 상세에 보존합니다."
+        : "같은 행은 관계상 독립 분기이며 실제 동시 실행을 뜻하지 않습니다. 선은 인접 단계의 검증된 관계만 단순화해 표시하며 원본 관계는 상세에 보존합니다.",
     ),
   );
   heading.append(copy, legend);
@@ -3054,24 +3553,8 @@ function buildObservedWorkMap(run, work, onSelect) {
   selectionStatus.setAttribute("aria-live", "polite");
   section.append(heading, selectionStatus);
 
-  const scroll = element("div", { className: "work-map-scroll" });
-  scroll.tabIndex = 0;
-  scroll.setAttribute("aria-label", "실제 위임과 보고 작업 지도");
+  const flow = element("div", { className: "work-map-scroll" });
   const canvas = element("div", { className: "work-map-canvas" });
-  const rankCount = Math.max(1, observed.graph.max_rank + 1);
-  const selectedRank = observed.cards.find(
-    (card) => card.work_id === state.selectedStage,
-  )?.rank;
-  canvas.style.setProperty("--work-rank-count", String(rankCount));
-  canvas.style.setProperty(
-    "--work-canvas-width",
-    `${
-      176
-      + (rankCount * 224)
-      + (Math.max(0, rankCount - 1) * 52)
-      + (selectedRank === undefined ? 0 : 296)
-    }px`,
-  );
   const svg = document.createElementNS(
     "http://www.w3.org/2000/svg",
     "svg",
@@ -3083,93 +3566,61 @@ function buildObservedWorkMap(run, work, onSelect) {
   const cardsById = new Map(
     observed.cards.map((card) => [card.work_id, card]),
   );
-  const lanes = element("div", { className: "work-lanes" });
-  observed.lanes.forEach((lane) => {
-    const laneRow = element("section", { className: "work-lane" });
-    const laneHeader = element("header", { className: "work-lane-header" });
-    laneHeader.append(
-      element("strong", { text: lane.label }),
-      element("span", { text: `${lane.work_ids.length}건` }),
-      element("small", { text: lane.description }),
+  const waves = element("div", { className: "work-waves" });
+  appendWorkWaves(waves, observed.cards, (card) => {
+    const selected = card.work_id === state.selectedStage;
+    return observedWorkCard(
+      card,
+      selected,
+      onSelect,
+      cardsById,
+      buildObservedWorkCardDetail(run, work, card),
     );
-    const track = element("div", { className: "work-lane-track" });
-    track.style.gridTemplateColumns = workTrackColumns(
-      rankCount,
-      selectedRank,
-    );
-    const byRank = new Map();
-    lane.work_ids.forEach((workId) => {
-      const card = cardsById.get(workId);
-      if (!card) return;
-      if (!byRank.has(card.rank)) byRank.set(card.rank, []);
-      byRank.get(card.rank).push(card);
-    });
-    [...byRank.entries()]
-      .sort(([left], [right]) => left - right)
-      .forEach(([rank, cards]) => {
-        const column = element("div", { className: "work-stage-column" });
-        column.style.gridColumn = String(rank + 1);
-        cards
-          .sort((left, right) => left.position - right.position)
-          .forEach((card) => {
-            const selected = card.work_id === state.selectedStage;
-            column.append(observedWorkCard(
-              card,
-              selected,
-              onSelect,
-              cardsById,
-              selected
-                ? buildObservedWorkInspector(run, work, card)
-                : null,
-            ));
-          });
-        track.append(column);
-      });
-    laneRow.append(laneHeader, track);
-    lanes.append(laneRow);
   });
-  canvas.append(lanes);
-  scroll.append(canvas);
-  section.append(scroll);
+  canvas.append(waves);
+  flow.append(canvas);
+  section.append(flow);
+  const groups = displayEdgeGroups(
+    observed.graph,
+    observed.cards,
+    "work_id",
+  );
   window.requestAnimationFrame(() => drawWorkEdges(
     canvas,
-    observed.graph.edges,
+    groups,
     ".work-attempt-card",
     "workId",
   ));
+  observeWorkCanvas(canvas);
   return section;
 }
 
 function buildStageMap(run, work, onSelect) {
-  const section = element("section", {
-    className: "work-map-panel",
-  });
+  const section = element("section", { className: "work-map-panel" });
   const heading = element("div", { className: "work-map-heading" });
   const copy = element("div");
   copy.append(
-    element("p", { className: "eyebrow", text: "작업 지도" }),
-    element("h3", { text: "담당 영역별 실행 단계" }),
+    element("p", { className: "eyebrow", text: "계획 작업 흐름" }),
+    element("h3", { text: "시작 단계부터 검증까지" }),
   );
   const legend = element("div", { className: "work-map-legend" });
   legend.append(
     element("span", {
       className: "work-map-legend-edge",
-      text: "→ 계획에서 확인된 depends_on",
+      text: "위→아래 계획 의존 관계",
     }),
     element("span", {
       className: "work-map-legend-mobile",
-      text: "각 카드의 ‘선행 단계’로 계획 의존 관계 표시",
+      text: "각 카드의 선행 단계로 의존 관계 표시",
     }),
     workInfoDisclosure(
       "plan-map",
-      "계획 지도 표시 기준",
-      "같은 열은 계획 관계상 독립 가능하다는 뜻입니다. 실제 실행 순서나 동시 실행은 관측 기록이 있을 때만 별도로 표시합니다.",
+      "계획 흐름 표시 기준",
+      "같은 행은 plan 관계상 독립 가능한 단계입니다. 실제 실행 순서나 동시 실행은 관측 기록이 있을 때만 별도로 표시합니다.",
     ),
   );
   heading.append(copy, legend);
-  const selectionStatus = element("span", {
-    className: "sr-only",
-  });
+  const selectionStatus = element("span", { className: "sr-only" });
   selectionStatus.id = "work-selection-status";
   selectionStatus.setAttribute("aria-live", "polite");
   section.append(heading, selectionStatus);
@@ -3179,31 +3630,8 @@ function buildStageMap(run, work, onSelect) {
     return section;
   }
 
-  const scroll = element("div", {
-    className: "work-map-scroll",
-  });
-  scroll.tabIndex = 0;
-  scroll.setAttribute("aria-label", "담당 영역별 작업 지도");
-  const canvas = element("div", {
-    className: "work-map-canvas",
-  });
-  const rankCount = Math.max(1, work.graph.max_rank + 1);
-  const selectedRank = work.stages.find(
-    (stage) => stage.stage_id === state.selectedStage,
-  )?.rank;
-  canvas.style.setProperty(
-    "--work-rank-count",
-    String(rankCount),
-  );
-  canvas.style.setProperty(
-    "--work-canvas-width",
-    `${
-      176
-      + (rankCount * 224)
-      + (Math.max(0, rankCount - 1) * 52)
-      + (selectedRank === undefined ? 0 : 296)
-    }px`,
-  );
+  const flow = element("div", { className: "work-map-scroll" });
+  const canvas = element("div", { className: "work-map-canvas" });
   const svg = document.createElementNS(
     "http://www.w3.org/2000/svg",
     "svg",
@@ -3211,59 +3639,30 @@ function buildStageMap(run, work, onSelect) {
   svg.setAttribute("class", "work-edge-layer");
   svg.setAttribute("aria-hidden", "true");
   canvas.append(svg);
-
   const stagesById = new Map(
     work.stages.map((stage) => [stage.stage_id, stage]),
   );
-  const lanes = element("div", { className: "work-lanes" });
-  work.lanes.forEach((lane) => {
-    const laneRow = element("section", { className: "work-lane" });
-    const laneHeader = element("header", { className: "work-lane-header" });
-    laneHeader.append(
-      element("strong", { text: lane.label }),
-      element("span", { text: `${lane.stage_ids.length}단계` }),
-      element("small", { text: lane.description }),
+  const waves = element("div", { className: "work-waves" });
+  appendWorkWaves(waves, work.stages, (stage) => {
+    const selected = stage.stage_id === state.selectedStage;
+    return stageCard(
+      stage,
+      selected,
+      onSelect,
+      stagesById,
+      buildStageCardDetail(run, work, stage),
     );
-    const track = element("div", { className: "work-lane-track" });
-    track.style.gridTemplateColumns = workTrackColumns(
-      rankCount,
-      selectedRank,
-    );
-    const byRank = new Map();
-    lane.stage_ids.forEach((stageId) => {
-      const stage = stagesById.get(stageId);
-      if (!stage) return;
-      if (!byRank.has(stage.rank)) byRank.set(stage.rank, []);
-      byRank.get(stage.rank).push(stage);
-    });
-    [...byRank.entries()]
-      .sort(([left], [right]) => left - right)
-      .forEach(([rank, stages]) => {
-        const column = element("div", {
-          className: "work-stage-column",
-        });
-        column.style.gridColumn = String(rank + 1);
-        stages
-          .sort((left, right) => left.position - right.position)
-          .forEach((stage) => {
-            const selected = stage.stage_id === state.selectedStage;
-            column.append(stageCard(
-              stage,
-              selected,
-              onSelect,
-              stagesById,
-              selected ? buildStageInspector(run, work, stage) : null,
-            ));
-          });
-        track.append(column);
-      });
-    laneRow.append(laneHeader, track);
-    lanes.append(laneRow);
   });
-  canvas.append(lanes);
-  scroll.append(canvas);
-  section.append(scroll);
-  window.requestAnimationFrame(() => drawWorkEdges(canvas, work.graph.edges));
+  canvas.append(waves);
+  flow.append(canvas);
+  section.append(flow);
+  const groups = displayEdgeGroups(
+    work.graph,
+    work.stages,
+    "stage_id",
+  );
+  window.requestAnimationFrame(() => drawWorkEdges(canvas, groups));
+  observeWorkCanvas(canvas);
   return section;
 }
 
@@ -3827,19 +4226,9 @@ function selectWorkStage(run, work, stageId) {
       null,
       "replaceState",
     );
-    const scroll = document.querySelector(".work-map-scroll");
-    const scrollPosition = {
-      left: scroll?.scrollLeft || 0,
-      top: scroll?.scrollTop || 0,
-    };
     renderRunWorkspace(state.snapshot, {
       focusStageId: stageId,
     });
-    const restored = document.querySelector(".work-map-scroll");
-    if (restored) {
-      restored.scrollLeft = scrollPosition.left;
-      restored.scrollTop = scrollPosition.top;
-    }
     return;
   }
   const observedCard = work.execution?.cards?.find(
@@ -3852,19 +4241,9 @@ function selectWorkStage(run, work, stageId) {
       observedCard.work_id,
       "replaceState",
     );
-    const scroll = document.querySelector(".work-map-scroll");
-    const scrollPosition = {
-      left: scroll?.scrollLeft || 0,
-      top: scroll?.scrollTop || 0,
-    };
     renderRunWorkspace(state.snapshot, {
       focusStageId: observedCard.work_id,
     });
-    const restored = document.querySelector(".work-map-scroll");
-    if (restored) {
-      restored.scrollLeft = scrollPosition.left;
-      restored.scrollTop = scrollPosition.top;
-    }
     return;
   }
   const stage = work.stages.find((item) => item.stage_id === stageId);
@@ -3875,19 +4254,9 @@ function selectWorkStage(run, work, stageId) {
     stage.stage_id,
     "replaceState",
   );
-  const scroll = document.querySelector(".work-map-scroll");
-  const scrollPosition = {
-    left: scroll?.scrollLeft || 0,
-    top: scroll?.scrollTop || 0,
-  };
   renderRunWorkspace(state.snapshot, {
     focusStageId: stage.stage_id,
   });
-  const restored = document.querySelector(".work-map-scroll");
-  if (restored) {
-    restored.scrollLeft = scrollPosition.left;
-    restored.scrollTop = scrollPosition.top;
-  }
 }
 
 function renderRunWorkspace(snapshot, options = {}) {
@@ -3897,7 +4266,8 @@ function renderRunWorkspace(snapshot, options = {}) {
     list.hidden = false;
     target.hidden = true;
     clear(target);
-    state.activeWorkEdges = [];
+    state.activeWorkEdgeGroups = [];
+    state.workResizeObserver?.disconnect();
     state.activeWorkEdgeMode = "plan";
     requestWorkFocus(options);
     return;
@@ -3972,9 +4342,13 @@ function renderRunWorkspace(snapshot, options = {}) {
       ),
   );
   target.append(layout);
-  state.activeWorkEdges = hasObservedWork
-    ? work.execution.graph.edges
-    : work.graph.edges;
+  state.activeWorkEdgeGroups = hasObservedWork
+    ? displayEdgeGroups(
+      work.execution.graph,
+      work.execution.cards,
+      "work_id",
+    )
+    : displayEdgeGroups(work.graph, work.stages, "stage_id");
   state.activeWorkEdgeMode = hasObservedWork ? "observed" : "plan";
   requestWorkFocus(options);
 }
@@ -5569,7 +5943,8 @@ function resetProjectContext() {
   state.snapshot = null;
   state.selectedRun = null;
   state.selectedStage = null;
-  state.activeWorkEdges = [];
+  state.activeWorkEdgeGroups = [];
+  state.workResizeObserver?.disconnect();
   state.activeWorkEdgeMode = "plan";
   state.pendingWorkFocus = null;
   state.pendingWorkFocusRestore = null;
@@ -5825,17 +6200,7 @@ window.addEventListener("popstate", () => {
   restoreViewFromLocation({ focusList });
 });
 window.addEventListener("resize", () => {
-  if (!state.activeWorkEdges.length) return;
-  window.requestAnimationFrame(() => {
-    drawWorkEdges(
-      document.querySelector(".work-map-canvas"),
-      state.activeWorkEdges,
-      state.activeWorkEdgeMode === "observed"
-        ? ".work-attempt-card"
-        : ".work-stage-card",
-      state.activeWorkEdgeMode === "observed" ? "workId" : "stageId",
-    );
-  });
+  window.requestAnimationFrame(redrawActiveWorkEdges);
 });
 document.getElementById("run-search").addEventListener("input", (event) => {
   state.runSearch = event.target.value;

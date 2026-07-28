@@ -483,9 +483,10 @@ class WorkObservationTests(unittest.TestCase):
         source = (
             ROOT / "src/maestro/resources/viewer/app.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("지시 → 실행 → 보고 → 합류 흐름", source)
-        self.assertIn("buildObservedWorkInspector", source)
-        self.assertIn("담당 전문 지식", source)
+        self.assertIn("오래된 단계부터 최종 결과까지", source)
+        self.assertIn("buildObservedWorkCardDetail", source)
+        self.assertIn("지시·보고·다음 판단", source)
+        self.assertIn("담당 전문지식", source)
         self.assertIn("실제 모델 확인 불가", source)
         self.assertNotIn(
             "완전한 Host 실행 이벤트에서 확인했습니다.",
