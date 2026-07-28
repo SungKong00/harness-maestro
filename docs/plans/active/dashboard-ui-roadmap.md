@@ -477,8 +477,8 @@ focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 
 
 ### 단계 4 — 필요한 telemetry와 증거 계약 확장
 
-상태: 진행 중 — 수동 work lifecycle·GUI projection 완료, Codex 공식 event
-producer와 자동 상관은 미구현
+상태: 진행 중 — 수동 work lifecycle·GUI projection과 Maestro-owned App Server
+P0 producer 완료, coverage·version binding과 다른 Codex 생산자는 미구현
 
 반복되는 사용자 판단 공백과 생산자는 확인됐다.
 
@@ -494,7 +494,7 @@ producer와 자동 상관은 미구현
 
 #### 4A — Codex 위임 lifecycle 자동 수집
 
-상태: 다음 구현 milestone
+상태: P0 구현 완료 · 4A 전체는 진행 중
 
 목표는 `observe-work-start/finish`를 호출할 수 있는 현재 domain 계약을 Codex의
 공식 lifecycle 생산자와 연결하는 것이다.
@@ -526,19 +526,21 @@ parent turn 시작
 
 - [ ] installed Codex version, generated stable schema digest와 adapter capability를
       execution binding에 기록한다.
-- [ ] `thread_id + turn_id + item_id + lifecycle phase` 기반 idempotent event
+- [x] `thread_id + turn_id + item_id + lifecycle phase` 기반 idempotent event
       envelope를 정의한다.
-- [ ] `spawnAgent`의 sender·receiver를 `delegates_to`와 child work attempt로
+- [x] `spawnAgent`의 sender·receiver를 `delegates_to`와 child work attempt로
       투영한다.
-- [ ] child terminal과 bounded result summary를 `reports_to` 후보로 연결한다.
-- [ ] `sendInput`·`resumeAgent`를 기존 attempt의 사건 또는 새 `followup_of`로
-      구분하는 reason code를 정의한다.
-- [ ] `wait`를 합류 대기로 기록하되 wait 완료만으로 synthesis 완료를 만들지 않는다.
+- [x] child terminal과 bounded result summary를 `reports_to` 후보로 연결한다.
+- [x] `sendInput`은 기존 attempt의 상태 관측으로 유지하고 `resumeAgent`는 새
+      `followup_of` attempt로 분리한다.
+- [ ] 후속 지시의 사용자 의미 reason code를 추가한다.
+- [x] `wait`는 child terminal 관측에만 사용하고 wait 완료만으로 synthesis나
+      `joins_into`를 만들지 않는다.
 - [ ] main agent의 명시적 synthesis work와 child 결과 소비가 있을 때만
       `joins_into`를 만든다.
 - [ ] `turn/interrupt` 요청과 최종 `interrupted`를 분리한다.
 - [ ] mid-turn `error`와 terminal `failed`를 분리한다.
-- [ ] process crash·event drop 뒤 running span을 `완료`로 바꾸지 않고
+- [x] process crash·event drop 뒤 running span을 `완료`로 바꾸지 않고
       incomplete recovery 대상으로 남긴다.
 
 카드 하나는 저수준 item 하나가 아니라 의미 있는 실행 시도 하나다. command,
@@ -548,13 +550,14 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 
 4A 완료 조건:
 
-- [ ] 실제 spawn마다 child 카드가 하나만 생기고 event 재처리에도 중복되지 않는다.
+- [x] 실제 spawn마다 child 카드가 하나만 생기고 event 재처리에도 중복되지 않는다.
 - [ ] 오케스트레이터 → 위임 → 보고 → 합류 → 후속 시도가 relation으로 보인다.
-- [ ] terminal이 없는 child와 parent는 완료로 표시되지 않는다.
+- [x] terminal이 없는 child는 완료로 표시하지 않고 관찰을 복구 가능한 상태로
+      남긴다.
 - [ ] 순차·독립 병렬·nested child·failure·interrupt·continuation fixture가 있다.
-- [ ] 과거 실행과 Hook 미설정 프로젝트는 `세부 실행 기록 없음`으로 안전하게
+- [x] 과거 실행과 Hook 미설정 프로젝트는 `세부 실행 기록 없음`으로 안전하게
       fallback한다.
-- [ ] raw protocol body 없이 bounded metadata만 Observation·RunReceipt에 남는다.
+- [x] raw protocol body 없이 bounded metadata만 Observation·RunReceipt에 남는다.
 
 #### 4B — 모델·시간·사용량의 검증된 범위
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from maestro.codex_host import run_codex_host
 from maestro.errors import MaestroError
 from maestro.util import safe_target
+from maestro.work import project_observed_work
 from tests.test_codex_host import CodexHostTests, FAKE_APP_SERVER
 
 
@@ -148,6 +149,16 @@ class CodexHostWorkTests(unittest.TestCase):
             self.assertNotIn("SECRET-CHILD-MESSAGE", serialized)
             self.assertNotIn("SECRET-CHILD-RESULT", serialized)
             self.assertNotIn("child-thread-1", serialized)
+            work = project_observed_work(
+                observation["work_spans"],
+                [],
+            )
+            self.assertEqual("observed", work["mode"])
+            self.assertEqual(2, len(work["cards"]))
+            self.assertEqual(
+                {"delegates_to", "reports_to"},
+                {edge["type"] for edge in work["graph"]["edges"]},
+            )
 
     def test_unresolved_child_keeps_the_observation_recoverable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

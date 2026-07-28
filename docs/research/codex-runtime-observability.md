@@ -128,12 +128,18 @@ codex app-server generate-json-schema --out <temporary-directory>
 - `model/rerouted`와 `thread/tokenUsage/updated`를 제한적으로 수집한다.
 - terminal `durationMs`와 최종 `agentMessage`를 기록한다.
 - Assignment 실행은 typed Packet 검증 뒤 stage result로 연결한다.
+- parent turn을 오케스트레이터 work span으로 만들고, allowlisted
+  `collabAgentToolCall` started·completed event를 child work lifecycle로 연결한다.
+- `spawnAgent`는 child attempt, `resumeAgent`는 `followup_of` attempt로 만들고
+  `sendInput`·`wait`·`closeAgent`는 이미 알려진 child의 명시적 상태만 갱신한다.
+- collaboration RPC 완료와 child 완료를 분리하고 `agentsStates`의 terminal
+  상태가 없으면 running span과 열린 Observation을 복구 대상으로 남긴다.
 - 고용량 delta는 opt-out하고 raw protocol stream을 영속 저장하지 않는다.
 
-현재 `work span` 계약과 GUI projection은 위임·보고·합류·후속 시도를 표현할 수
-있지만 생산자가 `observe-work-start/finish`를 명시적으로 호출해야 한다.
-App Server의 `collabAgentToolCall`이나 Codex Hooks를 이 lifecycle에 자동 연결하는
-producer는 아직 없다.
+현재 `work span` 계약과 GUI projection은 이 App Server producer가 만든
+오케스트레이터·위임·보고·후속 시도를 자동 표시할 수 있다. 다만 명시적 synthesis
+소비 근거가 없으므로 `joins_into`는 만들지 않으며, SDK·exec JSONL·Codex
+Desktop/CLI Hook producer도 아직 없다.
 
 ### 현재 데이터 가용성
 
@@ -144,14 +150,14 @@ producer는 아직 없다.
 | 부모 요청·실제 모델 | Maestro 소유 실행에서 가능 | 요청 model + 완전한 reroute stream | complete stream 조건을 명시 |
 | 부모 경과 시간 | 가능 | 설치 schema의 `durationMs` | `모델 응답 시간`이 아니라 `경과 시간` |
 | 부모 token | 부분 가능 | turn-correlated thread usage의 `last`·`total` | 현재 `total` 사용을 재감사하고 scope 표기 |
-| child 생성·대상 | 미연결 | `collabAgentToolCall` sender·receiver | 4A 자동 producer |
-| child 상태 | 미연결 | collab agent state, child terminal event | child thread와 상관될 때만 표시 |
-| child 요청 모델 | 수동 기록만 | spawn item의 requested model | `요청 모델`로만 수집 |
+| child 생성·대상 | Maestro-owned App Server에서 가능 | `collabAgentToolCall` sender·receiver | 해시 ID로 child work 생성 |
+| child 상태 | Maestro-owned App Server에서 가능 | `agentsStates` terminal | RPC 완료만으로 child 완료 처리 금지 |
+| child 요청 모델 | App Server child 카드에서 가능 | spawn item의 requested model | `요청 모델`로만 수집 |
 | child 실제 모델 | 불가 | child turn stream 또는 child hook 시점 model 필요 | 부모 값 전파 금지 |
-| child 시간 | 수동 current-host clock | child turn event 또는 Hook 수신 clock | 같은 clock·coverage를 함께 기록 |
-| 보고·후속 지시 | 수동 work relation | `sendInput`, `resumeAgent`, child 결과 item | 의미 mapping 규칙 필요 |
-| 합류 | 수동 work relation | `wait`와 orchestration result | wait 발생만으로 합성 완료 단정 금지 |
-| 재작업 | `attempt`, `followup_of` 수동 가능 | 일급 사용자 의미 계약 없음 | Maestro가 의미와 reason code 소유 |
+| child 시간 | App Server item event 구간 가능 | `startedAtMs`·`completedAtMs` | child turn 순수 실행 시간으로 부르지 않음 |
+| 보고·후속 지시 | terminal report와 resume 후속 시도 가능 | `agentsStates`, `resumeAgent` | sendInput reason은 아직 구조화하지 않음 |
+| 합류 | 아직 자동 생성하지 않음 | `wait`와 orchestration result | wait 발생만으로 합성 완료 단정 금지 |
+| 재작업 | `resumeAgent` attempt·`followup_of` 가능 | explicit resume item | 사용자 의미 reason code는 후속 과제 |
 | 실제 병렬 실행 | 수동 span 시간이 완전할 때 가능 | 겹치는 child lifecycle | coverage complete일 때만 계산 |
 | 비용 | 불가 | 공식 event는 token이지 provider 비용 receipt가 아님 | 가격 추정으로 대체 금지 |
 
@@ -345,13 +351,13 @@ adapter는 다음을 지킨다.
 ## 채택 체크리스트
 
 - [ ] App Server stable schema를 설치 runtime에서 생성하고 adapter fixture로 고정한다.
-- [ ] `collabAgentToolCall` item started·completed와 child thread relation을 중복 없이
+- [x] `collabAgentToolCall` item started·completed와 child thread relation을 중복 없이
       work lifecycle로 변환한다.
 - [ ] child terminal, report, join, follow-up의 의미 mapping을 fixture로 검증한다.
 - [ ] model provenance와 stream coverage를 work span에 추가한다.
 - [ ] `last`·`total` token scope를 분리하고 부모 값을 child에 전파하지 않는다.
 - [ ] Hook adapter는 별도 opt-in으로 만들고 trust·coverage·dedupe를 검증한다.
-- [ ] prompt·transcript·reasoning·tool payload가 state와 snapshot에 남지 않는지
+- [x] prompt·transcript·reasoning·tool payload가 state와 snapshot에 남지 않는지
       검사한다.
 - [ ] interruption, error 후 failure, dropped event, process crash와 recovery를
       검증한다.

@@ -44,6 +44,7 @@ Assignment는 최대 다섯 개, 한 명 writer, 하나의 terminal stage result
 | --- | --- | --- |
 | `work/contracts.py` | allowlist, 크기 제한, 상태·증거 검증 | 파일 저장, UI 문구 |
 | `work/lifecycle.py` | 시작·종료의 idempotency와 관계 무결성 | 현재 시각 계산, CLI |
+| `work/codex.py` | App Server collaboration item을 redacted work action으로 변환 | Observation 저장, prompt·message 보존 |
 | `work/graph.py` | 계획 그래프와 실제 그래프의 typed edge 구성 | 실행 순서·동시성 추정 |
 | `work/projection.py` | GUI가 읽는 카드·lane·근거 수준 구성 | DOM 생성, 번역 재계산 |
 | `observations.py` | 프로젝트 관찰 파일의 안전한 읽기·쓰기 | 그래프 의미 계산 |
@@ -102,9 +103,13 @@ observe work-start
   → 실제 작업 카드 또는 plan-only fallback
 ```
 
-현재 Host가 child lifecycle을 자동 제공하지 않으면 `$maestro`가 실제 위임
-경계에서 allowlisted hook을 호출한다. 자동 계측 부재를 이유로 대화 내용을 파싱해
-가짜 child, 보고, 재작업 또는 병렬 실행을 만들지 않는다.
+Maestro가 소유한 Codex App Server turn은 `collabAgentToolCall`의
+`spawnAgent`·`resumeAgent`와 `agentsStates` terminal을 자동 work lifecycle로
+변환한다. collaboration RPC의 `completed`는 child terminal이 아니며, terminal
+상태가 없는 child는 running으로 남겨 복구 가능성을 보존한다. 현재 Host나 다른
+Codex 생산자에 자동 계측이 없으면 실제 위임 경계에서 allowlisted lifecycle API를
+호출한다. 자동 계측 부재를 이유로 대화 내용을 파싱해 가짜 child, 보고, 재작업
+또는 병렬 실행을 만들지 않는다.
 
 ## 검증 기준
 
