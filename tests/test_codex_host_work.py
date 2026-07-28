@@ -5,16 +5,27 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from maestro.codex_host import run_codex_host
+from maestro.codex_host import (
+    _capture_child_runtime_event,
+    _enrich_child_finish_action,
+    run_codex_host,
+)
 from maestro.errors import MaestroError
 from maestro.util import safe_target
 from maestro.work import project_observed_work
+from maestro.work.codex import CodexCollaborationTracker
 from tests.test_codex_host import CodexHostTests, FAKE_APP_SERVER
 
 
 COLLAB_EVENTS = r'''
-        if mode in {"collab", "collab-error", "collab-incomplete"}:
+        if mode in {
+            "collab",
+            "collab-error",
+            "collab-incomplete",
+            "collab-measured",
+        }:
             spawn = {
                 "id": "spawn-1",
                 "type": "collabAgentToolCall",
@@ -74,7 +85,49 @@ COLLAB_EVENTS = r'''
                         },
                     }
                 )
-            if mode in {"collab", "collab-error"}:
+            if mode == "collab-measured":
+                emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/started",
+                        "params": {
+                            "threadId": "child-thread-1",
+                            "turn": {
+                                "id": "child-turn-1",
+                                "status": "inProgress",
+                            },
+                        },
+                    }
+                )
+                emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "model/rerouted",
+                        "params": {
+                            "threadId": "child-thread-1",
+                            "turnId": "child-turn-1",
+                            "fromModel": "gpt-5.6-terra",
+                            "toModel": "gpt-5.6-sol",
+                            "reason": "capacity",
+                        },
+                    }
+                )
+                emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": "child-thread-1",
+                            "turn": {
+                                "id": "child-turn-1",
+                                "status": "completed",
+                                "completedAt": 1785217058,
+                                "durationMs": 600,
+                            },
+                        },
+                    }
+                )
+            if mode in {"collab", "collab-error", "collab-measured"}:
                 emit(
                     {
                         "jsonrpc": "2.0",
@@ -219,12 +272,56 @@ COLLAB_EVENTS = r'''
             )
 '''
 
+COLLAB_LATE_EVENTS = r'''
+        if mode == "collab-measured":
+            emit(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "child-thread-1",
+                        "turnId": "child-turn-1",
+                        "tokenUsage": {
+                            "last": {
+                                "inputTokens": 12,
+                                "outputTokens": 6,
+                                "cachedInputTokens": 4,
+                                "reasoningOutputTokens": 3,
+                                "totalTokens": 25,
+                            },
+                            "total": {
+                                "inputTokens": 80,
+                                "outputTokens": 20,
+                                "cachedInputTokens": 5,
+                                "reasoningOutputTokens": 4,
+                                "totalTokens": 109,
+                            },
+                        },
+                    },
+                }
+            )
+'''
+
 
 def collab_app_server() -> str:
     marker = '        if mode != "terminal-message":\n'
     if marker not in FAKE_APP_SERVER:
         raise AssertionError("fake App Server insertion point changed")
-    return FAKE_APP_SERVER.replace(marker, COLLAB_EVENTS + marker, 1)
+    late_marker = (
+        '        time.sleep(0.6 if mode == "late-token" else 0.03)\n'
+    )
+    if late_marker not in FAKE_APP_SERVER:
+        raise AssertionError("fake App Server late-event point changed")
+    with_collaboration = FAKE_APP_SERVER.replace(
+        marker,
+        COLLAB_EVENTS + marker,
+        1,
+    )
+    return with_collaboration.replace(
+        late_marker,
+        COLLAB_LATE_EVENTS + late_marker,
+        1,
+    )
 
 
 class CodexHostWorkTests(unittest.TestCase):
@@ -338,6 +435,477 @@ class CodexHostWorkTests(unittest.TestCase):
                 ["completed", "running"],
                 [item["status"] for item in observation["work_spans"]],
             )
+
+    def test_complete_child_turn_records_direct_model_tokens_and_time(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, prompt, server = self._project(root)
+            with patch(
+                "maestro.codex_host._codex_runtime_binding",
+                return_value={
+                    "version": "codex-cli 0.144.1",
+                    "schema_digest": "a" * 64,
+                    "capability": "full_stream",
+                },
+            ):
+                result = run_codex_host(
+                    repo,
+                    run_id="collab-measured",
+                    task_label="하위 Codex 실행 계측",
+                    prompt_file=prompt,
+                    sandbox="read-only",
+                    timeout_seconds=5,
+                    command=[
+                        sys.executable,
+                        str(server),
+                        "collab-measured",
+                    ],
+                )
+            observation = json.loads(
+                safe_target(
+                    repo,
+                    (
+                        ".maestro/state/inflight/"
+                        f"{result['observation_id']}.json"
+                    ),
+                ).read_text(encoding="utf-8")
+            )
+            child = next(
+                span
+                for span in observation["work_spans"]
+                if span["kind"] == "delegation"
+            )
+            self.assertEqual("gpt-5.6-sol", child["applied_model"])
+            self.assertEqual("complete", child["model_evidence"])
+            self.assertEqual(
+                "complete_stream",
+                child["source_binding"]["event_coverage"],
+            )
+            self.assertEqual("work_turn", child["usage"]["scope"])
+            self.assertEqual("direct", child["usage"]["attribution"])
+            self.assertEqual(25, child["usage"]["last"]["total"])
+            self.assertEqual(109, child["usage"]["total"]["total"])
+            self.assertEqual(600, child["duration_ms"])
+
+    def test_child_without_terminal_stream_never_uses_requested_as_actual(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, prompt, server = self._project(root)
+            with patch(
+                "maestro.codex_host._codex_runtime_binding",
+                return_value={
+                    "version": "codex-cli 0.144.1",
+                    "schema_digest": "b" * 64,
+                    "capability": "full_stream",
+                },
+            ):
+                result = run_codex_host(
+                    repo,
+                    run_id="collab-unmeasured-child",
+                    task_label="불완전 하위 실행 계측",
+                    prompt_file=prompt,
+                    sandbox="read-only",
+                    timeout_seconds=5,
+                    command=[sys.executable, str(server), "collab"],
+                )
+            observation = json.loads(
+                safe_target(
+                    repo,
+                    (
+                        ".maestro/state/inflight/"
+                        f"{result['observation_id']}.json"
+                    ),
+                ).read_text(encoding="utf-8")
+            )
+            child = next(
+                span
+                for span in observation["work_spans"]
+                if span["kind"] == "delegation"
+            )
+            self.assertIsNone(child["applied_model"])
+            self.assertEqual("host_request", child["model_evidence"])
+            self.assertEqual(
+                "partial_stream",
+                child["source_binding"]["event_coverage"],
+            )
+            self.assertEqual("unavailable", child["usage"]["scope"])
+
+    def test_resumed_child_uses_stable_delta_and_rejects_late_baseline(
+        self,
+    ) -> None:
+        def measured_resume(*, late_prior_token: bool) -> dict[str, object]:
+            tracker = CodexCollaborationTracker(
+                root_work_id="root-work",
+                root_thread_id="root-thread",
+                root_turn_id="root-turn",
+                assignment_id=None,
+                read_only=True,
+                source_version="codex-cli 0.144.1",
+                schema_digest="c" * 64,
+                source_capability="full_stream",
+            )
+            runtime_state = {
+                "child_work_starts": {},
+                "child_work_runtime": {},
+                "child_thread_totals": {},
+            }
+
+            def collab(
+                *,
+                item_id: str,
+                tool: str,
+                status: str,
+                child_status: str,
+                timestamp: int,
+            ) -> list[dict[str, object]]:
+                return tracker.consume(
+                    method=(
+                        "item/started"
+                        if status == "inProgress"
+                        else "item/completed"
+                    ),
+                    params={
+                        "threadId": "root-thread",
+                        "turnId": "root-turn",
+                        (
+                            "startedAtMs"
+                            if status == "inProgress"
+                            else "completedAtMs"
+                        ): timestamp,
+                        "item": {
+                            "id": item_id,
+                            "type": "collabAgentToolCall",
+                            "tool": tool,
+                            "status": status,
+                            "senderThreadId": "root-thread",
+                            "receiverThreadIds": ["child-thread"],
+                            "model": "gpt-5.6-terra",
+                            "reasoningEffort": "medium",
+                            "agentsStates": {
+                                "child-thread": {"status": child_status}
+                            },
+                        },
+                    },
+                )
+
+            first_actions = collab(
+                item_id="spawn-1",
+                tool="spawnAgent",
+                status="inProgress",
+                child_status="running",
+                timestamp=1785217057000,
+            )
+            first_start = next(
+                action
+                for action in first_actions
+                if action["action"] == "start"
+                and action["kind"] == "delegation"
+            )
+            runtime_state["child_work_starts"][
+                first_start["work_id"]
+            ] = first_start
+            _capture_child_runtime_event(
+                method="turn/started",
+                params={
+                    "threadId": "child-thread",
+                    "turn": {"id": "child-turn-1"},
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            _capture_child_runtime_event(
+                method="thread/tokenUsage/updated",
+                params={
+                    "threadId": "child-thread",
+                    "turnId": "child-turn-1",
+                    "tokenUsage": {
+                        "last": {
+                            "inputTokens": 12,
+                            "outputTokens": 6,
+                            "cachedInputTokens": 4,
+                            "reasoningOutputTokens": 3,
+                            "totalTokens": 25,
+                        },
+                        "total": {
+                            "inputTokens": 80,
+                            "outputTokens": 20,
+                            "cachedInputTokens": 5,
+                            "reasoningOutputTokens": 4,
+                            "totalTokens": 109,
+                        },
+                    },
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            _capture_child_runtime_event(
+                method="turn/completed",
+                params={
+                    "threadId": "child-thread",
+                    "turn": {
+                        "id": "child-turn-1",
+                        "status": "completed",
+                        "durationMs": 600,
+                    },
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            first_finish = next(
+                action
+                for action in collab(
+                    item_id="wait-1",
+                    tool="wait",
+                    status="completed",
+                    child_status="completed",
+                    timestamp=1785217058000,
+                )
+                if action["action"] == "finish"
+            )
+            first_enriched = _enrich_child_finish_action(
+                first_finish,
+                start_action=first_start,
+                runtime=runtime_state["child_work_runtime"][
+                    first_start["work_id"]
+                ],
+            )
+            self.assertEqual(
+                109,
+                first_enriched["usage"]["total"]["total"],
+            )
+
+            resumed_actions = collab(
+                item_id="resume-2",
+                tool="resumeAgent",
+                status="inProgress",
+                child_status="running",
+                timestamp=1785217059000,
+            )
+            second_start = next(
+                action
+                for action in resumed_actions
+                if action["action"] == "start"
+                and action["kind"] == "delegation"
+            )
+            runtime_state["child_work_starts"][
+                second_start["work_id"]
+            ] = second_start
+            _capture_child_runtime_event(
+                method="turn/started",
+                params={
+                    "threadId": "child-thread",
+                    "turn": {"id": "child-turn-2"},
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            if late_prior_token:
+                _capture_child_runtime_event(
+                    method="thread/tokenUsage/updated",
+                    params={
+                        "threadId": "child-thread",
+                        "turnId": "child-turn-1",
+                        "tokenUsage": {
+                            "last": {
+                                "inputTokens": 2,
+                                "outputTokens": 1,
+                                "cachedInputTokens": 0,
+                                "reasoningOutputTokens": 0,
+                                "totalTokens": 3,
+                            },
+                            "total": {
+                                "inputTokens": 82,
+                                "outputTokens": 21,
+                                "cachedInputTokens": 5,
+                                "reasoningOutputTokens": 4,
+                                "totalTokens": 112,
+                            },
+                        },
+                    },
+                    state=runtime_state,
+                    tracker=tracker,
+                )
+            _capture_child_runtime_event(
+                method="thread/tokenUsage/updated",
+                params={
+                    "threadId": "child-thread",
+                    "turnId": "child-turn-2",
+                    "tokenUsage": {
+                        "last": {
+                            "inputTokens": 8,
+                            "outputTokens": 4,
+                            "cachedInputTokens": 2,
+                            "reasoningOutputTokens": 1,
+                            "totalTokens": 15,
+                        },
+                        "total": {
+                            "inputTokens": 88,
+                            "outputTokens": 24,
+                            "cachedInputTokens": 7,
+                            "reasoningOutputTokens": 5,
+                            "totalTokens": 124,
+                        },
+                    },
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            _capture_child_runtime_event(
+                method="turn/completed",
+                params={
+                    "threadId": "child-thread",
+                    "turn": {
+                        "id": "child-turn-2",
+                        "status": "completed",
+                        "durationMs": 400,
+                    },
+                },
+                state=runtime_state,
+                tracker=tracker,
+            )
+            second_finish = next(
+                action
+                for action in collab(
+                    item_id="wait-2",
+                    tool="wait",
+                    status="completed",
+                    child_status="completed",
+                    timestamp=1785217060000,
+                )
+                if action["action"] == "finish"
+            )
+            return _enrich_child_finish_action(
+                second_finish,
+                start_action=second_start,
+                runtime=runtime_state["child_work_runtime"][
+                    second_start["work_id"]
+                ],
+            )
+
+        stable = measured_resume(late_prior_token=False)
+        self.assertEqual("direct", stable["usage"]["attribution"])
+        self.assertEqual(15, stable["usage"]["total"]["total"])
+        invalidated = measured_resume(late_prior_token=True)
+        self.assertEqual(
+            "unavailable",
+            invalidated["usage"]["attribution"],
+        )
+        self.assertIsNone(invalidated["usage"]["total"])
+
+    def test_first_observed_resume_never_uses_zero_token_baseline(
+        self,
+    ) -> None:
+        tracker = CodexCollaborationTracker(
+            root_work_id="root-work",
+            root_thread_id="root-thread",
+            root_turn_id="root-turn",
+            assignment_id=None,
+            read_only=True,
+            source_version="codex-cli 0.144.1",
+            schema_digest="d" * 64,
+            source_capability="full_stream",
+        )
+        actions = tracker.consume(
+            method="item/started",
+            params={
+                "threadId": "root-thread",
+                "turnId": "root-turn",
+                "startedAtMs": 1785217057000,
+                "item": {
+                    "id": "resume-existing",
+                    "type": "collabAgentToolCall",
+                    "tool": "resumeAgent",
+                    "status": "inProgress",
+                    "senderThreadId": "root-thread",
+                    "receiverThreadIds": ["existing-child-thread"],
+                    "model": "gpt-5.6-terra",
+                    "reasoningEffort": "medium",
+                    "agentsStates": {
+                        "existing-child-thread": {"status": "running"}
+                    },
+                },
+            },
+        )
+        start = next(
+            action
+            for action in actions
+            if action["action"] == "start"
+            and action["kind"] == "delegation"
+        )
+        runtime_state = {
+            "child_work_starts": {start["work_id"]: start},
+            "child_work_runtime": {},
+            "child_thread_totals": {},
+        }
+        _capture_child_runtime_event(
+            method="turn/started",
+            params={
+                "threadId": "existing-child-thread",
+                "turn": {"id": "resumed-turn"},
+            },
+            state=runtime_state,
+            tracker=tracker,
+        )
+        _capture_child_runtime_event(
+            method="thread/tokenUsage/updated",
+            params={
+                "threadId": "existing-child-thread",
+                "turnId": "resumed-turn",
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 4,
+                        "outputTokens": 2,
+                        "cachedInputTokens": 0,
+                        "reasoningOutputTokens": 1,
+                        "totalTokens": 7,
+                    },
+                    "total": {
+                        "inputTokens": 104,
+                        "outputTokens": 42,
+                        "cachedInputTokens": 10,
+                        "reasoningOutputTokens": 9,
+                        "totalTokens": 165,
+                    },
+                },
+            },
+            state=runtime_state,
+            tracker=tracker,
+        )
+        _capture_child_runtime_event(
+            method="turn/completed",
+            params={
+                "threadId": "existing-child-thread",
+                "turn": {
+                    "id": "resumed-turn",
+                    "status": "completed",
+                    "durationMs": 500,
+                },
+            },
+            state=runtime_state,
+            tracker=tracker,
+        )
+        enriched = _enrich_child_finish_action(
+            {
+                "action": "finish",
+                "work_id": start["work_id"],
+                "status": "completed",
+                "result_summary": "재개 작업 완료",
+                "ended_at": "2026-07-28T01:00:00Z",
+                "duration_ms": 500,
+                "evidence_refs": ["fixture:first-resume"],
+            },
+            start_action=start,
+            runtime=runtime_state["child_work_runtime"][
+                start["work_id"]
+            ],
+        )
+        self.assertEqual("complete", enriched["model_evidence"])
+        self.assertEqual("unavailable", enriched["usage"]["attribution"])
+        self.assertIsNone(enriched["usage"]["total"])
 
     def test_full_wave_fixture_projects_join_and_redelegation_ranks(
         self,

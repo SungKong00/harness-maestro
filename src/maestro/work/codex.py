@@ -189,6 +189,8 @@ class CodexCollaborationTracker:
         self._work_by_thread: dict[str, str] = {
             self.root_thread_id: self.root_work_id,
         }
+        self._runtime_work_by_turn: dict[tuple[str, str], str] = {}
+        self._runtime_turn_by_work: dict[str, tuple[str, str]] = {}
         self._delegation_parent_by_thread: dict[str, str] = {
             self.root_thread_id: self.root_work_id,
         }
@@ -251,6 +253,55 @@ class CodexCollaborationTracker:
         if event_thread == self.root_thread_id:
             return event_turn == self.root_turn_id
         return event_thread == sender and isinstance(event_turn, str)
+
+    def runtime_work_id(
+        self,
+        *,
+        thread_id: Any,
+        turn_id: Any,
+        bind: bool = False,
+    ) -> str | None:
+        """Bind one known child turn to its current delegated work attempt."""
+
+        if (
+            not isinstance(thread_id, str)
+            or not thread_id
+            or len(thread_id) > 160
+            or any(character in thread_id for character in "\r\n\x00")
+            or not isinstance(turn_id, str)
+            or not turn_id
+            or len(turn_id) > 160
+            or any(character in turn_id for character in "\r\n\x00")
+            or thread_id == self.root_thread_id
+            or thread_id not in self._known_threads
+        ):
+            return None
+        identity = (thread_id, turn_id)
+        recorded = self._runtime_work_by_turn.get(identity)
+        if recorded is not None:
+            return recorded
+        if not bind:
+            return None
+        current = self._work_by_thread.get(thread_id)
+        if current not in self._delegation_work:
+            return None
+        bound_turn = self._runtime_turn_by_work.get(current)
+        if bound_turn is not None and bound_turn != identity:
+            raise MaestroError(
+                "CODEX_WORK_EVENT_INVALID",
+                "One delegated work attempt cannot bind multiple child turns.",
+            )
+        self._runtime_work_by_turn[identity] = current
+        self._runtime_turn_by_work[current] = identity
+        return current
+
+    def current_work_id(self, thread_id: Any) -> str | None:
+        """Return the current delegated attempt for one known child thread."""
+
+        if not isinstance(thread_id, str) or thread_id == self.root_thread_id:
+            return None
+        current = self._work_by_thread.get(thread_id)
+        return current if current in self._delegation_work else None
 
     def consume(
         self,

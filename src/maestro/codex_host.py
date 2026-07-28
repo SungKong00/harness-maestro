@@ -71,6 +71,7 @@ _RELEVANT_NOTIFICATIONS = {
     "item/completed",
     "model/rerouted",
     "thread/tokenUsage/updated",
+    "turn/started",
     "turn/completed",
 }
 _HIGH_VOLUME_NOTIFICATION_OPT_OUTS = [
@@ -848,6 +849,307 @@ def _token_summary(value: Any) -> dict[str, int] | None:
     return {target: value[source] for source, target in fields.items()}
 
 
+def _capture_child_runtime_event(
+    *,
+    method: str,
+    params: dict[str, Any],
+    state: dict[str, Any],
+    tracker: CodexCollaborationTracker,
+) -> bool:
+    """Buffer verified child-turn telemetry until its WorkSpan can freeze."""
+
+    if method not in {
+        "model/rerouted",
+        "thread/tokenUsage/updated",
+        "turn/started",
+        "turn/completed",
+    }:
+        return False
+    thread_id = params.get("threadId")
+    turn = params.get("turn")
+    turn_id = (
+        turn.get("id")
+        if method in {"turn/started", "turn/completed"}
+        and isinstance(turn, dict)
+        else params.get("turnId")
+    )
+    work_id = tracker.runtime_work_id(
+        thread_id=thread_id,
+        turn_id=turn_id,
+        bind=method == "turn/started",
+    )
+    if work_id is None:
+        return False
+    runtime = state["child_work_runtime"].setdefault(
+        work_id,
+        {
+            "thread_id": thread_id,
+            "turn_id": turn_id,
+            "started": False,
+            "completion": None,
+            "reroutes": [],
+            "tokens_last": None,
+            "tokens_total": None,
+            "token_baseline": None,
+            "token_baseline_stable": False,
+        },
+    )
+    if (
+        runtime["thread_id"] != thread_id
+        or runtime["turn_id"] != turn_id
+    ):
+        raise MaestroError(
+            "CODEX_HOST_PROTOCOL_INVALID",
+            "A delegated work attempt received conflicting child turn identities.",
+        )
+    if method == "turn/started":
+        if runtime["started"]:
+            return True
+        prior_turns = [
+            item
+            for item in state["child_work_runtime"].values()
+            if item is not runtime and item["thread_id"] == thread_id
+        ]
+        start_action = state.get("child_work_starts", {}).get(work_id)
+        first_observation_is_resume = (
+            not isinstance(start_action, dict)
+            or start_action.get("diagnostics", {}).get("followup_reason")
+            == "continue_incomplete"
+        )
+        if not prior_turns and not first_observation_is_resume:
+            runtime["token_baseline"] = {
+                "input": 0,
+                "output": 0,
+                "cached": 0,
+                "reasoning": 0,
+                "total": 0,
+            }
+            runtime["token_baseline_stable"] = True
+        elif isinstance(
+            state["child_thread_totals"].get(thread_id),
+            dict,
+        ):
+            runtime["token_baseline"] = dict(
+                state["child_thread_totals"][thread_id]
+            )
+            runtime["token_baseline_stable"] = True
+        runtime["started"] = True
+        return True
+    if method == "model/rerouted":
+        reroute = {
+            "from_model": _bounded_option(
+                params.get("fromModel"),
+                field="child-reroute-from-model",
+                maximum=128,
+            ),
+            "to_model": _bounded_option(
+                params.get("toModel"),
+                field="child-reroute-to-model",
+                maximum=128,
+            ),
+            "reason": _bounded_option(
+                params.get("reason"),
+                field="child-reroute-reason",
+                maximum=160,
+            ),
+        }
+        if any(value is None for value in reroute.values()):
+            raise MaestroError(
+                "CODEX_HOST_PROTOCOL_INVALID",
+                "A child model reroute requires bounded from, to, and reason fields.",
+            )
+        if runtime["reroutes"] and runtime["reroutes"][-1] == reroute:
+            return True
+        runtime["reroutes"].append(reroute)
+        if len(runtime["reroutes"]) > MAX_MODEL_REROUTES:
+            raise MaestroError(
+                "CODEX_HOST_PROTOCOL_LIMIT",
+                "A child turn emitted more model reroutes than the observation contract allows.",
+            )
+        return True
+    if method == "thread/tokenUsage/updated":
+        usage = params.get("tokenUsage")
+        observed_last = (
+            _token_summary(usage.get("last"))
+            if isinstance(usage, dict)
+            else None
+        )
+        observed_total = (
+            _token_summary(usage.get("total"))
+            if isinstance(usage, dict)
+            else None
+        )
+        if observed_total is not None:
+            runtime["tokens_last"] = observed_last
+            runtime["tokens_total"] = observed_total
+            state["child_thread_totals"][thread_id] = observed_total
+            current = tracker.current_work_id(thread_id)
+            if current is not None and current != work_id:
+                newer = state["child_work_runtime"].get(current)
+                if isinstance(newer, dict):
+                    newer["token_baseline_stable"] = False
+        return True
+    assert isinstance(turn, dict)
+    if turn.get("status") not in _TERMINAL_STATUSES:
+        return True
+    recorded = runtime["completion"]
+    if recorded is not None and recorded != turn:
+        raise MaestroError(
+            "CODEX_HOST_PROTOCOL_INVALID",
+            "Conflicting terminal events were emitted for one child turn.",
+        )
+    runtime["completion"] = turn
+    return True
+
+
+def _token_delta(
+    final: Any,
+    baseline: Any,
+) -> dict[str, int] | None:
+    fields = {"input", "output", "cached", "reasoning", "total"}
+    if (
+        not isinstance(final, dict)
+        or not isinstance(baseline, dict)
+        or set(final) != fields
+        or set(baseline) != fields
+    ):
+        return None
+    delta = {
+        field: final[field] - baseline[field]
+        for field in fields
+    }
+    if any(
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        for value in delta.values()
+    ):
+        return None
+    return delta
+
+
+def _enrich_child_finish_action(
+    action: dict[str, Any],
+    *,
+    start_action: dict[str, Any],
+    runtime: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Promote child telemetry only from one complete version-bound stream."""
+
+    if not isinstance(runtime, dict):
+        return action
+    completion = runtime.get("completion")
+    binding = start_action.get("source_binding")
+    complete_coverage = (
+        isinstance(completion, dict)
+        and completion.get("status") == action["status"]
+        and runtime.get("started") is True
+        and isinstance(binding, dict)
+        and binding.get("capability") == "full_stream"
+        and isinstance(binding.get("version"), str)
+        and bool(binding["version"])
+        and isinstance(binding.get("schema_digest"), str)
+        and bool(binding["schema_digest"])
+    )
+    if not complete_coverage:
+        return action
+    requested_model = start_action.get("requested_model")
+    reroutes = list(runtime.get("reroutes", []))
+    complete_model = isinstance(requested_model, str)
+    expected_model = requested_model
+    for reroute in reroutes:
+        if (
+            not complete_model
+            or reroute.get("from_model") != expected_model
+            or not isinstance(reroute.get("to_model"), str)
+        ):
+            complete_model = False
+            break
+        expected_model = reroute["to_model"]
+    applied_model = (
+        expected_model if complete_model else None
+    )
+    direct_tokens = (
+        _token_delta(
+            runtime.get("tokens_total"),
+            runtime.get("token_baseline"),
+        )
+        if runtime.get("token_baseline_stable") is True
+        else None
+    )
+    tokens_last = runtime.get("tokens_last")
+    observed_last = tokens_last if isinstance(tokens_last, dict) else None
+    completed_at = completion.get("completedAt")
+    event_ended_at = (
+        codex_event_timestamp(completed_at * 1000)
+        if (
+            isinstance(completed_at, int)
+            and not isinstance(completed_at, bool)
+            and completed_at >= 0
+        )
+        else action["ended_at"]
+    )
+    duration = completion.get("durationMs")
+    event_duration = (
+        float(duration)
+        if (
+            isinstance(duration, (int, float))
+            and not isinstance(duration, bool)
+            and duration >= 0
+        )
+        else action.get("duration_ms")
+    )
+    return {
+        **action,
+        "ended_at": event_ended_at,
+        "duration_ms": event_duration,
+        "applied_model": applied_model,
+        "model_evidence": (
+            "complete"
+            if complete_model
+            else start_action.get("model_evidence", "unavailable")
+        ),
+        "source_binding": {
+            **binding,
+            "correlation_id": codex_work_id(
+                "source",
+                runtime["thread_id"],
+                runtime["turn_id"],
+            ),
+            "event_coverage": "complete_stream",
+        },
+        "model_observation": {
+            "observed_model": None,
+            "coverage": (
+                "complete_stream"
+                if complete_model
+                else (
+                    "request_only"
+                    if isinstance(requested_model, str)
+                    else "unavailable"
+                )
+            ),
+            "reroutes": reroutes if complete_model else [],
+        },
+        "usage": {
+            "last": observed_last if direct_tokens is not None else None,
+            "total": direct_tokens,
+            "scope": (
+                "work_turn"
+                if direct_tokens is not None
+                else "unavailable"
+            ),
+            "attribution": (
+                "direct"
+                if direct_tokens is not None
+                else "unavailable"
+            ),
+            "timing_coverage": "host_event",
+            "cost": None,
+        },
+    }
+
+
 def _process_notification(
     value: dict[str, Any],
     state: dict[str, Any],
@@ -867,6 +1169,16 @@ def _process_notification(
         actions = tracker.consume(method=method, params=params)
         for action in actions:
             action_sink(action)
+        return
+    if (
+        isinstance(tracker, CodexCollaborationTracker)
+        and _capture_child_runtime_event(
+            method=str(method),
+            params=params,
+            state=state,
+            tracker=tracker,
+        )
+    ):
         return
     if params.get("threadId") != state["thread_id"]:
         return
@@ -1326,6 +1638,11 @@ def _run_codex_host_locked(
         "root_work_terminal": False,
         "work_tracker": None,
         "work_action_sink": None,
+        "delegated_work_ids": set(),
+        "child_work_starts": {},
+        "child_work_runtime": {},
+        "child_thread_totals": {},
+        "pending_child_finishes": {},
     }
     try:
         server.send(
@@ -1490,6 +1807,26 @@ def _run_codex_host_locked(
             source_capability=runtime_binding["capability"],
         )
         def record_action(action: dict[str, Any]) -> None:
+            if (
+                action["action"] == "start"
+                and action["kind"] == "delegation"
+            ):
+                state["delegated_work_ids"].add(action["work_id"])
+                state["child_work_starts"][action["work_id"]] = action
+            if (
+                action["action"] == "finish"
+                and action["work_id"] in state["delegated_work_ids"]
+            ):
+                pending = state["pending_child_finishes"].get(
+                    action["work_id"]
+                )
+                if pending is not None and pending != action:
+                    raise MaestroError(
+                        "CODEX_HOST_PROTOCOL_INVALID",
+                        "A delegated work attempt received conflicting terminal states.",
+                    )
+                state["pending_child_finishes"][action["work_id"]] = action
+                return
             recorded_action = action
             if (
                 action["action"] == "finish"
@@ -1666,6 +2003,22 @@ def _run_codex_host_locked(
             ):
                 state["root_work_terminal"] = True
 
+        def flush_child_finishes() -> None:
+            pending = state["pending_child_finishes"]
+            for work_id, action in list(pending.items()):
+                recorded_action = _enrich_child_finish_action(
+                    action,
+                    start_action=state["child_work_starts"][work_id],
+                    runtime=state["child_work_runtime"].get(work_id),
+                )
+                _record_codex_work_action(
+                    repo,
+                    observation_id=observation["observation_id"],
+                    run_id=run_id,
+                    action=recorded_action,
+                )
+                del pending[work_id]
+
         state["work_action_sink"] = record_action
         pending_notifications = server.notifications
         server.notifications = []
@@ -1678,7 +2031,6 @@ def _run_codex_host_locked(
             if isinstance(value.get("method"), str):
                 _process_notification(value, state)
 
-        token_updates_at_completion = state["token_updates"]
         drain_deadline = min(
             deadline,
             time.monotonic() + POST_COMPLETION_TOKEN_WAIT_SECONDS,
@@ -1695,8 +2047,6 @@ def _run_codex_host_locked(
                 break
             if isinstance(value.get("method"), str):
                 _process_notification(value, state)
-                if state["token_updates"] > token_updates_at_completion:
-                    break
 
         applied_model = (
             state["reroutes"][-1]["to_model"]
@@ -1707,6 +2057,7 @@ def _run_codex_host_locked(
         assert isinstance(completion, dict)
         _capture_terminal_message(completion, state)
         _capture_terminal_collaboration(completion, state)
+        flush_child_finishes()
         duration = completion.get("durationMs")
         if (
             not isinstance(duration, (int, float))
