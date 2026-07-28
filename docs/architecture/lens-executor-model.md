@@ -168,8 +168,10 @@ Assignment 최대 5개를 그대로 유지하기 위해서다. 외부 조사가 
   artifact를 비교한다.
 - writer가 만든 test만으로 framework wiring이나 외부 동작을 과대 주장하지 않는다.
 
-실제 runtime capability 강제와 workspace lease는 v0 이후 범위다. v0에서는 Registry와
-Skill 계약이 경계를 표현하며, 그 한계는
+Host가 직접 소유한 Codex App Server turn은 sandbox와 같은 run·Assignment의
+중복 launch lease를 runtime에서 강제한다. workspace 전체, current-Host와 다른
+도구까지 포괄하는 lease·base-revision gate 및 일반 capability broker는 v0 이후
+범위다. 나머지 경계는 Registry와 Skill 계약이 표현하며, 그 한계는
 [제외·보류 목록](../governance/deferred-and-excluded.md)에 명시한다.
 
 ## Executor 모델 라우팅

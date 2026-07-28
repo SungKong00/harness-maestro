@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Route v1 호환 Typed Assignment Plan, 실행 전 의미 검증과 관측·HTML·재개 기능의 도입 경계.
 scope: [src/maestro/planning.py, src/maestro/cli.py, route-v2, validation, inspector]
-last_verified: 2026-07-26
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -62,11 +62,14 @@ maestro route --goal "결제 webhook 재시도 변경" \
   --risk medium --intent implementation --route-version v2 --json \
   > route-v2.json
 
-maestro validate-plan --plan route-v2.json --json
+maestro validate-plan --plan route-v2.json \
+  [--research-evidence research-bundle.json] --json
 ```
 
 `route`와 `validate-plan`은 모두 읽기 전용이다. 기본 `route` 호출은 계속 v1을
-반환한다.
+반환한다. `research_requirement.gate: satisfied`인 계획도 검증 경계에서 실제
+ResearchBundle을 다시 주지 않으면 구조는 PASS지만 실행 상태는
+`RESEARCH_REQUIRED`다. 계획 안의 digest 문자열만으로 실행 준비를 주장할 수 없다.
 
 컨텍스트 경계를 실제로 사용하는 관리 Host는 다음 읽기 전용 단계를 추가한다.
 사용자가 이 명령들을 직접 입력하는 흐름이 아니라 `$maestro`가 임시 JSON을 만들고
@@ -90,6 +93,37 @@ maestro validate-packet --repo . \
 `insufficient`이면 시작하지 않는다. 파일 내용을 복사하지 않고
 repository-relative path와 SHA-256만 반환한다. reviewer의 validated FindingPacket은 compact payload 그대로
 다음 Assignment에 포함할 수 있지만, transcript나 원본 파일 본문은 포함할 수 없다.
+
+Codex Host가 Assignment를 실행할 때는 자유 형식 prompt를 받지 않는다.
+
+```bash
+maestro host codex --repo . --run-id <run-id> --task-label "<label>" \
+  --plan route-v2.json --assignment <id> \
+  --projection assignment-input.json --baseline baseline.json \
+  [--document <path>] \
+  [--dependency-packet <packet.json> \
+   --dependency-projection <source-assignment-input.json>] \
+  [--research-evidence research-bundle.json] \
+  --observation <parent-observation-id> --json
+```
+
+Host는 이 권위 입력으로 AssignmentInput을 재구성하고 전달된 projection과 정확히
+비교한 뒤에만 turn을 시작한다. 선행 Assignment가 parent observation에서 완료되지
+않았거나, 전달한 dependency Packet digest가 선행 stage evidence와 다르거나, 같은
+Assignment가 이미 terminal이면 turn을 시작하지 않는다. App Server의 completed 이벤트 뒤에도
+final-answer Packet을 같은 plan·projection·ResearchBundle로 검증하고, 유효한
+Packet digest를 stage evidence에 결합한 뒤에만 완료를 기록한다.
+turn을 시작할 때는 package의 권위 Packet schema에서 해당 output과 전이 `$defs`만
+추출하고 plan·Assignment·Lens 또는 packet type에 결합한 self-contained JSON
+Schema를 prompt와 App Server `turn/start.outputSchema`에 동일하게 전달한다.
+FindingPacket의 inspected·evidence reference·coverage artifact는 projection
+allowlist에, `suggested_lens`는 선택되지 않은 Registry Lens 또는 `null`에 추가로
+결합한다.
+provider가 지원하지 않는 길이·pattern 제약은 output schema에서 제외하되 완료 뒤
+권위 validator가 원래의 닫힌 wire 계약 전체를 다시 검사한다.
+같은 pending Assignment의 검사와 실행 사이 경쟁은 64개 bounded shard의
+interprocess lease로 막는다. lease는 turn 전체에 유지되고 process 종료 시
+운영체제가 자동 해제하므로 stale timestamp를 신뢰해 writer를 재개하지 않는다.
 
 ## 작은 Surface Map과 Engineering Baseline
 
@@ -262,7 +296,7 @@ Packet, DAG 의미 검사를 더한다. 두 계약의 required field 집합은 �
 | 단계 | 상태 | 도입 조건 |
 |---|---|---|
 | Typed Plan과 pre-execution validator | 현재 구현 | 전체 test, schema package, strict Doctor와 Host 수동 검사 |
-| Bounded Host Observation | 현재 구현 | Host가 제공한 값만 compact final receipt에 기록하고 미측정값은 null |
+| Bounded Host Observation | 현재 구현 | route 전 요청 관측, 계획 결합, Assignment별 terminal 결과와 Host가 제공한 실측값만 compact final receipt에 기록하고 미측정값은 null |
 | JSON snapshot | 현재 구현 | 최근 실행·Expertise·governance metadata만 합성 |
 | localhost HTML Inspector | 현재 구현 | localhost bind, session token, CSP, no raw prompt, read-only API |
 | AssignmentInput·FindingPacket v2 | 현재 구현 | 전체 test, package schema와 실제 Host projection 확인 |

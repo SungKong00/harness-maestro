@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro v0의 작은 커널, 읽기·쓰기 경계와 프로젝트 적용 흐름.
 scope: [src/maestro, skills, docs]
-last_verified: 2026-07-27
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -69,20 +69,40 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro expertise update --apply-plan <plan> --json` | 검토한 다음 버전과 감사 스냅샷 게시 | 기존 `.agents/skills/<id>/` |
 | `maestro expertise deactivate ... --json` | Pack 사용 중지 plan 미리보기 | 없음 |
 | `maestro expertise deactivate --apply-plan <plan> --json` | allowlist만 제거하고 Skill 파일 보존 | project manifest |
+| `maestro expertise reconcile ... --json` | 비활성·전역 승격 사본의 Host 발견 충돌 미리보기 | 없음 |
+| `maestro expertise reconcile --apply-plan <plan> --json` | 안전 판정된 사본을 Host 밖 archive로 이동 | project manifest, `.agents/archive/expertise/` |
+| `maestro host sync ... --json` | 누락된 Codex Skill 링크와 충돌 미리보기 | 없음 |
+| `maestro host sync --apply-plan <plan> --json` | 누락 링크만 생성 | Host Skill root |
+| `maestro expertise reject-candidate ... --json` | 후보 기각 plan 미리보기 | 없음 |
+| `maestro expertise reject-candidate --apply-plan <plan> --json` | 후보 원본을 보존하고 라우팅·게시를 막는 disposition 기록 | candidate의 `disposition.json` |
+| `maestro expertise restore-candidate ... --json` | 기각 후보 복원 plan 미리보기 | 없음 |
+| `maestro expertise restore-candidate --apply-plan <plan> --json` | digest가 같은 후보의 disposition만 제거 | candidate의 `disposition.json` |
+| `maestro expertise change-set ... --json` | 원자 변경안 전체의 프로젝트 승인·보관·복원·영구 제거 plan 미리보기 | 없음 |
+| `maestro expertise change-set --apply-plan <plan> --json` | 모든 member의 같은 preview를 한 transaction으로 적용하고 실패 시 rollback | project Pack 또는 candidate state |
+| `maestro expertise promotion-decision ... --json` | 현재 candidate digest의 전역 승격 거절 또는 재검토 plan 미리보기 | 없음 |
+| `maestro expertise promotion-decision --apply-plan <plan> --json` | 5회 이상 승격 요청의 사용자 결정을 후보에 기록하거나 제거 | candidate의 `promotion-decision.json` |
+| `maestro expertise export ... --json` | 저장소 간 전달용 content-addressed contribution 묶음 생성 미리보기 | 없음 |
+| `maestro expertise export --apply-plan <plan> --json` | 검토한 내부 운반 묶음만 프로젝트 export 경로에 생성 | `.maestro/exports/expertise/` |
+| `maestro expertise promote-global ... --json` | Harness checkout의 global 새 Pack 또는 pinned Guide 추가를 기본 Pack 소스에 반영하는 미리보기 | 없음 |
+| `maestro expertise promote-global --apply-plan <plan> --json` | Registry·bundled Skill·release manifest·초기화된 checkout의 Registry lock을 로컬 반영하고 실패 시 rollback | Harness 소스 checkout; Git·원격·릴리스 쓰기 없음 |
 | `maestro govern classify --input <signals.json> --json` | 증거에서 만든 닫힌 신호를 가장 작은 durable component surface로 분류 | 없음 |
 | `maestro component validate-candidate --repo <path> --candidate <id> --json` | 격리된 비-Expertise 구성요소 후보의 분류·digest·경계·frozen case 검증 | 없음 |
 | `maestro route --goal "<goal>" --risk <level> [--intent <intent>] --json` | 의도와 위험도에 맞는 Lens·Executor 실행 계획 및 과소 위험 경고 생성 | 없음 |
 | `maestro route ... --route-version v2 --json` | v1 선택을 최대 5개 typed Assignment DAG로 정규화하고 optional Expertise Pack·research gate를 검증 | 없음 |
 | `maestro validate-plan --plan <route-v2.json> --json` | 외부에서 전달받은 v2 계획의 참조·연결·Packet·writer·상한 재검사 | 없음 |
-| `maestro assignment project --plan <route-v2.json> --assignment <id> --baseline <file> --json` | bounded surface에서 문서·Convention을 재선택해 digest로 묶고 선택 Lens·Guide·reference와 validated dependency만 AssignmentInput으로 투영 | 없음 |
+| `maestro assignment project --plan <route-v2.json> --assignment <id> --baseline <file> [--research-evidence <bundle>] --json` | bounded surface에서 문서·Convention을 재선택하고 satisfied gate의 bound research context와 선택 Lens·Guide·validated dependency만 AssignmentInput으로 투영 | 없음 |
 | `maestro validate-packet --plan <route-v2.json> --assignment <id> --packet <file> --json` | FindingPacket v2 또는 terminal Packet을 plan·Assignment에 결합해 검사 | 없음 |
-| `maestro validate-research --artifact <packet-or-bundle.json> --json` | 내부 ResearchPacket·ResearchBundle의 source ref·tier·합성·follow-up 계약 검사 | 없음 |
+| `maestro validate-research --repo <path> --artifact <packet-or-bundle.json> --json` | Research v2 framing·source plan/query·source/claim semantics·local artifact digest·합성·follow-up 새 근거 계약 검사 | 없음 |
 | `maestro decide --repo <path> --goal "<goal>" --json` | 구현 전 독립 Specialist 판단과 synthesis·기술 타당성의 read-only 계획 생성 | 없음 |
 | `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
 | `maestro enact --repo <path> --plan <plan> --bundle <bundle> --packet <packet>... --authorization-source <source> --json` | 결정·근거·checkout을 재검사하고 digest-bound ExecutionPlan 생성 | 없음 |
-| `maestro observe start --repo <path> --run-id <id> --task-label "<label>" [--plan <route-v2>] --json` | prompt 없이 작업명·시작 시각·compact 계획 관측 시작 | `.maestro/state/inflight/` 한 건 |
+| `maestro observe start|desktop --repo <path> --run-id <id> --task-label "<label>" ... --json` | route 전에 prompt 없이 작업명·시작 시각과 공개된 요청 설정 관측 시작 | `.maestro/state/inflight/` 한 건 |
+| `maestro observe plan --observation <id> --run-id <id> --plan <route-v2> --json` | 검증된 compact 계획을 같은 요청 관측에 한 번 결합 | 같은 in-flight marker |
+| `maestro observe stage --observation <id> --run-id <id> --assignment <id> ... --json` | 현재 Host 또는 결정론적 명령이 확인한 Assignment terminal 결과와 근거 기록 | 같은 in-flight marker의 bounded stage result |
 | `maestro observe host ... --json` | 공개 Host가 제공한 요청 모델·요청 추론 강도·완전한 model event 근거·적용 모델·token과 상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
-| `maestro record --repo <path> --receipt <file> [--observation <id>] --json` | 작업 종료 시 compact RunReceipt 한 건 기록하고 반복 개선 신호 확인 | `.maestro/state/events/`에 append |
+| `maestro host codex ... --assignment <id> --observation <id> --json` | App Server로 Assignment를 실행하고 terminal 상태·모델·reroute·시간·token을 부모 관측에 자동 기록 | ephemeral Host 실행과 같은 in-flight marker |
+| `maestro finalize --repo <path> --run-id <id> [--observation <id>] ... --json` | 모든 계획 단계의 terminal 관측에서 compact RunReceipt를 자동 생성하고 반복 개선 신호 확인 | `.maestro/state/events/`에 append |
+| `maestro record --repo <path> --receipt <file> [--observation <id>] --json` | 이전 형식이나 외부 Host의 검증된 RunReceipt 가져오기 | `.maestro/state/events/`에 append |
 | `maestro snapshot --repo <path> --json` | 상태·작업·Expertise·거버넌스를 하나의 read-only JSON으로 합성 | 없음 |
 | `maestro verification approve ...` | 탐지된 정확한 검증 명령 승인 plan 미리보기·적용 | apply 때만 project state |
 | `maestro dashboard --repo <path>` | localhost snapshot 조회와 정확한 검증 명령 `preview → apply` | 명시 승인 때만 project state |
@@ -111,29 +131,36 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 
 ### 일상 작업
 
-1. 목표와 되돌리기 어려움으로 위험도를 정한다.
+1. 목표와 되돌리기 어려움으로 위험도를 정한다. 초기화된 프로젝트의 비단순 구현
+   요청이면 route 전에 작업명·시작 시각과 공개된 요청 설정을 관측한다.
 2. `docs`로 관련 문서를 좁힌다. 기본적으로 `required_documents`만 읽고,
    `optional_documents`의 research·plan은 해당 근거 경계가 열릴 때만 추가한다.
 3. `route`가 Fast, Standard, Deep 중 가장 작은 충분한 경로를 만든다.
 4. 방향이 이미 정해진 작은 변경은 route v2로 정규화해 Assignment 의존 관계와
-   Packet·권한 계약을 실행 전에 검사한다.
+   Packet·권한 계약을 실행 전에 검사하고, 확정된 계획을 같은 observation에 결합한다.
 5. 디자인·아키텍처·기술 선택 또는 “판단 후 구현” 요청은 `decide`로 전환한다.
    초기 역할은 서로의 결론을 보지 않고 read-only packet만 반환하며, synthesis와
    기술 타당성 뒤 유효한 DecisionBundle이 생기기 전에는 writer를 만들지 않는다.
 6. 선택된 Expertise Pack과 관련 Decision Guide만 읽는다. research gate가 열렸으면
-   bounded artifact를 만든 뒤 digest로 재-route해 `READY`가 될 때까지 중단한다.
+   framing·query·source·claim·채택/기각/충돌을 보존한 bound v2 artifact를 만든 뒤
+   정확히 같은 목표로 재-route해 `READY`가 될 때까지 중단한다. 일반 research
+   단어만으로 domain Pack을 선택하지 않는다.
 7. 실제 artifact에서 작은 Surface Map과 Engineering Baseline을 만들고,
-   Assignment마다 문서 선택을 재계산한 뒤 허용된 Lens·Guide·reference와 validated
-   dependency만 투영한다. mutation owner는 coverage gap 또는 문서 근거 부족이
-   남으면 시작하지 않는다.
+   Assignment마다 문서 선택을 재계산한 뒤 허용된 Lens·Guide·reference, satisfied
+   gate의 ResearchBundle과 validated dependency만 투영한다. mutation owner는
+   coverage gap, open research gate 또는 문서 근거 부족이 남으면 시작하지 않는다.
 8. reviewer FindingPacket과 terminal Packet을 plan·Assignment에 결합해
    검증하고, invalid Packet은 다음 edge로 넘기지 않는다.
 9. staged 요청은 `enact`가 모든 packet digest, Registry와 Git revision, blocker,
    feasibility와 허용 path를 검증한 뒤에만 기존 한 명 writer route로 전환한다.
 10. 한 명의 writer만 승인 범위를 수정하고, reviewer와 verifier는 읽기 전용으로
-   증거를 반환한다. writer는 선택된 Convention마다 적용·비적용·waiver·충돌을
-   보고하고 열린 충돌을 남긴 채 완료하지 않는다.
-11. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다.
+   증거를 반환한다. 각 Assignment가 끝날 때 terminal 상태와 근거를 같은
+   observation에 즉시 기록한다. 선행 실패로 실행하지 않은 단계도 `skipped`로 닫는다.
+   writer는 선택된 Convention마다 적용·비적용·waiver·충돌을 보고하고 열린 충돌을
+   남긴 채 완료하지 않는다. ResearchBundle이 투영됐으면 bundle digest를 인용하고
+   adopted claim마다 project evidence가 있는 적용·비적용·충돌 disposition도 남긴다.
+11. test·lint·schema·실제 diff 같은 외부 증거로 완료를 판정한다. 모든 계획 단계가
+   terminal이면 관측값에서 최종 RunReceipt를 생성한다.
 12. 검증된 재사용 규칙은 프로젝트 설정이 허용할 때 같은 실행에서는 candidate로만
    기록한다. active Convention 갱신은 `owner_decision` 또는 승인된
    `held_out_evaluation` 근거가 있을 때만 작업당 한 건으로 제한한다.
@@ -142,10 +169,8 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
    Packet contract 중 가장 작은 표면을 먼저 고른다. Expertise가 아닌 Registry 계열
    후보는 명시적으로 요청된 경우에만 project-local 격리 bundle로 컴파일하며 active
    Registry를 바꾸지 않는다.
-14. 구현을 시작할 때 prompt 없이 작업명과 compact 계획만 관측하고, 실행 비용과
-   finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt 한 건으로 runtime
-   JSONL에 남기되
-   checkpoint와 장문 대화를 복제하지 않는다.
+14. 실행 비용과 finding, 선택한 팩·가이드·research mode는 작업 종료 RunReceipt
+   한 건으로 runtime JSONL에 남기되 checkpoint와 장문 대화를 복제하지 않는다.
 
 Route v2는 scheduler가 아니라 실행 전 계약이다. Route model은 권고값이며 실제
 Assignment 시작·종료, 요청·적용 model, token과 duration은 Host가 측정 출처와

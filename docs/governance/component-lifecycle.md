@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Lens, Executor, Expertise Pack, Decision Guide, Skill, Adapter와 Convention을 증거 기반으로 개선하는 생명주기.
 scope: [skills, src/maestro/resources/registry, docs/conventions, .maestro/state]
-last_verified: 2026-07-27
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -52,7 +52,7 @@ observed → candidate → pilot → active → deprecated → retired
 | 상태 축 | 값 | 답하는 질문 |
 | --- | --- | --- |
 | 구성요소 개선 수명주기 | `observed/candidate/pilot/active/deprecated/retired/rejected` | 이 변경 제안은 채택 과정의 어디에 있는가 |
-| Expertise 후보 실행 자격 | `available/published/expired/superseded/conflict/invalid` | 이 프로젝트 라우팅이 지금 이 후보를 선택해도 되는가 |
+| Expertise 후보 실행 자격 | `available/published/change_set_paused/expired/superseded/conflict/invalid` | 이 프로젝트 라우팅이 지금 이 후보를 선택해도 되는가 |
 | Expertise Pack 사용 단계 | `candidate/pilot/active/deprecated/retired` | 배포된 전문 지식 묶음은 어느 사용 단계인가 |
 | Decision Guide 최신성 | `stable/versioned/volatile` | 이 판단 근거를 언제 다시 확인해야 하는가 |
 | 프로젝트 사용 검토 | `awaiting_usage/evidence_gathering/review_due/review_required` | 이 프로젝트의 사용 기록으로 지금 무엇을 해야 하는가 |
@@ -79,9 +79,11 @@ observed → candidate → pilot → active → deprecated → retired
 
 ## 후보 생성
 
-`maestro record`는 작업 종료 시 RunReceipt 한 건을 현재 project와 checkout에
-기록한다. `maestro govern report`는 그 범위에 속한 최근 JSONL만 읽고 반복
-fingerprint를 보여 준다. 보고서는 다음 행동을 자동 수행하지 않는다.
+새 관리 실행은 요청 관측에 검증된 계획과 Assignment별 terminal 근거를 결합한 뒤
+`maestro finalize`가 RunReceipt 한 건을 현재 project와 checkout에 기록한다.
+호환용 `maestro record`는 이미 검증된 외부 receipt를 가져올 때만 사용한다.
+`maestro govern report`는 그 범위에 속한 최근 JSONL만 읽고 반복 fingerprint를
+보여 준다. 보고서는 다음 행동을 자동 수행하지 않는다.
 
 과거 기록은 전체 Registry digest가 달라졌다는 이유만으로 버리지 않는다. 현재 event
 schema로 검증되고, 해당 실행이 실제로 사용한 Lens·Executor·Expertise Pack의
@@ -91,8 +93,14 @@ record 수를 별도로 보여 주며 서로 다른 definition을 같은 Pilot a
 
 반복 임계치를 넘은 후보는 fingerprint와 횟수만 보여 주지 않는다. 심각도, 마지막
 run, 최신 evidence와 command artifact를 각각 최대 세 개만 노출한다. `maestro status`
-는 이런 후보가 있으면 `review_governance_candidates`를 다음 행동으로 추가하지만
-어떤 파일도 자동 수정하지 않는다.
+는 이런 후보가 있으면 `review_governance_candidates`를 다음 행동으로 추가한다.
+일반 구성요소와 활성 권위는 자동 수정하지 않는다. 다만 서로 다른 실행의 재사용
+가능한 Expertise 공백이 세 번 반복되거나 critical 공백이 생긴 mutation 작업에서는
+`$maestro-expertise-builder`가 fingerprint당 최대 한 건의 격리 후보를 자동 작성할
+수 있다. 이는 candidate authoring 권한일 뿐 pilot·active 승격 권한이 아니다.
+현재 실행에서 구체적인 실패 근거와 재사용 경계가 분명하고 통합 분류가
+`decision-guide` 또는 `expertise-pack`이면 `resolution=author_candidate` 한 건으로
+즉시 후보 authoring을 열 수 있다. 모호한 공백은 여전히 독립 실행 세 번을 요구한다.
 
 일반 완료는 `run_summary`로 기록한다. 반복 개선 근거로 사용할
 `review_finding`, `verification_failure`, `correction`은 안정적인 fingerprint,
@@ -148,10 +156,29 @@ criterion·forbidden behavior disposition과 compact artifact digest를 통과�
 이는 구조, 분리와 provenance를 검사하는 gate이며 출처의 진실성이나 evaluator의
 domain 판단을 자동 승인하지 않는다.
 
-Pack 하위 요소도 별도 live 디렉터리를 직접 수정하지 않는다. Guide 추가·수정·폐기,
-trigger 조정, source refresh와 evaluation 확장은 `component_change`로 의도를
+Pack 하위 요소도 별도 live 디렉터리를 직접 수정하지 않는다. Guide 추가·수정·폐기·
+이동·복사, Pack 통합·분할, trigger 조정, source refresh와 evaluation 확장은
+`component_change`로 의도를
 표시한 완전한 다음 Pack 후보가 된다. 이 방식은 하위 요소별 효용을 관찰하면서도
 manifest·source·평가·rollback의 배포 단위를 하나로 유지한다.
+
+여러 후보가 하나의 재배치라면 동일 `change_set_id` 아래 의미 단위
+`operation_id`로 묶는다. source·target Pack, 기준 digest와 모든 operation을 함께
+검토하며 일부 승인·보관·영구 제거를 금지한다. 기준 Pack이 바뀌거나 후보 하나가
+invalid·conflict·expired가 되면 전체 ChangeSet을 pause한다.
+Pack 통합·분할과 Guide 이동·복사는 한 후보뿐이어도 `change_set_id`가 필수다.
+원자 변경은 개별 candidate 명령이 아니라 `maestro expertise change-set`의
+`project-approve/archive/restore/delete` preview/apply만 사용한다. plan은 모든
+member plan digest와 파일의 이전 digest를 고정하며 하나의 쓰기나 최종 catalog
+검증이 실패하면 전체 파일을 preview 이전 상태로 복원한다.
+
+후보는 `generation.mode`로 `user-requested`와 `automatic`을 구분한다. 자동 후보는
+반드시 원인이 된 관리 신호의 fingerprint를 보존하며 같은 fingerprint로 중복
+작성하지 않는다. 기존 두 개 이상 Pack의 공통 trigger·source·평가 수명주기가
+실제로 같고 top-1 선택 손실이나 반복 handoff가 증거로 남은 경우에는
+`component_change.kind=pack-merge`와 `source_pack_ids`로 통합 후보를 만들 수 있다.
+단순한 주제 중복은 Guide 추가나 기존 Pack 확장으로 처리한다. 통합 후보도 기존
+Pack을 자동 폐기하지 않는다.
 
 owner 결정 또는 accepted held-out evaluation을 받은 후보는
 `maestro expertise activate`의 preview/apply 경계로
@@ -163,19 +190,50 @@ mutation owner인 Executor만 기존 경계 안에서 적용한다.
 `maestro expertise update`로 같은 ID의 version을 정확히 하나 올린다. 사용 중지는
 `maestro expertise deactivate`로 allowlist만 제거하고 파일을 보존한다. 기존 범용
 Pack에 속하는 판단은 base ID·version·digest를 고정한 한 단계 `extends`를 기본으로
-사용한다. 동일 ID shadowing, inherited guide 재정의, 활성 파일 직접 수정과 자동
-전역 승격은 허용하지 않는다.
+사용한다. 동일 ID shadowing, inherited guide 재정의와 활성 파일 직접 수정은
+허용하지 않는다. 사용 횟수만으로 기본 Pack에 자동 반영하지 않는다.
 
-활성 Pack과 Guide는 RunReceipt의 선택 기록과 bounded Expertise observation으로
-관찰한다. Guide 5회 선택은 정기 검토를, 반복된 음성 신호 3회 또는 critical 신호는
-문제 검토를 연다. 사용·수정·검증 실패의 동시 발생은 원인 증명이 아니며, 임계치는
-후보를 자동 만들거나 active 파일을 바꾸지 않는다. 실제 변경은 다시
-candidate → frozen evaluation → preview/apply를 거친다.
+활성 Pack과 Guide는 RunReceipt의 선택 기록, Assignment 배정과 WorkSpan
+`expertise_evidence`로 관찰한다. 선택·배정·불러옴·적용 관찰·검증 통과는 별도
+카운터다. Guide의 서로 다른 Run `application_observed` 5회는 정기 검토를,
+반복된 음성 신호 3회 또는 critical 신호는 문제 검토를 연다. 후보의
+`component_change.target_guide_id`가 있으면 Pack 총사용과 별도로 그 Guide 적용
+관찰 횟수를 세어 같은 임계치를 적용한다. selection-only 과거 기록은 적용으로
+backfill하지 않는다. 사용·수정·검증 실패의 동시 발생은 원인 증명이 아니며,
+임계치는 active 파일을 바꾸지 않는다. 실제 변경은
+다시 candidate → frozen evaluation → preview/apply를 거친다.
 
-`profile` 또는 `global`로 판단된 프로젝트 후보는
+portable 후보가 서로 다른 Run에서 `application_observed` 5회 이상 확인되면
+Codex의 마지막 메시지와 뷰어 주의 항목은 소유자 결정을 계속 요청한다. 정확히
+5번째에만 잠깐 표시하지 않는다. 사용자가 전역 승격을 원하지 않으면
+`maestro expertise promotion-decision --decision decline`이 현재 candidate digest에
+결정을 고정한다. 후보 내용이 바뀌면 다시 pending이 되고, `reconsider`는 같은
+버전의 결정을 명시적으로 다시 연다. 어느 결정도 자동 승격 권한을 만들지 않는다.
+
+일반 보관은 `maestro expertise archive-candidate`의 preview/apply로 후보
+디렉터리 안에 `status=archived` marker를 쓰고 라우팅·승격에서 제외한다.
+`restore-candidate`는 marker만 제거한다. 보관함 영구 제거는 정확한 candidate ID
+확인, 활성 publication과 묶음 ChangeSet 의존성 검사 뒤 candidate 파일을 제거하고
+`.maestro/state/candidates/expertise-tombstones/`에 작은 tombstone을 남긴다.
+원자 ChangeSet member에는 이 개별 명령이 거부되며 ChangeSet ID를 정확히 확인한
+묶음 작업만 모든 disposition 또는 tombstone을 함께 적용한다.
+
+부적합한 후보는 호환 명령인 `maestro expertise reject-candidate`의 preview/apply로 후보
+디렉터리 안에 작은 `disposition.json`만 쓴다. 파일과 평가 근거는 보존하고
+라우팅·게시·export에서 제외한다. 판단을 되돌릴 때는
+`maestro expertise restore-candidate`가 정확한 candidate digest를 확인한 뒤
+marker만 제거한다. 이는 게시된 Pack의 `deactivate`와 별개다.
+
+`profile` 또는 `global`로 판단된 프로젝트 후보는 저장소 간 전달이 필요할 때만
 `maestro expertise export`로 content-addressed contribution bundle을 만들 수 있다.
-이는 검토용 운반 형식일 뿐이다. Harness maintainer의 별도 저장소 diff와 릴리스가
-완료된 뒤에만 다른 프로젝트가 새 설치 버전으로 받아들인다.
+이는 일반 사용자 단계가 아닌 내부 운반 형식이다. Harness Maestro 소스 checkout
+안의 검증된 standalone `global` 새 Pack 또는 pinned Guide 추가는 owner가
+`maestro expertise promote-global` preview/apply를 승인하면 별도 export 없이
+Registry·bundled Skill·release manifest에 로컬 반영할 수 있다. apply 중 검증
+실패는 이 plan이 만든 경로와 이전 manifest로 rollback한다. 이 명령은
+stage·commit·push·PR·태그·릴리스를 하지 않는다. 그 밖의 contribution은
+maintainer의 일반 저장소 diff로 검토한다. 어느 경로든 릴리스가 완료된 뒤에만
+다른 프로젝트가 새 설치 버전으로 받아들인다.
 
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은

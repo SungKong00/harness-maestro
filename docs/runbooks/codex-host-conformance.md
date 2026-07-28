@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Codex가 Maestro의 Fast·Standard·Deep 계약을 실제로 지키는지 릴리스 전에 확인하는 최소 수동 검사.
 scope: [release, codex, routing]
-last_verified: 2026-07-27
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -52,15 +52,39 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
 - active Convention은 명시적인 owner 결정 또는 분리된 held-out 평가, Convention digest,
   repository-local 검증 artifact digest를 모두 가진다.
 - 중요한 충돌이 없거나 새 근거가 없으면 토론을 시작하거나 계속하지 않는다.
-- 실행 종료 시 compact RunReceipt를 정확히 하나만 남긴다.
+- 구현 요청을 분류한 뒤 route 전에 요청 관측을 시작하고, route가 확정되면 같은
+  observation에 계획을 결합한다.
+- Desktop 요청 접수의 `desktop_request`를 실행 fallback으로 취급하지 않는다.
+  App Server로 처리할 수 없는 Assignment만 별도 `observe fallback` 뒤
+  `current_host` 단계로 기록하며, 전환 전 current-Host 기록은 거부한다.
+- 각 Assignment 종료 직후 terminal 단계 결과를 한 건 남긴다. 실패한 선행 단계
+  때문에 실행하지 않은 하위 단계도 `skipped`와 원인 근거로 닫는다.
+- 계획된 모든 Assignment가 terminal이 되기 전에는 최종화를 거부하고, 이후 관측된
+  계획·단계에서 compact RunReceipt를 정확히 하나만 생성한다.
 - `maestro host codex`로 시작한 Assignment는 plan의 side-effect 계약에서 sandbox를
   파생한다. reviewer·verifier는 `readOnly`, mutation owner만 저장소 루트 하나를
   writable root로 가진 `workspaceWrite`이고 두 경우 모두 network는 꺼져 있어야 한다.
+- 여러 Assignment가 같은 plan을 실행할 때 `host codex --observation`이 하나의 부모
+  observation에 결과를 추가하며 Assignment마다 별도 Run으로 분열되지 않아야 한다.
+- Assignment Host가 authoritative baseline·문서·dependency·ResearchBundle에서
+  projection을 재구성하고 자유 prompt나 변조된 projection을 거부하는지 확인한다.
+- 같은 pending Assignment 두 개를 동시에 시작했을 때 full-turn lease로 하나만
+  실행되고, process 종료 뒤 lease가 자동 회수되는지 확인한다.
+- `turn/completed` 뒤 final Packet이 없거나 invalid이면 stage가 먼저 `failed`로
+  고정되고 같은 writer가 다시 실행되지 않는지 확인한다.
+- dependent Assignment가 선행 stage에 기록된 exact Packet digest와 다른 dependency
+  Packet을 거부하는지 확인한다.
 - App Server가 approval·사용자 입력 같은 server request를 보내면 Host가 임의
   승인하지 않고 typed failure로 중단하는지 확인한다.
 - terminal completion 뒤 늦게 도착한 token update까지 bounded drain 안에서
   수집하되, prompt·전체 JSON-RPC trace·최종 agent message는 observation이나
   RunReceipt에 저장하지 않는지 확인한다.
+- `initialize`에서 정확한 고빈도 delta notification method만
+  `optOutNotificationMethods`로 제외하고, `turn/completed`와 필요한
+  `item/completed`, reroute, token event는 계속 받는지 확인한다.
+- 관련 없는 notification이 기존 observation trace 한도보다 많이 와도 terminal
+  event를 잃지 않는지 확인한다. 대신 raw transport에는 별도의 큰 message·byte
+  안전 한도와 전체 timeout을 유지한다.
 
 하나라도 관찰할 수 없거나 위반되면 릴리스 판정은 `CONTINUE`다. 실제 host가 강제하지
 못하는 권한·격리 속성을 CLI 통과만으로 `DONE`이라고 주장하지 않는다.
@@ -85,8 +109,14 @@ reroute와 token은 완전한 App Server 이벤트 구간이 있을 때만 Host 
 초기화 뒤 ephemeral thread 하나와 turn 하나만 만들고 terminal completion까지
 읽는다. Assignment가 있으면 권한·모델·추론 강도는 검증된 plan에서 파생하며,
 최종 agent message는 stdout 결과에만 존재한다. 구현 근거는
-[Codex App Server 공식 문서](https://developers.openai.com/codex/app-server/)의
-초기화, thread/turn 시작, `model/rerouted`, token usage, turn completion 계약이다.
+[Codex App Server 공식 문서](https://learn.chatgpt.com/docs/app-server/)의
+초기화, thread/turn 시작, 별도 `turn/plan/updated`, `model/rerouted`, token usage,
+turn completion 계약이다. 자유 형식 plan event 본문은 저장하지 않고 Maestro의
+검증된 route plan을 별도 결합한다.
+공식 계약상 client는 terminal event까지 event stream을 계속 읽고, 고빈도
+notification은 `initialize.params.capabilities.optOutNotificationMethods`에서
+정확한 method 이름으로 줄일 수 있다. approval과 사용자 입력은 notification이
+아니라 server request이므로 opt-out 대신 명시적인 거부 경계를 유지한다.
 
 ## 보존할 결과
 

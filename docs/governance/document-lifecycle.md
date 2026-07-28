@@ -106,6 +106,12 @@ v0 `doctor`는 문서의 필수 frontmatter, type·status·authority enum, 중�
 `supersedes` 대상은 `FAIL`로 처리한다. 규칙이 실제로 좋은지, 행동 가능하고 근거가
 충분한지는 Doctor가 아니라 생성·변경·승격 시의 별도 의미 검토가 담당한다.
 
+계획 문서는 위치와 상태도 검사한다. `docs/plans/active/**`는 `type: plan`,
+`status: active`, `docs/plans/completed/**`는 `type: plan`,
+`status: archived`여야 하며 불일치는 `DOC_PLAN_LIFECYCLE` 실패다. 단계·결정·blocker
+또는 handoff가 현재 작업을 넘어 유지될 때만 계획 문서를 만들고, Assignment 진행률과
+token·시간 같은 실행 상태는 `.maestro/state/`에 둔다.
+
 `init`은 기존 Markdown에 이 계약이 없더라도 본문을 자동 변경하지 않고 누락 필드를
 경고한다. `maestro docs`는 configured project·architecture 문서가 draft, missing,
 untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 **필수**
@@ -116,6 +122,13 @@ untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고�
 선택되지 않은 `none` 상태 자체는 근거 공백이 아니다. 사용자가 frontmatter를 수동
 추가한 뒤에는 `maestro upgrade` 미리보기에서 검토한 user-owned 문서 기준선만
 변경되는지 확인해 적용하고 strict Doctor를 다시 실행한다.
+
+반복 `--path`로 전달한 정확한 `docs/**/*.md` target은 일반 ranking보다 먼저
+고정한다. 정확히 요청된 Convention 문서는 그 문서 자체의 code scope가 다르더라도
+선택한다. 완료 계획은 정확히 요청됐고 `docs/plans/completed/` 아래
+`type: plan`, `status: archived`일 때만 읽는다. 다른 inactive 문서와
+`docs/archive/`는 계속 제외하며, exact target이 없거나 예산에서 빠지면 근거를
+`insufficient`로 표시한다.
 
 ## 생성부터 아카이브까지
 
@@ -131,6 +144,19 @@ untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고�
    참조 검색, 복구 경로를 확인한 뒤 수행한다.
 
 문서 개수가 임계치를 넘었다는 이유만으로 삭제하거나 규칙을 승격하지 않는다.
+
+Convention은 다음 판단표를 사용한다.
+
+| 상황 | 판단 |
+|---|---|
+| 같은 topic과 같은 authority의 규칙 보정 | typed `convention update`; 기존 `supersedes`와 `sensitivity` 보존 |
+| 새 topic 또는 authority의 실질 변경 | owner 또는 ADR 결정 후 별도 권위와 명시적 supersession |
+| 낡았지만 역사·감사 가치가 있음 | active index에서 제거하고 archive |
+| 일반 중복 | delete보다 supersede/archive 우선 |
+| 비밀·법적 요구·Git history 정리가 필요 | `NEEDS_DECISION`; 파일 삭제가 history purge는 아님 |
+
+전용 Convention supersede·archive·delete·rollback CLI는 현재 보류 상태다. free-form
+편집으로 이를 자동화하지 않는다.
 
 새 Convention은 다음처럼 미리보기 plan을 만든 뒤 같은 plan만 적용할 수 있다.
 

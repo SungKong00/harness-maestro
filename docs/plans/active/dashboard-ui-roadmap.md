@@ -532,8 +532,8 @@ focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 
 
 ### 단계 4 — 필요한 telemetry와 증거 계약 확장
 
-상태: 진행 중 — 수동 work lifecycle·GUI projection과 Maestro-owned App Server
-P0 producer 완료, coverage·version binding과 다른 Codex 생산자는 미구현
+상태: 현재 P0 범위 구현·검증 완료 — App Server producer, v2 증거 계약,
+구조화된 결과 projection과 인라인 확장 카드 적용
 
 반복되는 사용자 판단 공백과 생산자는 확인됐다.
 
@@ -600,7 +600,7 @@ P0 producer 완료, coverage·version binding과 다른 Codex 생산자는 미�
 
 #### 4A — Codex 위임 lifecycle 자동 수집
 
-상태: 핵심 카드·관계·파동 구현 완료 · producer binding과 진단 hardening은 진행 중
+상태: P0 App Server producer와 진단 hardening 구현 완료
 
 목표는 `observe-work-start/finish`를 호출할 수 있는 현재 domain 계약을 Codex의
 공식 lifecycle 생산자와 연결하는 것이다.
@@ -630,7 +630,7 @@ P0는 이미 `codex_host.py`가 소유하는 App Server turn에
 
 구현 작업:
 
-- [ ] installed Codex version, generated stable schema digest와 adapter capability를
+- [x] installed Codex version, generated stable schema digest와 adapter capability를
       execution binding에 기록한다.
 - [x] `thread_id + turn_id + item_id + lifecycle phase` 기반 idempotent event
       envelope를 정의한다.
@@ -639,7 +639,7 @@ P0는 이미 `codex_host.py`가 소유하는 App Server turn에
 - [x] child terminal과 bounded result summary를 `reports_to` 후보로 연결한다.
 - [x] `sendInput`은 기존 attempt의 상태 관측으로 유지하고 `resumeAgent`는 새
       `followup_of` attempt로 분리한다.
-- [ ] 후속 지시의 사용자 의미 reason code를 추가한다.
+- [x] 후속 지시의 사용자 의미 reason code를 추가한다.
 - [x] `wait`는 child terminal 관측에만 사용하고 wait 완료만으로 synthesis나
       `joins_into`를 만들지 않는다.
 - [x] main agent의 명시적 synthesis work와 child 결과 소비가 있을 때만
@@ -650,8 +650,8 @@ P0는 이미 `codex_host.py`가 소유하는 App Server turn에
       위임은 그 판단 work를 부모 또는 명시적 의존 대상으로 삼는다.
 - [x] 새 위임 없이 종료·차단·사용자 결정 요청으로 끝난 판단도 bounded 결론과
       terminal 상태를 가진 마지막 카드로 남긴다.
-- [ ] `turn/interrupt` 요청과 최종 `interrupted`를 분리한다.
-- [ ] mid-turn `error`와 terminal `failed`를 분리한다.
+- [x] `turn/interrupt` 요청과 최종 `interrupted`를 분리한다.
+- [x] mid-turn `error`와 terminal `failed`를 분리한다.
 - [x] process crash·event drop 뒤 running span을 `완료`로 바꾸지 않고
       incomplete recovery 대상으로 남긴다.
 
@@ -694,13 +694,13 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
   `actual_concurrency=unavailable`을 유지한다.
 - terminal 보고 6건은 세 synthesis 판단에 합류하고, 다음 child 6건은 직전
   판단 work를 부모로 삼는다. duplicate spawn replay는 새 카드를 만들지 않는다.
-- source version·generated schema digest binding, 후속 지시의 사용자 의미 reason,
-  interrupt 요청과 terminal 분리, mid-turn error 진단은 이 카드·파동 완료 조건과
-  별개인 남은 producer hardening이다. 이 값은 구현될 때까지 UI가 추정하지 않는다.
+- source version·generated schema digest·adapter capability, 후속 지시의 사용자
+  의미 reason, interrupt 요청과 terminal, mid-turn error와 terminal failed를
+  각각 분리했다. source가 제공하지 않는 값은 여전히 UI가 추정하지 않는다.
 
 #### 4B — 모델·시간·사용량의 검증된 범위
 
-상태: 4A와 함께 계약 설계, child event 확보 뒤 구현
+상태: v2 계약·producer·projection과 complete/partial fixture 구현 완료
 
 현재 부모 Assignment Host telemetry를 child work span으로 복사하지 않는다.
 다음 provenance를 분리한다.
@@ -727,16 +727,16 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 
 4B 완료 조건:
 
-- [ ] 요청 모델·Hook 시점 모델·실제 모델이 서로 다른 상태로 검증된다.
-- [ ] reroute가 있는 child와 없는 child를 complete stream fixture로 검증한다.
-- [ ] 부모의 모델·시간·token이 child에 암묵적으로 복사되지 않는다.
-- [ ] 같은 clock domain의 완전한 구간에서만 실제 병렬 실행을 계산한다.
-- [ ] thread token의 `last`·`total` 범위를 재생 fixture로 확인한다.
-- [ ] runtime·schema mismatch와 partial stream은 `일부만 기록됨`으로 낮아진다.
+- [x] 요청 모델·Hook 시점 모델·실제 모델이 서로 다른 상태로 검증된다.
+- [x] reroute가 있는 child와 없는 child를 complete stream fixture로 검증한다.
+- [x] 부모의 모델·시간·token이 child에 암묵적으로 복사되지 않는다.
+- [x] 같은 clock domain의 완전한 구간에서만 실제 병렬 실행을 계산한다.
+- [x] thread token의 `last`·`total` 범위를 재생 fixture로 확인한다.
+- [x] runtime·schema mismatch와 partial stream은 `일부만 기록됨`으로 낮아진다.
 
 #### 4C — 단계 결과·근거 계약
 
-상태: 4A 뒤 별도 milestone
+상태: v2 work span과 snapshot summary/detail read model에 구현 완료
 
 자동 lifecycle이 안정된 뒤, 사용자가 단계 카드에서 이해해야 할 결과를 구조화한다.
 
@@ -755,9 +755,18 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 자동 승격하지 않는다. 다음 행동은 결론의 bounded 결과이지 hidden reasoning이나
 원문 transcript가 아니다.
 
+구현 결과:
+
+- finding·conclusion·decision·bounded next action과 consumed work ID를 결과
+  계약에서 서로 다른 필드로 유지한다.
+- handoff, typed artifact와 verification evidence를 상세 read model로만 내리고,
+  접힌 카드에서는 짧은 decision/result만 사용한다.
+- Pack 선택, Guide·Lens load, 결과 반영과 검증을 별도 attestation으로 유지한다.
+- provider가 확인하지 않은 비용은 `unavailable`이며 token으로 계산하지 않는다.
+
 #### 4D — 작업 카드 정보 구조와 인라인 확장 UI
 
-상태: 예정 — 4A의 lifecycle과 4B·4C의 표시 계약이 준비된 뒤 구현
+상태: Product Design Pack·공식 레퍼런스 근거로 구현·브라우저 검증 완료
 
 목표:
 
@@ -820,23 +829,47 @@ UI 작업:
 
 4D 완료 조건:
 
-- [ ] 기본 작업 지도에 별도 오른쪽 상세 칸이 없고, 선택한 카드 자체에서 상세을
+- [x] 기본 작업 지도에 별도 오른쪽 상세 칸이 없고, 선택한 카드 자체에서 상세를
       확인한다.
-- [ ] 접힌 카드에서 단계 주제와 근거 있는 짧은 결과·결정이 가장 먼저 읽힌다.
-- [ ] 모델·요청 추론 강도·token·경과 시간이 카드 하단에 일관되게 배치되고,
+- [x] 접힌 카드에서 단계 주제와 근거 있는 짧은 결과·결정이 가장 먼저 읽힌다.
+- [x] 모델·요청 추론 강도·token·경과 시간이 카드 하단에 일관되게 배치되고,
       실제·요청·권장과 `기록 없음` 상태가 섞이지 않는다.
-- [ ] Pack이 있으면 이름과 증거 수준이 보이고, nested disclosure에서 Guide와
+- [x] Pack이 있으면 이름과 증거 수준이 보이고, nested disclosure에서 Guide와
       Lens가 별도 그룹으로 보인다.
-- [ ] Pack 선택만 있는 fixture가 `사용함` 또는 `반영됨`으로 과장되지 않는다.
-- [ ] 반복 설명은 제거되고 판정에 필요한 최소 범례와 접근 가능한 `i` disclosure만
+- [x] Pack 선택만 있는 fixture가 `사용함` 또는 `반영됨`으로 과장되지 않는다.
+- [x] 반복 설명은 제거되고 판정에 필요한 최소 범례와 접근 가능한 `i` disclosure만
       남는다.
-- [ ] 카드·Pack·정보 버튼은 keyboard와 touch에서 독립적으로 동작하고
+- [x] 카드·Pack·정보 버튼은 keyboard와 touch에서 독립적으로 동작하고
       `aria-expanded`, focus return과 Escape 계약을 지킨다.
-- [ ] 확장 카드가 인접 카드를 덮거나 연결선을 잘못된 위치에 남기지 않는다.
-- [ ] 390×844, 800px, 일반 데스크톱과 200% zoom에서 정보 순서와 긴 한국어가
+- [x] 확장 카드가 인접 카드를 덮거나 연결선을 잘못된 위치에 남기지 않는다.
+- [x] 390×844, 800px, 일반 데스크톱과 200% zoom에서 정보 순서와 긴 한국어가
       보존된다.
-- [ ] 선택 Pack·Guide와 ResearchBundle의 채택 기준이 구현·검증 evidence에
+- [x] 선택 Pack·Guide와 ResearchBundle의 채택 기준이 구현·검증 evidence에
       disposition으로 연결된다.
+
+4D 구현·근거 disposition — 2026-07-28:
+
+- Product Design `design-brief`는 카드의 단일 책임과 검증 범위를,
+  `visual-hierarchy-layout`은 주제 → 결정·결과 → 전문 지식 → 하단 실행값 순서를,
+  `interaction-responsive-accessibility`는 독립 disclosure, Escape·focus return과
+  좁은 화면의 동일 정보 순서를 적용했다.
+- 검증된 ResearchBundle
+  `.maestro/state/research/dashboard-stage4-card-ui-20260728.json`
+  (`3f6f159229d44debd1f361e9f1172ef27b5fc5380210ad41026244e152d611bb`)에서
+  `claim-inline-step-object`, `claim-provenance-before-trace-label`,
+  `claim-accessible-nested-disclosure`를 채택했다.
+- 고정 오른쪽 inspector는 `claim-fixed-right-inspector`로 기각했다. 원본 제품이
+  동기화된 detail surface를 제공한다는 사실은 유지하되, Maestro에서는 사용자의
+  객체형 단계 요구에 맞춰 선택 카드 내부 detail로 적용했다.
+- 근거는 [CrewAI One Card per Step](https://docs.crewai.com/v1.14.7/en/enterprise/features/merged-step-card),
+  [Microsoft Agent Framework DevUI tracing](https://learn.microsoft.com/ga-ie/agent-framework/devui/tracing),
+  [LangSmith Studio](https://docs.langchain.com/oss/python/langgraph/studio),
+  [WAI-ARIA Disclosure Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)과
+  [WAI-ARIA Keyboard Interface Practices](https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/)다.
+- `tests.test_work_observations`, `tests.test_work_graph`,
+  `tests.test_codex_host_work`, `tests.test_operations_viewer`가 complete/partial,
+  모델·token provenance, 종합·재위임 관계와 DOM 계약을 검증한다. 실제 브라우저에서
+  데스크톱, 390×844, 800px와 200% zoom 상당 viewport를 확인했다.
 
 #### 단계 4 공통 도입 조건
 
@@ -844,20 +877,19 @@ UI 작업:
 - [x] Maestro-owned App Server, SDK, exec JSONL과 trusted Hooks의 생산자 경계를
       공식 자료와 설치 schema로 확인했다.
 - [x] null, redacted, partial과 unavailable의 기본 compatibility 방향을 정했다.
-- [ ] schema, observation, receipt, snapshot과 UI 소비자를 end-to-end fixture로
+- [x] schema, observation, receipt, snapshot과 UI 소비자를 end-to-end fixture로
       함께 검증한다.
-- [ ] 실제 work 카드의 ordering relation마다 source와 coverage가 있고,
+- [x] 실제 work 카드의 ordering relation마다 source와 coverage가 있고,
       projection이 같은 입력에서 결정론적인 파동 순위를 만든다.
-- [ ] 의미 있는 종합·판단이 있는 fixture와 없는 fixture를 모두 검증해, 전자는
+- [x] 의미 있는 종합·판단이 있는 fixture와 없는 fixture를 모두 검증해, 전자는
       빠뜨리지 않고 후자는 억지 카드를 만들지 않는다.
 - [x] raw reasoning, transcript와 민감한 tool payload 없이 목적을 달성하는 수집
       allowlist를 정했다.
 
-단계 5로 바로 넘어가지 않고 4A를 먼저 완료한다. 4B는 child stream의 직접 근거가
-확보된 범위까지만 병행하고, 4C는 자동 lifecycle이 안정된 뒤 진행한다. 4D는
-4A~4C가 제공하는 값의 신뢰 경계를 고정한 뒤 Pack·research gate를 통과하고
-구현한다. 이 단계가 완료되기 전에는 UI가 계획, parent 값이나 summary에서
-누락값을 추론하지 않는다.
+단계 4의 현재 P0 범위는 4A → 4B → 4C → 4D 순서로 완료했다. 이후 SDK,
+`codex exec --json`, trusted project Hook과 experimental recovery adapter를
+추가하더라도 같은 v2 source·coverage 계약을 사용한다. 새 생산자가 직접 증명하지
+않은 값은 계획, parent 값이나 summary에서 추론하지 않는다.
 
 ### 단계 5 — 전체 품질 검증과 계획 종료
 

@@ -104,6 +104,7 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 현재 근거가 필요한 전문 판단 | `$maestro <요청>` | 내부 source lane 조사·ResearchBundle 검증 뒤에만 다음 단계 진행 |
 | 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
 | Codex Desktop 설치 배선 확인 | `maestro doctor --host codex` | CLI 버전과 루트·companion Skill 연결을 읽기 전용 검사 |
+| Codex Skill 배선 유지 | 모든 `$maestro` 작업의 내부 preflight | 누락 링크만 자동 생성하고 실제 필요할 때만 재시작 안내 |
 | 프로젝트 Convention 초안 | `maestro convention draft` | preview/apply 뒤에도 활성화되지 않는 정형 draft 생성 |
 | 검증된 Convention 활성화·수정 | `maestro convention activate/update` | owner attestation 또는 의미 검증된 held-out artifact·checkout·문서 지도를 한 plan으로 적용 |
 | 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
@@ -120,7 +121,10 @@ doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 �
 | 검증된 로컬 Expertise를 프로젝트 권위로 게시 | `maestro expertise activate` | 사용 중인 후보를 추적되는 project pilot으로 preview/apply 게시 |
 | 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
 | 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
-| 검증된 Expertise를 Harness 기여 후보로 추출 | `maestro expertise export` | project-local content-addressed review bundle만 생성; 설치·push는 하지 않음 |
+| 비활성·전역 승격 Expertise 정리 | 승격·비활성화의 내부 후처리 | 동일성 검증 뒤 Host 탐색 밖 `.agents/archive/expertise/`로 자동 이동 |
+| 아직 부적합한 Expertise 후보 보류·복원 | `maestro expertise reject-candidate/restore-candidate` | 후보 파일을 지우지 않고 disposition marker만 preview/apply |
+| 검증된 Expertise를 기본 Pack에 반영 | 대시보드의 `기본 Pack으로 올리기` | Harness 소스 checkout에서 후보를 Registry·bundled Skill에 직접 preview/apply; commit·push·릴리스는 별도 |
+| Expertise를 다른 저장소로 전달 | `maestro expertise export` | 일반 사용자 단계가 아닌 content-addressed 내부 운반 묶음만 생성 |
 | 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
 
 ## 빠른 시작
@@ -156,20 +160,21 @@ uv tool install /path/to/harness-maestro
 ### 2. 컴퓨터에서 한 번: `$maestro` Skill 연결
 
 ```bash
-maestro_source=/path/to/harness-maestro
-mkdir -p ~/.agents/skills
-for skill in maestro maestro-adapter-builder maestro-govern \
-  maestro-product-design maestro-expertise-builder maestro-registry-builder \
-  maestro-reference-research maestro-marketing maestro-software-qa
-do
-  ln -s "$maestro_source/skills/$skill" ~/.agents/skills/"$skill"
-done
+maestro host sync --host codex \
+  --source-root /path/to/harness-maestro \
+  --json > /tmp/maestro-host-sync.json
+maestro host sync \
+  --apply-plan /tmp/maestro-host-sync.json \
+  --json
 ```
 
-기존 경로가 있으면 `ln`은 덮어쓰지 않고 중단합니다. 연결한 뒤에는
-**restart the agent client** 해서 Skill 목록을 다시 읽게 합니다.
+위 명령은 아직 `$maestro` 자체가 설치되지 않은 새 컴퓨터의 최초 bootstrap만
+보여줍니다. 루트 Skill이 한 번 연결된 뒤에는 모든 `$maestro` 작업이 같은 sync를
+내부 preflight로 수행하므로 별도 요청이나 명령이 필요 없습니다. 기존 경로가
+있으면 sync는 덮어쓰지 않고 중단합니다. 현재 작업에 새 Skill이 실제로 필요할
+때만 **restart the agent client** 해서 목록을 다시 읽습니다.
 
-연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 아홉 Skill이 같은
+연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 모든 bundled Skill이 같은
 `release_id`인지 함께 확인합니다.
 
 ```bash
@@ -258,9 +263,11 @@ Maestro workflow는 다음 순서로 진행합니다.
 4. 등록된 Expertise Pack이 있으면 작업에 필요한 전문가 판단 가이드만 최대 네 개
    선택합니다. 예를 들어 한글 UI는 font·글자 위계 검증을 추가합니다.
 5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 내부 reference research가
-   source lane을 분리해 조사합니다. 각 claim의 source tier·한계·충돌을 담은
-   `ResearchPacket`을 합성하고, 검증된 `ResearchBundle` **파일**로 같은 작업을 다시
-   route합니다. 임의 digest 문자열만으로는 research gate를 통과할 수 없습니다.
+   기본 한 source lane에서 시작합니다. exact query, 실제 검토 근거, source
+   tier·role·version, claim authority·검증 상태·project fit·confidence, 채택·기각·
+   충돌을 보존한 v2 `ResearchPacket`을 합성하고, goal·Pack·Guide에 묶인
+   `ResearchBundle` **파일**로 같은 작업을 다시 route합니다. 임의 digest,
+   insufficient·legacy·다른 작업 bundle은 gate를 통과할 수 없습니다.
 6. 방향 선택이 필요한 요청은 구현 전에 읽기 전용 Decision Plan을 만듭니다.
    Specialist는 자신의 `owns`에 속한 finding만 반환하고, 다른 역할의 문제는 typed
    escalation으로 넘깁니다.
@@ -284,7 +291,11 @@ Maestro workflow는 다음 순서로 진행합니다.
    요청된 경우에만 격리 bundle로 만들고 active Registry에는 연결하지 않습니다.
 14. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
     compact RunReceipt 한 건으로 연결합니다.
-15. 반복 신호는 검토 후보로만 올리고, 사용자가 원할 때 통합 뷰어에서 확인합니다.
+15. 서로 다른 실행에서 같은 전문성 공백이 세 번 반복되거나 critical 신호가
+    생기면, mutation 작업당 최대 한 건의 격리 Expertise 후보를 자동 작성할 수
+    있습니다. 후보는 `자동 생성`으로 표시되고 active Pack 승격은 하지 않습니다.
+16. 후보와 하위 Guide는 선택 5회 또는 음성 신호 3회·critical 1회에 검토하며,
+    사용자가 통합 뷰어에서 게시·기각·복원 여부를 결정합니다.
 
 ## 무엇을 해결하나요?
 
@@ -303,13 +314,18 @@ Maestro workflow는 다음 순서로 진행합니다.
   소비합니다. 실제 fresh context 강제 여부는 Host conformance에서 따로 확인합니다.
 - **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
   전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
-  ResearchBundle 파일 없이는 gate를 통과하지 못합니다.
+  bound v2 ResearchBundle 파일 없이는 gate를 통과하지 못하며, writer는 adopted
+  claim을 어떻게 적용했는지 project evidence와 함께 보고합니다. 토큰은 연구 내용을
+  삭제하지 않고 기본 한 lane·최대 세 initial lane·충돌 follow-up 한 번으로 제한합니다.
 - **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
   baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 최신 후보는
   후보로 표시한 채 즉시 작업 기준으로 사용할 수 있고, 쓰기 권한은 기존 Executor
-  계약을 그대로 따릅니다. 계속 유지할 후보만 `.agents/skills`의 tracked pilot으로
-  명시적으로 게시합니다. 다음 버전도 새 후보와 검토된 update plan을 거치며, 전역
-  승격이나 Agent 설치는 자동화하지 않습니다.
+  계약을 그대로 따릅니다. 자동 작성과 사용자 요청 후보는 같은 격리 목록에서
+  출처를 구분하고, Guide 추가·수정·폐기와 여러 기존 Pack의 통합도 정확한
+  `component_change`로 관찰합니다. 계속 유지할 후보만 `.agents/skills`의 tracked
+  pilot으로 명시적으로 게시합니다. 다음 버전도 새 후보와 검토된 update plan을
+  거칩니다. 기본 Pack 반영은 사용자가 승인한 Harness source preview/apply로만
+  수행하고, 원격 commit·push·릴리스나 Agent 설치는 자동화하지 않습니다.
 - **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
   Standard·Deep 검토를 추가합니다.
 - **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
@@ -359,12 +375,22 @@ Codex Desktop에서 다음처럼 말하면 됩니다.
 
 ```text
 $maestro 이 프로젝트의 대시보드 열어줘.
+$maestro 진행 중인 Maestro 프로젝트를 한 대시보드에서 전환해서 보여줘.
 ```
 
 Maestro가 `127.0.0.1`의 임시 서버와 브라우저를 열고 종료까지 맡습니다. 매 작업마다
 HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·걸린 시간·token·채팅에서 선택한 모델·
 선택한 추론 강도·실제로 실행된 모델·Maestro 권장 모델과 권장 추론 강도·전문 지식
 출처·검토 후보를 다시 읽습니다.
+여러 프로젝트를 요청하면 Host가 알고 있는 로컬 프로젝트 중 Maestro가 초기화된
+경로만 하나의 서버 allowlist에 넣고, 화면 상단의 `보는 프로젝트` 선택기로
+전환합니다. 프로젝트마다 새 페이지를 열거나 token을 따로 관리할 필요가 없습니다.
+선택지는 세션을 시작할 때 고정되고, 브라우저가 임의 경로를 추가할 수 없습니다.
+프로젝트를 바꾸면 체크한 작업과 승인 미리보기도 지워지며, 한 프로젝트에서 만든
+미리보기는 다른 프로젝트에 적용할 수 없습니다.
+드롭다운 옆 `이름 바꾸기`로 화면에 보이는 프로젝트 이름을 바꿀 수 있습니다.
+이 기능은 `project_id`를 건드리지 않고 프로젝트의 Git 제외 로컬 상태에 표시 이름만
+저장하므로 다음에 대시보드를 열어도 유지됩니다.
 Maestro 권장값은 실제 실행값으로 대체 표시하지 않습니다. 채팅 설정·실행값은 실행 환경이 안정적인
 공개 인터페이스와 완전한 model event 구간으로 제공할 때만 기록합니다. Desktop이
 현재 요청의 모델·추론 강도만 제공하면 `채팅에서 선택한 설정만 기록됨`, 전체
@@ -388,12 +414,13 @@ Maestro 권장값은 실제 실행값으로 대체 표시하지 않습니다. �
 [운영 뷰어의 표시 언어 계약](docs/architecture/operations-viewer.md#표시-언어-계약)에
 정리되어 있습니다.
 
-일반 개발 요청에서는 사용자가 `observe`나 `record` 명령을 외울 필요가 없습니다.
-`$maestro`가 구현 계획을 확정한 뒤 compact 관측을 시작하고 최종 검증 결과에
-연결합니다. 현재 Desktop에서 직접 실행해야 하는 작업도 공개 요청 설정을
-`observe desktop` 한 번으로 시작과 동시에 연결하므로, 요청 모델과 추론 강도를
-별도 명령 사이에서 빠뜨리지 않습니다. `dashboard`는 보고 싶을 때만 여는
-on-demand 운영 도구이며 영구 daemon을 설치하지 않습니다.
+일반 개발 요청에서는 사용자가 `observe`, `stage`, `finalize` 명령을 외울 필요가
+없습니다. `$maestro`가 요청 접수 시 관측을 시작하고, route 확정 시 계획을 결합하며,
+각 실행 단계가 끝날 때 terminal 결과를 남긴 뒤 최종 기록을 자동 생성합니다.
+현재 Desktop에서 직접 실행해야 하는 작업도 공개 요청 설정을 시작과 동시에
+연결하므로 요청 모델과 추론 강도를 별도 명령 사이에서 빠뜨리지 않습니다.
+`dashboard`는 보고 싶을 때만 여는 on-demand 운영 도구이며 영구 daemon을 설치하지
+않습니다.
 
 새 Codex 작업을 Maestro가 직접 시작하는 경우에는 내장 `host codex` 경로가
 ephemeral App Server turn을 소유합니다. 검증된 Assignment에서 읽기 전용 또는

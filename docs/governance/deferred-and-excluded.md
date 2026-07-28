@@ -56,12 +56,12 @@ sensitivity: internal
 
 | 기능 | 판정 | v0에서 보류한 이유 | 도입 게이트 |
 |---|---|---|---|
-| 실제 멀티에이전트 scheduler와 fan-out | deferred | CLI가 아직 capability, cancel, retry, lease를 runtime에서 강제하지 않음 | 상태 기계, packet schema, budget·cancel·writer invariant 검증 |
-| Assignment 실행 상태 머신·자동 retry·cancel 전파 | deferred | terminal Packet과 최종 관측은 있지만 pending/running lease, idempotency, crash recovery를 CLI가 소유하지 않음 | 공개 Host lifecycle/cancel API와 두 프로젝트 이상의 반복 부분 실패 |
-| workspace lease와 base-revision gate | deferred | 동시 writer 안전성을 파일 문구만으로 보장할 수 없음 | 격리 worktree 통합 test와 crash recovery |
+| 실제 멀티에이전트 scheduler와 fan-out | deferred | CLI는 같은 Host Assignment의 중복 launch lease만 강제하며 capability, cancel, retry와 전체 scheduling을 소유하지 않음 | 상태 기계, packet schema, budget·cancel·writer invariant 검증 |
+| Assignment 실행 상태 머신·자동 retry·cancel 전파 | deferred | terminal Packet·최종 관측과 crash-recoverable launch lease는 있지만 durable pending/running 전이, resume idempotency와 cancel 전파를 소유하지 않음 | 공개 Host lifecycle/cancel API와 두 프로젝트 이상의 반복 부분 실패 |
+| workspace-wide lease와 base-revision gate | deferred | 현재 lease는 같은 run·Assignment의 App Server 중복 launch만 막고 current-Host·다른 도구·별도 run의 workspace write나 base revision drift까지 직렬화하지 않음 | 격리 worktree 통합 test와 crash recovery |
 | 외부 API 쓰기 capability broker | deferred | idempotency, 승인, read-after-write와 compensation 계약이 없음 | service별 adapter와 명시적 user approval |
 | Notion 양방향 sync·쓰기 | deferred | dual master, freshness, deletion, 민감 정보 문제가 해결되지 않음 | topic별 단일 권위, revision/digest, tombstone, 실패 복구 |
-| 자동 expertise candidate 생성·Pilot·promote | deferred | Builder Skill의 격리 후보·자동 validator·사용 임계치 보고와 typed 사용자 조치는 가능하지만, 관찰을 자동 정책 변경과 합치면 자기강화 오류가 생김 | 전문성 공백 fingerprint, offline evaluator, 승인자 분리, signed/versioned promotion |
+| expertise candidate 자동 Pilot·promote·원격 배포 | deferred | 반복·critical 신호에서 격리 후보 한 건을 표시해 작성하는 경계까지는 구현했지만, 관찰을 active 정책 변경과 합치면 자기강화 오류가 생김 | offline evaluator, 승인자 분리, signed/versioned promotion |
 | 원격 Expertise 자동 다운로드·활성화 | deferred | 기여 Bundle 추출은 가능하지만 실행 중 새 기준을 조용히 주입하면 현재 route와 검증 기준선이 바뀜 | 서명된 immutable release catalog, 사용자 승인, project version pin, rollback과 clean-host conformance |
 | 비-Expertise component candidate의 activate·promote | deferred | 분류·격리 후보·frozen case 검증은 가능하지만 Lens·Executor·Packet 등은 route와 Host 계약을 바꾸므로 공통 승격 명령이 과도한 권한 표면이 됨 | kind별 held-out route 평가, migration·rollback, release owner 승인과 clean-host conformance |
 | 별도 Convention candidate queue와 자동 병합 | deferred | 현재 compact RunReceipt signal, typed draft·activate·update로 수명주기가 닫히며 또 하나의 장기 저장소는 중복과 정리 비용을 만든다 | 서로 다른 실행에서 rule·scope·예외·owner를 보존하지 못해 draft 품질이 반복 저하되는 측정 사례 |

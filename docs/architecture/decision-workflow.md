@@ -6,8 +6,8 @@ status: active
 authority: repository
 owner: harness-maestro
 summary: 구현 전 전문 판단이 필요한 요청을 read-only DecisionPlan, 역할 제한 packet, DecisionBundle과 digest-bound enactment로 처리하는 계약.
-scope: [src/maestro/decisions.py, src/maestro/cli.py, skills/maestro, decision-workflow]
-last_verified: 2026-07-26
+scope: [src/maestro/decisions.py, src/maestro/planning.py, src/maestro/registry.py, skills/maestro, decision-workflow]
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -59,9 +59,25 @@ visual과 UX는 서로의 최초 결론을 보지 않는다. technical-feasibili
 - `decision_mode`: `direct | staged`
 - `side_effect_policy`: `forbidden | after_decision | direct`
 - `authorization_source`: `explicit_user | explicit_cli | null`
+- `forbidden_side_effects`: `git_commit`, `remote_write` 중 사용자가 명시적으로
+  금지한 외부 효과
+
+`side_effect_policy`는 현재 프로젝트 파일의 쓰기 권한이고
+`forbidden_side_effects`는 commit·push·PR·배포 같은 외부 효과의 금지 목록이다.
+“로컬 코드를 수정하되 커밋·푸시는 하지 마”는 writer를 열면서 두 외부 효과만
+금지한다. 반대로 “코드나 파일을 수정하지 마”와 “검토만”은 로컬 쓰기를 닫는다.
+금지 표현과 효과 단어는 같은 절 안에서만 결합하며 `but`·`하되` 같은 대조 경계도
+나눈다. 따라서 다른 절의 “커밋 기록을 검토해줘”나 “수정하되 커밋하지 마”가 로컬
+수정 금지로 오인되지 않는다. 이 두 축은 route v2의
+`task_contract`와 Assignment projection까지 함께 전달된다.
 
 부정 표현이 인접 mutation keyword보다 우선한다. `auto`로 확신할 수 없으면 review다.
 staged 요청을 일반 route로 보내면 `DECISION_WORKFLOW_REQUIRED`를 반환한다.
+
+이 분리는 [MCP tool annotation](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)이
+`readOnly`, `destructive`, `idempotent`, `open-world` 위험을 한 값으로 합치지
+않는 방식과 같은 원칙을 따른다. 다만 annotation 자체를 권한 증명으로 신뢰하지
+않고 Maestro의 결정론적 계약과 Host sandbox로 강제한다.
 
 ### SpecialistContract와 packet
 

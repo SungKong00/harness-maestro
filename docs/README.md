@@ -35,7 +35,10 @@ sensitivity: internal
    Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
 9. [대시보드 UI 개편 계획](plans/active/dashboard-ui-roadmap.md) — 작업 중심 GUI,
    회사형 단계 표현, 데이터·증거 경계와 단계별 구현 순서
-10. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+10. [최소 Expertise 라우팅 개선 계획](plans/active/minimal-expertise-routing.md) —
+    top-1 Pack 계약을 유지하면서 자연어 누락을 작업 종류·상대 경로·명시 선택으로
+    보완하는 단계별 체크리스트
+11. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
    릴리스·실사용 Pilot TODO만 관리
 ## 거버넌스
 

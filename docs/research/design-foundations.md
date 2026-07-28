@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro의 숙의, 컨텍스트, 오케스트레이션, 자가개선과 문서 구조에 영향을 준 연구·공학 자료와 실제 채택 범위.
 scope: [routing, research, docs, skills, self-improvement]
-last_verified: 2026-07-27
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -467,6 +467,57 @@ Host Adapter나 runtime 확장을 검토한다.
 [ADR-0007](../decisions/0007-separate-decision-and-execution.md)과
 [Decision Workflow](../architecture/decision-workflow.md)에 있다.
 
+## 10. 권한·관측·검색·기록 기준선을 하나의 성공 조건으로 묶지 않는다
+
+### 확인한 공식 자료와 유사 구현 원칙
+
+- [MCP tool specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)은
+  `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`를 독립
+  annotation으로 둔다. [공식 annotation 해설](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/)도
+  이 값들이 서로 다른 위험 차원이며 신뢰할 수 없는 server의 annotation만으로
+  권한을 결정하지 말아야 한다고 설명한다.
+- [Codex App Server](https://developers.openai.com/codex/app-server/)는 client가
+  terminal event까지 stream을 계속 읽고, 필요하면
+  `optOutNotificationMethods`로 정확한 고빈도 notification만 줄이는 계약을
+  제공한다. approval과 사용자 입력은 별도 server request이므로 같은 event count
+  필터로 처리하지 않는다.
+- [Lucene BM25Similarity](https://lucene.apache.org/core/9_10_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)와
+  [OpenSearch keyword search](https://docs.opensearch.org/latest/search-plugins/keyword-search/)는
+  문서 집합 전반에 자주 나오는 term의 IDF 가중치를 낮춘다. 이는 “상태”, “목록”
+  같은 일반 단어가 많은 문서를 동시에 끌어오는 문제를 줄이는 전례다.
+- [Azure Event Sourcing pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing)은
+  append-only event를 사실의 기록으로 보존하고 현재 조회 모델은 별도 projection으로
+  만든다. [OpenTelemetry Logs SDK](https://opentelemetry.io/docs/specs/otel/logs/sdk/)도
+  로그 emit 경로가 호출자를 오래 막지 않도록 batching과 bounded queue를
+  분리한다.
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)는
+  재실행될 수 있는 경계 앞의 side effect를 idempotent하게 만들거나 별도 node로
+  분리할 것을 권한다. 영수증 append와 Registry upgrade를 한 재시도 단위로 묶지
+  않는 설계에 참고했다.
+
+### Maestro에 반영한 동작
+
+- 프로젝트 파일 쓰기와 commit·push·배포 금지를 별도 필드로 라우팅한다. 따라서
+  외부 작업 금지가 로컬 구현 승인을 취소하지 않고, Host는 두 경계를 모두 검사한다.
+- App Server의 compact observation 한도는 보존할 telemetry의 한도이지 live
+  protocol 완료 한도가 아니다. 고빈도 delta는 협상으로 줄이고, 필요한 event만
+  buffer하며, raw transport hard limit과 전체 timeout은 별도 안전장치로 유지한다.
+- 문서 선택은 active corpus의 document frequency로 일반 task term을 제거한 뒤
+  점수화한다. core 문서는 항상 별도 검사하고, active Convention은 일반 body
+  공통어가 아니라 path scope·Lens·구별 가능한 metadata로 결속한다. 그렇게 매칭된
+  Convention이 context 경계에서 빠지면 mutation은 fail-closed한다.
+- RunReceipt는 검증 후 append하는 사실이고, 최신 Registry로 반복 신호를 계산하는
+  management check는 projection이다. lock이 stale이어도 사실은 한 번 기록하고
+  projection만 보류한다. `upgrade`는 별도의 reviewed transaction으로 남긴다.
+
+### 의도적으로 채택하지 않은 부분
+
+범용 검색 엔진, message broker, OpenTelemetry backend, event replay database와
+background upgrade daemon은 도입하지 않았다. 현재 문제는 작은 active Markdown
+corpus와 로컬 JSONL이므로 document frequency, protocol filtering, append-first
+경계만으로 해결한다. 실제 부하와 복구 요구가 이 한계를 넘을 때만 외부 runtime을
+다시 평가한다.
+
 ## 세부 동작과 근거 연결표
 
 | 실제 동작 | 주 근거 | 저장소 권위 |
@@ -484,6 +535,7 @@ Host Adapter나 runtime 확장을 검토한다.
 | bounded surface·AssignmentInput·FindingPacket v2 | NIST SSDF, SEI QAW/ATAM, JSON Schema, Hermes delegation, CoVe·CRITIC | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
 | 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
 | read-only DecisionPlan, 역할 제한 packet, digest-bound enactment | OpenAI orchestration·guardrails, OWASP least privilege, LangGraph HITL, gstack·Superpowers 단계 분리 | [ADR-0007](../decisions/0007-separate-decision-and-execution.md) |
+| 독립 side-effect 축, event-stream 종료, corpus 공통어 억제, append-first receipt | MCP tool annotations, Codex App Server, BM25 IDF, Event Sourcing·OpenTelemetry | [Decision Workflow](../architecture/decision-workflow.md), [Host conformance](../runbooks/codex-host-conformance.md), [운영 뷰어](../architecture/operations-viewer.md) |
 
 ## 아직 검증하지 않았거나 주장하지 않는 것
 
