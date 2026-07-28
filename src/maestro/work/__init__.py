@@ -10,6 +10,7 @@ from .contracts import (
 )
 from .graph import build_work_graph
 from .lifecycle import append_work_span, finish_work_span
+from .projection import project_observed_work
 
 __all__ = [
     "MAX_WORK_SPANS",
@@ -19,6 +20,7 @@ __all__ = [
     "complete_work_span",
     "finish_work_span",
     "new_work_span",
+    "project_observed_work",
     "validate_work_span",
     "validate_work_spans",
 ]

@@ -9,6 +9,7 @@ from maestro.work import (
     complete_work_span,
     finish_work_span,
     new_work_span,
+    project_observed_work,
     validate_work_spans,
 )
 
@@ -203,6 +204,31 @@ class WorkGraphTests(unittest.TestCase):
             },
             graph["execution"]["edges"],
         )
+
+    def test_projection_exposes_responsibility_and_expertise_without_claiming_use(
+        self,
+    ) -> None:
+        child = complete_work_span(
+            _span("domain-review"),
+            status="completed",
+            result_summary="데이터 경계를 확인했습니다.",
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
+            evidence_refs=["src/maestro/observations.py"],
+        )
+        projection = project_observed_work(
+            [child],
+            [{"assignment_id": "implementation", "kind": "implementation"}],
+        )
+        card = projection["cards"][0]
+        self.assertEqual("검토 담당", card["role"])
+        self.assertEqual(["data-integrity"], card["expertise"]["lens_ids"])
+        self.assertEqual(
+            "selection_only",
+            card["expertise"]["evidence"],
+        )
+        self.assertIsNone(card["models"]["applied"])
+        self.assertEqual("host_request", card["models"]["evidence"])
 
 
 if __name__ == "__main__":
