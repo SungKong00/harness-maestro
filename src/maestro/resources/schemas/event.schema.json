@@ -916,6 +916,86 @@
         }
       ]
     },
+    "expertiseRoutingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "selection_state",
+        "selection_source",
+        "route_attempt",
+        "conflict_warning_codes"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_expertise_routing_summary_v1"
+        },
+        "selection_state": {
+          "enum": [
+            "selected",
+            "not_selected"
+          ]
+        },
+        "selection_source": {
+          "enum": [
+            "natural_language",
+            "work_kind",
+            "explicit_pack",
+            "none"
+          ]
+        },
+        "route_attempt": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "conflict_warning_codes": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "EXPERTISE_HINTS_AMBIGUOUS",
+              "EXPERTISE_OVERRIDE_CONFLICT",
+              "EXPERTISE_SELECTION_AMBIGUOUS"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selection_state": {
+                "const": "selected"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selection_source": {
+                "enum": [
+                  "natural_language",
+                  "work_kind",
+                  "explicit_pack"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "selection_source": {
+                "const": "none"
+              },
+              "conflict_warning_codes": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
     "planSummary": {
       "type": [
         "object",
@@ -960,6 +1040,9 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "expertise_routing": {
+          "$ref": "#/$defs/expertiseRoutingSummary"
         },
         "assignments": {
           "type": "array",

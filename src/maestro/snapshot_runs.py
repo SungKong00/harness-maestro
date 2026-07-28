@@ -772,6 +772,28 @@ def _measurement_provenance(
     }
 
 
+def _expertise_routing_projection(event: dict[str, Any]) -> dict[str, Any]:
+    plan_summary = event.get("plan_summary")
+    routing = (
+        plan_summary.get("expertise_routing")
+        if isinstance(plan_summary, dict)
+        else None
+    )
+    if isinstance(routing, dict):
+        return {
+            **routing,
+            "evidence": "plan_summary",
+        }
+    return {
+        "schema_version": None,
+        "selection_state": "unavailable",
+        "selection_source": "unavailable",
+        "route_attempt": None,
+        "conflict_warning_codes": [],
+        "evidence": "unavailable",
+    }
+
+
 def _run_card(
     event: dict[str, Any],
     display_labels: dict[str, str] | None = None,
@@ -988,6 +1010,7 @@ def _run_card(
                 "not-required",
             ),
             "observations": list(event.get("expertise_observations", [])),
+            "routing": _expertise_routing_projection(event),
             "evidence": {
                 "selection": (
                     "run_receipt"

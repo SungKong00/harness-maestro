@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from maestro.errors import MaestroError
+from maestro.expertise_routing import normalize_route_hints
 from maestro.governance import finalize_run
 from maestro.observations import (
     observation_receipt_fields,
@@ -137,6 +138,16 @@ class WorkObservationTests(unittest.TestCase):
                 run_id="observed-work",
             )
             self.assertEqual(3, len(observed["work_spans"]))
+            self.assertEqual(
+                {
+                    "schema_version": "maestro_expertise_routing_summary_v1",
+                    "selection_state": "not_selected",
+                    "selection_source": "none",
+                    "route_attempt": 1,
+                    "conflict_warning_codes": [],
+                },
+                observed["plan_summary"]["expertise_routing"],
+            )
             self.assertIsNone(
                 observed["work_spans"][1]["applied_model"],
             )
@@ -181,6 +192,104 @@ class WorkObservationTests(unittest.TestCase):
             self.assertEqual(
                 2,
                 work_detail["execution"]["summary"]["report_count"],
+            )
+            self.assertEqual(
+                "plan_summary",
+                snapshot_report(repo)["runs"][0]["expertise"]["routing"][
+                    "evidence"
+                ],
+            )
+
+    def test_corrected_routing_summary_flows_into_event_and_snapshot(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            goal = "내부 경계를 정리한다"
+            initial = route_goal_v2(
+                goal,
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            corrected = route_goal_v2(
+                goal,
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+                route_hints=normalize_route_hints(
+                    work_kinds=[
+                        "software-structure",
+                        "user-interface",
+                    ],
+                    route_attempt=2,
+                    prior_plan_id=initial["plan_id"],
+                    prior_source_route_digest=initial[
+                        "source_route_digest"
+                    ],
+                ),
+                prior_route_plan=initial,
+            )
+            plan_path = root / "corrected-plan.json"
+            write_json(plan_path, corrected)
+            started = start_run_observation(
+                repo,
+                run_id="corrected-routing",
+                task_label="보정 라우팅 관찰",
+                plan_path=plan_path,
+                execution_binding={
+                    "schema_version": "maestro_execution_binding_v1",
+                    "mode": "explicit_fallback",
+                    "reason": "capability_unavailable",
+                    "evidence": "Fixture observes the current-Host route.",
+                },
+            )
+            for assignment in corrected["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="corrected-routing",
+                    assignment_id=assignment["assignment_id"],
+                    status="completed",
+                    evidence_source="current_host",
+                    evidence_refs=[
+                        f"tests:stage:{assignment['assignment_id']}"
+                    ],
+                )
+            finalized = finalize_run(
+                repo,
+                run_id="corrected-routing",
+                observation_id=started["observation_id"],
+                outcome="completed",
+                evidence_refs=["tests:corrected-routing"],
+                verifier_result="passed",
+                command_artifact_ref="tests:corrected-routing",
+            )
+            event = json.loads(
+                (repo / finalized["event_path"]).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(
+                {
+                    "schema_version": "maestro_expertise_routing_summary_v1",
+                    "selection_state": "selected",
+                    "selection_source": "work_kind",
+                    "route_attempt": 2,
+                    "conflict_warning_codes": [
+                        "EXPERTISE_HINTS_AMBIGUOUS"
+                    ],
+                },
+                event["plan_summary"]["expertise_routing"],
+            )
+            self.assertEqual(
+                {
+                    **event["plan_summary"]["expertise_routing"],
+                    "evidence": "plan_summary",
+                },
+                snapshot_report(repo)["runs"][0]["expertise"]["routing"],
             )
 
     def test_work_binding_must_reference_attached_plan(self) -> None:

@@ -782,6 +782,70 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIsNone(run["flow"][1]["applied_model"])
         self.assertFalse(run["stage_telemetry"]["complete"])
 
+    def test_run_card_distinguishes_new_no_selection_from_legacy(
+        self,
+    ) -> None:
+        event = {
+            "event_id": "event-routing-summary",
+            "run_id": "routing-summary",
+            "timestamp": "2026-07-28T00:00:00Z",
+            "risk": "low",
+            "route_depth": "fast",
+            "outcome": "completed",
+            "verifier_result": "not_run",
+            "plan_summary": {
+                "expertise_routing": {
+                    "schema_version": (
+                        "maestro_expertise_routing_summary_v1"
+                    ),
+                    "selection_state": "not_selected",
+                    "selection_source": "none",
+                    "route_attempt": 1,
+                    "conflict_warning_codes": [],
+                },
+            },
+        }
+
+        current = _run_card(event)["expertise"]["routing"]
+        legacy = _run_card(
+            {
+                **event,
+                "event_id": "event-routing-legacy",
+                "plan_summary": {},
+            }
+        )["expertise"]["routing"]
+
+        self.assertEqual("plan_summary", current["evidence"])
+        self.assertEqual("not_selected", current["selection_state"])
+        self.assertEqual("none", current["selection_source"])
+        self.assertEqual("unavailable", legacy["evidence"])
+        self.assertEqual("unavailable", legacy["selection_state"])
+        self.assertIsNone(legacy["route_attempt"])
+
+    def test_public_schemas_share_the_routing_summary_contract(self) -> None:
+        schemas = [
+            json.loads(
+                (
+                    ROOT
+                    / "src/maestro/resources/schemas"
+                    / filename
+                ).read_text(encoding="utf-8")
+            )
+            for filename in (
+                "event.schema.json",
+                "run-receipt.schema.json",
+            )
+        ]
+
+        self.assertEqual(
+            schemas[0]["$defs"]["planSummary"],
+            schemas[1]["$defs"]["planSummary"],
+        )
+        self.assertEqual(
+            schemas[0]["$defs"]["expertiseRoutingSummary"],
+            schemas[1]["$defs"]["expertiseRoutingSummary"],
+        )
+
     def test_finalize_rejects_an_unrecorded_planned_stage(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1106,6 +1170,19 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual(
                 "not_selected",
                 snapshot["runs"][0]["expertise"]["evidence"]["selection"],
+            )
+            self.assertEqual(
+                {
+                    "schema_version": (
+                        "maestro_expertise_routing_summary_v1"
+                    ),
+                    "selection_state": "not_selected",
+                    "selection_source": "none",
+                    "route_attempt": 1,
+                    "conflict_warning_codes": [],
+                    "evidence": "plan_summary",
+                },
+                snapshot["runs"][0]["expertise"]["routing"],
             )
             self.assertEqual(
                 "unavailable",
@@ -2266,6 +2343,10 @@ class OperationsViewerTests(unittest.TestCase):
             'function restoreViewFromLocation(options = {})',
             viewer_source,
         )
+        self.assertIn("function expertiseRoutingText(run)", viewer_source)
+        self.assertIn("선택 방식 기록 없음", viewer_source)
+        self.assertIn("라우터 확인 결과 선택 없음", viewer_source)
+        self.assertIn('"전문성 라우팅"', viewer_source)
         self.assertIn('url.searchParams.set("view", viewName)', viewer_source)
         self.assertIn('`${url.pathname}${url.search}${url.hash}`', viewer_source)
         self.assertIn('window.addEventListener("popstate"', viewer_source)

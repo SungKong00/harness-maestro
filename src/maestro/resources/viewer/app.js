@@ -388,6 +388,35 @@ function displayResearch(value) {
   return labels[value] || value || "미기록";
 }
 
+function routingSourceLabel(value) {
+  return {
+    natural_language: "자연어 어휘로 선택",
+    work_kind: "작업 종류로 선택",
+    explicit_pack: "사용자가 명시한 묶음 선택",
+    none: "라우터 확인 결과 선택 없음",
+  }[value] || "선택 방식 기록 없음";
+}
+
+function routingWarningLabel(value) {
+  return {
+    EXPERTISE_HINTS_AMBIGUOUS: "작업 종류 간 충돌",
+    EXPERTISE_OVERRIDE_CONFLICT: "명시 선택과 작업 종류 충돌",
+    EXPERTISE_SELECTION_AMBIGUOUS: "자연어 후보 간 충돌",
+  }[value] || value;
+}
+
+function expertiseRoutingText(run) {
+  const routing = run.expertise.routing;
+  if (!routing || routing.evidence !== "plan_summary") {
+    return "선택 방식 기록 없음";
+  }
+  const attempt = routing.route_attempt === 2 ? "1회 보정" : "최초 선택";
+  const conflicts = routing.conflict_warning_codes.length
+    ? `충돌: ${routing.conflict_warning_codes.map(routingWarningLabel).join(", ")}`
+    : "충돌 없음";
+  return `${routingSourceLabel(routing.selection_source)} · ${attempt} · ${conflicts}`;
+}
+
 function element(tag, options = {}) {
   const node = document.createElement(tag);
   if (options.className) node.className = options.className;
@@ -2050,6 +2079,10 @@ function buildRunDetail(run) {
     text: "선택한 기준이 실제 결과까지 전달됐는지 구분합니다",
   }));
   expertiseEvidence.append(expertiseHeading);
+  expertiseEvidence.append(element("p", {
+    className: "muted",
+    text: expertiseRoutingText(run),
+  }));
   if (!run.expertise.packs.length) {
     const noExpertise = element("div", { className: "info-callout" });
     noExpertise.append(element("strong", {
@@ -2142,6 +2175,11 @@ function buildRunDetail(run) {
     criteria.facts,
     "전문 지식 묶음",
     run.expertise.packs.map(packName).join(", ") || "선택하지 않음",
+  );
+  addFact(
+    criteria.facts,
+    "전문성 라우팅",
+    expertiseRoutingText(run),
   );
   addFact(
     criteria.facts,

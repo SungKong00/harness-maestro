@@ -12,7 +12,11 @@ from tests.support import ROOT, write_json
 
 from maestro.cli import main
 from maestro.errors import MaestroError
-from maestro.expertise_routing import normalize_route_hints
+from maestro.expertise_routing import (
+    expertise_routing_summary,
+    normalize_route_hints,
+    valid_expertise_routing_summary,
+)
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.util import canonical_json, sha256_text
 
@@ -41,7 +45,7 @@ class ExpertiseRouteHintTests(unittest.TestCase):
                     case["goal"],
                     case["risk"],
                     intent="review",
-                    repo_path=ROOT,
+                    repo_path=None,
                 )
                 baseline_ids = baseline.get("expertise", {}).get(
                     "selected_pack_ids",
@@ -66,7 +70,7 @@ class ExpertiseRouteHintTests(unittest.TestCase):
                             case["goal"],
                             case["risk"],
                             intent="review",
-                            repo_path=ROOT,
+                            repo_path=None,
                             route_hints=hints,
                         )
                     self.assertEqual(
@@ -79,7 +83,7 @@ class ExpertiseRouteHintTests(unittest.TestCase):
                     case["goal"],
                     case["risk"],
                     intent="review",
-                    repo_path=ROOT,
+                    repo_path=None,
                     route_hints=hints,
                 )
                 expertise = plan["expertise"]
@@ -101,7 +105,7 @@ class ExpertiseRouteHintTests(unittest.TestCase):
                             for warning in expertise["warnings"]
                         },
                     )
-                result = validate_route_v2(plan, repo_path=ROOT)
+                result = validate_route_v2(plan, repo_path=None)
                 self.assertEqual("PASS", result["status"])
                 self.assertEqual("READY", result["execution_status"])
 
@@ -115,6 +119,131 @@ class ExpertiseRouteHintTests(unittest.TestCase):
 
         self.assertNotIn("expertise", plan)
         self.assertEqual("PASS", validate_route_v2(plan)["status"])
+
+    def test_routing_summary_distinguishes_each_selection_source(self) -> None:
+        natural = {
+            "selected_pack_ids": ["software-engineering"],
+            "selection_trace": {},
+            "warnings": [{"code": "EXPERTISE_PACK_PILOT"}],
+        }
+        work_kind = route_goal_v2(
+            "내부 이름을 정리해줘",
+            "medium",
+            intent="review",
+            repo_path=ROOT,
+            route_hints=normalize_route_hints(
+                work_kinds=["software-structure"],
+            ),
+        )["expertise"]
+        explicit = route_goal_v2(
+            "검토해줘",
+            "medium",
+            intent="review",
+            repo_path=ROOT,
+            route_hints=normalize_route_hints(
+                explicit_pack_id="software-engineering",
+            ),
+        )["expertise"]
+        no_selection = route_goal_v2(
+            "내부 이름을 정리해줘",
+            "medium",
+            intent="review",
+            route_hints=normalize_route_hints(
+                affected_paths=["src/example.py"],
+            ),
+        )["expertise"]
+
+        self.assertEqual(
+            "natural_language",
+            expertise_routing_summary(natural)["selection_source"],
+        )
+        self.assertEqual(
+            "work_kind",
+            expertise_routing_summary(work_kind)["selection_source"],
+        )
+        self.assertEqual(
+            "explicit_pack",
+            expertise_routing_summary(explicit)["selection_source"],
+        )
+        self.assertEqual(
+            {
+                "schema_version": "maestro_expertise_routing_summary_v1",
+                "selection_state": "not_selected",
+                "selection_source": "none",
+                "route_attempt": 1,
+                "conflict_warning_codes": [],
+            },
+            expertise_routing_summary(no_selection),
+        )
+
+    def test_routing_summary_keeps_one_correction_and_conflicts_only(
+        self,
+    ) -> None:
+        selection = {
+            "selected_pack_ids": ["software-engineering"],
+            "route_hints": normalize_route_hints(
+                work_kinds=["software-structure", "user-interface"],
+                route_attempt=2,
+                prior_plan_id="a" * 64,
+                prior_source_route_digest="b" * 64,
+            ),
+            "selection_trace": {
+                "structured_routing": {
+                    "structured_pack_id": "software-engineering",
+                },
+            },
+            "warnings": [
+                {"code": "EXPERTISE_HINTS_AMBIGUOUS"},
+                {"code": "EXPERTISE_PACK_PILOT"},
+                {"code": "EXPERTISE_HINTS_AMBIGUOUS"},
+            ],
+        }
+
+        summary = expertise_routing_summary(selection)
+
+        self.assertEqual(2, summary["route_attempt"])
+        self.assertEqual(
+            ["EXPERTISE_HINTS_AMBIGUOUS"],
+            summary["conflict_warning_codes"],
+        )
+        self.assertNotIn("affected_paths", summary)
+        self.assertNotIn("candidate_pack_ids", summary)
+
+    def test_routing_summary_validator_rejects_inconsistent_evidence(
+        self,
+    ) -> None:
+        valid = {
+            "schema_version": "maestro_expertise_routing_summary_v1",
+            "selection_state": "selected",
+            "selection_source": "work_kind",
+            "route_attempt": 1,
+            "conflict_warning_codes": [],
+        }
+        self.assertTrue(
+            valid_expertise_routing_summary(
+                valid,
+                selected_pack_ids=["software-engineering"],
+            )
+        )
+        for mutation in (
+            {"route_attempt": 3},
+            {"selection_source": "none"},
+            {"conflict_warning_codes": ["UNKNOWN"]},
+            {
+                "conflict_warning_codes": [
+                    "EXPERTISE_HINTS_AMBIGUOUS",
+                    "EXPERTISE_HINTS_AMBIGUOUS",
+                ],
+            },
+        ):
+            with self.subTest(mutation=mutation):
+                invalid = {**valid, **mutation}
+                self.assertFalse(
+                    valid_expertise_routing_summary(
+                        invalid,
+                        selected_pack_ids=["software-engineering"],
+                    )
+                )
 
     def test_paths_are_canonical_audit_evidence_not_selection_authority(
         self,

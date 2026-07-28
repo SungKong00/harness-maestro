@@ -9,6 +9,7 @@ from .util import canonical_json, sha256_text
 
 
 ROUTE_HINT_SCHEMA_VERSION = "maestro_expertise_route_hints_v1"
+ROUTING_SUMMARY_SCHEMA_VERSION = "maestro_expertise_routing_summary_v1"
 MAX_WORK_KINDS = 2
 MAX_AFFECTED_PATHS = 32
 MAX_AFFECTED_PATH_LENGTH = 240
@@ -19,6 +20,12 @@ CONFLICT_WARNING_CODES = {
     "EXPERTISE_HINTS_AMBIGUOUS",
     "EXPERTISE_OVERRIDE_CONFLICT",
     "EXPERTISE_SELECTION_AMBIGUOUS",
+}
+ROUTING_SELECTION_SOURCES = {
+    "natural_language",
+    "work_kind",
+    "explicit_pack",
+    "none",
 }
 
 WORK_KIND_TO_PACK_ID = {
@@ -49,6 +56,110 @@ POLICY_DIGEST = sha256_text(
         }
     )
 )
+
+
+def expertise_routing_summary(selection: Any) -> dict[str, Any]:
+    """Project one validated selection into bounded Pilot telemetry."""
+
+    if not isinstance(selection, dict):
+        raise MaestroError(
+            "EXPERTISE_ROUTING_SUMMARY_INVALID",
+            "Expertise selection must be an object.",
+        )
+    selected_pack_ids = selection.get("selected_pack_ids")
+    if not isinstance(selected_pack_ids, list):
+        raise MaestroError(
+            "EXPERTISE_ROUTING_SUMMARY_INVALID",
+            "Expertise selection must contain selected_pack_ids.",
+        )
+    selected = bool(selected_pack_ids)
+    hints = selection.get("route_hints")
+    normalized_hints = require_route_hints(hints) if hints is not None else None
+    structured_routing = (
+        selection.get("selection_trace", {}).get("structured_routing")
+        if isinstance(selection.get("selection_trace"), dict)
+        else None
+    )
+
+    if not selected:
+        source = "none"
+    elif (
+        normalized_hints is not None
+        and normalized_hints["explicit_pack_id"] is not None
+    ):
+        source = "explicit_pack"
+    elif (
+        isinstance(structured_routing, dict)
+        and structured_routing.get("structured_pack_id") is not None
+    ):
+        source = "work_kind"
+    else:
+        source = "natural_language"
+
+    warning_codes = list(
+        dict.fromkeys(
+            warning["code"]
+            for warning in selection.get("warnings", [])
+            if isinstance(warning, dict)
+            and warning.get("code") in CONFLICT_WARNING_CODES
+        )
+    )
+    return {
+        "schema_version": ROUTING_SUMMARY_SCHEMA_VERSION,
+        "selection_state": "selected" if selected else "not_selected",
+        "selection_source": source,
+        "route_attempt": (
+            normalized_hints["route_attempt"]
+            if normalized_hints is not None
+            else 1
+        ),
+        "conflict_warning_codes": warning_codes,
+    }
+
+
+def valid_expertise_routing_summary(
+    value: Any,
+    *,
+    selected_pack_ids: list[str] | None = None,
+) -> bool:
+    """Validate compact telemetry without re-running Pack selection."""
+
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "schema_version",
+            "selection_state",
+            "selection_source",
+            "route_attempt",
+            "conflict_warning_codes",
+        }
+        or value.get("schema_version") != ROUTING_SUMMARY_SCHEMA_VERSION
+        or value.get("selection_state") not in {"selected", "not_selected"}
+        or value.get("selection_source") not in ROUTING_SELECTION_SOURCES
+        or value.get("route_attempt") not in {1, 2}
+        or isinstance(value.get("route_attempt"), bool)
+    ):
+        return False
+    warning_codes = value.get("conflict_warning_codes")
+    if (
+        not isinstance(warning_codes, list)
+        or len(warning_codes) > len(CONFLICT_WARNING_CODES)
+        or len(set(warning_codes)) != len(warning_codes)
+        or any(code not in CONFLICT_WARNING_CODES for code in warning_codes)
+    ):
+        return False
+
+    selected = value["selection_state"] == "selected"
+    if selected != (value["selection_source"] != "none"):
+        return False
+    if not selected and warning_codes:
+        return False
+    if selected_pack_ids is not None and selected != bool(selected_pack_ids):
+        return False
+    return True
 
 
 def _unique_strings(

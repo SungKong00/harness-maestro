@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from .errors import MaestroError
+from .expertise_routing import (
+    expertise_routing_summary,
+    valid_expertise_routing_summary,
+)
 from .planning import validate_route_v2
 from .project import checkout_id
 from .util import (
@@ -504,7 +508,7 @@ def _plan_summary(repo: Path, plan_path: str | Path | None) -> dict[str, Any] | 
         if isinstance(expertise, dict)
         else None
     )
-    return {
+    summary = {
         "schema_version": "maestro_plan_summary_v1",
         "plan_id": plan["plan_id"],
         "intent": plan["intent"],
@@ -543,6 +547,16 @@ def _plan_summary(repo: Path, plan_path: str | Path | None) -> dict[str, Any] | 
             else {"mode": "reuse", "gate": "not-required"}
         ),
     }
+    summary["expertise_routing"] = expertise_routing_summary(
+        expertise
+        if isinstance(expertise, dict)
+        else {
+            "selected_pack_ids": [],
+            "selection_trace": {},
+            "warnings": [],
+        }
+    )
+    return summary
 
 
 def start_run_observation(
@@ -2219,4 +2233,16 @@ def _valid_plan_summary_for_observation(value: Any) -> bool:
         or not all(isinstance(item, str) and item for item in selected_lenses)
     ):
         return False
-    return True
+    selected_pack_ids = list(
+        dict.fromkeys(
+            pack_id
+            for assignment in value["assignments"]
+            if isinstance(assignment, dict)
+            for pack_id in assignment.get("expertise_pack_ids", [])
+            if isinstance(pack_id, str)
+        )
+    )
+    return valid_expertise_routing_summary(
+        value.get("expertise_routing"),
+        selected_pack_ids=selected_pack_ids,
+    )

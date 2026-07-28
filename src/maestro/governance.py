@@ -18,6 +18,7 @@ from .errors import MaestroError
 from .expertise import expertise_definition_map, load_expertise_catalog
 from .expertise_health import expertise_component_health
 from .expertise_lifecycle import expertise_inventory
+from .expertise_routing import valid_expertise_routing_summary
 from .observations import (
     _valid_execution_binding,
     _valid_host_observation,
@@ -391,7 +392,12 @@ def _valid_plan_summary(value: Any) -> bool:
         "assignments",
         "research",
     }
-    optional_fields = {"risk", "depth", "selected_lenses"}
+    optional_fields = {
+        "risk",
+        "depth",
+        "selected_lenses",
+        "expertise_routing",
+    }
     if (
         not isinstance(value, dict)
         or not required_fields.issubset(value)
@@ -494,13 +500,24 @@ def _valid_plan_summary(value: Any) -> bool:
     ):
         return False
     research = value.get("research")
-    return (
+    research_valid = (
         isinstance(research, dict)
         and set(research) == {"mode", "gate"}
         and research.get("mode")
         in {"reuse", "contextualize", "refresh", "discover"}
         and research.get("gate")
         in {"not-required", "satisfied", "in-plan", "open"}
+    )
+    selected_pack_ids = list(
+        dict.fromkeys(
+            pack_id
+            for assignment in assignments
+            for pack_id in assignment["expertise_pack_ids"]
+        )
+    )
+    return research_valid and valid_expertise_routing_summary(
+        value.get("expertise_routing"),
+        selected_pack_ids=selected_pack_ids,
     )
 
 
