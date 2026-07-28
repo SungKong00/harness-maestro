@@ -4,8 +4,10 @@ import unittest
 
 from maestro.errors import MaestroError
 from maestro.work import (
+    append_work_span,
     build_work_graph,
     complete_work_span,
+    finish_work_span,
     new_work_span,
     validate_work_spans,
 )
@@ -72,6 +74,46 @@ class WorkContractTests(unittest.TestCase):
 
     def test_relations_must_reference_known_work(self) -> None:
         self.assertFalse(validate_work_spans([_span("child", parent_work_id="missing")]))
+
+    def test_lifecycle_is_idempotent_and_rejects_conflicts(self) -> None:
+        running = _span("review")
+        spans, changed = append_work_span([], running)
+        self.assertTrue(changed)
+        repeated, changed = append_work_span(spans, running)
+        self.assertFalse(changed)
+        self.assertEqual(spans, repeated)
+
+        completed, changed = finish_work_span(
+            spans,
+            work_id="review",
+            status="completed",
+            result_summary="검토가 끝났습니다.",
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
+            evidence_refs=["tests/test_work_graph.py"],
+        )
+        self.assertTrue(changed)
+        repeated, changed = finish_work_span(
+            completed,
+            work_id="review",
+            status="completed",
+            result_summary="검토가 끝났습니다.",
+            ended_at="2026-07-28T01:00:04Z",
+            duration_ms=4000,
+            evidence_refs=["tests/test_work_graph.py"],
+        )
+        self.assertFalse(changed)
+        self.assertEqual(completed, repeated)
+        with self.assertRaises(MaestroError):
+            finish_work_span(
+                completed,
+                work_id="review",
+                status="failed",
+                result_summary="다른 결과입니다.",
+                ended_at="2026-07-28T01:00:04Z",
+                duration_ms=4000,
+                evidence_refs=["tests/test_work_graph.py"],
+            )
 
 
 class WorkGraphTests(unittest.TestCase):
