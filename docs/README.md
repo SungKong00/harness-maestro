@@ -33,11 +33,10 @@ sensitivity: internal
    Specialist 역할 경계, DecisionBundle과 실행 승인
 8. [통합 운영 뷰어](architecture/operations-viewer.md) — 작업 흐름, 측정값,
    Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
-9. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+9. [대시보드 UI 개편 계획](plans/active/dashboard-ui-roadmap.md) — 작업 중심 GUI,
+   회사형 단계 표현, 데이터·증거 경계와 단계별 구현 순서
+10. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
    릴리스·실사용 Pilot TODO만 관리
-10. [이름 있는 작업 히스토리 구현](plans/completed/named-goal-history.md) — 기존
-    JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶는 후속 구현 계획
-
 ## 거버넌스
 
 - [문서 생명주기](governance/document-lifecycle.md) — Markdown 권위, metadata,
@@ -47,11 +46,19 @@ sensitivity: internal
 - [제외·보류 목록](governance/deferred-and-excluded.md) — 의도적으로 넣지 않은
   기능과 재검토 조건
 
+## 완료된 계획
+
+- [이름 있는 작업 히스토리 구현](plans/completed/named-goal-history.md) — 기존
+  JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶은 historical plan
+
 ## 설계 근거
 
 - [설계 근거와 참고 자료](research/design-foundations.md) — 멀티에이전트 숙의,
   컨텍스트 절약, orchestration, 자가개선과 문서 구조에 참고한 원 논문·공식 저장소·
   공학 자료, 실제 채택 범위와 아직 검증하지 않은 주장
+- [Codex 실행 관측 근거](research/codex-runtime-observability.md) — App Server,
+  SDK, exec JSONL과 trusted Hooks를 작업 그래프에 연결할 때의 공식 수집 경로,
+  버전·완전성·모델·시간·개인정보 경계
 
 ## 릴리스 검사
 
