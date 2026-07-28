@@ -73,8 +73,12 @@ Assignment는 최대 다섯 개, 한 명 writer, 하나의 terminal stage result
 - `depends_on` 계획 간선은 실제 실행 순서나 동시 실행을 증명하지 않는다.
 - `delegates_to`, `reports_to`, `joins_into`, `followup_of`는 명시적 work lifecycle
   기록이 있을 때만 표시한다.
-- 요청 모델은 실제 적용 모델이 아니다. `model_evidence=complete`이고 적용 모델이
-  있을 때만 UI에서 실제 실행 모델로 표시한다.
+- 요청 모델은 실제 적용 모델이 아니다. v1 work span에는 Host 실행 이벤트와
+  개별 작업을 묶는 상관 계약이 없으므로 `applied_model`을 저장하지 않고
+  `model_evidence=host_request`까지만 허용한다.
+- 실제 적용 모델은 현재 Run/Assignment의 검증된 Host 관측에서만 표시한다.
+  개별 작업 카드에 이를 추가하려면 Host 이벤트와 work span을 묶는 별도 상관
+  계약이 먼저 필요하다.
 - Lens·Pack·Guide 선택은 Host 로드나 결과 적용의 증명이 아니다.
 - 종료 보고 요약은 원문이나 완전한 FindingPacket이 아니다.
 - 실행 시간 구간이 완전하고 같은 clock domain임을 증명하기 전에는 실제 병렬 실행을

@@ -35,7 +35,6 @@ WORK_SOURCES = {
 MODEL_EVIDENCE = {
     "unavailable",
     "host_request",
-    "complete",
 }
 EXPERTISE_EVIDENCE = {
     "unavailable",
@@ -145,7 +144,7 @@ def _valid_model_fields(value: dict[str, Any]) -> bool:
         return requested is None and effort is None and applied is None
     if evidence == "host_request":
         return requested is not None and applied is None
-    return requested is not None and applied is not None
+    return False
 
 
 def validate_work_span(value: Any) -> bool:

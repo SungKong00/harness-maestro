@@ -62,6 +62,20 @@ class WorkContractTests(unittest.TestCase):
         self.assertEqual("host_request", completed["model_evidence"])
         self.assertIsNone(completed["applied_model"])
 
+    def test_work_span_cannot_self_attest_an_applied_model(self) -> None:
+        with self.assertRaises(MaestroError) as raised:
+            complete_work_span(
+                _span("untrusted-model"),
+                status="completed",
+                result_summary="실제 모델이라고 자체 주장합니다.",
+                ended_at="2026-07-28T01:00:03Z",
+                duration_ms=3000,
+                evidence_refs=["untrusted:host-event"],
+                applied_model="gpt-5.6-terra",
+                model_evidence="complete",
+            )
+        self.assertEqual("WORK_SPAN_INVALID", raised.exception.code)
+
     def test_terminal_span_requires_a_result_and_duration(self) -> None:
         with self.assertRaises(MaestroError):
             complete_work_span(
