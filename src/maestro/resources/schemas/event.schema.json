@@ -1734,6 +1734,142 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "required": ["schema_version", "model_evidence"],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "model_evidence": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": ["complete_stream", "recovered_full"]
+                  }
+                }
+              },
+              "model_observation": {
+                "properties": {
+                  "coverage": {
+                    "const": "complete_stream"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["schema_version", "usage"],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "usage": {
+                "required": ["attribution"],
+                "properties": {
+                  "attribution": {
+                    "const": "direct"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "interface": {
+                    "enum": ["codex_app_server", "host_adapter"]
+                  },
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": ["complete_stream", "recovered_full"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["schema_version", "usage"],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "usage": {
+                "required": ["timing_coverage"],
+                "properties": {
+                  "timing_coverage": {
+                    "const": "host_event"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": ["complete_stream", "recovered_full"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["schema_version", "timing_evidence"],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "timing_evidence": {
+                "const": "host_event"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "interface": {
+                    "enum": ["codex_app_server", "host_adapter"]
+                  },
+                  "capability": {
+                    "enum": ["full_stream", "lifecycle_only"]
+                  },
+                  "event_coverage": {
+                    "enum": [
+                      "complete_stream",
+                      "recovered_full",
+                      "hook_lifecycle",
+                      "partial_stream"
+                    ]
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },

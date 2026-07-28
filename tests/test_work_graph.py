@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from maestro.errors import MaestroError
@@ -10,8 +11,10 @@ from maestro.work import (
     finish_work_span,
     new_work_span,
     project_observed_work,
+    validate_work_span,
     validate_work_spans,
 )
+from tests.support import ROOT
 
 
 def _span(
@@ -131,6 +134,36 @@ def _terminal_complete_stream(
 
 
 class WorkContractTests(unittest.TestCase):
+    def test_event_and_receipt_publish_the_same_v2_work_span_schema(
+        self,
+    ) -> None:
+        schemas = [
+            json.loads(
+                (
+                    ROOT
+                    / "src/maestro/resources/schemas"
+                    / filename
+                ).read_text(encoding="utf-8")
+            )
+            for filename in (
+                "event.schema.json",
+                "run-receipt.schema.json",
+            )
+        ]
+        self.assertEqual(
+            schemas[0]["$defs"]["workSpan"],
+            schemas[1]["$defs"]["workSpan"],
+        )
+        properties = schemas[0]["$defs"]["workSpan"]["properties"]
+        for field in (
+            "source_binding",
+            "model_observation",
+            "usage",
+            "outcome",
+            "diagnostics",
+        ):
+            self.assertFalse(properties[field]["additionalProperties"])
+
     def test_running_and_terminal_spans_preserve_evidence_boundaries(self) -> None:
         running = _span("domain-review", assignment_id="implementation")
         self.assertTrue(validate_work_spans([running]))
@@ -277,6 +310,74 @@ class WorkContractTests(unittest.TestCase):
         )
         self.assertEqual(20, rerouted["usage"]["last"]["total"])
         self.assertEqual(200, rerouted["usage"]["total"]["total"])
+
+    def test_complete_claims_require_one_full_stream_source_binding(self) -> None:
+        complete = _terminal_complete_stream(
+            "complete",
+            started_at="2026-07-28T01:00:00Z",
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
+        )
+        unavailable = {
+            **complete,
+            "source_binding": {
+                **complete["source_binding"],
+                "version": None,
+                "schema_digest": None,
+                "capability": "unavailable",
+                "correlation_id": None,
+                "event_coverage": "unavailable",
+            },
+        }
+        self.assertFalse(validate_work_span(unavailable))
+
+        partial_direct_usage = {
+            **complete,
+            "model_evidence": "host_request",
+            "applied_model": None,
+            "model_observation": {
+                "observed_model": None,
+                "coverage": "request_only",
+                "reroutes": [],
+            },
+            "source_binding": {
+                **complete["source_binding"],
+                "event_coverage": "partial_stream",
+            },
+            "usage": {
+                **complete["usage"],
+                "timing_coverage": "partial",
+            },
+        }
+        self.assertFalse(validate_work_span(partial_direct_usage))
+
+        unavailable_host_clock = {
+            **complete,
+            "model_evidence": "host_request",
+            "applied_model": None,
+            "model_observation": {
+                "observed_model": None,
+                "coverage": "request_only",
+                "reroutes": [],
+            },
+            "usage": {
+                **complete["usage"],
+                "last": None,
+                "total": None,
+                "scope": "unavailable",
+                "attribution": "unavailable",
+                "timing_coverage": "unavailable",
+            },
+            "source_binding": {
+                **complete["source_binding"],
+                "version": None,
+                "schema_digest": None,
+                "capability": "unavailable",
+                "correlation_id": None,
+                "event_coverage": "unavailable",
+            },
+        }
+        self.assertFalse(validate_work_span(unavailable_host_clock))
 
     def test_hook_point_is_not_promoted_to_an_applied_model(self) -> None:
         running = new_work_span(

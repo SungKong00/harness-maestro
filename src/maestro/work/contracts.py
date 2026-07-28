@@ -484,6 +484,43 @@ def _valid_diagnostics(value: Any) -> bool:
     return (value["error_count"] == 0) == (value["last_error"] is None)
 
 
+def _valid_evidence_binding(value: dict[str, Any]) -> bool:
+    """Keep complete claims bound to one compatible producer surface."""
+
+    binding = value["source_binding"]
+    model = value["model_observation"]
+    usage = value["usage"]
+    complete_stream = (
+        binding["capability"] == "full_stream"
+        and binding["event_coverage"]
+        in {"complete_stream", "recovered_full"}
+    )
+    if (
+        value["model_evidence"] == "complete"
+        or model["coverage"] == "complete_stream"
+    ) and not complete_stream:
+        return False
+    if usage["attribution"] == "direct":
+        if not complete_stream:
+            return False
+    if usage["timing_coverage"] == "host_event" and not complete_stream:
+        return False
+    if value["timing_evidence"] == "host_event":
+        if (
+            binding["interface"] == "current_host"
+            or binding["capability"] in {"current_host", "unavailable"}
+            or binding["event_coverage"] == "unavailable"
+        ):
+            return False
+    if model["coverage"] == "hook_point":
+        return (
+            binding["interface"] == "host_adapter"
+            and binding["event_coverage"] == "hook_lifecycle"
+            and binding["capability"] in {"lifecycle_only", "full_stream"}
+        )
+    return True
+
+
 def _validate_work_span_base(value: Any, fields: set[str]) -> bool:
     if (
         not isinstance(value, dict)
@@ -567,6 +604,7 @@ def validate_work_span(value: Any) -> bool:
         and _valid_usage(value["usage"])
         and _valid_outcome(value["outcome"], value)
         and _valid_diagnostics(value["diagnostics"])
+        and _valid_evidence_binding(value)
     )
 
 
@@ -690,7 +728,14 @@ def new_work_span(
                 else "lifecycle_only"
             ),
             "correlation_id": None,
-            "event_coverage": "unavailable",
+            "event_coverage": (
+                "partial_stream"
+                if (
+                    source in {"codex_app_server", "host_adapter"}
+                    and timing_evidence == "host_event"
+                )
+                else "unavailable"
+            ),
         },
         "model_observation": model_observation or {
             "observed_model": None,

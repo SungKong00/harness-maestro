@@ -358,28 +358,51 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schema_version", "mode"],
+          "required": [
+            "schema_version",
+            "mode"
+          ],
           "properties": {
-            "schema_version": {"const": "maestro_execution_binding_v1"},
-            "mode": {"const": "maestro_owned_codex_app_server"}
+            "schema_version": {
+              "const": "maestro_execution_binding_v1"
+            },
+            "mode": {
+              "const": "maestro_owned_codex_app_server"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schema_version", "mode"],
+          "required": [
+            "schema_version",
+            "mode"
+          ],
           "properties": {
-            "schema_version": {"const": "maestro_execution_binding_v1"},
-            "mode": {"const": "desktop_request"}
+            "schema_version": {
+              "const": "maestro_execution_binding_v1"
+            },
+            "mode": {
+              "const": "desktop_request"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schema_version", "mode", "reason", "evidence"],
+          "required": [
+            "schema_version",
+            "mode",
+            "reason",
+            "evidence"
+          ],
           "properties": {
-            "schema_version": {"const": "maestro_execution_binding_v1"},
-            "mode": {"const": "explicit_fallback"},
+            "schema_version": {
+              "const": "maestro_execution_binding_v1"
+            },
+            "mode": {
+              "const": "explicit_fallback"
+            },
             "reason": {
               "enum": [
                 "interactive_required",
@@ -846,10 +869,19 @@
           "minLength": 1
         },
         "risk": {
-          "enum": ["low", "medium", "high", "critical"]
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
         },
         "depth": {
-          "enum": ["fast", "standard", "deep"]
+          "enum": [
+            "fast",
+            "standard",
+            "deep"
+          ]
         },
         "selected_lenses": {
           "type": "array",
@@ -1018,12 +1050,18 @@
           "maxLength": 96
         },
         "parent_work_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 96
         },
         "assignment_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 96
         },
@@ -1056,7 +1094,10 @@
           "pattern": "^[^\\r\\n\\u0000]+$"
         },
         "result_summary": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 240,
           "pattern": "^[^\\r\\n\\u0000]+$"
@@ -1076,7 +1117,10 @@
           "maximum": 20
         },
         "followup_of_work_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 96
         },
@@ -1115,28 +1159,46 @@
           "format": "date-time"
         },
         "ended_at": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "format": "date-time"
         },
         "duration_ms": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "minimum": 0
         },
         "timing_evidence": {
-          "enum": ["current_host_clock", "host_event"]
+          "enum": [
+            "current_host_clock",
+            "host_event"
+          ]
         },
         "requested_model": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 128
         },
         "requested_reasoning_effort": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 40
         },
         "applied_model": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 128
         },
@@ -1196,19 +1258,436 @@
           }
         },
         "source_binding": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "interface",
+            "version",
+            "schema_digest",
+            "capability",
+            "correlation_id",
+            "event_coverage"
+          ],
+          "properties": {
+            "interface": {
+              "enum": [
+                "current_host",
+                "codex_app_server",
+                "host_adapter"
+              ]
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "schema_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "capability": {
+              "enum": [
+                "full_stream",
+                "lifecycle_only",
+                "current_host",
+                "unavailable"
+              ]
+            },
+            "correlation_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "event_coverage": {
+              "enum": [
+                "complete_stream",
+                "recovered_full",
+                "hook_lifecycle",
+                "partial_stream",
+                "unavailable"
+              ]
+            }
+          }
         },
         "model_observation": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed_model",
+            "coverage",
+            "reroutes"
+          ],
+          "properties": {
+            "observed_model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "coverage": {
+              "enum": [
+                "complete_stream",
+                "hook_point",
+                "request_only",
+                "unavailable"
+              ]
+            },
+            "reroutes": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "from_model",
+                  "to_model",
+                  "reason"
+                ],
+                "properties": {
+                  "from_model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "to_model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                }
+              }
+            }
+          }
         },
         "usage": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "last",
+            "total",
+            "scope",
+            "attribution",
+            "timing_coverage",
+            "cost"
+          ],
+          "properties": {
+            "last": {
+              "$ref": "#/$defs/tokenSummary"
+            },
+            "total": {
+              "$ref": "#/$defs/tokenSummary"
+            },
+            "scope": {
+              "enum": [
+                "work_turn",
+                "thread",
+                "parent_turn",
+                "unavailable"
+              ]
+            },
+            "attribution": {
+              "enum": [
+                "direct",
+                "shared",
+                "unavailable"
+              ]
+            },
+            "timing_coverage": {
+              "enum": [
+                "host_event",
+                "collector_clock",
+                "partial",
+                "unavailable"
+              ]
+            },
+            "cost": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "provider",
+                    "amount",
+                    "currency",
+                    "receipt_ref"
+                  ],
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "amount": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16
+                    },
+                    "receipt_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  }
+                }
+              ]
+            }
+          }
         },
         "outcome": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "finding_summary",
+            "conclusion",
+            "decision",
+            "next_action",
+            "consumed_work_ids",
+            "handoff",
+            "artifacts",
+            "verification"
+          ],
+          "properties": {
+            "finding_summary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "conclusion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "decision": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "next_action": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "continue",
+                    "revise",
+                    "redelegate",
+                    "verify",
+                    "finish",
+                    "blocked",
+                    "user_decision"
+                  ]
+                }
+              ]
+            },
+            "consumed_work_ids": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "handoff": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "purpose",
+                    "completion_criteria"
+                  ],
+                  "properties": {
+                    "purpose": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "completion_criteria": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  }
+                }
+              ]
+            },
+            "artifacts": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "artifact_id",
+                  "format",
+                  "digest",
+                  "producer_work_id",
+                  "verification"
+                ],
+                "properties": {
+                  "artifact_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96
+                  },
+                  "format": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "producer_work_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96
+                  },
+                  "verification": {
+                    "enum": [
+                      "unverified",
+                      "passed",
+                      "failed"
+                    ]
+                  }
+                }
+              }
+            },
+            "verification": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "target",
+                    "basis",
+                    "assertion",
+                    "command_result",
+                    "evidence_refs"
+                  ],
+                  "properties": {
+                    "target": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "basis": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "assertion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "command_result": {
+                      "enum": [
+                        "passed",
+                        "failed",
+                        "not_run"
+                      ]
+                    },
+                    "evidence_refs": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
         },
         "diagnostics": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "interrupt_requested",
+            "error_count",
+            "last_error",
+            "followup_reason"
+          ],
+          "properties": {
+            "interrupt_requested": {
+              "type": "boolean"
+            },
+            "error_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "last_error": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "followup_reason": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "new_scope",
+                    "retry_after_failure",
+                    "continue_incomplete",
+                    "verification_followup",
+                    "unknown"
+                  ]
+                }
+              ]
+            }
+          }
         }
       },
       "allOf": [
@@ -1232,12 +1711,202 @@
           "else": {
             "not": {
               "anyOf": [
-                {"required": ["source_binding"]},
-                {"required": ["model_observation"]},
-                {"required": ["usage"]},
-                {"required": ["outcome"]},
-                {"required": ["diagnostics"]}
+                {
+                  "required": [
+                    "source_binding"
+                  ]
+                },
+                {
+                  "required": [
+                    "model_observation"
+                  ]
+                },
+                {
+                  "required": [
+                    "usage"
+                  ]
+                },
+                {
+                  "required": [
+                    "outcome"
+                  ]
+                },
+                {
+                  "required": [
+                    "diagnostics"
+                  ]
+                }
               ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "schema_version",
+              "model_evidence"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "model_evidence": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": [
+                      "complete_stream",
+                      "recovered_full"
+                    ]
+                  }
+                }
+              },
+              "model_observation": {
+                "properties": {
+                  "coverage": {
+                    "const": "complete_stream"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "schema_version",
+              "usage"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "usage": {
+                "required": [
+                  "attribution"
+                ],
+                "properties": {
+                  "attribution": {
+                    "const": "direct"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "interface": {
+                    "enum": [
+                      "codex_app_server",
+                      "host_adapter"
+                    ]
+                  },
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": [
+                      "complete_stream",
+                      "recovered_full"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "schema_version",
+              "usage"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "usage": {
+                "required": [
+                  "timing_coverage"
+                ],
+                "properties": {
+                  "timing_coverage": {
+                    "const": "host_event"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "capability": {
+                    "const": "full_stream"
+                  },
+                  "event_coverage": {
+                    "enum": [
+                      "complete_stream",
+                      "recovered_full"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "schema_version",
+              "timing_evidence"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              },
+              "timing_evidence": {
+                "const": "host_event"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_binding": {
+                "properties": {
+                  "interface": {
+                    "enum": [
+                      "codex_app_server",
+                      "host_adapter"
+                    ]
+                  },
+                  "capability": {
+                    "enum": [
+                      "full_stream",
+                      "lifecycle_only"
+                    ]
+                  },
+                  "event_coverage": {
+                    "enum": [
+                      "complete_stream",
+                      "recovered_full",
+                      "hook_lifecycle",
+                      "partial_stream"
+                    ]
+                  }
+                }
+              }
             }
           }
         }
@@ -1304,11 +1973,27 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["from_model", "to_model", "reason"],
+            "required": [
+              "from_model",
+              "to_model",
+              "reason"
+            ],
             "properties": {
-              "from_model": {"type": "string", "minLength": 1, "maxLength": 128},
-              "to_model": {"type": "string", "minLength": 1, "maxLength": 128},
-              "reason": {"type": "string", "minLength": 1, "maxLength": 240}
+              "from_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "to_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
             }
           }
         },

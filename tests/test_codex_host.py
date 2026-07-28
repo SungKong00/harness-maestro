@@ -331,6 +331,17 @@ class CodexHostTests(unittest.TestCase):
                 },
                 observation["execution_binding"],
             )
+            root_work = next(
+                span
+                for span in observation["work_spans"]
+                if span["kind"] == "orchestration"
+            )
+            self.assertEqual(
+                "lifecycle_only",
+                root_work["source_binding"]["capability"],
+            )
+            self.assertEqual("unavailable", root_work["usage"]["attribution"])
+            self.assertIsNone(root_work["usage"]["total"])
 
     def test_assignment_lease_blocks_concurrent_launch_and_recovers(
         self,

@@ -1587,16 +1587,30 @@ def _run_codex_host_locked(
                         ),
                     },
                     "usage": {
-                        "last": state["tokens_last"],
-                        "total": state["tokens"],
+                        "last": (
+                            state["tokens_last"]
+                            if complete_coverage
+                            else None
+                        ),
+                        "total": (
+                            state["tokens"]
+                            if complete_coverage
+                            else None
+                        ),
                         "scope": (
                             "work_turn"
-                            if state["tokens"] is not None
+                            if (
+                                complete_coverage
+                                and state["tokens"] is not None
+                            )
                             else "unavailable"
                         ),
                         "attribution": (
                             "direct"
-                            if state["tokens"] is not None
+                            if (
+                                complete_coverage
+                                and state["tokens"] is not None
+                            )
                             else "unavailable"
                         ),
                         "timing_coverage": (
