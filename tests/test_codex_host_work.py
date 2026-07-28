@@ -14,7 +14,7 @@ from tests.test_codex_host import CodexHostTests, FAKE_APP_SERVER
 
 
 COLLAB_EVENTS = r'''
-        if mode in {"collab", "collab-incomplete"}:
+        if mode in {"collab", "collab-error", "collab-incomplete"}:
             spawn = {
                 "id": "spawn-1",
                 "type": "collabAgentToolCall",
@@ -58,7 +58,23 @@ COLLAB_EVENTS = r'''
                     },
                 }
             )
-            if mode == "collab":
+            if mode == "collab-error":
+                emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "error",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "error": {
+                                "code": "transient",
+                                "message": "SECRET-ERROR-MESSAGE",
+                            },
+                            "willRetry": True,
+                        },
+                    }
+                )
+            if mode in {"collab", "collab-error"}:
                 emit(
                     {
                         "jsonrpc": "2.0",
@@ -262,6 +278,13 @@ class CodexHostWorkTests(unittest.TestCase):
             self.assertEqual(1_000, child_span["duration_ms"])
             self.assertEqual("gpt-5.6-terra", child_span["requested_model"])
             self.assertIsNone(child_span["applied_model"])
+            self.assertEqual("unavailable", child_span["usage"]["scope"])
+            self.assertIsNone(child_span["usage"]["total"])
+            self.assertEqual(
+                "partial_stream",
+                child_span["source_binding"]["event_coverage"],
+            )
+            self.assertIsNone(child_span["source_binding"]["version"])
             self.assertEqual("synthesis", decision_span["kind"])
             self.assertEqual(
                 [child_span["work_id"]],
@@ -390,6 +413,51 @@ class CodexHostWorkTests(unittest.TestCase):
                 work["graph"]["actual_concurrency"],
             )
             self.assertEqual(3, result["work_capture"]["decision_count"])
+
+    def test_mid_turn_error_is_diagnostic_until_terminal_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, prompt, server = self._project(root)
+            result = run_codex_host(
+                repo,
+                run_id="collab-error",
+                task_label="중간 오류 진단",
+                prompt_file=prompt,
+                sandbox="read-only",
+                timeout_seconds=5,
+                command=[
+                    sys.executable,
+                    str(server),
+                    "collab-error",
+                ],
+            )
+            observation = json.loads(
+                safe_target(
+                    repo,
+                    (
+                        ".maestro/state/inflight/"
+                        f"{result['observation_id']}.json"
+                    ),
+                ).read_text(encoding="utf-8")
+            )
+            diagnostic_span = next(
+                span
+                for span in reversed(observation["work_spans"])
+                if span["diagnostics"]["error_count"]
+            )
+            self.assertEqual("completed", diagnostic_span["status"])
+            self.assertEqual(
+                1,
+                diagnostic_span["diagnostics"]["error_count"],
+            )
+            self.assertEqual(
+                "Codex App Server error (transient)",
+                diagnostic_span["diagnostics"]["last_error"],
+            )
+            self.assertNotIn(
+                "SECRET-ERROR-MESSAGE",
+                json.dumps(observation, ensure_ascii=False),
+            )
 
 
 if __name__ == "__main__":

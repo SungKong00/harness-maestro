@@ -51,6 +51,11 @@ def finish_work_span(
     applied_model: str | None = None,
     model_evidence: str | None = None,
     expertise_evidence: str | None = None,
+    source_binding: dict[str, Any] | None = None,
+    model_observation: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     existing = list(work_spans or [])
     if not validate_work_spans(existing):
@@ -72,6 +77,17 @@ def finish_work_span(
             "The work ID is not present in this run observation.",
         )
     recorded = existing[index]
+    if expertise_evidence in {"host_loaded", "application_observed"}:
+        has_expertise_binding = bool(
+            recorded.get("expertise_pack_ids")
+            or recorded.get("decision_guide_ids")
+        )
+        if not has_expertise_binding or not evidence_refs:
+            raise MaestroError(
+                "WORK_EXPERTISE_EVIDENCE_INVALID",
+                "Loaded or applied Expertise requires a bound Pack or Guide "
+                "and at least one result evidence reference.",
+            )
     if recorded["status"] != "running":
         comparable = {
             "status": status,
@@ -83,6 +99,20 @@ def finish_work_span(
                 expertise_evidence or recorded["expertise_evidence"]
             ),
         }
+        if recorded.get("schema_version") == "maestro_work_span_v2":
+            comparable.update(
+                {
+                    "source_binding": (
+                        source_binding or recorded["source_binding"]
+                    ),
+                    "model_observation": (
+                        model_observation or recorded["model_observation"]
+                    ),
+                    "usage": usage or recorded["usage"],
+                    "outcome": outcome or recorded["outcome"],
+                    "diagnostics": diagnostics or recorded["diagnostics"],
+                }
+            )
         if all(recorded[key] == value for key, value in comparable.items()):
             return existing, False
         raise MaestroError(
@@ -99,6 +129,11 @@ def finish_work_span(
         applied_model=applied_model,
         model_evidence=model_evidence,
         expertise_evidence=expertise_evidence,
+        source_binding=source_binding,
+        model_observation=model_observation,
+        usage=usage,
+        outcome=outcome,
+        diagnostics=diagnostics,
     )
     updated = list(existing)
     updated[index] = completed

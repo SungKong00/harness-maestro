@@ -1086,6 +1086,11 @@ def record_work_start(
     expertise_pack_ids: list[str] | None = None,
     decision_guide_ids: list[str] | None = None,
     expertise_evidence: str = "unavailable",
+    source_binding: dict[str, Any] | None = None,
+    model_observation: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
     event_started_at: str | None = None,
 ) -> dict[str, Any]:
     """Append one bounded actual-work attempt to a run observation."""
@@ -1147,6 +1152,11 @@ def record_work_start(
         expertise_pack_ids=expertise_pack_ids,
         decision_guide_ids=decision_guide_ids,
         expertise_evidence=expertise_evidence,
+        source_binding=source_binding,
+        model_observation=model_observation,
+        usage=usage,
+        outcome=outcome,
+        diagnostics=diagnostics,
     )
     work_spans, changed = append_work_span(
         value.get("work_spans"),
@@ -1187,6 +1197,11 @@ def record_work_finish(
     applied_model: str | None = None,
     model_evidence: str | None = None,
     expertise_evidence: str | None = None,
+    source_binding: dict[str, Any] | None = None,
+    model_observation: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
     event_ended_at: str | None = None,
     event_duration_ms: float | None = None,
 ) -> dict[str, Any]:
@@ -1275,6 +1290,11 @@ def record_work_finish(
         applied_model=applied_model,
         model_evidence=model_evidence,
         expertise_evidence=expertise_evidence,
+        source_binding=source_binding,
+        model_observation=model_observation,
+        usage=usage,
+        outcome=outcome,
+        diagnostics=diagnostics,
     )
     if changed:
         value["work_spans"] = work_spans

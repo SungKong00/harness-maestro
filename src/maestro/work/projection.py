@@ -70,6 +70,87 @@ def _presentation(kind: str) -> dict[str, str]:
     )
 
 
+def _coverage(span: dict[str, Any]) -> dict[str, Any]:
+    source = span.get("source_binding")
+    model = span.get("model_observation")
+    usage = span.get("usage")
+    return {
+        "source": source or {
+            "interface": span["source"],
+            "version": None,
+            "schema_digest": None,
+            "capability": "unavailable",
+            "correlation_id": None,
+            "event_coverage": "unavailable",
+        },
+        "model": (
+            model.get("coverage")
+            if isinstance(model, dict)
+            else (
+                "request_only"
+                if span["requested_model"] is not None
+                else "unavailable"
+            )
+        ),
+        "timing": (
+            usage.get("timing_coverage")
+            if isinstance(usage, dict)
+            else (
+                "collector_clock"
+                if span["timing_evidence"] == "current_host_clock"
+                else "partial"
+            )
+        ),
+        "event": (
+            source.get("event_coverage")
+            if isinstance(source, dict)
+            else "unavailable"
+        ),
+    }
+
+
+def _outcome(span: dict[str, Any]) -> dict[str, Any]:
+    structured = span.get("outcome")
+    if isinstance(structured, dict):
+        return {
+            **structured,
+            "result_summary": span["result_summary"],
+            "decision_evidence": (
+                "structured_work_outcome"
+                if structured["decision"] is not None
+                else "unavailable"
+            ),
+        }
+    return {
+        "finding_summary": None,
+        "conclusion": None,
+        "decision": None,
+        "next_action": None,
+        "consumed_work_ids": [],
+        "handoff": None,
+        "artifacts": [],
+        "verification": None,
+        "result_summary": span["result_summary"],
+        "decision_evidence": "unavailable",
+    }
+
+
+def _usage(span: dict[str, Any]) -> dict[str, Any]:
+    value = span.get("usage")
+    return value if isinstance(value, dict) else {
+        "last": None,
+        "total": None,
+        "scope": "unavailable",
+        "attribution": "unavailable",
+        "timing_coverage": (
+            "collector_clock"
+            if span["timing_evidence"] == "current_host_clock"
+            else "partial"
+        ),
+        "cost": None,
+    }
+
+
 def project_observed_work(
     work_spans: list[dict[str, Any]] | None,
     stages: list[dict[str, Any]],
@@ -97,6 +178,11 @@ def project_observed_work(
             },
         )
         lane["work_ids"].append(span["work_id"])
+        outcome = _outcome(span)
+        coverage = _coverage(span)
+        usage = _usage(span)
+        model_observation = span.get("model_observation")
+        diagnostics = span.get("diagnostics")
         cards.append(
             {
                 "work_id": span["work_id"],
@@ -106,6 +192,12 @@ def project_observed_work(
                 "role": span["role"],
                 "task_summary": span["task_summary"],
                 "result_summary": span["result_summary"],
+                "summary": {
+                    "topic": span["task_summary"],
+                    "decision": outcome["decision"],
+                    "result": span["result_summary"],
+                    "decision_evidence": outcome["decision_evidence"],
+                },
                 "assignment": {
                     "assignment_id": span["assignment_id"],
                     "label": stage_titles.get(span["assignment_id"]),
@@ -143,12 +235,86 @@ def project_observed_work(
                     ],
                     "applied": span["applied_model"],
                     "evidence": span["model_evidence"],
+                    "observed": (
+                        model_observation.get("observed_model")
+                        if isinstance(model_observation, dict)
+                        else None
+                    ),
+                    "coverage": coverage["model"],
+                    "reroutes": (
+                        list(model_observation.get("reroutes", []))
+                        if isinstance(model_observation, dict)
+                        else []
+                    ),
                 },
                 "measurements": {
                     "started_at": span["started_at"],
                     "ended_at": span["ended_at"],
                     "duration_ms": span["duration_ms"],
                     "timing_evidence": span["timing_evidence"],
+                    "timing_coverage": coverage["timing"],
+                    "tokens": {
+                        "last": usage["last"],
+                        "total": usage["total"],
+                        "scope": usage["scope"],
+                        "attribution": usage["attribution"],
+                    },
+                    "cost": usage["cost"],
+                },
+                "execution_facts": {
+                    "model": {
+                        "kind": (
+                            "actual"
+                            if coverage["model"] == "complete_stream"
+                            and span["applied_model"] is not None
+                            else (
+                                "hook_point"
+                                if coverage["model"] == "hook_point"
+                                and isinstance(model_observation, dict)
+                                and model_observation.get("observed_model")
+                                is not None
+                                else (
+                                    "requested"
+                                    if span["requested_model"] is not None
+                                    else "unavailable"
+                                )
+                            )
+                        ),
+                        "value": (
+                            span["applied_model"]
+                            if coverage["model"] == "complete_stream"
+                            else (
+                                model_observation.get("observed_model")
+                                if coverage["model"] == "hook_point"
+                                and isinstance(model_observation, dict)
+                                else span["requested_model"]
+                            )
+                        ),
+                        "coverage": coverage["model"],
+                    },
+                    "reasoning": {
+                        "kind": (
+                            "requested"
+                            if span["requested_reasoning_effort"] is not None
+                            else "unavailable"
+                        ),
+                        "value": span["requested_reasoning_effort"],
+                    },
+                    "tokens": {
+                        "value": usage["total"],
+                        "last": usage["last"],
+                        "scope": usage["scope"],
+                        "attribution": usage["attribution"],
+                    },
+                    "duration": {
+                        "value_ms": span["duration_ms"],
+                        "coverage": coverage["timing"],
+                        "state": (
+                            "running"
+                            if span["status"] == "running"
+                            else "terminal"
+                        ),
+                    },
                 },
                 "expertise": {
                     "lens_ids": list(span["lens_ids"]),
@@ -159,6 +325,33 @@ def project_observed_work(
                 "evidence": {
                     "count": len(span["evidence_refs"]),
                     "refs": list(span["evidence_refs"]),
+                },
+                "coverage": coverage,
+                "outcome": outcome,
+                "diagnostics": (
+                    diagnostics
+                    if isinstance(diagnostics, dict)
+                    else {
+                        "interrupt_requested": False,
+                        "error_count": 0,
+                        "last_error": None,
+                        "followup_reason": None,
+                    }
+                ),
+                "detail": {
+                    "input": span["task_summary"],
+                    "completion_criteria": (
+                        outcome["handoff"]["completion_criteria"]
+                        if isinstance(outcome["handoff"], dict)
+                        else None
+                    ),
+                    "finding": outcome["finding_summary"],
+                    "conclusion": outcome["conclusion"],
+                    "decision": outcome["decision"],
+                    "next_action": outcome["next_action"],
+                    "handoff": outcome["handoff"],
+                    "artifacts": list(outcome["artifacts"]),
+                    "verification": outcome["verification"],
                 },
             }
         )
@@ -173,7 +366,7 @@ def project_observed_work(
     for edge in execution["edges"]:
         edge_counts[edge["type"]] = edge_counts.get(edge["type"], 0) + 1
     return {
-        "schema_version": "maestro_observed_work_projection_v1",
+        "schema_version": "maestro_observed_work_projection_v2",
         "mode": "observed" if cards else "plan_only",
         "completeness": execution["completeness"],
         "cards": cards,
@@ -184,6 +377,9 @@ def project_observed_work(
             "terminal_work_ids": list(execution["terminal_node_ids"]),
             "max_rank": execution["max_rank"],
             "actual_concurrency": execution["actual_concurrency"],
+            "concurrent_work_pairs": list(
+                execution["concurrent_work_pairs"]
+            ),
         },
         "bindings": list(graph["bindings"]),
         "summary": {

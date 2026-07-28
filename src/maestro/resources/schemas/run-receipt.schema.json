@@ -146,6 +146,13 @@
       ],
       "minimum": 0
     },
+    "planning_duration_ms": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
     "tokens": {
       "type": [
         "object",
@@ -215,6 +222,13 @@
         "$ref": "#/$defs/stageResult"
       }
     },
+    "work_spans": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/workSpan"
+      }
+    },
     "expertise_observations": {
       "type": "array",
       "maxItems": 3,
@@ -224,6 +238,9 @@
     },
     "host_observation": {
       "$ref": "#/$defs/hostObservation"
+    },
+    "execution_binding": {
+      "$ref": "#/$defs/executionBinding"
     },
     "project_convention_action": {
       "enum": [
@@ -336,6 +353,51 @@
     }
   },
   "$defs": {
+    "executionBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "mode"],
+          "properties": {
+            "schema_version": {"const": "maestro_execution_binding_v1"},
+            "mode": {"const": "maestro_owned_codex_app_server"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "mode"],
+          "properties": {
+            "schema_version": {"const": "maestro_execution_binding_v1"},
+            "mode": {"const": "desktop_request"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "mode", "reason", "evidence"],
+          "properties": {
+            "schema_version": {"const": "maestro_execution_binding_v1"},
+            "mode": {"const": "explicit_fallback"},
+            "reason": {
+              "enum": [
+                "interactive_required",
+                "network_required",
+                "app_connector_required",
+                "capability_unavailable"
+              ]
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240,
+              "pattern": "^[^\\r\\n\\u0000]+$"
+            }
+          }
+        }
+      ]
+    },
     "conventionUsage": {
       "type": "object",
       "additionalProperties": false,
@@ -783,6 +845,21 @@
           "type": "string",
           "minLength": 1
         },
+        "risk": {
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "depth": {
+          "enum": ["fast", "standard", "deep"]
+        },
+        "selected_lenses": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "assignments": {
           "type": "array",
           "maxItems": 5,
@@ -814,6 +891,21 @@
               },
               "depends_on": {
                 "$ref": "#/$defs/stringList"
+              },
+              "lens_ids": {
+                "type": "array",
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "mutation_owner": {
+                "type": "boolean"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "planned_model": {
                 "type": "string",
@@ -879,6 +971,278 @@
         }
       }
     },
+    "workSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "work_id",
+        "parent_work_id",
+        "assignment_id",
+        "kind",
+        "role",
+        "executor_id",
+        "task_summary",
+        "result_summary",
+        "status",
+        "attempt",
+        "followup_of_work_id",
+        "depends_on_work_ids",
+        "joins_work_ids",
+        "read_only",
+        "source",
+        "started_at",
+        "ended_at",
+        "duration_ms",
+        "timing_evidence",
+        "requested_model",
+        "requested_reasoning_effort",
+        "applied_model",
+        "model_evidence",
+        "lens_ids",
+        "expertise_pack_ids",
+        "decision_guide_ids",
+        "expertise_evidence",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "enum": [
+            "maestro_work_span_v1",
+            "maestro_work_span_v2"
+          ]
+        },
+        "work_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "parent_work_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "assignment_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "kind": {
+          "enum": [
+            "orchestration",
+            "delegation",
+            "research",
+            "review",
+            "implementation",
+            "synthesis",
+            "verification"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "executor_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "task_summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "result_summary": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "blocked",
+            "interrupted"
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "followup_of_work_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "depends_on_work_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        },
+        "joins_work_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "current_host",
+            "codex_app_server",
+            "host_adapter"
+          ]
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ended_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "timing_evidence": {
+          "enum": ["current_host_clock", "host_event"]
+        },
+        "requested_model": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested_reasoning_effort": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "applied_model": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model_evidence": {
+          "enum": [
+            "unavailable",
+            "host_request",
+            "hook_point",
+            "complete"
+          ]
+        },
+        "lens_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        },
+        "expertise_pack_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        },
+        "decision_guide_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        },
+        "expertise_evidence": {
+          "enum": [
+            "unavailable",
+            "selection_only",
+            "host_loaded",
+            "application_observed"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "source_binding": {
+          "type": "object"
+        },
+        "model_observation": {
+          "type": "object"
+        },
+        "usage": {
+          "type": "object"
+        },
+        "outcome": {
+          "type": "object"
+        },
+        "diagnostics": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "schema_version": {
+                "const": "maestro_work_span_v2"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_binding",
+              "model_observation",
+              "usage",
+              "outcome",
+              "diagnostics"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {"required": ["source_binding"]},
+                {"required": ["model_observation"]},
+                {"required": ["usage"]},
+                {"required": ["outcome"]},
+                {"required": ["diagnostics"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
     "stageResult": {
       "type": "object",
       "additionalProperties": false,
@@ -900,7 +1264,8 @@
             "completed",
             "failed",
             "blocked",
-            "skipped"
+            "skipped",
+            "interrupted"
           ]
         },
         "actual_model": {
@@ -911,11 +1276,41 @@
           "minLength": 1,
           "maxLength": 128
         },
+        "requested_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested_reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 40
+        },
         "model_evidence": {
           "enum": [
             "unavailable",
             "complete"
           ]
+        },
+        "reroutes": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from_model", "to_model", "reason"],
+            "properties": {
+              "from_model": {"type": "string", "minLength": 1, "maxLength": 128},
+              "to_model": {"type": "string", "minLength": 1, "maxLength": 128},
+              "reason": {"type": "string", "minLength": 1, "maxLength": 240}
+            }
+          }
         },
         "duration_ms": {
           "type": [
@@ -934,6 +1329,17 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "evidence_source": {
+          "enum": [
+            "codex_app_server",
+            "current_host",
+            "deterministic_command"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
         }
       },
       "allOf": [
@@ -999,6 +1405,7 @@
             "trigger_miss",
             "trigger_false_positive",
             "guide_not_loaded",
+            "guide_unassigned",
             "guide_ineffective",
             "pack_conflict",
             "unnecessary_research"
@@ -1037,7 +1444,8 @@
             "reuse",
             "research",
             "manual_correction",
-            "unresolved"
+            "unresolved",
+            "author_candidate"
           ]
         },
         "evidence_ref": {

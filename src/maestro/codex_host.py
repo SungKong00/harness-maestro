@@ -9,7 +9,9 @@ import stat
 import subprocess
 import threading
 import time
+import tempfile
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence, TextIO
 
@@ -20,6 +22,7 @@ except ImportError:  # pragma: no cover - exercised through the typed fallback
 
 from . import __version__
 from .assignment_contracts import (
+    assignment_output_schema,
     project_assignment_input,
     validate_assignment_packet,
 )
@@ -63,6 +66,7 @@ PROCESS_EXIT_GRACE_SECONDS = 1.0
 _SANDBOXES = {"read-only", "workspace-write"}
 _TERMINAL_STATUSES = {"completed", "interrupted", "failed"}
 _RELEVANT_NOTIFICATIONS = {
+    "error",
     "item/started",
     "item/completed",
     "model/rerouted",
@@ -179,12 +183,20 @@ def _bounded_text_file(path_value: str | Path) -> str:
     return value
 
 
-def _assignment_prompt(projection: dict[str, Any]) -> str:
+def _assignment_prompt(
+    projection: dict[str, Any],
+    output_schema: dict[str, Any],
+) -> str:
     prompt = (
         "Execute only the following validated Maestro AssignmentInput. "
         "Treat its task, side-effect, context, evidence, and Packet contracts "
-        "as closed. Inspect only referenced repository artifacts and return "
-        "only one JSON Packet matching assignment_contract.output_packet.\n"
+        "as closed. Inspect only referenced repository artifacts. Your final "
+        "answer is machine-validated: return exactly one JSON object matching "
+        "the final-answer JSON Schema below, with no Markdown fence, preface, "
+        "or trailing commentary.\n"
+        "Final-answer JSON Schema:\n"
+        f"{canonical_json(output_schema)}\n"
+        "Validated AssignmentInput:\n"
         f"{canonical_json(projection)}"
     )
     if len(prompt.encode("utf-8")) > MAX_PROMPT_BYTES:
@@ -330,6 +342,7 @@ def _host_contract(
     assignment: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
     projection: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     research_bundle: dict[str, Any] | None = None
     dependency_packet_digests: dict[str, str] = {}
     plan_id: str | None = None
@@ -452,6 +465,7 @@ def _host_contract(
                 "Projection does not exactly match the AssignmentInput reconstructed from authoritative inputs.",
             )
         projection = reconstructed["input"]
+        output_schema = assignment_output_schema(projection)
         dependency_packet_digests = {
             packet["assignment_id"]: sha256_text(canonical_json(packet))
             for packet in dependency_packets
@@ -518,6 +532,7 @@ def _host_contract(
         "assignment": assignment,
         "plan": plan,
         "projection": projection,
+        "output_schema": output_schema,
         "research_bundle": research_bundle,
         "dependency_packet_digests": dependency_packet_digests,
     }
@@ -855,6 +870,19 @@ def _process_notification(
         return
     if params.get("threadId") != state["thread_id"]:
         return
+    if method == "error":
+        if params.get("turnId") not in {None, state["turn_id"]}:
+            return
+        error = params.get("error")
+        code = (
+            error.get("code")
+            if isinstance(error, dict)
+            and isinstance(error.get("code"), (str, int))
+            else "unclassified"
+        )
+        state["error_count"] += 1
+        state["last_error"] = f"Codex App Server error ({str(code)[:80]})"
+        return
     if method == "turn/completed":
         turn = params.get("turn")
         if (
@@ -887,13 +915,19 @@ def _process_notification(
         return
     if method == "thread/tokenUsage/updated":
         usage = params.get("tokenUsage")
-        observed = (
+        observed_last = (
+            _token_summary(usage.get("last"))
+            if isinstance(usage, dict)
+            else None
+        )
+        observed_total = (
             _token_summary(usage.get("total"))
             if isinstance(usage, dict)
             else None
         )
-        if observed is not None:
-            state["tokens"] = observed
+        if observed_total is not None:
+            state["tokens"] = observed_total
+            state["tokens_last"] = observed_last
             state["token_updates"] += 1
         return
     item = params.get("item")
@@ -992,6 +1026,11 @@ def _record_codex_work_action(
                 "requested_reasoning_effort"
             ],
             model_evidence=action["model_evidence"],
+            source_binding=action.get("source_binding"),
+            model_observation=action.get("model_observation"),
+            usage=action.get("usage"),
+            outcome=action.get("outcome"),
+            diagnostics=action.get("diagnostics"),
             event_started_at=action["started_at"],
         )
         return
@@ -1004,6 +1043,13 @@ def _record_codex_work_action(
             status=action["status"],
             result_summary=action["result_summary"],
             evidence_refs=action["evidence_refs"],
+            applied_model=action.get("applied_model"),
+            model_evidence=action.get("model_evidence"),
+            source_binding=action.get("source_binding"),
+            model_observation=action.get("model_observation"),
+            usage=action.get("usage"),
+            outcome=action.get("outcome"),
+            diagnostics=action.get("diagnostics"),
             event_ended_at=action["ended_at"],
             event_duration_ms=action.get("duration_ms"),
         )
@@ -1032,6 +1078,74 @@ def _command(command: Sequence[str] | None) -> list[str]:
             "Codex CLI is not installed or is not available on PATH.",
         )
     return [executable, "app-server", "--stdio"]
+
+
+@lru_cache(maxsize=4)
+def _codex_runtime_binding(executable: str) -> dict[str, Any]:
+    """Bind the installed Codex version and generated stable schema surface."""
+
+    if Path(executable).name != "codex":
+        return {
+            "version": None,
+            "schema_digest": None,
+            "capability": "lifecycle_only",
+        }
+    try:
+        version_result = subprocess.run(
+            [executable, "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        version = version_result.stdout.strip()
+        if not version or len(version) > 80 or "\n" in version:
+            raise ValueError("invalid version")
+        with tempfile.TemporaryDirectory() as temporary:
+            subprocess.run(
+                [
+                    executable,
+                    "app-server",
+                    "generate-json-schema",
+                    "--out",
+                    temporary,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            root = Path(temporary)
+            files = sorted(
+                path
+                for path in root.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+            if not files:
+                raise ValueError("schema bundle is empty")
+            schema_manifest = [
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "sha256": sha256_text(path.read_text(encoding="utf-8")),
+                }
+                for path in files
+            ]
+        return {
+            "version": version,
+            "schema_digest": sha256_text(canonical_json(schema_manifest)),
+            "capability": "full_stream",
+        }
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        ValueError,
+    ):
+        return {
+            "version": None,
+            "schema_digest": None,
+            "capability": "lifecycle_only",
+        }
 
 
 def _run_codex_host_locked(
@@ -1089,7 +1203,11 @@ def _run_codex_host_locked(
                 "Assignment execution derives its prompt only from the exact projection; do not supply --prompt-file.",
             )
         assert isinstance(contract["projection"], dict)
-        prompt = _assignment_prompt(contract["projection"])
+        assert isinstance(contract["output_schema"], dict)
+        prompt = _assignment_prompt(
+            contract["projection"],
+            contract["output_schema"],
+        )
     else:
         if prompt_file is None:
             raise MaestroError(
@@ -1188,14 +1306,20 @@ def _run_codex_host_locked(
                 "observation ID only when starting a different pending Assignment.",
             )
     deadline = time.monotonic() + float(timeout_seconds)
-    server = _AppServer(_command(command), cwd=repo, deadline=deadline)
+    host_command = _command(command)
+    runtime_binding = _codex_runtime_binding(host_command[0])
+    server = _AppServer(host_command, cwd=repo, deadline=deadline)
     state = {
         "thread_id": None,
         "turn_id": None,
         "completion": None,
         "reroutes": [],
         "tokens": None,
+        "tokens_last": None,
         "token_updates": 0,
+        "error_count": 0,
+        "last_error": None,
+        "interrupt_requested": False,
         "final_message": None,
         "final_message_is_final": False,
         "root_work_id": None,
@@ -1283,6 +1407,8 @@ def _run_codex_host_locked(
             "approvalPolicy": "never",
             "sandboxPolicy": contract["sandbox_policy"],
         }
+        if contract["output_schema"] is not None:
+            turn_params["outputSchema"] = contract["output_schema"]
         if contract["model"] is not None:
             turn_params["model"] = contract["model"]
         if contract["reasoning_effort"] is not None:
@@ -1338,6 +1464,18 @@ def _run_codex_host_locked(
             requested_model=requested_model,
             requested_reasoning_effort=requested_effort,
             model_evidence="host_request",
+            source_binding={
+                "interface": "codex_app_server",
+                "version": runtime_binding["version"],
+                "schema_digest": runtime_binding["schema_digest"],
+                "capability": runtime_binding["capability"],
+                "correlation_id": codex_work_id(
+                    "source",
+                    state["thread_id"],
+                    state["turn_id"],
+                ),
+                "event_coverage": "partial_stream",
+            },
             event_started_at=root_event_started_at,
         )
         state["root_work_id"] = root_work_id
@@ -1347,6 +1485,9 @@ def _run_codex_host_locked(
             root_turn_id=state["turn_id"],
             assignment_id=contract["assignment_id"],
             read_only=contract["sandbox"] == "read-only",
+            source_version=runtime_binding["version"],
+            schema_digest=runtime_binding["schema_digest"],
+            source_capability=runtime_binding["capability"],
         )
         def record_action(action: dict[str, Any]) -> None:
             recorded_action = action
@@ -1359,6 +1500,145 @@ def _run_codex_host_locked(
                     **action,
                     "ended_at": None,
                     "duration_ms": None,
+                }
+            if (
+                action["action"] == "finish"
+                and state["completion"] is not None
+                and (
+                    state["error_count"]
+                    or state["interrupt_requested"]
+                )
+            ):
+                recorded_action = {
+                    **recorded_action,
+                    "diagnostics": {
+                        "interrupt_requested": state[
+                            "interrupt_requested"
+                        ],
+                        "error_count": min(state["error_count"], 20),
+                        "last_error": state["last_error"],
+                        "followup_reason": None,
+                    },
+                }
+            if (
+                action["action"] == "finish"
+                and action["work_id"] == root_work_id
+                and state["completion"] is not None
+            ):
+                complete_coverage = (
+                    runtime_binding["capability"] == "full_stream"
+                    and runtime_binding["version"] is not None
+                    and runtime_binding["schema_digest"] is not None
+                )
+                complete_model_coverage = (
+                    complete_coverage and requested_model is not None
+                )
+                recorded_action = {
+                    **recorded_action,
+                    "applied_model": (
+                        (
+                            state["reroutes"][-1]["to_model"]
+                            if state["reroutes"]
+                            else requested_model
+                        )
+                        if complete_model_coverage
+                        else None
+                    ),
+                    "model_evidence": (
+                        "complete"
+                        if complete_model_coverage
+                        else (
+                            "host_request"
+                            if requested_model is not None
+                            else "unavailable"
+                        )
+                    ),
+                    "source_binding": {
+                        "interface": "codex_app_server",
+                        "version": runtime_binding["version"],
+                        "schema_digest": runtime_binding["schema_digest"],
+                        "capability": runtime_binding["capability"],
+                        "correlation_id": codex_work_id(
+                            "source",
+                            str(state["thread_id"]),
+                            str(state["turn_id"]),
+                        ),
+                        "event_coverage": (
+                            "complete_stream"
+                            if complete_coverage
+                            else "partial_stream"
+                        ),
+                    },
+                    "model_observation": {
+                        "observed_model": None,
+                        "coverage": (
+                            "complete_stream"
+                            if complete_model_coverage
+                            else (
+                                "request_only"
+                                if requested_model is not None
+                                else "unavailable"
+                            )
+                        ),
+                        "reroutes": (
+                            list(state["reroutes"])
+                            if complete_model_coverage
+                            else []
+                        ),
+                    },
+                    "usage": {
+                        "last": state["tokens_last"],
+                        "total": state["tokens"],
+                        "scope": (
+                            "work_turn"
+                            if state["tokens"] is not None
+                            else "unavailable"
+                        ),
+                        "attribution": (
+                            "direct"
+                            if state["tokens"] is not None
+                            else "unavailable"
+                        ),
+                        "timing_coverage": (
+                            "host_event"
+                            if complete_coverage
+                            else "partial"
+                        ),
+                        "cost": None,
+                    },
+                    "outcome": {
+                        "finding_summary": None,
+                        "conclusion": action["result_summary"],
+                        "decision": (
+                            "작업을 종료합니다."
+                            if action["status"] == "completed"
+                            else (
+                                "실행 실패로 작업을 종료합니다."
+                                if action["status"] == "failed"
+                                else "중단된 상태로 작업을 종료합니다."
+                            )
+                        ),
+                        "next_action": (
+                            "finish"
+                            if action["status"] in {
+                                "completed",
+                                "interrupted",
+                            }
+                            else "blocked"
+                        ),
+                        "consumed_work_ids": [],
+                        "handoff": None,
+                        "artifacts": [],
+                        "verification": None,
+                    },
+                    "diagnostics": {
+                        "interrupt_requested": state[
+                            "interrupt_requested"
+                        ],
+                        "error_count": min(state["error_count"], 20),
+                        "last_error": state["last_error"],
+                        "followup_reason": None,
+                    },
                 }
             _record_codex_work_action(
                 repo,
@@ -1586,6 +1866,9 @@ def _run_codex_host_locked(
             "stage_record": stage_record,
             "packet_digest": packet_digest,
             "packet_validation": packet_validation,
+            "output_schema_applied": (
+                contract["output_schema"] is not None
+            ),
             "work_capture": {
                 "root_work_id": root_work_id,
                 "delegation_count": tracker.observed_work_count,

@@ -161,6 +161,9 @@ class CodexCollaborationTracker:
         root_turn_id: str,
         assignment_id: str | None,
         read_only: bool,
+        source_version: str | None = None,
+        schema_digest: str | None = None,
+        source_capability: str = "lifecycle_only",
     ) -> None:
         self.root_work_id = _bounded_line(
             root_work_id,
@@ -179,6 +182,9 @@ class CodexCollaborationTracker:
         )
         self.assignment_id = assignment_id
         self.read_only = read_only
+        self.source_version = source_version
+        self.schema_digest = schema_digest
+        self.source_capability = source_capability
         self._work_by_item: dict[str, str] = {}
         self._work_by_thread: dict[str, str] = {
             self.root_thread_id: self.root_work_id,
@@ -194,6 +200,20 @@ class CodexCollaborationTracker:
         self._decision_work: set[str] = set()
         self._known_threads = {self.root_thread_id}
         self._root_terminal = False
+
+    def _source_binding(
+        self,
+        *identity: str,
+        event_coverage: str = "partial_stream",
+    ) -> dict[str, Any]:
+        return {
+            "interface": "codex_app_server",
+            "version": self.source_version,
+            "schema_digest": self.schema_digest,
+            "capability": self.source_capability,
+            "correlation_id": codex_work_id("source", *identity),
+            "event_coverage": event_coverage,
+        }
 
     @property
     def running_work_ids(self) -> list[str]:
@@ -407,6 +427,21 @@ class CodexCollaborationTracker:
                             if requested_model is not None
                             else "unavailable"
                         ),
+                        "source_binding": self._source_binding(
+                            sender_thread_id,
+                            str(item_id),
+                            str(tool),
+                        ),
+                        "diagnostics": {
+                            "interrupt_requested": False,
+                            "error_count": 0,
+                            "last_error": None,
+                            "followup_reason": (
+                                "continue_incomplete"
+                                if tool == "resumeAgent"
+                                else None
+                            ),
+                        },
                     }
                 )
                 self._started_work.add(current_work_id)
@@ -605,6 +640,46 @@ class CodexCollaborationTracker:
             "requested_model": None,
             "requested_reasoning_effort": None,
             "model_evidence": "unavailable",
+            "source_binding": self._source_binding(
+                sender_thread_id,
+                boundary_item_id,
+                outcome,
+            ),
+            "outcome": {
+                "finding_summary": None,
+                "conclusion": (
+                    f"하위 작업 {count}건의 terminal 보고를 소비했습니다."
+                ),
+                "decision": f"{decision_label}을 확정했습니다.",
+                "next_action": {
+                    "continue": "continue",
+                    "redelegate": "redelegate",
+                    "finish": (
+                        "finish"
+                        if terminal_status == "completed"
+                        else (
+                            "blocked"
+                            if terminal_status == "failed"
+                            else "finish"
+                        )
+                    ),
+                }[outcome],
+                "consumed_work_ids": list(pending),
+                "handoff": (
+                    {
+                        "purpose": (
+                            "종합한 결과를 다음 위임 실행으로 전달합니다."
+                        ),
+                        "completion_criteria": (
+                            "새 위임 작업이 terminal 상태와 근거를 보고합니다."
+                        ),
+                    }
+                    if outcome in {"continue", "redelegate"}
+                    else None
+                ),
+                "artifacts": [],
+                "verification": None,
+            },
         }
         finish = {
             "action": "finish",
