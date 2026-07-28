@@ -483,7 +483,7 @@ class WorkObservationTests(unittest.TestCase):
         source = (
             ROOT / "src/maestro/resources/viewer/app.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("오래된 단계부터 최종 결과까지", source)
+        self.assertIn("관계상 첫 단계부터 최종 결과까지", source)
         self.assertIn("buildObservedWorkCardDetail", source)
         self.assertIn("지시·보고·다음 판단", source)
         self.assertIn("담당 전문지식", source)

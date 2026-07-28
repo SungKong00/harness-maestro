@@ -1949,13 +1949,23 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn("토큰 기록 없음", viewer_source)
         self.assertIn("compactWorkDuration(", viewer_source)
         self.assertIn(
-            'facts.reasoning.value.replaceAll("_", " ")',
+            '`요청 ${facts.reasoning.value.replaceAll("_", " ")}`',
             viewer_source,
         )
         self.assertIn(
             'facts.model?.kind === "actual"',
             viewer_source,
         )
+        self.assertIn(
+            'facts.tokens?.attribution === "direct"',
+            viewer_source,
+        )
+        self.assertIn(
+            '["assignment", "work_turn"].includes(facts.tokens?.scope)',
+            viewer_source,
+        )
+        self.assertIn('element("span", { className: "work-stage-footer" })', viewer_source)
+        self.assertNotIn('element("footer", { className: "work-stage-footer" })', viewer_source)
         self.assertIn('"완료 상태"', viewer_source)
         self.assertIn('"기록된 수정"', viewer_source)
         self.assertIn("`계획 단계 ${String(stage.rank + 1)", viewer_source)

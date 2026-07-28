@@ -2741,7 +2741,7 @@ function compactWorkDuration(value) {
 }
 
 function workExecutionFooter(facts, provenance = "") {
-  const footer = element("footer", { className: "work-stage-footer" });
+  const footer = element("span", { className: "work-stage-footer" });
   const summary = `${facts.model} - ${facts.reasoning}, `
     + `${facts.tokens}, ${facts.duration}`;
   footer.append(element("span", {
@@ -2767,11 +2767,14 @@ function workExecutionFooterFromProjection(facts) {
     : "모델 기록 없음";
   const reasoning = facts.reasoning?.kind === "requested"
     && facts.reasoning.value
-    ? facts.reasoning.value.replaceAll("_", " ")
+    ? `요청 ${facts.reasoning.value.replaceAll("_", " ")}`
     : "추론 기록 없음";
-  const tokens = compactTokenValue({
-    total: facts.tokens?.value,
-  });
+  const tokens = (
+    facts.tokens?.attribution === "direct"
+    && ["assignment", "work_turn"].includes(facts.tokens?.scope)
+  )
+    ? compactTokenValue({ total: facts.tokens?.value })
+    : "토큰 기록 없음";
   const duration = facts.duration?.value_ms === null
     || facts.duration?.value_ms === undefined
     ? facts.duration?.state === "running"
@@ -3533,12 +3536,12 @@ function buildObservedWorkMap(run, work, onSelect) {
   const copy = element("div");
   copy.append(
     element("p", { className: "eyebrow", text: "실제 작업 흐름" }),
-    element("h3", { text: "오래된 단계부터 최종 결과까지" }),
+    element("h3", { text: "관계상 첫 단계부터 최종 결과까지" }),
   );
   const legend = element("div", { className: "work-map-legend" });
   legend.append(
     element("span", { text: "위→아래 관계 순서" }),
-    element("span", { text: "같은 행 독립 분기" }),
+    element("span", { text: "같은 단계 독립 분기" }),
     workInfoDisclosure(
       "observed-map",
       "작업 흐름 표시 기준",
