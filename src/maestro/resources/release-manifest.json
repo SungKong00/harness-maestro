@@ -3,10 +3,10 @@
   "registry": {
     "sha256": "bfc8a3eec2a2f95a3d2b233db320dc473e7179e7a6f4d34b834ba556421f6905"
   },
-  "release_id": "0f5c6ded3074c7d3ef4928856866e9ac63cc7d20c07f6c38a76636e369036716",
+  "release_id": "7affc7152f4072048a34aaad9cad6b2bc340fa83be2ded2c1bde9106ce60c68f",
   "runtime": {
     "file_count": 106,
-    "sha256": "db258b383585453b786af0121fb7f9822c3cc67b5791491654bf2ee569115191"
+    "sha256": "fc62939a4ef45a92d975f04bea4bbde520b94c33a50ebd5790303fe3c831a275"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
