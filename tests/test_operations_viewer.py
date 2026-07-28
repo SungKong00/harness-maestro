@@ -1811,6 +1811,18 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn("workExecutionFooterFromProjection(", viewer_source)
         self.assertIn("workPackDisclosure(", viewer_source)
         self.assertIn("workInfoDisclosure(", viewer_source)
+        self.assertIn(
+            "if (state.selectedStage === stageId)",
+            viewer_source,
+        )
+        self.assertIn(
+            'event.key === "Escape"',
+            viewer_source,
+        )
+        self.assertIn(
+            "containMobileNavigationFocus(event)",
+            viewer_source,
+        )
         self.assertIn('className: "run-flow-preview"', viewer_source)
         self.assertNotIn('id="run-detail"', viewer_markup)
         self.assertIn(
@@ -1844,7 +1856,91 @@ class OperationsViewerTests(unittest.TestCase):
             'inspector.setAttribute("aria-live"',
             viewer_source,
         )
+        self.assertNotIn(
+            'textContent = snapshot.repo_root',
+            viewer_source,
+        )
         self.assertIn("target.append(layout);", viewer_source)
+
+    def test_status_matrix_keeps_run_and_stage_scopes_distinct(self) -> None:
+        stage_statuses = [
+            "completed",
+            "failed",
+            "blocked",
+            "skipped",
+            "interrupted",
+        ]
+        event = {
+            "event_id": "status-matrix",
+            "run_id": "status-matrix",
+            "task_label": "상태 매트릭스",
+            "timestamp": "2026-07-28T01:00:00Z",
+            "risk": "high",
+            "route_depth": "deep",
+            "selected_lenses": ["test-proof"],
+            "selected_expertise_packs": ["software-qa"],
+            "selected_decision_guides": ["qa-test-design"],
+            "executor_runs": 1,
+            "primary_executor_id": "lens-reviewer",
+            "executor_ids": ["lens-reviewer"],
+            "outcome": "corrected",
+            "evidence_refs": ["tests:status-matrix"],
+            "duration_ms": 100,
+            "tokens": None,
+            "correction_count": 1,
+            "agent_calls": 5,
+            "verifier_result": "passed",
+            "command_artifact_ref": "tests:status-matrix",
+            "plan_summary": {
+                "assignments": [
+                    {
+                        "assignment_id": f"stage-{status}",
+                        "kind": "review",
+                        "executor_id": "lens-reviewer",
+                        "depends_on": [],
+                        "lens_ids": ["test-proof"],
+                        "mutation_owner": False,
+                        "read_only": True,
+                        "planned_model": "gpt-5.6-terra",
+                        "reasoning_effort": "medium",
+                        "expertise_pack_ids": ["software-qa"],
+                        "decision_guide_ids": ["qa-test-design"],
+                    }
+                    for status in stage_statuses
+                ],
+            },
+            "stage_results": [
+                {
+                    "assignment_id": f"stage-{status}",
+                    "status": status,
+                    "evidence_source": "current_host",
+                    "observed_at": "2026-07-28T01:00:01Z",
+                    "duration_ms": 10,
+                    "tokens": None,
+                    "evidence_refs": [f"tests:{status}"],
+                }
+                for status in stage_statuses
+            ],
+        }
+
+        flow, evidence = _run_flow(event)
+        self.assertEqual("assignment_observation", evidence)
+        self.assertEqual(
+            stage_statuses,
+            [stage["status"] for stage in flow],
+        )
+        self.assertEqual("corrected", _run_card(event)["outcome"])
+        for run_outcome in (
+            "completed",
+            "corrected",
+            "failed",
+            "blocked",
+            "no_change",
+        ):
+            self.assertEqual(
+                run_outcome,
+                _run_card({**event, "outcome": run_outcome})["outcome"],
+            )
 
     def test_history_bundle_hides_selected_runs_without_deleting_receipts(
         self,

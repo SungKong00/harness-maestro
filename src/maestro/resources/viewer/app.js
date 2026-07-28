@@ -814,6 +814,13 @@ function openMobileNavigation() {
   document.body.classList.add("navigation-open");
   document.getElementById("navigation-toggle").setAttribute("aria-expanded", "true");
   document.getElementById("navigation-scrim").hidden = false;
+  const navigation = document.getElementById("primary-navigation");
+  navigation.setAttribute("role", "dialog");
+  navigation.setAttribute("aria-modal", "true");
+  (
+    navigation.querySelector('[aria-current="page"]')
+    || navigation.querySelector(".destination-link")
+  )?.focus({ preventScroll: true });
 }
 
 function closeMobileNavigation({ returnFocus = false } = {}) {
@@ -821,7 +828,41 @@ function closeMobileNavigation({ returnFocus = false } = {}) {
   document.body.classList.remove("navigation-open");
   document.getElementById("navigation-toggle").setAttribute("aria-expanded", "false");
   document.getElementById("navigation-scrim").hidden = true;
+  const navigation = document.getElementById("primary-navigation");
+  navigation.removeAttribute("role");
+  navigation.removeAttribute("aria-modal");
   if (returnFocus) document.getElementById("navigation-toggle").focus();
+}
+
+function containMobileNavigationFocus(event) {
+  if (
+    event.key !== "Tab"
+    || !navigationIsOpen()
+    || !mobileNavigation.matches
+  ) return false;
+  const navigation = document.getElementById("primary-navigation");
+  const focusable = [...navigation.querySelectorAll(
+    'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((item) => !item.hidden);
+  if (!focusable.length) return false;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!navigation.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+    return true;
+  }
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+    return true;
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+    return true;
+  }
+  return false;
 }
 
 function packName(packId) {
@@ -3737,6 +3778,28 @@ function buildWorkContext(run, work) {
 }
 
 function selectWorkStage(run, work, stageId) {
+  if (state.selectedStage === stageId) {
+    state.selectedStage = null;
+    writeWorkSelectionToLocation(
+      run.event_id,
+      null,
+      "replaceState",
+    );
+    const scroll = document.querySelector(".work-map-scroll");
+    const scrollPosition = {
+      left: scroll?.scrollLeft || 0,
+      top: scroll?.scrollTop || 0,
+    };
+    renderRunWorkspace(state.snapshot, {
+      focusStageId: stageId,
+    });
+    const restored = document.querySelector(".work-map-scroll");
+    if (restored) {
+      restored.scrollLeft = scrollPosition.left;
+      restored.scrollTop = scrollPosition.top;
+    }
+    return;
+  }
   const observedCard = work.execution?.cards?.find(
     (item) => item.work_id === stageId,
   );
@@ -3837,24 +3900,11 @@ function renderRunWorkspace(snapshot, options = {}) {
   const requestedNode = hasObservedWork
     ? observedCards.find((card) => card.work_id === state.selectedStage)
     : work.stages.find((stage) => stage.stage_id === state.selectedStage);
-  const entryNode = hasObservedWork
-    ? observedCards.find(
-      (card) => work.execution.graph.entry_work_ids.includes(card.work_id),
-    )
-    : work.stages.find(
-      (stage) => work.graph.entry_stage_ids.includes(stage.stage_id),
-    );
-  const selectedNode = requestedNode
-    || entryNode
-    || (hasObservedWork ? observedCards[0] : work.stages[0])
-    || null;
+  const selectedNode = requestedNode || null;
   state.selectedStage = hasObservedWork
     ? selectedNode?.work_id || null
     : selectedNode?.stage_id || null;
-  if (
-    state.selectedStage
-    && state.selectedStage !== workSelectionFromLocation().stageId
-  ) {
+  if (state.selectedStage !== workSelectionFromLocation().stageId) {
     writeWorkSelectionToLocation(
       run.event_id,
       state.selectedStage,
@@ -5419,7 +5469,15 @@ function render(snapshot) {
   const workFocus = state.pendingWorkFocus || captureWorkFocus();
   state.pendingWorkFocus = null;
   state.snapshot = snapshot;
-  document.getElementById("repo-path").textContent = snapshot.repo_root;
+  const selectedProject = state.projects.find(
+    (item) => item.id === state.selectedProject,
+  );
+  const projectLabel = selectedProject?.label || snapshot.project_id;
+  document.getElementById("repo-path").textContent = (
+    projectLabel === snapshot.project_id
+      ? projectLabel
+      : `${projectLabel} · ${snapshot.project_id}`
+  );
   document.getElementById("updated-at").textContent = (
     `갱신 ${formatDate(snapshot.generated_at)} · 화면이 열려 있으면 1분마다 확인`
   );
@@ -5690,8 +5748,27 @@ document.getElementById("navigation-scrim").addEventListener("click", () => {
   closeMobileNavigation({ returnFocus: true });
 });
 document.addEventListener("keydown", (event) => {
+  if (containMobileNavigationFocus(event)) return;
   if (event.key === "Escape" && navigationIsOpen()) {
+    event.preventDefault();
     closeMobileNavigation({ returnFocus: true });
+    return;
+  }
+  if (
+    event.key === "Escape"
+    && state.selectedRun
+    && state.selectedStage
+    && document.activeElement?.closest?.(
+      ".work-stage-card, .work-attempt-card",
+    )
+  ) {
+    const run = state.snapshot?.runs?.find(
+      (item) => item.event_id === state.selectedRun,
+    );
+    if (run?.work_detail) {
+      event.preventDefault();
+      selectWorkStage(run, run.work_detail, state.selectedStage);
+    }
   }
 });
 mobileNavigation.addEventListener("change", (event) => {

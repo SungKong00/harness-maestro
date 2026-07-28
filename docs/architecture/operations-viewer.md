@@ -62,9 +62,9 @@ Back/Forward 위치를 같은 화면에 복원한다. 누락되었거나 허용 
 
 좁은 화면에서는 메뉴 버튼이 내비게이션 오버레이를 열며 `aria-expanded`와
 `aria-controls`로 상태를 표현한다. Escape, scrim 클릭, 목적지 선택, 넓은 화면으로의
-resize는 메뉴를 닫는다. 취소로 닫을 때는 메뉴 버튼에 포커스를 돌려보낸다. 화면 내용은
-한 열로 재배치하되 전문 지식 화면의 Pack 목록과 상세 정보의 master-detail 관계는
-유지한다.
+resize는 메뉴를 닫는다. 열린 동안 Tab·Shift+Tab은 내비게이션 목적지 안에서만
+순환하고, 취소로 닫을 때는 메뉴 버튼에 포커스를 돌려보낸다. 화면 내용은 한 열로
+재배치하되 전문 지식 화면의 Pack 목록과 상세 정보의 master-detail 관계는 유지한다.
 
 공통 문구는 짧은 한국어로 행동과 상태를 구분한다. 내부 enum과 snapshot·action API
 계약은 바꾸지 않고, 색만으로 상태를 전달하지 않는다. 개요에서는 확인·승인 대기열을
@@ -88,7 +88,8 @@ resize는 메뉴를 닫는다. 취소로 닫을 때는 메뉴 버튼에 포커�
 화면은 `개요 → 작업 → 전문 지식 → 관리` 네 뷰로 나눈다. 개요는 readiness,
 요청 접수부터 목표 묶음까지의 기록 파이프라인, 관측 범위, 사용자 action queue와
 최종 기록 전 관측만 보여준다. 작업은 검색·결과
-필터와 inline Run 상세, 완료 묶음을 함께 둔다. 전문 지식은 Pack 목록과 선택한
+필터와 별도 URL을 가진 Run 작업 공간을 함께 둔다. Run 안에서는 카드를 직접
+펼치고 접어 상세를 확인한다. 전문 지식은 Pack 목록과 선택한
 Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승인과 자가개선
 신호는 관리 뷰에 둔다. 모든 카탈로그 내용을 한 긴 페이지에 동시에 펼치지 않는다.
 페이지가 보이는 동안에는 1분마다 같은 snapshot을 다시 읽고, 백그라운드였다가
@@ -119,7 +120,8 @@ Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승
   별도로 “프로젝트 비교”를 요청할 필요가 없다. 한번 정상적으로 열린 뒤에는 Host
   inventory를 사용할 수 없는 다음 재시작에서도 로컬 카탈로그가 자동 복원한다.
 - `/api/projects`는 전체 경로 대신 세션 안에서만 유효한 `project-1` 같은 opaque ID와
-  표시 이름만 반환한다. 실제 경로는 선택된 snapshot의 기존 `repo_root`에서만 보인다.
+  표시 이름만 반환한다. snapshot의 `repo_root`는 브라우저에 전달될 수 있지만 화면에는
+  프로젝트 표시 이름 또는 project ID만 보여 주고 실제 경로는 렌더링하지 않는다.
 - snapshot과 모든 변경 endpoint는 `X-Maestro-Project`를 server-side allowlist로
   다시 해석한다. 브라우저가 임의 경로를 전달할 수 없다.
 - snapshot을 읽는 동안에도 프로젝트 선택기는 활성 상태를 유지한다. 새 선택은
@@ -289,15 +291,18 @@ project·checkout·run ID와 event 계약이 유효하면 완료 사실로만 �
 `reasoning effort low/medium/high/xhigh`는 서로 다른 축이다. 위험도는 검토 필요성,
 Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강도다.
 
-최근 작업 목록은 한 번에 한 Run만 여는 inline disclosure다. 선택한 Run의 상세
-단계는 전체 목록 뒤의 분리된 패널이 아니라 해당 행 바로 다음 행에 렌더링한다.
-같은 행을 다시 선택하면 닫히며, 다른 행을 선택하면 기존 상세를 닫고 새 상세만
-연다. 작업명 안의 실제 button이 `aria-expanded`, `aria-controls`와 상세 region의
-`aria-labelledby`를 연결하므로 마우스로 행을 선택하는 동작과 키보드
-Enter·Space 동작이 같은 상태 전이를 사용한다.
-좁은 화면에서는 같은 표 데이터를 가로 스크롤로 숨기지 않고 작업명 아래에
-결과·시간·모델과 token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다.
-데스크톱 표의 필드와 상세 disclosure 계약은 그대로 유지한다.
+최근 작업 목록에서 Run 하나를 선택하면 `?view=work&run=<event-id>`의 단일 작업
+workspace로 이동한다. 목록과 workspace를 동시에 노출하지 않으며, Back/Forward와
+`← 작업 목록`이 같은 이동 계약을 사용한다. workspace는 결과·검증·실제 모델·시간·
+수정 횟수를 먼저 보여준 뒤 실행 지도를 렌더링한다. 선택한 단계는
+`stage=<work-or-stage-id>`로 표현하며 카드 자체가 가로로 확장되어 상세을 품는다.
+같은 카드를 다시 선택하거나 카드 안에서 Escape를 누르면 접히고 해당 카드 trigger로
+포커스가 돌아간다. Pack과 정보 disclosure의 Escape는 자신만 닫고 단계 카드는
+유지한다. 별도 고정 오른쪽 inspector는 두지 않는다.
+
+좁은 화면에서는 최근 작업 표를 가로 스크롤로 숨기지 않고 작업명 아래에 결과·시간·
+모델과 token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다. workspace의 카드
+정보 순서와 disclosure 계약은 데스크톱과 동일하게 유지한다.
 
 작업 상세의 전문 지식은 선택된 묶음이 있을 때만 `작업 기준으로 선택 → 실행 단계로
 전달 → 본문 불러오기 →
