@@ -25,9 +25,7 @@
     "provider": "markdown"
   },
   "expertise": {
-    "active_pack_paths": [
-      ".agents/skills/product-design-web-structure/maestro-pack.json"
-    ]
+    "active_pack_paths": []
   },
   "kind": "project",
   "profiles": [

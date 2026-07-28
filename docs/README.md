@@ -89,3 +89,9 @@ sensitivity: internal
   검색어를 이용해 필요한 문서만 고른다. 본문 전체를 한 번에 컨텍스트에 넣지 않는다.
 - 문서 구조를 바꾼 뒤에는 `maestro doctor --repo . --json`으로 metadata,
   중복 활성 ID와 상대 링크를 검사한다.
+
+<!-- MAESTRO:CONVENTIONS:BEGIN -->
+## Project Conventions
+
+- [frontend-dashboard-ui](conventions/frontend-dashboard-ui.md)
+<!-- MAESTRO:CONVENTIONS:END -->

@@ -1133,5 +1133,64 @@ class OperationsViewerTests(unittest.TestCase):
             )
 
 
+class OperationsViewerVisualThemeContractTests(unittest.TestCase):
+    """Isolated contract for the final visual-system layer."""
+
+    def setUp(self) -> None:
+        self.viewer_root = ROOT / "src/maestro/resources/viewer"
+        self.styles = (self.viewer_root / "styles.css").read_text(
+            encoding="utf-8"
+        )
+        marker = "/* Trustworthy operations console:"
+        self.theme = self.styles[self.styles.index(marker):]
+
+    def test_theme_layer_follows_structural_styles(self) -> None:
+        structural = self.styles.index(":root")
+        theme = self.styles.index("/* Trustworthy operations console:")
+        self.assertLess(structural, theme)
+
+    def test_theme_uses_semantic_tokens_and_neutral_trust_palette(self) -> None:
+        for token in (
+            "--color-canvas",
+            "--color-surface",
+            "--color-surface-raised",
+            "--color-ink",
+            "--color-blue",
+            "--color-success",
+            "--color-warning",
+            "--color-danger",
+            "--space-",
+            "--radius-",
+            "--shadow-",
+            "--type-",
+        ):
+            self.assertIn(token, self.theme)
+        self.assertIn("--color-canvas: #eef3f8", self.theme)
+        self.assertIn("--color-blue: #1769c2", self.theme)
+        for legacy_purple in ("#4f46e5", "#3730a3", "#eeedff", "#deddff"):
+            self.assertNotIn(legacy_purple, self.theme)
+
+    def test_theme_preserves_visual_state_and_accessibility_contracts(self) -> None:
+        for contract in (
+            ":focus-visible",
+            ":hover",
+            ":disabled",
+            '[aria-current="page"]',
+            ".selected",
+            ".empty-state",
+            ".error-banner",
+            ".pill.good",
+            ".pill.warn",
+            ".pill.bad",
+            "--shadow-overlay",
+            "@media (max-width: 640px)",
+            "@media (prefers-reduced-motion: reduce)",
+            '[aria-busy="true"]',
+        ):
+            self.assertIn(contract, self.theme)
+        self.assertNotIn("gradient(", self.theme.lower())
+        self.assertNotIn("display: none !important", self.theme)
+
+
 if __name__ == "__main__":
     unittest.main()

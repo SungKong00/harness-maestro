@@ -318,3 +318,13 @@ maestro dashboard --repo /path/to/project
 
 실제 누락 분석에 per-call trace가 반복해서 필요하고 Host가 신뢰 가능한 event ID와
 redaction contract를 제공할 때만 별도 milestone에서 검토한다.
+## Visual theme contract
+
+`styles.css`의 `Trustworthy operations console` 경계 뒤는 구조 규칙과 분리된 시각
+레이어다. `--color-*`·간격·radius·type 역할 토큰으로 중성 청회색 canvas, 흰 content,
+선택/raised surface의 세 단계를 만들고 blue는 링크·현재 위치·주 행동·focus에만 쓴다.
+상태는 색과 기존 한글 설명을 함께 제공하며 장식용 gradient·shadow는 쓰지 않는다.
+shadow는 실제 overlay에만 허용한다.
+
+변경 후 unit contract와 데스크톱·800px·390×844 브라우저에서 긴 한글, 상태 대비,
+overflow, 메뉴 scrim/Escape와 focus 복귀를 확인한다. rollback 범위는 이 시각 레이어다.
