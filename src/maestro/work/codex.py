@@ -105,16 +105,21 @@ def _targets(value: Any) -> list[str]:
     if (
         not isinstance(value, list)
         or len(value) > MAX_COLLAB_TARGETS
-        or len(value) != len(set(value))
     ):
         raise MaestroError(
             "CODEX_WORK_EVENT_INVALID",
             "receiverThreadIds must be a bounded unique list.",
         )
-    return [
+    targets = [
         _bounded_line(item, field="receiverThreadIds", maximum=160)
         for item in value
     ]
+    if len(targets) != len(set(targets)):
+        raise MaestroError(
+            "CODEX_WORK_EVENT_INVALID",
+            "receiverThreadIds must be a bounded unique list.",
+        )
+    return targets
 
 
 def _agent_states(value: Any) -> dict[str, str]:
