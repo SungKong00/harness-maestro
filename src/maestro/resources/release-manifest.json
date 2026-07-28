@@ -2,8 +2,8 @@
   "schema_version": "maestro_release_manifest_v1",
   "framework_version": "0.3.0",
   "runtime": {
-    "sha256": "3e396d190535687d344099260cf8eaef5d9302c47fa000fcca5c7d721f33c3b5",
-    "file_count": 105
+    "sha256": "25d2bd33f76f8c8bf56952869c9a40cc94b174215786b078c2793cc1089d87a3",
+    "file_count": 106
   },
   "registry": {
     "sha256": "bfc8a3eec2a2f95a3d2b233db320dc473e7179e7a6f4d34b834ba556421f6905"
@@ -74,5 +74,5 @@
       "file_count": 16
     }
   },
-  "release_id": "16ae9e7d8183cefde7f849aba98ddf069f25252cfa8d45dd01576a5f8eb8760a"
+  "release_id": "1d19e28a95f8e096ab0571439c868d17d23f63964229f8b6660ded9a71ad29fa"
 }
