@@ -8,7 +8,7 @@ owner: harness-maestro
 topic: operations-viewer
 scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/expertise_health.py, src/maestro/resources/viewer/**]
 summary: 작업 계획과 Host 실측값, Expertise 구성요소 근거, 반복 개선 신호와 typed project-local 작업을 한 로컬 페이지에서 다루고 전체 연결을 점검하는 최소 운영 구조.
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -162,6 +162,10 @@ Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승
 - 짧은 배지는 상태만 말하고, 원인과 다음 행동은 바로 옆 설명이나 tooltip에 쓴다.
 - `기록 없음`, `불러옴 기록 없음`은 오류가 아니므로 경고색으로 표시하지
   않는다. 실제 실패·충돌·검토 필요 상태만 경고나 오류색을 사용한다.
+- compact 실행 footer는 설명 label을 반복하지 않고
+  `5.6 terra - 요청 high, 55,550, 27.6m`처럼 비교 가능한 순서로만 표시한다. 다만 없는
+  값을 하나의 모호한 `기록 없음`으로 합치지 않고 `모델 기록 없음`,
+  `추론 기록 없음`, `토큰 기록 없음`, `시간 기록 없음`처럼 필드별로 말한다.
 - 색만으로 상태를 구분하지 않고 항상 텍스트를 함께 표시한다.
 - 후보 상태는 내부 enum을 직역하지 않는다. `현재 사용 가능 · 프로젝트에 미확정`,
   `프로젝트에 확정됨`, `사용 기한 종료 · 기준 다시 확인 필요`,
@@ -201,7 +205,7 @@ Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
 미확정”으로만 다룬다. `host_reported`는 Host가 실행 단위 값을 직접 제공했음을,
 `host_delta`는 동일 Host의 두 누적 token 관측 사이 차이를 뜻한다.
 
-[Codex App Server](https://learn.chatgpt.com/docs/app-server/)는 `turn/start`에서
+[Codex App Server](https://developers.openai.com/codex/app-server/)는 `turn/start`에서
 모델·추론 강도를 요청하고, `turn/plan/updated`, `model/rerouted`,
 `thread/tokenUsage/updated`, `turn/completed`를 서로 다른 이벤트로 제공한다.
 Maestro의 계획 권위는 자유 형식 `turn/plan/updated` 본문이 아니라 검증된 route
@@ -269,10 +273,18 @@ Desktop 요청 접수는 먼저 `desktop_request` 실행 binding을 남긴다. �
 보이지 않는다.
 
 App Server의 `thread/tokenUsage/updated`는 마지막 모델 응답의 `last`와 thread 누적
-사용량 `total`을 함께 보낸다. Maestro Host는 새 ephemeral thread 하나에 turn 하나를
-소유하므로 작업 전체 token으로 `total`을 기록한다. `turn/completed`와 token 알림은
-별도 이벤트이므로 완료 뒤 bounded grace 동안 같은 turn의 늦은 token 알림을
-수집한다. 완전한 trace를 import하면 `durationMs`를 observation에 즉시 고정한다.
+사용량 `total`을 함께 보낸다. Maestro가 새 ephemeral root thread의 단일 turn을
+소유할 때는 final `total`을 root 작업 합계로 사용할 수 있다. 위임 child와
+`resumeAgent` attempt는 같은 thread 누적량을 공유할 수 있으므로 안정적인
+baseline→final component delta만 해당 work의 `usage.total`로 기록한다.
+`usage.last`는 마지막 응답 사용량으로 유지하며 합계에 복제하지 않는다.
+
+child `(thread_id, turn_id)`는 `turn/started`에서만 work에 결박한다. 늦은 이전 turn
+token, 첫 관측 resume, 누적량 회귀 또는 시작·완료 event가 빠진 partial stream은
+직접 token과 실제 모델로 승격하지 않는다. `turn/completed`와 token 알림은 별도
+이벤트이므로 root 완료 뒤 bounded grace 전체에서 child·root의 늦은 알림을 수집한
+다음 terminal work를 한 번만 확정한다. 완전한 trace를 import하면 `durationMs`를
+observation에 즉시 고정한다.
 최종 `finalize`는 같은 project·checkout·run ID의 observation을 자동으로 찾아
 task label, 계획, 계획 시간과 단계 결과를 최종 RunReceipt로 투영한다. 계획된 모든
 Assignment의 terminal 기록이 없으면 최종화를 거부한다. `maestro record`는 이전
@@ -294,15 +306,38 @@ Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강
 최근 작업 목록에서 Run 하나를 선택하면 `?view=work&run=<event-id>`의 단일 작업
 workspace로 이동한다. 목록과 workspace를 동시에 노출하지 않으며, Back/Forward와
 `← 작업 목록`이 같은 이동 계약을 사용한다. workspace는 결과·검증·실제 모델·시간·
-수정 횟수를 먼저 보여준 뒤 실행 지도를 렌더링한다. 선택한 단계는
-`stage=<work-or-stage-id>`로 표현하며 카드 자체가 가로로 확장되어 상세을 품는다.
-같은 카드를 다시 선택하거나 카드 안에서 Escape를 누르면 접히고 해당 카드 trigger로
-포커스가 돌아간다. Pack과 정보 disclosure의 Escape는 자신만 닫고 단계 카드는
-유지한다. 별도 고정 오른쪽 inspector는 두지 않는다.
+수정 횟수를 먼저 보여준 뒤 실행 지도를 렌더링한다.
+
+실행 지도는 관계 rank를 시간·인과의 화면 단위로 사용한다. 가장 오래된 첫 rank부터
+최종 결과까지 **위→아래**로 두고, 같은 rank의 관계상 독립 작업만 같은 wave 안에
+나란히 둔다. 관계상 독립과 실제 병렬은 다르다. 같은 clock domain의 완전한 구간이
+실제로 겹친 work pair만 `실제 병렬`로 표시한다. raw relation을 모두 보존하되
+기본 geometry는 인접 rank만 연결하고, 1→N·N→1 또는 완전한 bipartite component만
+shared fork/join trunk를 사용할 수 있다.
+
+접힌 카드의 읽기 순서는 단계 주제 → 근거 있는 짧은 결정·결과 → 담당 책임과
+전문 지식 → compact 모델·추론 설정·token·시간이다. 선택한 단계는
+`stage=<work-or-stage-id>`로 표현하며 **같은 카드가 자기 자리에서 아래로
+확장**되어 outcome, handoff, evidence·verification, Pack→Guide→Lens, 기술
+provenance를 품는다. 같은 카드를 다시 선택하거나 카드 안에서 Escape를 누르면
+접히고 해당 카드 trigger로 포커스가 돌아간다. Pack과 정보 disclosure의 Escape는
+자신만 닫고 단계 카드는 유지한다. 별도 고정 오른쪽 inspector는 두지 않는다.
+
+카드가 확장되거나 responsive wrap이 발생해 연결선이 카드를 가를 수 있으면 SVG를
+숨기고 카드의 명시적 dependency text를 선형 대체로 보여 준다. 접으면 인접 rank
+연결선을 다시 계산한다. 긴 상세은 카드별 nested scroll이 아니라 문서의 자연스러운
+page scroll을 사용한다.
 
 좁은 화면에서는 최근 작업 표를 가로 스크롤로 숨기지 않고 작업명 아래에 결과·시간·
-모델과 token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다. workspace의 카드
-정보 순서와 disclosure 계약은 데스크톱과 동일하게 유지한다.
+모델과 token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다. 실행 지도도
+wide canvas를 축소하지 않고 같은 위→아래 wave와 DOM 순서를 유지하며 compact
+footer는 필요한 경우 두 줄로 재배치한다. geometry를 안전하게 그리지 못하면
+dependency text가 관계를 대신한다.
+
+이 정보 위계와 상호작용 판단은 한 디자인 시스템의 token을 복제한 것이 아니라
+[Product Design 실무 근거와 검증 프레임](../research/product-design-practice-foundations.md)의
+brief, 정보 구조, 위계, 한국어 타이포그래피, 상호작용·접근성과 운영 워크플로
+Guide를 현재 데이터·fixture에 적용한 결과다.
 
 작업 상세의 전문 지식은 선택된 묶음이 있을 때만 `작업 기준으로 선택 → 실행 단계로
 전달 → 본문 불러오기 →

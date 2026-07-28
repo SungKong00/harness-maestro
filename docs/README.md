@@ -62,6 +62,9 @@ sensitivity: internal
 - [Codex 실행 관측 근거](research/codex-runtime-observability.md) — App Server,
   SDK, exec JSONL과 trusted Hooks를 작업 그래프에 연결할 때의 공식 수집 경로,
   버전·완전성·모델·시간·개인정보 경계
+- [Product Design 실무 근거](research/product-design-practice-foundations.md) —
+  문제 정의, 정보 구조, 위계, 한국어 타이포그래피, 상호작용·접근성, 레퍼런스
+  전이와 운영 워크플로 UI를 판단 질문·산출물·검증·31개 출처 경계로 정리한 연구
 
 ## 릴리스 검사
 

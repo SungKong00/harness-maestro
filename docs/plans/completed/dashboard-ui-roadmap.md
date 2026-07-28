@@ -185,31 +185,36 @@ URL, `aria-current`, 모바일 disclosure와 포커스 계약을 따른다.
 
 ```text
 ┌ 작업 제목 · 최종 결과 · 검증 · 실제 모델 · 시간 · 재작업 ┐
-├ 작업 지도 | 실행 기록 보기                                  ┤
+├ 실제 작업 흐름 | 실행 기록 보기                             ┤
 │                                                              │
-│  리서치 부서     [요구 분석] ── [레퍼런스 조사 · 펼쳐짐]      │
-│                                      ├ 짧은 결정              │
-│                                      ├ 전문 지식 Pack         │
-│                                      └ 모델 · 강도 · 시간     │
-│                         ╲                                    │
-│  설계 부서                 [정보 구조 설계] ──┐              │
-│                                               ├─ [검증]      │
-│  구현 부서        [구현] ─────────────────────┘              │
+│                    [요구 분석]                               │
+│                         │                                    │
+│          [레퍼런스 조사] [데이터 감사] [흐름 검토]           │
+│                   └─────┬─────┘                              │
+│                [결과 종합·다음 판단 · 펼쳐짐]                │
+│                    ├ 짧은 결정                               │
+│                    ├ 전문 지식 Pack                          │
+│                    └ 모델 · 강도 · token · 시간              │
+│                         │                                    │
+│                      [검증]                                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 기본 모드는 `작업 지도`다. `실행 기록 보기`는 event·span·기술 출처가 필요한
 사용자를 위한 보조 모드이며, 기본 작업 이해를 대신하지 않는다.
 
-### 부서 레인
+### 작업 wave와 담당 책임
 
-- 레인은 기능 영역 또는 task-local 역할 그룹이다.
-- 같은 부서가 여러 단계를 수행할 수 있다.
+- 위→아래 wave는 검증된 관계 rank이며 가장 오래된 단계부터 최종 결과까지의 인과
+  순서를 표현한다.
+- 카드의 담당 책임은 기능 영역 또는 task-local 역할 그룹이며 실제 조직으로
+  표현하지 않는다.
+- 같은 담당 책임이 여러 단계와 서로 다른 후속 wave에서 다시 일할 수 있다.
 - 단계가 다른 역할로 인계되면 연결선과 `인계됨` 사건을 함께 표시한다.
 - 부서 정보가 원본 계약에 없으면 Lens·Assignment kind에서 `담당 영역`을
   결정론적으로 투영하고, 실제 조직으로 표현하지 않는다.
-- 모바일에서는 가로 canvas를 축소하지 않고 계획 순서에 따른 세로 단계 목록으로
-  바꾸며 각 카드에 부서 라벨을 반복한다.
+- 좁은 화면에서도 같은 위→아래 DOM 순서를 유지하고 각 카드에 담당 책임과
+  dependency text를 반복한다.
 
 ### 단계 카드
 
@@ -245,9 +250,10 @@ URL, `aria-current`, 모바일 disclosure와 포커스 계약을 따른다.
 6. 모델·추론 강도·token·시간 provenance
 7. 원본 Assignment ID, enum과 correlation 같은 기술 기록
 
-확장은 modal이나 별도 side pane이 아니다. 카드가 자기 자리에서 넓이와 높이를
-늘리되 인접 카드를 덮지 않고 레인 높이와 연결선을 다시 계산한다. 모바일에서는
-가로 확대 대신 세로 전체 너비 disclosure가 된다. 카드 본체, Pack과 정보 버튼은
+확장은 modal이나 별도 side pane이 아니다. 카드가 자기 자리에서 높이를
+늘리되 인접 카드를 덮지 않고 wave 높이와 연결선을 다시 계산한다. geometry가
+안전하지 않으면 선을 숨기고 dependency text로 전환한다. 모바일에서는
+세로 전체 너비 disclosure가 된다. 카드 본체, Pack과 정보 버튼은
 서로 다른 실제 `button`이며 중첩 클릭이 카드 전체 toggle로 전파되지 않는다.
 
 #### 카드 안의 전문 지식
@@ -461,12 +467,14 @@ artifact이며 이 Markdown 권위를 대신하지 않는다.
 
 ### 단계 2 — 작업 중심 GUI와 projection 분리
 
-상태: 구현 및 핵심 검증 완료 — 현재 상세 검사기 interaction은 4D에서 대체 예정
+상태: 당시 구현 및 핵심 검증 완료 — 상세 검사기 interaction은 4D에서 인라인
+카드 확장으로 대체 완료
 
 목표:
 
 - 작업 목록에서 단일 작업 공간으로 이동한다.
-- 부서 레인, 객체형 단계 카드, 계획 의존선과 선택 단계 검사기를 구현한다.
+- 당시 담당 영역 레인, 객체형 단계 카드, 계획 의존선과 선택 단계 검사기를 구현한다.
+  최종 wave·인라인 카드 계약은 단계 4D가 대체한다.
 - 현재 데이터로 완료 상태·검증·모델 provenance·시간·전문 지식 근거를 먼저
   보여 준다.
 - 구현 전에 작업용 projection을 원본 수집과 프런트 렌더링에서 분리한다.
@@ -489,12 +497,12 @@ artifact이며 이 Markdown 권위를 대신하지 않는다.
 - [x] 계획상 독립 분기와 실제 병렬 실행이 구분된다.
 - [x] Lens, 담당 역할과 계획·기록된 Executor가 다른 라벨로 표시된다.
 - [x] 단계 상태는 색 외의 텍스트·형태를 함께 사용한다.
-- [x] 카드 선택이 작업 지도를 잃지 않는 inspector로 이어진다.
+- [x] 당시 카드 선택이 작업 지도를 잃지 않는 inspector로 이어진다.
 - [x] 과거 summary-only 실행과 unavailable 값이 오류 없이 표시된다.
 - [x] 모바일은 읽기 순서를 보존하는 세로 단계 목록으로 전환된다.
 
 이번 milestone에서는 `maestro_work_detail_v1` additive projection, 작업·단계 URL,
-담당 영역 레인, 계획 의존선, 선택 단계 검사기와 증거 경계를 구현했다. 1440px,
+당시 담당 영역 레인, 계획 의존선, 선택 단계 검사기와 증거 경계를 구현했다. 1440px,
 800px, 390×844 실제 렌더, keyboard 선택, 모바일 메뉴, Back/Forward, 자동 갱신 뒤
 focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 단계별 실제 순서,
 실제 동시성, retry 계보, 구조화된 문제·결론과 Guide 적용은 계속 `unavailable`로
@@ -550,21 +558,29 @@ focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 
 #### 단계 진행과 카드 배치 계약
 
 단계 4가 완료됐다는 말은 단순히 child 카드를 더 많이 수집했다는 뜻이 아니다.
-사용자가 한 작업의 진행을 왼쪽에서 오른쪽으로 읽고, 독립 분기와 결과 합류 뒤의
+사용자가 한 작업의 진행을 위에서 아래로 읽고, 독립 분기와 결과 합류 뒤의
 다음 판단을 잃지 않는다는 뜻이다.
 
 이 계획에서 **작업 파동**은 새 scheduler 상태나 영속 필드가 아니라, 검증된 실행
-관계로 계산하는 화면상의 가로 단계다.
+관계로 계산하는 화면상의 인과 rank다. 2026-07-29 후속 사용자 결정으로 기존
+왼쪽→오른쪽 wide canvas 방향을 **가장 오래된 rank가 위, 최종 결과가 아래**인
+세로 흐름으로 바꿨다. 같은 rank의 독립 작업만 같은 행을 공유한다. 이는 wall-clock
+시간축이 아니며 완전한 같은-clock 구간이 겹칠 때만 별도로 `실제 병렬`이라 표시한다.
 
 ```text
-파동 0             파동 1                  파동 2
-[계획·첫 지시]  →  [독립 검토 A] ─┐
-                    [독립 조사 B] ─┼→ [결과 종합·다음 판단]
-                    [독립 검토 C] ─┘
-
-파동 3                  파동 4              파동 5
-[후속 구현 D] ─┐
-[후속 구현 E] ─┼→ [검증] ───────────→ [최종 판단]
+파동 0  [계획·첫 지시]
+          │
+파동 1  [독립 검토 A] [독립 조사 B] [독립 검토 C]
+          └──────────────┬──────────────┘
+                         │
+파동 2  [결과 종합·다음 판단]
+          │
+파동 3  [후속 구현 D] [후속 구현 E]
+          └────────┬────────┘
+                   │
+파동 4  [검증]
+          │
+파동 5  [최종 판단]
 ```
 
 배치 불변조건은 다음과 같다.
@@ -573,9 +589,9 @@ focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 
    추가하고 terminal이 되면 같은 카드를 갱신한다. 새 시도와 재작업은 기존 카드를
    덮어쓰지 않고 새 카드가 된다.
 2. `delegates_to`, `depends_on`, `joins_into`, `followup_of`처럼 방향이 있는
-   ordering relation을 따라 후속 카드는 선행 카드보다 오른쪽 파동에 놓인다.
-   `reports_to`는 되돌아오는 보고 의미만 가지며 가로 순위를 역전시키지 않는다.
-3. 서로 의존하지 않고 가장 늦은 선행 파동이 같은 작업은 같은 가로 파동에 놓는다.
+   ordering relation을 따라 후속 카드는 선행 카드보다 아래 파동에 놓인다.
+   `reports_to`는 되돌아오는 보고 의미만 가지며 rank 순위를 역전시키지 않는다.
+3. 서로 의존하지 않고 가장 늦은 선행 파동이 같은 작업은 같은 파동의 한 행에 놓는다.
    이는 `독립 분기`이며, 같은 clock domain의 완전한 시간 구간이 겹칠 때만
    `실제 병렬 실행`으로 격상한다.
 4. 여러 작업 결과를 실제로 소비해 계속 진행·수정·재위임·검증·종료 중 하나를
@@ -588,11 +604,16 @@ focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 
 6. `followup_of_work_id`는 같은 논리적 책임의 재시도·수정 시도에만 사용한다.
    일반적인 다음 단계나 결과 합류를 retry처럼 표현하지 않는다.
 7. ordering relation은 DAG여야 한다. cycle, 없는 대상과 출처 coverage가 부족한
-   관계는 왼쪽 첫 칸으로 임의 복구하지 않고 `일부만 기록됨` 또는 계약 오류로
+   관계는 맨 위 첫 rank로 임의 복구하지 않고 `일부만 기록됨` 또는 계약 오류로
    낮춘다.
-8. 레인은 담당 영역을, 가로 파동은 인과 순서를 표현한다. 같은 담당 영역이 뒤에서
-   다시 일하면 같은 레인의 더 오른쪽 카드가 될 수 있고, 결과 종합처럼 다른 담당
-   영역이면 다른 레인에서도 오른쪽 파동을 공유할 수 있다.
+8. 세로 파동은 인과 순서를, 카드의 책임 표기는 담당 영역을 표현한다. 같은 담당
+   영역이 뒤에서 다시 일하면 아래쪽 후속 파동에 새 카드가 생기며, 같은 파동의
+   카드는 관계상 독립 분기로만 나란히 놓인다.
+9. raw typed relation과 화면용 edge를 분리한다. 기본 선은 바로 다음 인접 rank만
+   연결하고, 완전한 1→N·N→1 또는 완전 bipartite component만 shared trunk를 쓴다.
+   여러 rank를 건너뛰는 relation과 접은 관계는 선택 상세에서 보존한다.
+10. 카드 확장·responsive wrap에서 선이 다른 카드를 가를 수 있으면 SVG를 숨기고
+    dependency text를 선형 대체로 제공한다.
 
 계획 카드는 계획 확정 시 DAG 전체가 보일 수 있지만, 실제 작업 카드는 해당 실행
 시도가 관측되는 순서대로 추가된다. 화면 새로고침과 event 재처리는 카드의 ID,
@@ -672,14 +693,14 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 - [x] 오케스트레이터 → 위임 → 보고 → 합류 → 후속 시도가 relation으로 보인다.
 - [x] 하위 결과를 소비해 다음 행동을 정한 실제 과정이 부모 root 카드 안에
       사라지지 않고 별도 종합·판단 카드로 보인다.
-- [x] 종합·판단 뒤 재위임된 작업은 이전 파동이 아니라 다음 오른쪽 파동에 생긴다.
+- [x] 종합·판단 뒤 재위임된 작업은 이전 파동이 아니라 아래쪽 다음 파동에 생긴다.
 - [x] 독립 child는 같은 파동에 배치되지만 시간 coverage 없이는 실제 병렬로
       표기되지 않는다.
 - [x] terminal이 없는 child는 완료로 표시하지 않고 관찰을 복구 가능한 상태로
       남긴다.
 - [x] 순차·독립 병렬·nested child·failure·interrupt·continuation fixture가 있다.
 - [x] `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 → 최종 판단`
-      end-to-end fixture가 카드 수, relation, 가로 파동과 중복 방지를 검증한다.
+      end-to-end fixture가 카드 수, relation, 세로 파동과 중복 방지를 검증한다.
 - [x] 과거 실행과 Hook 미설정 프로젝트는 `세부 실행 기록 없음`으로 안전하게
       fallback한다.
 - [x] raw protocol body 없이 bounded metadata만 Observation·RunReceipt에 남는다.
@@ -766,7 +787,7 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 
 #### 4D — 작업 카드 정보 구조와 인라인 확장 UI
 
-상태: Product Design Pack·공식 레퍼런스 근거로 구현·브라우저 검증 완료
+상태: 다중 출처 Product Design 실무 근거로 구현·브라우저 검증 완료
 
 목표:
 
@@ -797,9 +818,12 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 4. 조사 결과는 그대로 복제하지 않고 `채택`, `기각`, `현재 UI에 적용할 기준`을
    분리한 bound ResearchBundle로 만든다. research gate가 만족되기 전에는 시각
    구현을 시작하지 않는다.
-5. 디자인 판단 기준은 최소한 정보 위계, 5초 내 scanability, progressive disclosure,
-   비교 가능성, provenance 오인 방지, 한국어 줄바꿈, keyboard·touch 접근성과
-   그래프 안정성을 포함한다.
+5. 디자인 판단 기준은 한 공식 문서나 한 제품의 token에 기대지 않는다.
+   [Product Design 실무 근거](../../research/product-design-practice-foundations.md)의
+   design brief, 정보 구조·사용자 흐름, 시각 위계, 한국어 타이포그래피,
+   상호작용·반응형·접근성, reference transfer와 운영 워크플로 UI를 사용한다.
+   최소한 정보 위계, 첫 scan, progressive disclosure, 비교 가능성, provenance
+   오인 방지, 한국어 줄바꿈, keyboard·touch 접근성과 그래프 안정성을 포함한다.
 
 Projection 작업:
 
@@ -871,6 +895,20 @@ UI 작업:
   모델·token provenance, 종합·재위임 관계와 DOM 계약을 검증한다. 실제 브라우저에서
   데스크톱, 390×844, 800px와 200% zoom 상당 viewport를 확인했다.
 
+4D 후속 보강 — 2026-07-29:
+
+- `reference-research-team` 조사 범위를 W3C 한 문서나 단일 디자인 시스템에서
+  31개 표준·서비스 디자인·design system·실제 운영 제품·runtime source로 넓혔다.
+  각 Guide는 판단 질문, 최소 산출물, rendered/task verification과 직접 근거·파생
+  규칙 경계를 갖는다.
+- `operational-workflow-interface` 후보 Guide로 위→아래 wave, raw/display edge 분리,
+  인접 rank 연결, 조건부 fork/join trunk, 카드 내부 detail, compact telemetry와
+  자연스러운 page scroll을 대표 fixture에서 검증했다.
+- 모델·추론 설정·token·시간 footer는 실제값·요청값·미수집을 구분하고, child token은
+  stable cumulative baseline→final delta만 직접 귀속한다.
+- 카드 확장 또는 responsive wrap에서 connector가 객체를 가를 수 있으면 선을 숨기고
+  dependency text를 제공하며, 접으면 geometry를 다시 계산한다.
+
 #### 단계 4 공통 도입 조건
 
 - [x] 반복해서 막히는 사용자 판단을 현재 work graph 요구로 확인했다.
@@ -898,7 +936,7 @@ UI 작업:
 - [x] representative fixture에서 완료·수정 후 완료·실패·진행 불가·생략·중단을
       검증한다.
 - [x] 실제 브라우저에서 `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 →
-      최종 판단`이 왼쪽에서 오른쪽으로 진행되고 독립 작업만 같은 파동에 놓이는지
+      최종 판단`이 위에서 아래로 진행되고 독립 작업만 같은 파동에 놓이는지
       검증한다.
 - [x] 결과를 소비한 뒤 재위임하는 카드와 관계가 하나라도 누락되면 단계 4를
       완료로 처리하지 않는다.
@@ -918,7 +956,7 @@ UI 작업:
 
 - 상태 범위는 Run 결과 `completed·corrected·failed·blocked·no_change`와 단계 상태
   `completed·failed·blocked·skipped·interrupted`를 분리한 fixture로 검증했다.
-- 실제 Run `dashboard-stage5-20260728T124917Z`의 관측 카드 15개는 파동 열
+- 실제 Run `dashboard-stage5-20260728T124917Z`의 관측 카드 15개는 세로 파동 순서
   `1 → 2(독립 3개) → 3 → 4 → 5(독립 2개) → 6 → 7 →
   8(독립 2개) → 9 → 10 → 11`로 투영됐다. 검토 결과를 소비한 synthesis,
   수정, 후속 재검토, 최종 verification과 종료 판단이 모두 별도 카드·관계로 남았다.
@@ -950,8 +988,8 @@ UI 작업:
 1. 문서·fixture와 현재 계약 고정
 2. 작업 read model과 projection 분리
 3. 공통 앱 셸·routing·semantic token
-4. 작업 header·부서 레인·단계 카드
-5. 선택 단계 inspector와 증거 표현
+4. 작업 header·세로 wave·담당 책임·단계 카드
+5. 선택 카드 인라인 상세과 증거 표현
 6. 전문 지식 lifecycle projection
 7. 전문 지식 여정 UI와 typed action
 8. 필요한 경우 원본 telemetry·schema와 producer

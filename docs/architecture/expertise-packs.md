@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 반복 가능한 전문가 판단을 선택형 Expertise Pack으로 재사용하고 최신 맥락 조사와 후보 승격을 bounded gate로 분리하는 계약.
 scope: [expertise, registry, route-v2, skills, governance]
-last_verified: 2026-07-27
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -124,6 +124,7 @@ high-impact 또는 material-conflict lane만 정상 model routing으로 승격�
 - `visual-hierarchy-layout`
 - `interaction-responsive-accessibility`
 - `reference-selection`
+- `information-architecture-and-user-flow`
 
 라우터는 이 중 기본과 직접 관련된 가이드만 최대 네 개 반환한다. 일반 dashboard
 layout은 research 없이 기준을 재사용하고, 명시적인 UI/디자인 리서치·레퍼런스/사례
@@ -146,6 +147,32 @@ regression·release와 defect evidence를 제공한다.
 세 팩은 모두 `pilot`이다. 디자인은 rendered artifact, 마케팅은 claim·message·
 experiment artifact, QA는 실제 test·build evidence와 독립 Verifier 없이 active나
 task completion으로 간주하지 않는다.
+
+#### Product Design 근거 보강 후보
+
+2026-07-29의
+[Product Design 실무 근거 연구](../research/product-design-practice-foundations.md)는
+한 공식 문서나 하나의 디자인 시스템에 의존하지 않고 31개 출처를 문제 정의,
+한국어 타이포그래피, 위계·레이아웃, 상호작용·반응형·접근성, 레퍼런스 전이,
+정보 구조·사용자 흐름과 운영 워크플로 UI의 일곱 작업 주제로 나눴다. 각 주제는
+원칙만 나열하지 않고 다음을 함께 요구한다.
+
+- 디자이너가 먼저 답할 실제 결정 질문
+- 결정 위험에 비례한 최소 산출물
+- source inspection과 구분되는 rendered·task verification
+- 직접 표준, 제품 사례, 프로젝트 파생 규칙과 warning의 authority label
+- 다른 디자인 시스템의 token·surface와 marketing screenshot을 옮기지 않는 경계
+
+`.maestro/state/candidates/expertise/product-design-evidence-refresh`는 이 구조를
+시험하는 project-local `candidate`다. 좁은 evidence-refresh 또는 run-oriented
+operations signal에서만 라우팅될 수 있으며 일반 Product Design 요청의 번들 Pack을
+대체하지 않는다. fresh-context normal·edge·non-trigger·overlap case 9개를
+통과했지만 현재 frozen artifact는 실제 brief·prototype·한국어 render·보조기술
+관찰·held-out workflow가 아니라 route와 expected reasoning을 검증한다. 따라서
+이는 다음 core Pack revision이나 게시된 project pilot을 뜻하지 않는다. 겹치는
+operational-workflow 후보를 정리하고 실제 rendered/task evidence와 owner 결정 또는
+승인된 held-out 평가를 갖추기 전에는 core registry·전역 Skill·bundled source
+manifest를 수정하지 않는다.
 
 ### 4. Candidate와 기록
 
