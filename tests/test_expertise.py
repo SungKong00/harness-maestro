@@ -374,13 +374,13 @@ class ExpertiseRoutingTests(unittest.TestCase):
         )
 
     def test_validate_plan_uses_nonzero_exit_for_open_research_gate(self) -> None:
-        plan = route_goal_v2(
-            "Find current references for a modern landing page design",
-            "medium",
-            intent="implementation",
-            repo_path=ROOT,
-        )
         with tempfile.TemporaryDirectory() as temporary:
+            plan = route_goal_v2(
+                "Find current references for a modern landing page design",
+                "medium",
+                intent="implementation",
+                repo_path=Path(temporary),
+            )
             plan_path = Path(temporary) / "plan.json"
             write_json(plan_path, plan)
             output = StringIO()
