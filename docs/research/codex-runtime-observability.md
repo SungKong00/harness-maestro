@@ -132,14 +132,21 @@ codex app-server generate-json-schema --out <temporary-directory>
   `collabAgentToolCall` started·completed event를 child work lifecycle로 연결한다.
 - `spawnAgent`는 child attempt, `resumeAgent`는 `followup_of` attempt로 만들고
   `sendInput`·`wait`·`closeAgent`는 이미 알려진 child의 명시적 상태만 갱신한다.
+- terminal child 보고를 sender별 합류 후보로 보관하고, 그 뒤 새
+  `spawnAgent`·`resumeAgent` 또는 부모 turn terminal이 관측될 때만 별도
+  synthesis·판단 work와 `joins_into`를 만든다.
+- synthesis 뒤의 새 위임은 synthesis work를 부모로 삼아 다음 실행 파동으로
+  이동하며, 중첩 child sender의 위임도 해당 child work 아래에 보존한다.
 - collaboration RPC 완료와 child 완료를 분리하고 `agentsStates`의 terminal
   상태가 없으면 running span과 열린 Observation을 복구 대상으로 남긴다.
 - 고용량 delta는 opt-out하고 raw protocol stream을 영속 저장하지 않는다.
 
 현재 `work span` 계약과 GUI projection은 이 App Server producer가 만든
 오케스트레이터·위임·보고·후속 시도를 자동 표시할 수 있다. 다만 명시적 synthesis
-소비 근거가 없으므로 `joins_into`는 만들지 않으며, SDK·exec JSONL·Codex
-Desktop/CLI Hook producer도 아직 없다.
+경계는 terminal 보고 뒤의 새 위임·재개·부모 turn terminal이라는 workflow
+transition 범위까지만 증명한다. 결과 본문의 어떤 주장이 결정을 바꿨는지와 후속
+지시의 사용자 의미 reason은 추론하지 않는다. SDK·exec JSONL·Codex Desktop/CLI
+Hook producer도 아직 없다.
 
 ### 현재 데이터 가용성
 
@@ -156,7 +163,7 @@ Desktop/CLI Hook producer도 아직 없다.
 | child 실제 모델 | 불가 | child turn stream 또는 child hook 시점 model 필요 | 부모 값 전파 금지 |
 | child 시간 | App Server item event 구간 가능 | `startedAtMs`·`completedAtMs` | child turn 순수 실행 시간으로 부르지 않음 |
 | 보고·후속 지시 | terminal report와 resume 후속 시도 가능 | `agentsStates`, `resumeAgent` | sendInput reason은 아직 구조화하지 않음 |
-| 합류 | 아직 자동 생성하지 않음 | `wait`와 orchestration result | wait 발생만으로 합성 완료 단정 금지 |
+| 합류 | Maestro-owned App Server에서 가능 | terminal child 보고 뒤의 새 위임·재개·부모 terminal | wait 발생만으로 합성 완료 단정 금지 |
 | 재작업 | `resumeAgent` attempt·`followup_of` 가능 | explicit resume item | 사용자 의미 reason code는 후속 과제 |
 | 실제 병렬 실행 | 수동 span 시간이 완전할 때 가능 | 겹치는 child lifecycle | coverage complete일 때만 계산 |
 | 비용 | 불가 | 공식 event는 token이지 provider 비용 receipt가 아님 | 가격 추정으로 대체 금지 |
@@ -199,7 +206,7 @@ Codex item 하나가 곧 카드 하나는 아니다.
 | child terminal turn·SubagentStop | child work attempt의 terminal 후보 |
 | `sendInput`·`resumeAgent` | 기존 child의 후속 지시 event, 의미가 새 시도면 `followup_of` |
 | `wait` | 기다림·합류 대기 event |
-| main agent가 child 결과를 소비한 명시적 합성 단계 | `reports_to`·`joins_into` relation |
+| terminal child 보고 뒤 새 위임·재개·부모 terminal | 별도 synthesis work와 `reports_to`·`joins_into` relation |
 | 일반 command·file change·MCP·web item | 선택 단계의 근거·활동 요약, 독립 카드 아님 |
 | delta·reasoning·prompt·transcript | 기본 저장 대상 아님 |
 
@@ -353,7 +360,7 @@ adapter는 다음을 지킨다.
 - [ ] App Server stable schema를 설치 runtime에서 생성하고 adapter fixture로 고정한다.
 - [x] `collabAgentToolCall` item started·completed와 child thread relation을 중복 없이
       work lifecycle로 변환한다.
-- [ ] child terminal, report, join, follow-up의 의미 mapping을 fixture로 검증한다.
+- [x] child terminal, report, join, follow-up의 의미 mapping을 fixture로 검증한다.
 - [ ] model provenance와 stream coverage를 work span에 추가한다.
 - [ ] `last`·`total` token scope를 분리하고 부모 값을 child에 전파하지 않는다.
 - [ ] Hook adapter는 별도 opt-in으로 만들고 trust·coverage·dedupe를 검증한다.

@@ -111,6 +111,14 @@ Codex 생산자에 자동 계측이 없으면 실제 위임 경계에서 allowli
 호출한다. 자동 계측 부재를 이유로 대화 내용을 파싱해 가짜 child, 보고, 재작업
 또는 병렬 실행을 만들지 않는다.
 
+terminal child 보고는 sender별 합류 후보로만 보관한다. `wait` 완료만으로 합성
+작업을 만들지 않고, 그 뒤 새 `spawnAgent`·`resumeAgent`가 시작되거나 부모 turn이
+terminal이 된 경우에만 `synthesis` work를 만든다. 이 work는 소비한 terminal
+child를 `joins_work_ids`로 연결하며, 새 위임은 synthesis를 `parent_work_id`로
+가리킨다. 따라서 독립 위임은 같은 가로 rank에 남고 결과 합류 뒤의 후속 위임은
+다음 rank로 이동한다. 이 관계는 workflow transition을 증명하지만, 원문 결과의
+어떤 문장이 판단을 바꿨는지까지 증명하지 않는다.
+
 ## 검증 기준
 
 1. 계획 간선과 실제 간선이 서로 다른 provenance를 가진다.

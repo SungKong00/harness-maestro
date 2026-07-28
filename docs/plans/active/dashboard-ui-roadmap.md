@@ -6,7 +6,7 @@ status: active
 authority: repository
 owner: harness-maestro
 summary: Maestro 대시보드를 보고서가 아닌 작업 중심 운영 GUI로 개편하는 목표, 정보 구조, 데이터 경계와 단계별 구현 계획.
-scope: [dashboard-ui-roadmap, src/maestro/resources/viewer, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/dashboard.py]
+scope: [dashboard-ui-roadmap, src/maestro/resources/viewer, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/dashboard.py, src/maestro/work, src/maestro/observations.py, src/maestro/codex_host.py]
 last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
@@ -54,6 +54,14 @@ sensitivity: internal
 11. 구현 커밋은 독립적으로 검토·검증·되돌릴 수 있는 의도 단위로 나눈다.
 12. 작업 보고와 대시보드는 계획값과 실측값을 구분하고, 실제 모델·시간·병렬 실행
     여부를 계측하지 못했으면 추정하지 않는다.
+13. 작업 카드의 상세은 별도 오른쪽 검사기에 반복하지 않고, 선택한 카드 자체가
+    확장되어 같은 작업 문맥 안에서 확인할 수 있게 한다.
+14. 접힌 카드에서도 단계 주제와 아주 짧은 결과·결정을 먼저 읽고, 모델·추론 강도·
+    시간·token은 카드 하단의 일관된 보조 정보로 비교할 수 있게 한다.
+15. 선택되거나 실제 반영된 전문 지식 Pack은 카드에서 확인하고, 펼치면 Guide와
+    Lens를 서로 다른 의미로 구분해 볼 수 있게 한다.
+16. 반드시 계속 보여야 하는 상태·흐름 설명만 화면에 남기고, 보조 설명과 provenance는
+    키보드·터치로 열 수 있는 정보 버튼에 둔다.
 
 ## 최종 제품 목표
 
@@ -76,8 +84,10 @@ Maestro 대시보드는 지표와 문단을 길게 읽는 보고서가 아니라
 ### 보고서가 아니라 작업 공간
 
 - 첫 화면을 KPI 카드와 긴 설명으로 채우지 않는다.
-- 하나의 작업 문맥을 유지한 채 단계 카드, 흐름, 상세 검사기로 깊이를 늘린다.
-- 전체 구조를 보고 있는 동안 선택한 단계의 상세을 확인할 수 있어야 한다.
+- 하나의 작업 문맥을 유지한 채 단계 카드와 흐름을 보고, 선택한 카드 자체를
+  확장해 깊이를 늘린다.
+- 전체 구조를 보고 있는 동안 별도 상세 칸으로 시선을 옮기지 않고 선택한 단계의
+  결과와 근거를 확인할 수 있어야 한다.
 - 원시 event, schema와 기술 ID는 기본 화면이 아니라 `기술 기록 보기`에 둔다.
 
 ### 회사 은유와 실제 계약을 구분
@@ -177,14 +187,14 @@ URL, `aria-current`, 모바일 disclosure와 포커스 계약을 따른다.
 ┌ 작업 제목 · 최종 결과 · 검증 · 실제 모델 · 시간 · 재작업 ┐
 ├ 작업 지도 | 실행 기록 보기                                  ┤
 │                                                              │
-│  리서치 부서     [요구 분석] ── [레퍼런스 조사]              │
+│  리서치 부서     [요구 분석] ── [레퍼런스 조사 · 펼쳐짐]      │
+│                                      ├ 짧은 결정              │
+│                                      ├ 전문 지식 Pack         │
+│                                      └ 모델 · 강도 · 시간     │
 │                         ╲                                    │
 │  설계 부서                 [정보 구조 설계] ──┐              │
 │                                               ├─ [검증]      │
 │  구현 부서        [구현] ─────────────────────┘              │
-│                                                              │
-├ 선택한 단계 상세 검사기                                      ┤
-│ 역할 · 실행 담당 · 입력 · 문제 · 결론 · 결과 · 근거 · 시간   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -203,24 +213,65 @@ URL, `aria-current`, 모바일 disclosure와 포커스 계약을 따른다.
 
 ### 단계 카드
 
-접힌 카드에는 한눈에 비교할 수 있는 사실만 둔다.
+접힌 카드에는 한눈에 비교할 수 있는 사실만 두고 읽는 순서를 고정한다.
 
-- 단계 이름과 짧은 목적
-- 담당 역할 또는 검토 관점
-- 실제 실행 담당 또는 기록 상태
-- 완료·실패·진행 불가·생략·중단 상태
-- 관측된 경우에만 시간
-- 결과 또는 근거가 있음을 알리는 개수
+```text
+┌ 상태                                      펼치기 ┐
+│ 단계 주제·작업명                                  │
+│ 짧은 결과·결정 한두 줄                            │
+│ 전문 지식: Product Design · 선택됨                │
+├───────────────────────────────────────────────────┤
+│ 모델 · 추론 강도                   token · 경과시간 │
+└───────────────────────────────────────────────────┘
+```
 
-카드를 선택하면 고정된 상세 검사기에서 다음 순서로 확장한다.
+- 상단은 완료·실패·진행 불가·생략·중단 상태와 단계 주제를 보여 준다.
+- 본문은 task summary를 반복하지 않고, 근거가 있는 경우 단계가 남긴 가장 짧은
+  결과 또는 결정을 한두 줄로 보여 준다. 없으면 `결정 기록 없음`으로 둔다.
+- Pack이 있으면 이름과 `선택됨`, `불러옴`, `반영 확인` 중 증명 가능한 수준을
+  함께 보여 준다. 선택만 된 Pack을 `사용함`으로 표현하지 않는다.
+- 하단 보조줄은 모델, 요청 추론 강도, token과 경과 시간을 일관된 순서로 둔다.
+  실제 값과 요청값을 라벨로 구분하고, 없으면 추정값 대신 `기록 없음`을 사용한다.
 
-1. 이 단계가 받은 입력과 완료 기준
-2. 담당 역할, Executor와 모델 provenance
-3. 확인된 문제 또는 `이 실행 기록에서 확인할 수 없음`
-4. 결론과 단계 출력 또는 `구조화된 결론 기록 없음`
-5. 검증 상태, evidence reference와 산출물
-6. 시작·종료·소요 시간과 인계·재작업 이력
+카드 본체를 선택하면 같은 카드가 확장되며 별도 오른쪽 상세 검사기는 기본 작업
+공간에서 제거한다. 기본값은 한 번에 주 확장 카드 하나이며, 다른 카드를 선택하면
+기존 카드가 접히고 새 카드가 열린다. 확장 카드의 읽기 순서는 다음과 같다.
+
+1. 단계 주제, 상태와 짧은 결과·결정
+2. 받은 입력, 완료 기준과 다음 인계
+3. 확인된 문제, 결론과 검증 상태
+4. 사용한 산출물과 evidence reference
+5. 전문 지식 Pack disclosure
+6. 모델·추론 강도·token·시간 provenance
 7. 원본 Assignment ID, enum과 correlation 같은 기술 기록
+
+확장은 modal이나 별도 side pane이 아니다. 카드가 자기 자리에서 넓이와 높이를
+늘리되 인접 카드를 덮지 않고 레인 높이와 연결선을 다시 계산한다. 모바일에서는
+가로 확대 대신 세로 전체 너비 disclosure가 된다. 카드 본체, Pack과 정보 버튼은
+서로 다른 실제 `button`이며 중첩 클릭이 카드 전체 toggle로 전파되지 않는다.
+
+#### 카드 안의 전문 지식
+
+- 접힌 카드에는 Pack 이름과 증거 수준만 노출한다.
+- Pack 영역을 선택하면 `적용 기준(Guide)`과 `검토 관점(Lens)`을 별도 그룹으로
+  펼친다. Lens가 Pack의 하위 구성요소인 것처럼 표현하지 않는다.
+- Guide와 Lens는 ID 나열보다 이해 가능한 이름을 우선하고, 원본 ID는 정보 disclosure
+  안에 둔다.
+- Pack 선택, Host load, 결과 반영과 검증은 다른 증거 상태다. 각 Guide와 Lens의
+  실제 사용 여부를 증명하지 못하면 `계획에서 선택`, `불러온 기록`, `반영 확인`
+  수준을 넘지 않는다.
+- Pack·Guide 본문, prompt와 hidden reasoning은 카드 projection에 복사하지 않는다.
+
+#### 설명 밀도와 정보 버튼
+
+계속 노출할 설명은 `계획 관계와 실제 실행의 차이`, `독립 분기와 실제 병렬의 차이`,
+`기록 없음은 미실행이 아님`처럼 오해가 판정을 바꾸는 최소 범례로 제한한다.
+
+나머지 모델 provenance, token 범위, Pack 증거 수준, 기술 ID와 용어 설명은 `i`
+정보 버튼으로 연다. 이 버튼은 hover tooltip만 사용하지 않고 클릭·Enter·Space로
+열리는 popover 또는 inline disclosure이며 `aria-expanded`, `aria-controls`,
+Escape 닫기와 focus return을 제공한다. 같은 설명 문단을 카드마다 반복하지 않고
+공통 정의를 참조한다.
 
 ### 흐름선
 
@@ -313,14 +364,16 @@ UI는 아래 표보다 강한 주장을 만들지 않는다.
 | 단계 terminal 상태 | 새 관리 실행에서 가능 | Observation stage result | 과거 실행은 `세부 실행 기록 없음`으로 유지 |
 | 요청 모델 | 조건부 가능 | Desktop request metadata 또는 Host observation | 실제 적용 모델과 다름 |
 | 실제 실행 모델 | 조건부 가능 | 완전한 Host model event range | 없으면 권장 모델로 채우지 않음 |
+| 요청 추론 강도 | 조건부 가능 | Desktop request 또는 child spawn request | 실제 reasoning token 소비량으로 표현하지 않음 |
 | 총 시간 | 부분 가능 | RunReceipt 또는 Host duration | 계획·실행·최종화 시간을 같은 값으로 합치지 않음 |
 | 단계별 시간 | 제한적 | Host가 제공한 stage duration | 시작·종료가 없으면 실제 timeline을 만들지 않음 |
+| 단계별 token | 현재 제한적 | work·turn에 직접 귀속되고 scope가 명확한 Host usage | 부모·thread 누적량을 child 카드에 배분하지 않음 |
 | 재작업 여부 | 요약만 가능 | receipt의 correction summary | attempt ID와 retry reason이 없어 횟수·계보를 발명하지 않음 |
 | 실제 병렬 실행 | 현재 불가 | 같은 clock domain의 stage start/end 필요 | 계획상 독립 분기만 표시 |
 | Lens 선택 | 가능 | plan의 `lens_ids` | 실제 적용됐다는 증거는 아님 |
 | Pack·Guide 선택·배정 | 가능 | plan, receipt와 Assignment attachment | 선택은 적용 증명이 아님 |
 | Pack·Guide 불러옴·반영 | 새 관리 실행에서 조건부 가능 | WorkSpan `host_loaded`, `application_observed` | 과거 selection-only 실행은 적용으로 추정하지 않음 |
-| 단계별 문제·결론 | 현재 제한적 | 별도 typed finding 또는 stage result 필요 | 일반 summary에서 노드별 사실을 추론하지 않음 |
+| 단계별 문제·결론·결정 | 현재 제한적 | 별도 typed finding, decision 또는 stage result 필요 | 일반 summary에서 노드별 사실을 추론하지 않음 |
 | 산출물 | 참조만 부분 가능 | evidence 또는 command artifact ref | 형식·digest·producer를 가진 artifact registry가 없음 |
 | 비용 | 현재 제한적 | provider 또는 Host가 확인한 receipt 필요 | 로컬 추정값을 실제 비용으로 표시하지 않음 |
 
@@ -408,7 +461,7 @@ artifact이며 이 Markdown 권위를 대신하지 않는다.
 
 ### 단계 2 — 작업 중심 GUI와 projection 분리
 
-상태: 구현 및 핵심 검증 완료
+상태: 구현 및 핵심 검증 완료 — 현재 상세 검사기 interaction은 4D에서 대체 예정
 
 목표:
 
@@ -445,7 +498,9 @@ artifact이며 이 Markdown 권위를 대신하지 않는다.
 800px, 390×844 실제 렌더, keyboard 선택, 모바일 메뉴, Back/Forward, 자동 갱신 뒤
 focus·disclosure 복원과 가로 overflow를 브라우저에서 확인했다. 단계별 실제 순서,
 실제 동시성, retry 계보, 구조화된 문제·결론과 Guide 적용은 계속 `unavailable`로
-유지하며 단계 4의 원본 계약 후보로 남긴다.
+유지하며 단계 4의 원본 계약 후보로 남긴다. 이 완료 기록은 당시 구현 근거를
+보존하지만 오른쪽 상세 검사기를 최종 UX로 고정하지 않는다. 후속 사용자 결정에
+따라 4D가 이를 카드 내부 확장으로 대체한다.
 
 ### 단계 3 — 전문 지식 여정 GUI
 
@@ -492,9 +547,60 @@ P0 producer 완료, coverage·version binding과 다른 Codex 생산자는 미�
 [Codex 실행 정보를 올바르게 관측하는 방법](../../research/codex-runtime-observability.md)을
 따른다.
 
+#### 단계 진행과 카드 배치 계약
+
+단계 4가 완료됐다는 말은 단순히 child 카드를 더 많이 수집했다는 뜻이 아니다.
+사용자가 한 작업의 진행을 왼쪽에서 오른쪽으로 읽고, 독립 분기와 결과 합류 뒤의
+다음 판단을 잃지 않는다는 뜻이다.
+
+이 계획에서 **작업 파동**은 새 scheduler 상태나 영속 필드가 아니라, 검증된 실행
+관계로 계산하는 화면상의 가로 단계다.
+
+```text
+파동 0             파동 1                  파동 2
+[계획·첫 지시]  →  [독립 검토 A] ─┐
+                    [독립 조사 B] ─┼→ [결과 종합·다음 판단]
+                    [독립 검토 C] ─┘
+
+파동 3                  파동 4              파동 5
+[후속 구현 D] ─┐
+[후속 구현 E] ─┼→ [검증] ───────────→ [최종 판단]
+```
+
+배치 불변조건은 다음과 같다.
+
+1. 의미 있는 실행 시도 하나가 카드 하나다. 카드가 시작될 때 `running`으로
+   추가하고 terminal이 되면 같은 카드를 갱신한다. 새 시도와 재작업은 기존 카드를
+   덮어쓰지 않고 새 카드가 된다.
+2. `delegates_to`, `depends_on`, `joins_into`, `followup_of`처럼 방향이 있는
+   ordering relation을 따라 후속 카드는 선행 카드보다 오른쪽 파동에 놓인다.
+   `reports_to`는 되돌아오는 보고 의미만 가지며 가로 순위를 역전시키지 않는다.
+3. 서로 의존하지 않고 가장 늦은 선행 파동이 같은 작업은 같은 가로 파동에 놓는다.
+   이는 `독립 분기`이며, 같은 clock domain의 완전한 시간 구간이 겹칠 때만
+   `실제 병렬 실행`으로 격상한다.
+4. 여러 작업 결과를 실제로 소비해 계속 진행·수정·재위임·검증·종료 중 하나를
+   정했다면 `결과 종합·다음 판단`에 해당하는 새 의미 작업을 기록한다. 소비한 모든
+   작업은 `joins_work_ids`로 이 카드에 합류하고, 그 판단에서 시작한 다음 작업은
+   이 카드를 `parent_work_id` 또는 `depends_on_work_ids`로 가리킨다.
+5. 단순 `wait`, 메시지 수신, tool call 또는 결과가 도착했다는 사실만으로 종합·판단
+   카드를 만들지 않는다. 반대로 하위 결과를 바탕으로 다음 작업자를 선택하거나
+   완료를 판정한 실제 단계는 부모 turn 전체에 묻어 생략하지 않는다.
+6. `followup_of_work_id`는 같은 논리적 책임의 재시도·수정 시도에만 사용한다.
+   일반적인 다음 단계나 결과 합류를 retry처럼 표현하지 않는다.
+7. ordering relation은 DAG여야 한다. cycle, 없는 대상과 출처 coverage가 부족한
+   관계는 왼쪽 첫 칸으로 임의 복구하지 않고 `일부만 기록됨` 또는 계약 오류로
+   낮춘다.
+8. 레인은 담당 영역을, 가로 파동은 인과 순서를 표현한다. 같은 담당 영역이 뒤에서
+   다시 일하면 같은 레인의 더 오른쪽 카드가 될 수 있고, 결과 종합처럼 다른 담당
+   영역이면 다른 레인에서도 오른쪽 파동을 공유할 수 있다.
+
+계획 카드는 계획 확정 시 DAG 전체가 보일 수 있지만, 실제 작업 카드는 해당 실행
+시도가 관측되는 순서대로 추가된다. 화면 새로고침과 event 재처리는 카드의 ID,
+관계와 파동을 바꾸거나 중복 카드를 만들면 안 된다.
+
 #### 4A — Codex 위임 lifecycle 자동 수집
 
-상태: P0 구현 완료 · 4A 전체는 진행 중
+상태: 핵심 카드·관계·파동 구현 완료 · producer binding과 진단 hardening은 진행 중
 
 목표는 `observe-work-start/finish`를 호출할 수 있는 현재 domain 계약을 Codex의
 공식 lifecycle 생산자와 연결하는 것이다.
@@ -511,14 +617,14 @@ P0는 이미 `codex_host.py`가 소유하는 App Server turn에
 `collabAgentToolCall` item producer를 추가한다.
 
 ```text
-parent turn 시작
-  → spawnAgent item
-  → receiver child thread 확인
+첫 판단 work 시작
+  → spawnAgent item과 receiver child thread 확인
   → child work attempt 시작
-  → child terminal 관측
-  → sendInput·resumeAgent 후속 지시
-  → wait·결과 소비
-  → report·join relation
+  → 독립 child terminal·보고 관측
+  → 명시적 결과 소비·종합·다음 판단 work
+  → 새 위임이면 다음 child work attempt 시작
+  → 재시도면 resumeAgent와 followup_of attempt 시작
+  → 검증 또는 다음 결과 종합
   → parent turn terminal
 ```
 
@@ -536,12 +642,24 @@ parent turn 시작
 - [ ] 후속 지시의 사용자 의미 reason code를 추가한다.
 - [x] `wait`는 child terminal 관측에만 사용하고 wait 완료만으로 synthesis나
       `joins_into`를 만들지 않는다.
-- [ ] main agent의 명시적 synthesis work와 child 결과 소비가 있을 때만
+- [x] main agent의 명시적 synthesis work와 child 결과 소비가 있을 때만
       `joins_into`를 만든다.
+- [x] 부모 App Server turn 하나를 카드 하나로만 늘여 쓰지 않고, 첫 판단,
+      결과 종합·다음 판단과 최종 판단의 의미 경계를 별도 work attempt로 기록한다.
+- [x] 종합·판단이 소비한 모든 terminal child를 `joins_work_ids`에 연결하고 다음
+      위임은 그 판단 work를 부모 또는 명시적 의존 대상으로 삼는다.
+- [x] 새 위임 없이 종료·차단·사용자 결정 요청으로 끝난 판단도 bounded 결론과
+      terminal 상태를 가진 마지막 카드로 남긴다.
 - [ ] `turn/interrupt` 요청과 최종 `interrupted`를 분리한다.
 - [ ] mid-turn `error`와 terminal `failed`를 분리한다.
 - [x] process crash·event drop 뒤 running span을 `완료`로 바꾸지 않고
       incomplete recovery 대상으로 남긴다.
+
+App Server의 collaboration event만으로는 main agent가 결과를 이해하고 다음 행동을
+정한 의미 경계를 항상 알 수 없다. 따라서 Maestro가 실행을 소유하는 경로에서는
+workflow가 결과 소비 직전과 판단 terminal을 명시적인 work lifecycle로 감싼다.
+Desktop·CLI Hook처럼 그 경계를 직접 증명할 수 없는 생산자는 메시지나 transcript를
+분석해 카드를 발명하지 않고 coverage를 낮춘다.
 
 카드 하나는 저수준 item 하나가 아니라 의미 있는 실행 시도 하나다. command,
 file change, MCP, web search와 tool progress는 선택 단계의 evidence·활동 요약이며
@@ -551,13 +669,34 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 4A 완료 조건:
 
 - [x] 실제 spawn마다 child 카드가 하나만 생기고 event 재처리에도 중복되지 않는다.
-- [ ] 오케스트레이터 → 위임 → 보고 → 합류 → 후속 시도가 relation으로 보인다.
+- [x] 오케스트레이터 → 위임 → 보고 → 합류 → 후속 시도가 relation으로 보인다.
+- [x] 하위 결과를 소비해 다음 행동을 정한 실제 과정이 부모 root 카드 안에
+      사라지지 않고 별도 종합·판단 카드로 보인다.
+- [x] 종합·판단 뒤 재위임된 작업은 이전 파동이 아니라 다음 오른쪽 파동에 생긴다.
+- [x] 독립 child는 같은 파동에 배치되지만 시간 coverage 없이는 실제 병렬로
+      표기되지 않는다.
 - [x] terminal이 없는 child는 완료로 표시하지 않고 관찰을 복구 가능한 상태로
       남긴다.
-- [ ] 순차·독립 병렬·nested child·failure·interrupt·continuation fixture가 있다.
+- [x] 순차·독립 병렬·nested child·failure·interrupt·continuation fixture가 있다.
+- [x] `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 → 최종 판단`
+      end-to-end fixture가 카드 수, relation, 가로 파동과 중복 방지를 검증한다.
 - [x] 과거 실행과 Hook 미설정 프로젝트는 `세부 실행 기록 없음`으로 안전하게
       fallback한다.
 - [x] raw protocol body 없이 bounded metadata만 Observation·RunReceipt에 남는다.
+
+구현 검증 메모 — 2026-07-28:
+
+- `tests.test_codex_work`가 wait-only 비승격, 순차 재위임, nested child,
+  failed·interrupted terminal과 resume continuation을 검증한다.
+- `tests.test_codex_host_work`의 전체 파동 fixture는 카드 수를
+  `1 → 3 → 1 → 2 → 1 → 1 → 1`, rank를 `0..6`으로 검증한다.
+- 첫 A/B/C와 후속 D/E는 각각 같은 rank에 있고, 실제 시간 coverage가 없으므로
+  `actual_concurrency=unavailable`을 유지한다.
+- terminal 보고 6건은 세 synthesis 판단에 합류하고, 다음 child 6건은 직전
+  판단 work를 부모로 삼는다. duplicate spawn replay는 새 카드를 만들지 않는다.
+- source version·generated schema digest binding, 후속 지시의 사용자 의미 reason,
+  interrupt 요청과 terminal 분리, mid-turn error 진단은 이 카드·파동 완료 조건과
+  별개인 남은 producer hardening이다. 이 값은 구현될 때까지 UI가 추정하지 않는다.
 
 #### 4B — 모델·시간·사용량의 검증된 범위
 
@@ -603,6 +742,9 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 
 - 명시적인 재작업 reason과 사용자 의미의 attempt
 - 구조화된 finding, conclusion과 decision
+- 종합·판단이 실제로 소비한 work ID와 `계속 진행`, `수정`, `재위임`, `검증`,
+  `종료`, `차단`, `사용자 결정 필요` 중 하나의 bounded 다음 행동
+- 다음 위임의 목적과 완료 조건을 연결하는 bounded handoff summary
 - typed artifact ID, 형식, digest, producer work와 검증 상태
 - Lens 적용, Pack·Guide load와 결과 반영 attestation
 - verifier 대상, 기준 버전·digest, assertion과 command 결과
@@ -610,7 +752,91 @@ file change, MCP, web search와 tool progress는 선택 단계의 evidence·활�
 
 Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에 반영된 사실과
 검증된 사실을 각각 유지한다. 모델이 작성한 summary를 finding 또는 검증 근거로
-자동 승격하지 않는다.
+자동 승격하지 않는다. 다음 행동은 결론의 bounded 결과이지 hidden reasoning이나
+원문 transcript가 아니다.
+
+#### 4D — 작업 카드 정보 구조와 인라인 확장 UI
+
+상태: 예정 — 4A의 lifecycle과 4B·4C의 표시 계약이 준비된 뒤 구현
+
+목표:
+
+- 카드 배치와 작업 지도를 유지하면서 카드 내부의 정보 우선순위를 다시 설계한다.
+- 오른쪽 고정 상세 검사기를 제거하고 선택한 카드가 자기 자리에서 확장되게 한다.
+- 접힌 카드만 훑어도 `무슨 단계인가`, `무엇을 결정했는가`, `어떤 전문 지식과
+  실행값이 있었는가`를 파악하게 한다.
+- 설명 문단을 줄이고, 판정에 필수적인 범례와 요청 시 여는 정보 disclosure를
+  구분한다.
+
+구현 전 디자인 근거 gate:
+
+1. 정확한 카드 개선 목표로 Maestro routing을 다시 실행하고, 선택된 Product Design
+   Expertise Pack과 `selected_guide_ids`만 불러온다. Pack이 선택됐다는 사실만으로
+   적용을 주장하지 않고, 최종 writer Packet에 Guide별 disposition을 남긴다.
+2. Maestro-owned reference research를 `contextualize` mode로 실행해 현재 개발자
+   운영 도구의 task card, trace node, inline disclosure와 metadata footer 사례를
+   다시 확인한다. 공식 제품 문서·실제 화면을 우선하고 블로그 모음이나 장식적
+   gallery를 결정 근거로 삼지 않는다.
+3. 리서치는 다음 질문에 답해야 한다.
+   - 사용자가 여러 카드를 훑을 때 주제와 결론을 가장 빨리 구분하는 위계는 무엇인가?
+   - 인라인 확장이 그래프 흐름과 연결선을 잃지 않게 하는 패턴은 무엇인가?
+   - 모델·시간·token 같은 보조 실행값은 어디에 두어야 비교 가능하면서 주목도를
+     빼앗지 않는가?
+   - 전문 지식 이름과 Guide·Lens 세부를 어떤 단계로 공개해야 의미가 섞이지 않는가?
+   - 정보 버튼이 설명 과잉을 줄이면서 keyboard·touch·screen reader에서 동작하려면
+     어떤 interaction이 필요한가?
+4. 조사 결과는 그대로 복제하지 않고 `채택`, `기각`, `현재 UI에 적용할 기준`을
+   분리한 bound ResearchBundle로 만든다. research gate가 만족되기 전에는 시각
+   구현을 시작하지 않는다.
+5. 디자인 판단 기준은 최소한 정보 위계, 5초 내 scanability, progressive disclosure,
+   비교 가능성, provenance 오인 방지, 한국어 줄바꿈, keyboard·touch 접근성과
+   그래프 안정성을 포함한다.
+
+Projection 작업:
+
+1. 접힌 카드용 `topic`, `status`, bounded `decision_summary`, Pack 이름·증거 수준과
+   하단 execution facts를 하나의 card summary read model로 만든다.
+2. 확장 카드용 input·completion criteria, finding·decision, handoff, artifact,
+   Pack·Guide·Lens와 provenance를 별도 detail read model로 만든다.
+3. 모델은 `실제`, `요청`, `권장`을, 추론 강도는 `요청 설정`을, token과 duration은
+   귀속 scope와 coverage를 함께 정규화한다. DOM에서 fallback 우선순위를 다시
+   계산하지 않는다.
+4. 정보 버튼은 복사된 장문 설명 대신 공통 explanation ID와 짧은 접근성 label을
+   받는다.
+5. plan-only, historical summary-only, partial stream과 complete stream이 같은
+   projection version에서 안전하게 표현되게 한다.
+
+UI 작업:
+
+1. 접힌 카드의 주제 → 짧은 결과·결정 → Pack → 하단 실행값 위계를 구현한다.
+2. 오른쪽 상세 검사기와 중복 설명을 제거하고, 카드 선택·URL stage 상태를 인라인
+   expansion에 연결한다.
+3. 기본 한 장만 확장하고, nested Pack disclosure와 정보 버튼 상태를 카드 전체
+   expansion과 분리한다.
+4. 확장·축소·자동 갱신 뒤 카드 선택, scroll 위치와 focus를 복원하고 연결선을 다시
+   계산한다.
+5. 좁은 화면은 같은 정보 순서를 세로로 유지하며, 하단 실행값은 잘리지 않고
+   두 줄까지 재배치할 수 있게 한다.
+
+4D 완료 조건:
+
+- [ ] 기본 작업 지도에 별도 오른쪽 상세 칸이 없고, 선택한 카드 자체에서 상세을
+      확인한다.
+- [ ] 접힌 카드에서 단계 주제와 근거 있는 짧은 결과·결정이 가장 먼저 읽힌다.
+- [ ] 모델·요청 추론 강도·token·경과 시간이 카드 하단에 일관되게 배치되고,
+      실제·요청·권장과 `기록 없음` 상태가 섞이지 않는다.
+- [ ] Pack이 있으면 이름과 증거 수준이 보이고, nested disclosure에서 Guide와
+      Lens가 별도 그룹으로 보인다.
+- [ ] Pack 선택만 있는 fixture가 `사용함` 또는 `반영됨`으로 과장되지 않는다.
+- [ ] 반복 설명은 제거되고 판정에 필요한 최소 범례와 접근 가능한 `i` disclosure만
+      남는다.
+- [ ] 카드·Pack·정보 버튼은 keyboard와 touch에서 독립적으로 동작하고
+      `aria-expanded`, focus return과 Escape 계약을 지킨다.
+- [ ] 확장 카드가 인접 카드를 덮거나 연결선을 잘못된 위치에 남기지 않는다.
+- [ ] 390×844, 800px, 일반 데스크톱과 200% zoom에서 정보 순서와 긴 한국어가
+      보존된다.
+- [ ] 선택 Pack·Guide와 ResearchBundle의 채택 기준이 구현·검증 evidence에
+      disposition으로 연결된다.
 
 #### 단계 4 공통 도입 조건
 
@@ -620,12 +846,18 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 - [x] null, redacted, partial과 unavailable의 기본 compatibility 방향을 정했다.
 - [ ] schema, observation, receipt, snapshot과 UI 소비자를 end-to-end fixture로
       함께 검증한다.
+- [ ] 실제 work 카드의 ordering relation마다 source와 coverage가 있고,
+      projection이 같은 입력에서 결정론적인 파동 순위를 만든다.
+- [ ] 의미 있는 종합·판단이 있는 fixture와 없는 fixture를 모두 검증해, 전자는
+      빠뜨리지 않고 후자는 억지 카드를 만들지 않는다.
 - [x] raw reasoning, transcript와 민감한 tool payload 없이 목적을 달성하는 수집
       allowlist를 정했다.
 
 단계 5로 바로 넘어가지 않고 4A를 먼저 완료한다. 4B는 child stream의 직접 근거가
-확보된 범위까지만 병행하고, 4C는 자동 lifecycle이 안정된 뒤 진행한다. 이 단계가
-완료되기 전에는 UI가 계획, parent 값이나 summary에서 누락값을 추론하지 않는다.
+확보된 범위까지만 병행하고, 4C는 자동 lifecycle이 안정된 뒤 진행한다. 4D는
+4A~4C가 제공하는 값의 신뢰 경계를 고정한 뒤 Pack·research gate를 통과하고
+구현한다. 이 단계가 완료되기 전에는 UI가 계획, parent 값이나 summary에서
+누락값을 추론하지 않는다.
 
 ### 단계 5 — 전체 품질 검증과 계획 종료
 
@@ -633,7 +865,16 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 
 - [ ] representative fixture에서 완료·수정 후 완료·실패·진행 불가·생략·중단을
       검증한다.
+- [ ] 실제 브라우저에서 `계획 → 독립 A/B/C → 종합·판단 → 독립 D/E → 검증 →
+      최종 판단`이 왼쪽에서 오른쪽으로 진행되고 독립 작업만 같은 파동에 놓이는지
+      검증한다.
+- [ ] 결과를 소비한 뒤 재위임하는 카드와 관계가 하나라도 누락되면 단계 4를
+      완료로 처리하지 않는다.
 - [ ] 모델 기록 없음·요청 설정만 있음·실제 모델 기록됨을 각각 검증한다.
+- [ ] 접힌 카드의 정보 위계, 인라인 확장, Pack→Guide·Lens disclosure와 하단
+      실행값을 complete·partial·plan-only fixture에서 실제 브라우저로 검증한다.
+- [ ] 화면에 계속 노출하는 설명과 `i` disclosure로 옮긴 설명을 inventory로
+      검토하고, 같은 안내 문단이 카드마다 반복되지 않는지 확인한다.
 - [ ] keyboard, focus, zoom, 긴 한국어와 reduced motion을 확인한다.
 - [ ] 390×844, 800px와 일반 데스크톱에서 overflow와 정보 순서를 확인한다.
 - [ ] snapshot action과 프로젝트 전환의 보안·stale plan 계약이 유지된다.
@@ -654,7 +895,9 @@ Lens·Pack·Guide가 plan에 선택된 사실, Host가 load한 사실, 결과에
 6. 전문 지식 lifecycle projection
 7. 전문 지식 여정 UI와 typed action
 8. 필요한 경우 원본 telemetry·schema와 producer
-9. 접근성·반응형·회귀 검증
+9. 작업 카드 summary·detail projection과 측정 provenance
+10. 인라인 확장 카드·Pack disclosure·정보 버튼 UI
+11. 접근성·반응형·회귀 검증
 
 각 커밋은 해당 변경과 직접 검증을 함께 포함하고, 직전 커밋을 되돌려도 다른 계층의
 계약이 깨지지 않아야 한다. commit, push, PR과 release는 각각 별도 사용자 권한이다.
