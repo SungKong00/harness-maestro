@@ -70,6 +70,7 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "experiment_arm",
     "correction_count",
     "correction_summary",
+    "expertise_routing",
     "agent_calls",
     "human_fix_required",
     "decision_changed",
@@ -161,6 +162,55 @@ def _valid_convention_usage(
         if item["disposition"] == "conflict" and outcome == "completed":
             return False
     return True
+
+
+def _valid_expertise_routing(
+    value: Any,
+    *,
+    selected_packs: list[str],
+) -> bool:
+    """Validate the bounded routing outcome without re-running selection."""
+
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value) != {
+            "selection_status",
+            "selection_method",
+            "reroute_count",
+            "warnings",
+        }
+        or value.get("selection_status") not in {"selected", "not_selected"}
+        or value.get("selection_method") not in {
+            "natural_language",
+            "work_kind",
+            "explicit_pack",
+            None,
+        }
+        or not isinstance(value.get("reroute_count"), int)
+        or isinstance(value["reroute_count"], bool)
+        or value["reroute_count"] < 0
+        or value["reroute_count"] > 1
+        or not isinstance(value.get("warnings"), list)
+        or len(value["warnings"]) > 2
+        or len(set(value["warnings"])) != len(value["warnings"])
+        or any(
+            warning not in {
+                "EXPERTISE_HINTS_AMBIGUOUS",
+                "EXPERTISE_OVERRIDE_CONFLICT",
+            }
+            for warning in value["warnings"]
+        )
+    ):
+        return False
+    selected = bool(selected_packs)
+    return (
+        (selected and value["selection_status"] == "selected"
+         and value["selection_method"] is not None)
+        or (not selected and value["selection_status"] == "not_selected"
+            and value["selection_method"] is None)
+    )
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -1151,6 +1201,14 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "convention_usage is invalid, stale, or contains an unresolved completed conflict.",
         )
+    if not _valid_expertise_routing(
+        receipt.get("expertise_routing"),
+        selected_packs=selected_expertise_packs,
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "expertise_routing is invalid or disagrees with selected Expertise Packs.",
+        )
     if expertise_research_mode not in {
         "reuse",
         "contextualize",
@@ -1406,6 +1464,7 @@ def record_run(
         "host_observation",
         "convention_usage",
         "execution_binding",
+        "expertise_routing",
     ):
         if receipt.get(field) is not None:
             event[field] = receipt[field]
@@ -1520,6 +1579,7 @@ def finalize_run(
     correction_summary: list[str] | None = None,
     human_fix_required: bool | None = None,
     decision_changed: bool = False,
+    expertise_routing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the compact receipt from observed plan and stage facts."""
 
@@ -1622,6 +1682,7 @@ def finalize_run(
         "tokens": None,
         "correction_count": correction_count,
         "correction_summary": list(correction_summary or []),
+        "expertise_routing": expertise_routing,
         "agent_calls": len(stage_results),
         "human_fix_required": human_fix_required,
         "decision_changed": decision_changed,
@@ -1674,6 +1735,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "experiment_arm",
         "correction_count",
         "correction_summary",
+        "expertise_routing",
         "agent_calls",
         "human_fix_required",
         "finding_severity",

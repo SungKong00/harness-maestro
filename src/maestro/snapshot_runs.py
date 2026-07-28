@@ -988,6 +988,7 @@ def _run_card(
                 "not-required",
             ),
             "observations": list(event.get("expertise_observations", [])),
+            "routing": event.get("expertise_routing"),
             "evidence": {
                 "selection": (
                     "run_receipt"

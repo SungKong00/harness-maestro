@@ -300,6 +300,9 @@
         "minLength": 1
       }
     },
+    "expertise_routing": {
+      "$ref": "#/$defs/expertiseRouting"
+    },
     "agent_calls": {
       "type": [
         "integer",
@@ -454,6 +457,57 @@
     }
   },
   "$defs": {
+    "expertiseRouting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_status",
+        "selection_method",
+        "reroute_count",
+        "warnings"
+      ],
+      "properties": {
+        "selection_status": {
+          "enum": ["selected", "not_selected"]
+        },
+        "selection_method": {
+          "enum": ["natural_language", "work_kind", "explicit_pack", null]
+        },
+        "reroute_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "warnings": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "EXPERTISE_HINTS_AMBIGUOUS",
+              "EXPERTISE_OVERRIDE_CONFLICT"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "selection_status": { "const": "selected" } }
+          },
+          "then": {
+            "properties": {
+              "selection_method": {
+                "enum": ["natural_language", "work_kind", "explicit_pack"]
+              }
+            }
+          },
+          "else": {
+            "properties": { "selection_method": { "const": null } }
+          }
+        }
+      ]
+    },
     "executionBinding": {
       "oneOf": [
         {
