@@ -190,114 +190,30 @@ Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승
 사용하지 않는다. Host가 값을 주지 않으면 `null`이며, route v2 계획이 없던 과거
 실행은 순서를 발명하지 않고 `summary_only` 한 단계로 표시한다.
 
-Host observation v2는 `source`, `quality`, `correlation_id`, `requested_model`,
-선택적인 `requested_reasoning_effort`와 그 근거, `applied_model`,
-`model_event_evidence`, 최대 네 번의 `reroutes`와 token summary만 가진다.
-요청 추론 강도는 실행에 설정된 강도이며 실제 사용된 reasoning token 양을 뜻하지
-않는다. `applied_model`은 Host가 턴 완료까지 model event stream을 관측한
-`model_event_evidence=complete`일 때만 허용한다. reroute가 없으면 요청 모델과 적용
-모델이 같아야 하고, reroute가 있으면 event chain의 마지막 `to_model`이 적용
-모델이어야 한다. 요청 모델만 알거나 이벤트 구간이 불완전하면 적용 모델은
-`null`이다.
+세부 실행 계약은
+[Codex 실행 관측 근거](../research/codex-runtime-observability.md)와
+[실제 작업 그래프](observed-work-graph.md)가 단일 권위다. 뷰어는 다음 경계만
+소비하고 protocol 의미를 다시 계산하지 않는다.
 
-이전 v1 Host observation의 `actual_model`과 stage result의 출처 없는
-`actual_model`은 기록 호환성을 위해 읽지만, Viewer에서는 “이전 형식 보고·적용
-미확정”으로만 다룬다. `host_reported`는 Host가 실행 단위 값을 직접 제공했음을,
-`host_delta`는 동일 Host의 두 누적 token 관측 사이 차이를 뜻한다.
+- 요청 모델·요청 추론 설정·권장 모델은 실제 적용 모델이 아니다.
+  `complete_stream`의 started·terminal·reroute 결합이 있을 때만 applied model을
+  표시하고, 이전 형식 또는 partial stream은 적용 미확정으로 남긴다.
+- Desktop 공개 메타데이터는 요청 설정만 증명한다. 비공개 session, 최종 응답문,
+  prompt나 transcript에서 model·token·계획을 추론하지 않는다.
+- App Server root의 단일 turn은 final 누적 token을 사용할 수 있지만, child와
+  resume attempt는 안정적인 cumulative baseline→final delta만 직접 귀속한다.
+  `usage.last`를 작업 합계로 복제하지 않으며 늦은 이전 turn·누적 회귀·첫 관측
+  resume는 unavailable로 낮춘다.
+- Pack 선택, Assignment 전달, Host load, 결과 반영과 검증은 서로 다른 증거다.
+  선택 횟수와 수정·실패의 동시 관찰은 review signal일 뿐 품질이나 인과 증명이
+  아니다. Pack lifecycle과 Guide freshness도 별도 축으로 표시한다.
+- `finalize`는 같은 project·checkout·run의 terminal 계획 단계를 요구한다. 실행
+  종료 전 24시간과 종료 뒤 최종 기록 대기 24시간은 각각 `stale`과
+  `receipt_stale`로 계산한다.
 
-[Codex App Server](https://developers.openai.com/codex/app-server/)는 `turn/start`에서
-모델·추론 강도를 요청하고, `turn/plan/updated`, `model/rerouted`,
-`thread/tokenUsage/updated`, `turn/completed`를 서로 다른 이벤트로 제공한다.
-Maestro의 계획 권위는 자유 형식 `turn/plan/updated` 본문이 아니라 검증된 route
-plan이므로 그 이벤트 본문을 저장하지 않는다. App Server 실행과 전체 이벤트 구간을
-직접 소유하는 Host adapter에서는 모델·reroute·token·terminal 값을
-`thread_id`·`turn_id`로 연결해 해당 Assignment의 단계 기록으로 남긴다. 최종
-응답문을 읽어 계획이나 token을 역추론하지 않는다.
-
-Codex Desktop의 현재 tool runtime이 공개 요청 메타데이터로 `model`,
-`reasoning_effort`, `thread_id`, `turn_id`를 제공하면 `$maestro`는 이 네 값만
-allowlist해 `codex-desktop-request-meta` 관측으로 자동 연결한다. 이 경로는 요청
-설정만 증명하므로 적용 모델·reroute·token은 계속 기록 없음이다. 해당 메타데이터가
-없으면 `모델·토큰 기록 없음`으로 유지하며, 어느 경우에도 비공개 session JSONL이나 원본
-메타데이터 객체를 저장하지 않는다.
-
-Maestro의 `observe import-codex`는 Host가 소유한 완전한 JSON-RPC JSONL에서
-`thread/start` 또는 `turn/start` 요청 모델·추론 강도, `model/rerouted`,
-`thread/tokenUsage/updated`의 turn 사용량과 terminal `turn/completed`를 같은
-thread·turn으로 검증해 observation을 단조롭게 보강한다. 완료 이벤트가 없거나
-여러 turn이 모호하면 기록하지 않는다. Route 권고값은 이 경로의 입력이 아니다.
-
-Guide 선택값도 품질 점수나 원인 귀속이 아니다. “선택된 Run에서 검증 실패 또는
-수정이 함께 관찰됐다”는 review signal일 뿐이며, 실제 Skill body가 Host context에
-로드됐다고 추정하지 않는다. 이 값만으로 Pack·Guide를 자동 승격·수정·삭제하지 않는다.
-선택 이력이 없으면 `awaiting_usage`, 선택 이력은 있지만 아직 검토 주기에 이르지
-않으면 `evidence_gathering`으로 기록하되 UI에서는 각각 “사용 기록 없음”,
-“사용 결과 수집 중”으로 표시한다. 이는 출처 수집이나 Pack 품질 검증 상태가
-아니다. 실제 Skill body가 실행 컨텍스트에
-로드됐다는 Host 증명이 없을 때는 `host_attestation_unavailable`로 표시한다.
-서로 다른 원인을 하나의 모호한 `not_observed` 상태로 합치지 않는다.
-
-Pack의 `candidate/pilot/active/deprecated/retired`는 사용 lifecycle이고, Guide의
-`stable/versioned/volatile`은 지식이 변하는 속도다. 따라서 원격에서 받은 active
-Pack은 이 프로젝트의 선택 기록이 0회여도 `정식 사용`으로 표시한다.
-`freshness=stable`은 “변경이 드문 기준”으로 표시하며 품질 승격으로 해석하지 않는다.
-
-작업의 Host 관측 상태는 세 단계로 표시한다.
-
-- `host_not_connected` → `모델·토큰 기록 없음`: 실행 기록 수집에 연결되지 않았으며
-  작업 실패를 뜻하지 않음
-- `host_request_observed` → `채팅에서 선택한 설정만 기록됨`: 채팅에서 선택한 모델
-  또는 추론 강도만 알며 실제 실행 모델과 token은 확인할 수 없음
-- `host_event_stream_complete` → `실제 실행 모델 기록됨`: 완료까지의 model event
-  stream이 연결되어 실제 실행 모델을 확정할 수 있음
-
-일반 화면은 이 상태명을 또 하나의 해석 대상처럼 나열하지 않는다. 작업 상세는
-`작업 기준`, `작업 결과`, `모델과 사용량 기록`으로 나누고 각 값에 “무엇을
-아는가”, “무엇을 모르는가”, “왜 기록이 없는가”, “작업 실패를 뜻하는가”를
-문장으로 표시한다. 원본 enum, 기록 source·quality와 correlation ID는 기본
-정보가 아니라 접힌 `기술 기록 보기` 안에서만 제공한다.
-
-`maestro host codex`로 Maestro가 직접 시작한 새 turn은 마지막 상태까지 자동으로
-올라갈 수 있다. 이 명령은 기존 Desktop 대화를 긁지 않고 별도 ephemeral App Server
-turn을 소유한다. 완전한 stream에서도 token notification이 오지 않으면 적용 모델과
-완료는 확정하되 token 사용량은 `기록 없음`으로 남긴다. final agent message와 prompt는 viewer
-snapshot의 입력이 아니며 Observation에도 저장되지 않는다.
-
-Desktop 요청 접수는 먼저 `desktop_request` 실행 binding을 남긴다. 이는 요청
-설정과 상관 ID만 관측했다는 뜻이며 현재 Host 실행 권한이 아니다. App Server로
-실행한 단계는 완전한 이벤트 구간을 직접 기록한다. 현재 Host로 전환해야 할 때만
-`interactive_required`, `network_required`, `app_connector_required`,
-`capability_unavailable` 중 하나와 한 줄의 사실 근거를 별도
-`observe fallback` transaction으로 남긴다. 이 전환 전에는 `current_host` 단계
-기록을 거부하므로 Desktop 요청 메타데이터나 관측 부재가 App Server 실행처럼
-보이지 않는다.
-
-App Server의 `thread/tokenUsage/updated`는 마지막 모델 응답의 `last`와 thread 누적
-사용량 `total`을 함께 보낸다. Maestro가 새 ephemeral root thread의 단일 turn을
-소유할 때는 final `total`을 root 작업 합계로 사용할 수 있다. 위임 child와
-`resumeAgent` attempt는 같은 thread 누적량을 공유할 수 있으므로 안정적인
-baseline→final component delta만 해당 work의 `usage.total`로 기록한다.
-`usage.last`는 마지막 응답 사용량으로 유지하며 합계에 복제하지 않는다.
-
-child `(thread_id, turn_id)`는 `turn/started`에서만 work에 결박한다. 늦은 이전 turn
-token, 첫 관측 resume, 누적량 회귀 또는 시작·완료 event가 빠진 partial stream은
-직접 token과 실제 모델로 승격하지 않는다. `turn/completed`와 token 알림은 별도
-이벤트이므로 root 완료 뒤 bounded grace 전체에서 child·root의 늦은 알림을 수집한
-다음 terminal work를 한 번만 확정한다. 완전한 trace를 import하면 `durationMs`를
-observation에 즉시 고정한다.
-최종 `finalize`는 같은 project·checkout·run ID의 observation을 자동으로 찾아
-task label, 계획, 계획 시간과 단계 결과를 최종 RunReceipt로 투영한다. 계획된 모든
-Assignment의 terminal 기록이 없으면 최종화를 거부한다. `maestro record`는 이전
-형식 가져오기와 저수준 통합을 위해 남기지만, 새 관리 실행의 기본 종료 경로가 아니다.
-현재 Registry 정의 digest와 달라 거버넌스 근거에서 제외된 과거 receipt도
-project·checkout·run ID와 event 계약이 유효하면 완료 사실로만 사용한다. 따라서
-정의가 갱신됐다는 이유로 완료 marker가 다시 `최종 기록 대기`로 나타나지 않는다.
-이 완료 ID projection은 과거 Lens·Executor·Pack 정의를 현재 판단 근거로 재사용하지
-않는다.
-최종 기록 전 관측의 24시간 기준은 상태별로 분리한다. 아직 실행 종료가 관측되지
-않았다면 시작 시각부터 계산해 `stale`로, 실행 종료가 관측됐다면 종료 시각부터
-계산해 `receipt_stale`로 표시한다. 장시간 실행이 방금 끝났다는 이유만으로 최종
-기록 누락으로 오인하지 않는다.
+일반 화면은 raw enum과 correlation을 반복하지 않고 무엇을 아는지와 필드별
+`기록 없음`을 보여 준다. source·quality·coverage는 `기술 기록 보기`에서만
+확인하며 기록 부재를 작업 실패처럼 표시하지 않는다.
 
 화면의 `risk low/medium/high`, Route의 `fast/standard/deep`, 모델의
 `reasoning effort low/medium/high/xhigh`는 서로 다른 축이다. 위험도는 검토 필요성,
