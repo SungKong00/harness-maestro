@@ -1763,9 +1763,7 @@ function renderRuns(snapshot) {
       text: expertiseSelectionText(run),
     }));
     expertise.append(element("small", {
-      text: run.expertise.packs.length
-        ? "본문을 불러오고 결과에 반영했는지는 상세에서 확인"
-        : "이 작업은 별도 전문 지식 묶음 없이 진행됨",
+      text: expertiseRoutingText(run),
     }));
     row.append(expertise);
 
@@ -2565,6 +2563,12 @@ function buildWorkHeader(run, work) {
     ),
   );
   header.append(summary);
+  const routingSummary = element("p", {
+    className: "muted work-routing-summary",
+    text: `전문성 라우팅 · ${expertiseRoutingText(run)}`,
+  });
+  routingSummary.id = "work-routing-summary";
+  header.append(routingSummary);
   return header;
 }
 

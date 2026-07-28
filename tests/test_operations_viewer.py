@@ -1938,6 +1938,92 @@ class OperationsViewerTests(unittest.TestCase):
             viewer_source,
         )
         self.assertIn("target.append(layout);", viewer_source)
+        header_start = viewer_source.index("function buildWorkHeader(")
+        header_end = viewer_source.index(
+            "function buildWorkTelemetryNotice(",
+            header_start,
+        )
+        header_source = viewer_source[header_start:header_end]
+        workspace_start = viewer_source.index(
+            "function renderRunWorkspace(",
+        )
+        workspace_end = viewer_source.index(
+            "function reviewReasonText(",
+            workspace_start,
+        )
+        workspace_source = viewer_source[workspace_start:workspace_end]
+        self.assertIn("expertiseRoutingText(run)", header_source)
+        self.assertIn('"work-routing-summary"', header_source)
+        self.assertIn("buildWorkHeader(run, work)", workspace_source)
+
+    def test_expertise_routing_text_distinguishes_recorded_states(
+        self,
+    ) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is required for the viewer helper test")
+        viewer_source = (
+            ROOT / "src/maestro/resources/viewer/app.js"
+        ).read_text(encoding="utf-8")
+        helper_start = viewer_source.index("function routingSourceLabel(")
+        helper_end = viewer_source.index("function element(", helper_start)
+        script = (
+            'const assert = require("node:assert/strict");\n'
+            + viewer_source[helper_start:helper_end]
+            + r"""
+const selected = {
+  expertise: {
+    routing: {
+      evidence: "plan_summary",
+      selection_source: "work_kind",
+      route_attempt: 2,
+      conflict_warning_codes: ["EXPERTISE_HINTS_AMBIGUOUS"],
+    },
+  },
+};
+const notSelected = {
+  expertise: {
+    routing: {
+      evidence: "plan_summary",
+      selection_source: "none",
+      route_attempt: 1,
+      conflict_warning_codes: [],
+    },
+  },
+};
+const legacy = {
+  expertise: {
+    routing: {
+      evidence: "unavailable",
+      selection_source: null,
+      route_attempt: null,
+      conflict_warning_codes: [],
+    },
+  },
+};
+assert.equal(
+  expertiseRoutingText(selected),
+  "작업 종류로 선택 · 1회 보정 · 충돌: 작업 종류 간 충돌",
+);
+assert.equal(
+  expertiseRoutingText(notSelected),
+  "라우터 확인 결과 선택 없음 · 최초 선택 · 충돌 없음",
+);
+assert.equal(expertiseRoutingText(legacy), "선택 방식 기록 없음");
+"""
+        )
+        completed = subprocess.run(
+            [node, "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
 
     def test_status_matrix_keeps_run_and_stage_scopes_distinct(self) -> None:
         stage_statuses = [
