@@ -2621,7 +2621,7 @@ function workInfoDisclosure(id, label, text) {
     title: label,
   });
   button.type = "button";
-  const panelId = `work-info-${id}`;
+  const panelId = workDomId("work-info", id);
   button.setAttribute("aria-label", label);
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", panelId);
@@ -2652,12 +2652,16 @@ function workInfoDisclosure(id, label, text) {
   return wrapper;
 }
 
+function workDomId(prefix, value) {
+  return `${prefix}-${encodeURIComponent(String(value))}`;
+}
+
 function workPackDisclosure(expertise, id) {
   if (!expertise.pack_ids?.length) return null;
   const wrapper = element("div", { className: "work-card-expertise" });
   const button = element("button", { className: "work-pack-toggle" });
   button.type = "button";
-  const panelId = `work-pack-${id}`;
+  const panelId = workDomId("work-pack", id);
   button.setAttribute(
     "aria-label",
     `담당 전문 지식 자세히 보기: ${expertise.pack_ids.map(packName).join(", ")}`,
@@ -2961,6 +2965,9 @@ function buildObservedWorkCardDetail(run, work, card) {
     observed.cards.map((item) => [item.work_id, item]),
   );
   const parent = cardsById.get(card.relationships.parent_work_id);
+  const previousAttempt = cardsById.get(
+    card.relationships.followup_of_work_id,
+  );
   const followups = observed.cards.filter(
     (item) => item.relationships.followup_of_work_id === card.work_id,
   );
@@ -2984,7 +2991,7 @@ function buildObservedWorkCardDetail(run, work, card) {
   heading.querySelector("h3").tabIndex = -1;
   detail.append(heading);
 
-  detail.append(workCardDetailSection("지시·보고·다음 판단", [
+  const handoffFacts = [
     [
       "지시·보고 대상",
       parent?.role || "최상위 실행 담당",
@@ -3005,6 +3012,15 @@ function buildObservedWorkCardDetail(run, work, card) {
           .join(", ")
         : "없음",
     ],
+  ];
+  if (previousAttempt) {
+    handoffFacts.push([
+      "재작업 원본",
+      `${previousAttempt.role} · ${previousAttempt.attempt}차`,
+      previousAttempt.result_summary || "이전 결과 기록 없음",
+    ]);
+  }
+  handoffFacts.push(
     [
       "다음 행동",
       workNextActionLabel(card.detail?.next_action),
@@ -3017,7 +3033,11 @@ function buildObservedWorkCardDetail(run, work, card) {
             .join(", ")
           : "후속·재위임 기록 없음",
     ],
-  ]));
+  );
+  detail.append(workCardDetailSection(
+    "지시·보고·다음 판단",
+    handoffFacts,
+  ));
 
   const evidenceFacts = [
     [
@@ -3029,8 +3049,9 @@ function buildObservedWorkCardDetail(run, work, card) {
       card.detail?.conclusion || "구조화된 결론 기록 없음",
     ],
     [
-      "완료 조건",
-      card.detail?.completion_criteria || "완료 조건 기록 없음",
+      "다음 위임 완료 조건",
+      card.detail?.completion_criteria
+      || "다음 위임 완료 조건 기록 없음",
     ],
   ];
   if (card.detail?.verification) {
@@ -3118,7 +3139,7 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
   });
   card.dataset.stageId = stage.stage_id;
   if (selected) card.classList.add("expanded");
-  const detailId = `work-card-detail-${stage.stage_id}`;
+  const detailId = workDomId("work-card-detail", stage.stage_id);
   const button = element("button", { className: "work-card-toggle" });
   button.type = "button";
   button.setAttribute("aria-expanded", String(selected));
@@ -3248,6 +3269,21 @@ function drawWorkEdges(
   if (!canvas) return;
   const svg = canvas.querySelector(".work-edge-layer");
   if (!svg) return;
+  const wrappedWave = [...canvas.querySelectorAll(".work-wave-cards")]
+    .some((wave) => (
+      new Set(
+        [...wave.children].map((card) => Math.round(card.offsetTop)),
+      ).size > 1
+    ));
+  const linearized = (
+    Boolean(canvas.querySelector(`${selector}.expanded`))
+    || wrappedWave
+  );
+  canvas.classList.toggle("work-edges-linearized", linearized);
+  if (linearized) {
+    clear(svg);
+    return;
+  }
   const cards = new Map(
     [...canvas.querySelectorAll(selector)].map(
       (card) => [card.dataset[dataKey], card.getBoundingClientRect()],
@@ -3413,13 +3449,14 @@ function observedWorkCard(
   onSelect,
   cardsById,
   detail,
+  actualParallel,
 ) {
   const article = element("article", {
     className: `work-stage-card work-attempt-card ${outcomeClass(card.status.value)}`,
   });
   article.dataset.workId = card.work_id;
   if (selected) article.classList.add("expanded");
-  const detailId = `work-card-detail-${card.work_id}`;
+  const detailId = workDomId("work-card-detail", card.work_id);
   const button = element("button", { className: "work-card-toggle" });
   button.type = "button";
   button.setAttribute("aria-expanded", String(selected));
@@ -3466,6 +3503,14 @@ function observedWorkCard(
       text: executorLabel(card.responsibility.executor_id),
     }),
   );
+  if (actualParallel) {
+    const badge = element("span", {
+      className: "work-parallel-badge",
+      text: "실제 병렬",
+      title: "동일한 실행 clock과 완전한 시간 기록에서 다른 작업과 실행 구간이 겹쳤습니다.",
+    });
+    responsibility.append(badge);
+  }
   button.append(responsibility);
   const parent = cardsById.get(card.relationships.parent_work_id);
   button.append(element("span", {
@@ -3516,7 +3561,7 @@ function appendWorkWaves(target, items, renderCard) {
         }),
         element("small", {
           text: waveItems.length > 1
-            ? `${waveItems.length}개 독립 분기`
+            ? `${waveItems.length}개 관계상 독립 작업`
             : "1개 작업",
         }),
       );
@@ -3569,6 +3614,11 @@ function buildObservedWorkMap(run, work, onSelect) {
   const cardsById = new Map(
     observed.cards.map((card) => [card.work_id, card]),
   );
+  const parallelWorkIds = new Set(
+    observed.graph.actual_concurrency === "observed"
+      ? (observed.graph.concurrent_work_pairs || []).flat()
+      : [],
+  );
   const waves = element("div", { className: "work-waves" });
   appendWorkWaves(waves, observed.cards, (card) => {
     const selected = card.work_id === state.selectedStage;
@@ -3578,6 +3628,7 @@ function buildObservedWorkMap(run, work, onSelect) {
       onSelect,
       cardsById,
       buildObservedWorkCardDetail(run, work, card),
+      parallelWorkIds.has(card.work_id),
     );
   });
   canvas.append(waves);

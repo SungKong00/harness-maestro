@@ -2532,6 +2532,7 @@ footer {
   justify-content: center;
   gap: 14px;
   justify-self: center;
+  justify-items: center;
   min-width: 0;
 }
 
@@ -2630,6 +2631,12 @@ footer {
   line-height: 1.45;
 }
 
+.work-parallel-badge {
+  padding: 1px 5px;
+  border: 1px solid;
+  font-weight: 700;
+}
+
 .work-stage-dependencies {
   position: absolute;
   width: 1px;
@@ -2637,6 +2644,19 @@ footer {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+
+.work-map-canvas.work-edges-linearized .work-edge-layer {
+  display: none;
+}
+
+.work-map-canvas.work-edges-linearized .work-stage-dependencies {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
 }
 
 .work-stage-footer {
@@ -3120,6 +3140,12 @@ footer {
     height: auto;
     overflow: visible;
     clip: auto;
+    white-space: normal;
+  }
+
+  .work-stage-footer-summary {
+    overflow: visible;
+    text-overflow: clip;
     white-space: normal;
   }
 
@@ -3913,6 +3939,12 @@ th {
 .work-pack-panel,
 .work-card-detail {
   border-color: var(--color-divider);
+}
+
+.work-parallel-badge {
+  border-color: var(--color-success);
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .work-pack-toggle > small {

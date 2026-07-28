@@ -1930,6 +1930,8 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn(".work-card-detail-content", viewer_styles)
         self.assertIn(".work-card-detail[hidden]", viewer_styles)
         self.assertIn(".work-card-detail.work-inspector", viewer_styles)
+        self.assertIn(".work-edges-linearized", viewer_styles)
+        self.assertIn(".work-parallel-badge", viewer_styles)
         self.assertIn("overflow: visible;", viewer_styles)
         self.assertIn("scroll-margin-top: 124px;", viewer_styles)
         self.assertIn("관계상 독립 가능", viewer_source)
@@ -1948,6 +1950,17 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn("모델 기록 없음", viewer_source)
         self.assertIn("토큰 기록 없음", viewer_source)
         self.assertIn("compactWorkDuration(", viewer_source)
+        self.assertIn("function workDomId(", viewer_source)
+        self.assertIn("encodeURIComponent(String(value))", viewer_source)
+        self.assertNotIn(
+            "`work-card-detail-${card.work_id}`",
+            viewer_source,
+        )
+        self.assertIn("concurrent_work_pairs", viewer_source)
+        self.assertIn("실제 병렬", viewer_source)
+        self.assertIn("재작업 원본", viewer_source)
+        self.assertIn("다음 위임 완료 조건", viewer_source)
+        self.assertIn("work-edges-linearized", viewer_source)
         self.assertIn(
             '`요청 ${facts.reasoning.value.replaceAll("_", " ")}`',
             viewer_source,
@@ -2097,10 +2110,20 @@ assert.equal(expertiseRoutingText(legacy), "선택 방식 기록 없음");
             "function workExecutionFooter(",
             helper_start,
         )
+        dom_id_start = viewer_source.index("function workDomId(")
+        dom_id_end = viewer_source.index(
+            "function workPackDisclosure(",
+            dom_id_start,
+        )
         script = (
             'const assert = require("node:assert/strict");\n'
+            + viewer_source[dom_id_start:dom_id_end]
             + viewer_source[helper_start:helper_end]
             + r"""
+assert.equal(
+  workDomId("work-card-detail", "worker one"),
+  "work-card-detail-worker%20one",
+);
 assert.equal(compactModelName("gpt-5.6-terra"), "5.6 terra");
 assert.equal(compactTokenValue({total: 55550}), "55,550");
 assert.equal(compactTokenValue(null), "토큰 기록 없음");
