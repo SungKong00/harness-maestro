@@ -17,6 +17,7 @@ from maestro.assignment_contracts import (
     ENGINEERING_BASELINE_VERSION,
     FINDING_PACKET_VERSION,
     TERMINAL_PACKET_VERSION,
+    VERIFICATION_VERDICT_VERSION,
     assignment_output_schema,
     project_assignment_input,
     validate_assignment_packet,
@@ -910,6 +911,83 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
         self.assertEqual(
             implementation_projection["input"]["projection_digest"],
             dependency_ref["projection_digest"],
+        )
+        target = verification_projection["input"][
+            "verification_target"
+        ]
+        evidence_ref = verification_projection["input"][
+            "artifact_refs"
+        ][0]["artifact_id"]
+        verdict = {
+            "schema_version": VERIFICATION_VERDICT_VERSION,
+            "plan_id": plan["plan_id"],
+            "assignment_id": "verification",
+            "packet_type": "VerificationVerdict",
+            "target_assignment_id": target["assignment_id"],
+            "target_execution_unit_id": target[
+                "execution_unit_id"
+            ],
+            "target_model_route_id": target["model_route_id"],
+            "verdict": "passed",
+            "failure_cause": "none",
+            "failure_categories": [],
+            "evidence_refs": [evidence_ref],
+            "summary": "Projected implementation evidence passed.",
+            "writes_performed": False,
+        }
+        self.assertEqual(
+            "PASS",
+            validate_assignment_packet(
+                verdict,
+                plan,
+                "verification",
+                verification_projection,
+                repo_path=ROOT,
+            )["status"],
+        )
+        provider_schema = assignment_output_schema(
+            verification_projection
+        )
+        self.assertIn(
+            "Runtime-enforced cardinality",
+            provider_schema["properties"]["failure_categories"][
+                "description"
+            ],
+        )
+        invalid_failed = {
+            **verdict,
+            "verdict": "failed",
+            "failure_cause": "implementation",
+        }
+        self.assertIn(
+            "VERIFICATION_FAILURE_ATTRIBUTION_REQUIRED",
+            {
+                issue["code"]
+                for issue in validate_assignment_packet(
+                    invalid_failed,
+                    plan,
+                    "verification",
+                    verification_projection,
+                    repo_path=ROOT,
+                )["issues"]
+            },
+        )
+        invalid_passed = {
+            **verdict,
+            "failure_categories": ["correctness"],
+        }
+        self.assertIn(
+            "VERIFICATION_PASS_CAUSE_CONFLICT",
+            {
+                issue["code"]
+                for issue in validate_assignment_packet(
+                    invalid_passed,
+                    plan,
+                    "verification",
+                    verification_projection,
+                    repo_path=ROOT,
+                )["issues"]
+            },
         )
 
     def test_terminal_failure_is_an_observation_not_a_retry_engine(self) -> None:

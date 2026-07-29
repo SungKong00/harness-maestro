@@ -6,14 +6,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.support import ROOT, write_json
+
 from maestro.expertise_reconcile import (
     apply_expertise_reconcile_plan,
     build_expertise_reconcile_plan,
 )
 from maestro.expertise import project_expertise_storage_status
 from maestro.host import apply_host_sync_plan, build_host_sync_plan
-
-from tests.support import ROOT, write_json
 
 
 class HostSyncTests(unittest.TestCase):

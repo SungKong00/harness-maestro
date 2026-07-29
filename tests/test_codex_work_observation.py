@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.support import apply_fresh_init
+
 from maestro.errors import MaestroError
 from maestro.observations import (
     observation_receipt_fields,
@@ -11,7 +13,6 @@ from maestro.observations import (
     record_work_start,
     start_run_observation,
 )
-from tests.support import apply_fresh_init
 
 
 class CodexWorkObservationTests(unittest.TestCase):

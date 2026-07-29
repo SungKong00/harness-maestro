@@ -24,7 +24,12 @@ from maestro.decisions import repository_revision
 from maestro.errors import MaestroError
 from maestro.host import CODEX_SKILLS, host_installation_checks
 from maestro.documents import select_documents
-from maestro.util import canonical_json, sha256_text
+from maestro.observations import (
+    record_stage_observation,
+    start_run_observation,
+)
+from maestro.planning import route_goal_v2
+from maestro.util import canonical_json, file_sha256, sha256_text
 
 
 class HostInstallationTests(unittest.TestCase):
@@ -116,13 +121,59 @@ class ConventionDraftTests(unittest.TestCase):
             },
         ]
         revision = repository_revision(repo)
+        candidate_sha256 = sha256_text(candidate)
+        authoring_run = "convention-api-author"
+        evaluation_run = "convention-api-evaluator"
+        plan_root = repo / ".maestro/state/test-convention-plans"
+        authoring_plan = route_goal_v2(
+            "Author the API error Convention",
+            "medium",
+            intent="implementation",
+            repo_path=repo,
+        )
+        authoring_plan_path = plan_root / "author.json"
+        write_json(authoring_plan_path, authoring_plan)
+        authored = start_run_observation(
+            repo,
+            run_id=authoring_run,
+            task_label="Author API Convention",
+            plan_path=authoring_plan_path,
+        )
+        for assignment in authoring_plan["assignments"]:
+            record_stage_observation(
+                repo,
+                observation_id=authored["observation_id"],
+                run_id=authoring_run,
+                assignment_id=assignment["assignment_id"],
+                status="completed",
+                evidence_source="deterministic_command",
+                evidence_refs=(
+                    [f"convention-candidate:{candidate_sha256}"]
+                    if assignment["mutation_owner"]
+                    else [f"authoring:{assignment['assignment_id']}"]
+                ),
+            )
+        evaluation_plan = route_goal_v2(
+            "Evaluate the API error Convention",
+            "medium",
+            intent="review",
+            repo_path=repo,
+        )
+        evaluation_plan_path = plan_root / "evaluate.json"
+        write_json(evaluation_plan_path, evaluation_plan)
+        evaluated = start_run_observation(
+            repo,
+            run_id=evaluation_run,
+            task_label="Evaluate API Convention",
+            plan_path=evaluation_plan_path,
+        )
         write_json(
             evidence,
             {
                 "schema_version": (
-                    "maestro_convention_held_out_evaluation_v1"
+                    "maestro_convention_held_out_evaluation_v2"
                 ),
-                "candidate_sha256": sha256_text(candidate),
+                "candidate_sha256": candidate_sha256,
                 "suite_sha256": sha256_text(canonical_json(cases)),
                 "source_revision": (
                     revision["head"]
@@ -136,6 +187,10 @@ class ConventionDraftTests(unittest.TestCase):
                     "command": "python -m unittest tests.test_api_contract",
                     "exit_code": 0,
                     "executed_at": "2026-07-27T00:00:00Z",
+                    "kind": "fresh-context",
+                    "observation_id": evaluated["observation_id"],
+                    "authoring_run_ref": authoring_run,
+                    "evaluation_run_ref": evaluation_run,
                 },
                 "conditions": {
                     "tool": "unittest",
@@ -144,6 +199,29 @@ class ConventionDraftTests(unittest.TestCase):
                 },
             },
         )
+        for assignment in evaluation_plan["assignments"]:
+            record_stage_observation(
+                repo,
+                observation_id=evaluated["observation_id"],
+                run_id=evaluation_run,
+                assignment_id=assignment["assignment_id"],
+                status="completed",
+                evidence_source="codex_app_server",
+                evidence_refs=[
+                    f"convention-candidate:{candidate_sha256}",
+                    f"convention-evaluation:{file_sha256(evidence)}",
+                ],
+                requested_model=assignment["model_route"][
+                    "selected_model"
+                ],
+                requested_reasoning_effort=assignment["model_route"][
+                    "reasoning_effort"
+                ],
+                actual_model=assignment["model_route"]["selected_model"],
+                model_evidence="complete",
+                reroutes=[],
+                duration_ms=1.0,
+            )
 
     def test_preview_then_apply_creates_only_an_inactive_draft(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -344,7 +422,7 @@ class ConventionDraftTests(unittest.TestCase):
                 verification_artifact=None,
             )
             self.assertEqual(
-                "maestro_convention_evaluation_request_v1",
+                "maestro_convention_evaluation_request_v2",
                 request["schema_version"],
             )
             self.assertEqual("evaluation_required", request["status"])

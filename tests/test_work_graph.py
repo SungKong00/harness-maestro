@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import unittest
 
+from tests.support import ROOT
+
 from maestro.errors import MaestroError
 from maestro.work import (
     append_work_span,
@@ -15,7 +17,6 @@ from maestro.work import (
     validate_work_span,
     validate_work_spans,
 )
-from tests.support import ROOT
 
 
 def _span(

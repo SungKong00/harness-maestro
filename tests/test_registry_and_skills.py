@@ -11,6 +11,8 @@ from tests.support import ROOT
 
 from maestro.cli import parser
 from maestro.errors import MaestroError
+from maestro.model_policy import MODEL_ROUTE_FIELDS
+from maestro.model_policy import build_stage_model_route
 from maestro.registry import (
     load_domain_index_document,
     load_registry,
@@ -562,10 +564,62 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("mechanical-change", route["model_route"]["task_class"])
         self.assertEqual("economy", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-luna", route["model_route"]["selected_model"])
-        self.assertIn(
-            route["model_route"]["reasoning_effort"],
-            {"low", "medium"},
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+        self.assertEqual(
+            {
+                "selected_class": "balanced",
+                "selected_model": "gpt-5.6-terra",
+                "reasoning_effort": "medium",
+                "trigger": "selected-model-unavailable",
+            },
+            route["model_route"]["fallback_route"],
         )
+
+    def test_mixed_mechanical_or_classification_work_is_not_economy(
+        self,
+    ) -> None:
+        for goal in (
+            "Rename symbols and implement a new parser feature",
+            "Classify files by metadata and implement a new parser feature",
+        ):
+            with self.subTest(goal=goal):
+                route = route_goal(
+                    goal,
+                    "medium",
+                    intent="implementation",
+                )
+                self.assertEqual(
+                    "general-implementation",
+                    route["model_route"]["task_class"],
+                )
+                self.assertEqual(
+                    "gpt-5.6-terra",
+                    route["model_route"]["selected_model"],
+                )
+                self.assertEqual(
+                    "high",
+                    route["model_route"]["reasoning_effort"],
+                )
+
+    def test_negated_or_unrelated_complexity_does_not_force_frontier(
+        self,
+    ) -> None:
+        for goal in (
+            "This is not a difficult implementation; implement one CRUD field",
+            "Avoid a complex implementation; just rename one field",
+            "Do not use a complex algorithm; rename one generated fixture",
+            "Implement one parser feature; the documentation is complex",
+        ):
+            with self.subTest(goal=goal):
+                route = route_goal(
+                    goal,
+                    "medium",
+                    intent="implementation",
+                )
+                self.assertNotEqual(
+                    "gpt-5.6-sol",
+                    route["model_route"]["selected_model"],
+                )
 
     def test_mechanical_auth_change_does_not_hide_high_impact_boundary(self) -> None:
         route = route_goal(
@@ -598,22 +652,80 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("general-implementation", route["model_route"]["task_class"])
         self.assertEqual("balanced", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-terra", route["model_route"]["selected_model"])
-        self.assertEqual("medium", route["model_route"]["reasoning_effort"])
-        self.assertEqual(
-            {
-                "executor",
-                "task_class",
-                "risk",
-                "host",
-                "selected_class",
-                "selected_model",
-                "reasoning_effort",
-                "selection_reason",
-                "escalation_allowed",
-                "fallback",
-            },
-            set(route["model_route"]),
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+        self.assertEqual(MODEL_ROUTE_FIELDS, set(route["model_route"]))
+
+    def test_stage_context_prevents_classification_keyword_leakage(self) -> None:
+        route = route_goal(
+            "Implement model policy and dashboard support for ambiguous file classification",
+            "medium",
+            intent="implementation",
         )
+
+        self.assertEqual("implementation", route["model_route"]["stage_kind"])
+        self.assertEqual(
+            "general-implementation",
+            route["model_route"]["task_class"],
+        )
+        self.assertEqual("gpt-5.6-terra", route["model_route"]["selected_model"])
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+
+        review = route_goal(
+            "Review frontmatter metadata classification policy",
+            "medium",
+            intent="review",
+        )
+        self.assertEqual("semantic-review", review["model_route"]["stage_kind"])
+        self.assertEqual("semantic-review", review["model_route"]["task_class"])
+        self.assertEqual("gpt-5.6-terra", review["model_route"]["selected_model"])
+
+        authoring = route_goal(
+            "Implement expertise candidate authoring flow",
+            "medium",
+            intent="implementation",
+        )
+        self.assertEqual(
+            "gpt-5.6-terra",
+            authoring["model_route"]["selected_model"],
+        )
+
+    def test_high_risk_semantic_review_can_reach_sol(self) -> None:
+        route = route_goal(
+            "Review the API behavior before release",
+            "high",
+            ["contract"],
+            intent="review",
+        )
+
+        self.assertEqual("semantic-review", route["model_route"]["stage_kind"])
+        self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+
+    def test_unknown_model_bearing_stage_fails_closed(self) -> None:
+        registry = load_registry()
+        executor = next(
+            item
+            for item in registry["executors"]
+            if item["executor_id"] == "implementation-engineer"
+        )
+        with self.assertRaises(MaestroError) as raised:
+            build_stage_model_route(
+                goal="Implement a CRUD endpoint",
+                risk="medium",
+                lens_ids=[],
+                executor=executor,
+                host_id="codex",
+                host_profile={
+                    "classes": {
+                        "economy": {"model": "luna"},
+                        "balanced": {"model": "terra"},
+                        "frontier": {"model": "sol"},
+                    }
+                },
+                execution_unit_id="writer",
+                stage_kind="unknown-stage",
+            )
+        self.assertEqual("MODEL_STAGE_UNKNOWN", raised.exception.code)
 
     def test_metadata_extraction_uses_economy_model(self) -> None:
         route = route_goal(
@@ -663,7 +775,7 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("frontier", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
 
-    def test_executor_default_class_and_reasoning_are_authoritative(self) -> None:
+    def test_stage_policy_is_independent_from_executor_defaults(self) -> None:
         registry = load_registry()
         executor = next(
             item
@@ -676,7 +788,7 @@ class RoutingContractTests(unittest.TestCase):
         with patch("maestro.registry.load_registry", return_value=registry):
             route = route_goal("Implement a CRUD endpoint", "medium")
 
-        self.assertEqual("frontier", route["model_route"]["selected_class"])
+        self.assertEqual("balanced", route["model_route"]["selected_class"])
         self.assertEqual("high", route["model_route"]["reasoning_effort"])
 
     def test_material_conflict_routes_only_one_explicit_lane(self) -> None:

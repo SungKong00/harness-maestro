@@ -8,8 +8,17 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Iterable
 
+from .coverage_admission import validate_task_coverage_admission
 from .documents import select_documents
+from .design_assurance import (
+    design_result_digest,
+    product_design_assurance_active,
+    validate_design_assurance_result,
+    validate_design_decision_packet,
+    validate_design_verification,
+)
 from .errors import MaestroError
+from .execution_contracts import normalize_execution_contract
 from .planning import validate_route_v2
 from .registry import load_registry
 from .research import (
@@ -30,6 +39,7 @@ ENGINEERING_BASELINE_VERSION = "maestro_engineering_baseline_v1"
 ASSIGNMENT_INPUT_VERSION = "maestro_assignment_input_v1"
 FINDING_PACKET_VERSION = "maestro_finding_packet_v2"
 TERMINAL_PACKET_VERSION = "maestro_terminal_packet_v1"
+VERIFICATION_VERDICT_VERSION = "maestro_verification_verdict_v1"
 VALIDATION_VERSION = "maestro_assignment_contract_validation_v1"
 CONVENTION_SELECTION_VERSION = "maestro_convention_selection_v1"
 _ASSIGNMENT_SCHEMA_RESOURCE = "schemas/assignment-contracts.schema.json"
@@ -76,6 +86,26 @@ _CHECK_IDS = {
 }
 _VERDICTS = {"PASS", "FINDINGS", "BLOCK", "INSUFFICIENT_EVIDENCE"}
 _SEVERITIES = {"medium", "high", "critical"}
+_VERIFICATION_VERDICTS = {"passed", "failed", "inconclusive"}
+_VERIFICATION_FAILURE_CAUSES = {
+    "none",
+    "implementation",
+    "specification",
+    "environment",
+    "tooling",
+    "unknown",
+}
+_VERIFICATION_FAILURE_CATEGORIES = {
+    "correctness",
+    "integration",
+    "security",
+    "regression",
+    "performance",
+    "contract",
+    "test-infrastructure",
+    "specification",
+    "unknown",
+}
 _TERMINAL_STATUSES = {
     "completed",
     "failed_transient",
@@ -255,6 +285,8 @@ def assignment_output_schema(projection: Any) -> dict[str, Any]:
     output_packet = assignment.get("output_packet")
     if output_packet == "FindingPacket":
         definition_id = "findingPacket"
+    elif output_packet == "VerificationVerdict":
+        definition_id = "verificationVerdict"
     elif isinstance(output_packet, str) and output_packet.strip():
         definition_id = "terminalPacket"
     else:
@@ -337,6 +369,82 @@ def assignment_output_schema(projection: Any) -> dict[str, Any]:
                 "type": "array",
                 "items": {"enum": sorted(projected_refs)},
             }
+    elif definition_id == "verificationVerdict":
+        target = projected.get("verification_target")
+        if not isinstance(target, dict):
+            raise MaestroError(
+                "PACKET_OUTPUT_SCHEMA_INVALID",
+                "VerificationVerdict requires one exact mutation-owner target.",
+            )
+        properties["target_assignment_id"] = {
+            "enum": [target["assignment_id"]]
+        }
+        properties["target_execution_unit_id"] = {
+            "enum": [target["execution_unit_id"]]
+        }
+        properties["target_model_route_id"] = {
+            "enum": [target["model_route_id"]]
+        }
+        projected_refs, _ = _projection_refs(projected)
+        if projected_refs:
+            properties["evidence_refs"] = {
+                "type": "array",
+                "items": {"enum": sorted(projected_refs)},
+            }
+        design_context = projected.get("design_assurance_context")
+        if (
+            isinstance(design_context, dict)
+            and design_context.get("role") == "verification"
+        ):
+            required = schema.get("required")
+            if not isinstance(required, list):
+                raise MaestroError(
+                    "PACKET_OUTPUT_SCHEMA_INVALID",
+                    "The verification Packet output schema has no required field set.",
+                )
+            required.append("design_verification")
+            decision_packet = design_context["decision_packet"]
+            implementation_result = design_context[
+                "implementation_result"
+            ]
+            design_verification_schema = schema["$defs"][
+                "designVerification"
+            ]
+            design_verification_schema["properties"][
+                "decision_packet_id"
+            ] = {"enum": [decision_packet["packet_id"]]}
+            design_verification_schema["properties"][
+                "implementation_result_digest"
+            ] = {"enum": [design_result_digest(implementation_result)]}
+            scenario_ids = [
+                item["scenario_id"]
+                for item in decision_packet["verification_scenarios"]
+            ]
+            scenario_result = schema["$defs"].get(
+                "designVerificationScenarioResult"
+            )
+            if isinstance(scenario_result, dict):
+                scenario_result["properties"]["scenario_id"] = {
+                    "enum": scenario_ids
+                }
+                scenario_result["properties"]["artifact_path"] = {
+                    "enum": [
+                        item["artifact_path"]
+                        for item in implementation_result[
+                            "rendered_artifacts"
+                        ]
+                    ]
+                }
+                scenario_result["properties"]["artifact_sha256"] = {
+                    "enum": [
+                        item["sha256"]
+                        for item in implementation_result[
+                            "rendered_artifacts"
+                        ]
+                    ]
+                }
+        else:
+            properties.pop("design_verification", None)
     else:
         properties["packet_type"] = {"enum": [output_packet]}
         mutation_owner = assignment.get("mutation_owner") is True
@@ -348,6 +456,7 @@ def assignment_output_schema(projection: Any) -> dict[str, Any]:
             else []
         )
         research_context = projected.get("research_context")
+        coverage_context = projected.get("coverage_context")
         required = schema.get("required")
         if not isinstance(required, list):
             raise MaestroError(
@@ -362,6 +471,51 @@ def assignment_output_schema(projection: Any) -> dict[str, Any]:
             required.append("research_dispositions")
         else:
             properties.pop("research_dispositions", None)
+        if mutation_owner and isinstance(coverage_context, dict):
+            required.append("coverage_dispositions")
+        else:
+            properties.pop("coverage_dispositions", None)
+        design_context = projected.get("design_assurance_context")
+        if (
+            mutation_owner
+            and isinstance(design_context, dict)
+            and design_context.get("role") == "implementation"
+        ):
+            required.append("design_assurance_result")
+            decision_packet = design_context["decision_packet"]
+            decision_ids = [
+                item["decision_id"]
+                for item in decision_packet["decisions"]
+            ]
+            scenario_ids = [
+                item["scenario_id"]
+                for item in decision_packet["verification_scenarios"]
+            ]
+            disposition = schema["$defs"].get(
+                "designDecisionDisposition"
+            )
+            if isinstance(disposition, dict):
+                disposition["properties"]["decision_id"] = {
+                    "enum": decision_ids
+                }
+            artifact = schema["$defs"].get("designRenderedArtifact")
+            if isinstance(artifact, dict):
+                artifact["properties"]["scenario_id"] = {
+                    "enum": scenario_ids
+                }
+                artifact["properties"]["artifact_path"] = {
+                    "enum": [
+                        item["artifact_path"]
+                        for item in decision_packet[
+                            "verification_scenarios"
+                        ]
+                    ]
+                }
+            schema["$defs"]["designAssuranceResult"]["properties"][
+                "decision_packet_id"
+            ] = {"enum": [decision_packet["packet_id"]]}
+        else:
+            properties.pop("design_assurance_result", None)
     return schema
 
 
@@ -370,12 +524,15 @@ def _project_document_selection(
     plan: dict[str, Any],
     assignment: dict[str, Any],
     target_paths: list[str],
+    *,
+    decision_authorized: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     selection = select_documents(
         repo,
         plan["goal"],
         assignment["lens_ids"],
         target_paths,
+        decision_authorized=decision_authorized,
     )
     selected_documents = selection.get("required_documents")
     if not isinstance(selected_documents, list):
@@ -622,6 +779,71 @@ def _assignments(plan: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _assignment_ancestors(
+    plan: Any,
+    assignment_id: str,
+) -> set[str]:
+    assignments = _assignments(plan)
+    pending = list(assignments.get(assignment_id, {}).get("depends_on", []))
+    ancestors: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in ancestors or current not in assignments:
+            continue
+        ancestors.add(current)
+        pending.extend(assignments[current].get("depends_on", []))
+    return ancestors
+
+
+def expected_verification_target(
+    plan: Any,
+    verifier_assignment_id: str,
+) -> dict[str, str] | None:
+    assignments = _assignments(plan)
+    verifier = assignments.get(verifier_assignment_id)
+    mutation_owners = [
+        item
+        for item in assignments.values()
+        if item.get("mutation_owner") is True
+    ]
+    if (
+        not isinstance(verifier, dict)
+        or verifier.get("executor_id") != "verifier"
+        or (
+            verifier.get("output_packet") is not None
+            and verifier.get("output_packet") != "VerificationVerdict"
+        )
+        or (
+            verifier.get("output_packet") is None
+            and verifier.get("kind") != "verification"
+        )
+        or len(mutation_owners) != 1
+    ):
+        return None
+    target = mutation_owners[0]
+    route = (
+        target.get("model_route")
+        if isinstance(target.get("model_route"), dict)
+        else target
+    )
+    if (
+        target.get("assignment_id")
+        not in _assignment_ancestors(plan, verifier_assignment_id)
+        or not isinstance(route, dict)
+        or not isinstance(route.get("execution_unit_id"), str)
+        or not isinstance(route.get("model_route_id"), str)
+    ):
+        return None
+    return {
+        "assignment_id": target["assignment_id"],
+        "execution_unit_id": route["execution_unit_id"],
+        "model_route_id": route["model_route_id"],
+    }
+
+
+_expected_verification_target = expected_verification_target
+
+
 def _plan_issues(
     plan: Any,
     repo_path: str | Path | None = None,
@@ -645,6 +867,192 @@ def _plan_issues(
         )
         for item in result["issues"]
     ]
+
+
+def _execution_context(
+    plan: Any,
+    *,
+    repo_path: str | Path | None = None,
+    research_bundle: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, str]]]:
+    """Normalize a direct route or a validated decision enactment wrapper."""
+
+    context = normalize_execution_contract(
+        plan,
+        repo_path=repo_path,
+        research_bundle=research_bundle,
+    )
+    if context["status"] != "PASS":
+        return (
+            {},
+            None,
+            [
+                _issue(
+                    "ASSIGNMENT_EXECUTION_PLAN_INVALID",
+                    f"plan.{item['path']}",
+                    item["message"],
+                )
+                for item in context["issues"]
+            ],
+        )
+    return (
+        context["route_plan"],
+        context["execution_authorization"],
+        [],
+    )
+
+
+def _coverage_context(
+    plan: dict[str, Any],
+    *,
+    goal: str,
+    repo: Path,
+    coverage: dict[str, Any] | None,
+    coverage_admission: dict[str, Any] | None,
+    coverage_projection: dict[str, Any] | None,
+    expertise_work_plan: dict[str, Any] | None,
+    expertise_closure: dict[str, Any] | None,
+    research_bundle: dict[str, Any] | None,
+    expertise_research_bundles: Any,
+    require_ready: bool,
+) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
+    binding = plan.get("coverage_binding")
+    supplied = any(
+        item is not None
+        for item in (
+            coverage,
+            coverage_admission,
+            coverage_projection,
+            expertise_work_plan,
+            expertise_closure,
+        )
+    ) or bool(expertise_research_bundles)
+    if binding is None:
+        if supplied:
+            return (
+                None,
+                [
+                    _issue(
+                        "PROJECTION_COVERAGE_UNEXPECTED",
+                        "coverage",
+                        "Coverage artifacts require a route bound to that Coverage.",
+                    )
+                ],
+            )
+        return None, []
+    if not isinstance(coverage, dict) or not isinstance(
+        coverage_admission,
+        dict,
+    ):
+        return (
+            None,
+            [
+                _issue(
+                    "PROJECTION_COVERAGE_REQUIRED",
+                    "coverage",
+                    "A Coverage-bound route requires its exact Coverage and final admission.",
+                )
+            ],
+        )
+    if (
+        coverage.get("coverage_id") != binding.get("coverage_id")
+        or coverage.get("goal_digest") != binding.get("goal_digest")
+    ):
+        return (
+            None,
+            [
+                _issue(
+                    "PROJECTION_COVERAGE_BINDING_MISMATCH",
+                    "coverage",
+                    "Coverage does not match the route binding.",
+                )
+            ],
+        )
+    candidate_ids = coverage_admission.get("compiled_candidate_ids")
+    if not isinstance(candidate_ids, list):
+        candidate_ids = []
+    validation = validate_task_coverage_admission(
+        coverage_admission,
+        repo_path=repo,
+        goal=goal,
+        coverage=coverage,
+        plan=plan,
+        coverage_projection=coverage_projection,
+        expertise_work_plan=expertise_work_plan,
+        expertise_closure=expertise_closure,
+        candidate_ids=candidate_ids,
+        research_bundle=research_bundle,
+        expertise_research_bundles=expertise_research_bundles,
+        allow_candidates=True,
+    )
+    if validation["status"] != "PASS":
+        return (
+            None,
+            [
+                _issue(
+                    "PROJECTION_COVERAGE_ADMISSION_INVALID",
+                    f"coverage_admission.{item['path']}",
+                    item["message"],
+                )
+                for item in validation["issues"]
+            ],
+        )
+    if require_ready and coverage_admission.get("status") != "READY":
+        return (
+            None,
+            [
+                _issue(
+                    "PROJECTION_COVERAGE_NOT_READY",
+                    "coverage_admission.status",
+                    "Mutation is blocked until every blocking and important Coverage allocation is ready.",
+                )
+            ],
+        )
+    return (
+        {
+            "schema_version": "maestro_assignment_coverage_context_v1",
+            "coverage_id": coverage["coverage_id"],
+            "admission_id": coverage_admission["admission_id"],
+            "coverage_projection_id": coverage_admission.get(
+                "coverage_projection_id"
+            ),
+            "expertise_work_plan_id": coverage_admission.get(
+                "expertise_work_plan_id"
+            ),
+            "expertise_closure_id": coverage_admission.get(
+                "expertise_closure_id"
+            ),
+            "items": [
+                {
+                    "item_id": item["item_id"],
+                    "kind": item["kind"],
+                    "summary": item["summary"],
+                    "failure_if_omitted": item["failure_if_omitted"],
+                    "materiality": item["materiality"],
+                    "depends_on": copy.deepcopy(item["depends_on"]),
+                    "allocations": [
+                        {
+                            "kind": allocation["kind"],
+                            "target_ref": allocation["target_ref"],
+                        }
+                        for allocation in item["allocations"]
+                    ],
+                }
+                for item in coverage["items"]
+            ],
+            "evidence_entries": copy.deepcopy(
+                coverage_projection.get("entries", [])
+                if isinstance(coverage_projection, dict)
+                else []
+            ),
+            "expertise_handoff": copy.deepcopy(
+                expertise_closure
+                if isinstance(expertise_closure, dict)
+                else None
+            ),
+        },
+        [],
+    )
 
 
 def _research_context(
@@ -1360,6 +1768,75 @@ def _projection_refs(
         for item in _dict_items(research.get("claims")):
             if isinstance(item.get("claim_id"), str):
                 identifiers.add(f"research-claim:{item['claim_id']}")
+    coverage = value.get("coverage_context")
+    if isinstance(coverage, dict):
+        admission_id = coverage.get("admission_id")
+        if (
+            isinstance(admission_id, str)
+            and _DIGEST.fullmatch(admission_id) is not None
+        ):
+            identifiers.add(f"coverage-admission:{admission_id}")
+        for item in _dict_items(coverage.get("evidence_entries")):
+            digest = item.get("evidence_digest")
+            if (
+                isinstance(digest, str)
+                and _DIGEST.fullmatch(digest) is not None
+            ):
+                identifiers.add(f"coverage-evidence:{digest}")
+            if (
+                item.get("evidence_kind") == "repository-file"
+                and isinstance(item.get("evidence_ref"), str)
+            ):
+                locations.add(item["evidence_ref"])
+        handoff = coverage.get("expertise_handoff")
+        if isinstance(handoff, dict):
+            closure_id = handoff.get("closure_id")
+            if (
+                isinstance(closure_id, str)
+                and _DIGEST.fullmatch(closure_id) is not None
+            ):
+                identifiers.add(f"expertise-closure:{closure_id}")
+            for result in _dict_items(handoff.get("batch_results")):
+                packet_digest = result.get("packet_digest")
+                if (
+                    isinstance(packet_digest, str)
+                    and _DIGEST.fullmatch(packet_digest) is not None
+                ):
+                    identifiers.add(
+                        f"expertise-packet:{packet_digest}"
+                    )
+    design = value.get("design_assurance_context")
+    if isinstance(design, dict):
+        packet = design.get("decision_packet")
+        if isinstance(packet, dict):
+            packet_id = packet.get("packet_id")
+            if isinstance(packet_id, str) and _DIGEST.fullmatch(packet_id):
+                identifiers.add(f"design-decision:{packet_id}")
+            for decision in _dict_items(packet.get("decisions")):
+                decision_id = decision.get("decision_id")
+                if isinstance(decision_id, str):
+                    identifiers.add(f"design-material:{decision_id}")
+            for scenario in _dict_items(
+                packet.get("verification_scenarios")
+            ):
+                scenario_id = scenario.get("scenario_id")
+                if isinstance(scenario_id, str):
+                    identifiers.add(f"design-scenario:{scenario_id}")
+        result = design.get("implementation_result")
+        if isinstance(result, dict):
+            for artifact in _dict_items(result.get("rendered_artifacts")):
+                scenario_id = artifact.get("scenario_id")
+                digest = artifact.get("sha256")
+                if (
+                    isinstance(scenario_id, str)
+                    and isinstance(digest, str)
+                    and _DIGEST.fullmatch(digest)
+                ):
+                    identifiers.add(
+                        f"design-render:{scenario_id}:{digest}"
+                    )
+                if isinstance(artifact.get("artifact_path"), str):
+                    locations.add(artifact["artifact_path"])
     return identifiers, locations
 
 
@@ -1545,6 +2022,147 @@ def _research_disposition_issues(
                 "PACKET_RESEARCH_CONFLICT_UNRESOLVED",
                 "research_dispositions",
                 "A writer cannot complete with an unresolved research conflict.",
+            )
+        )
+    return issues
+
+
+def _coverage_disposition_issues(
+    dispositions: Any,
+    *,
+    projection: Any,
+    completed: bool,
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    projected = _projection_value(projection)
+    context = (
+        projected.get("coverage_context")
+        if isinstance(projected, dict)
+        else None
+    )
+    if not isinstance(context, dict):
+        if dispositions is not None:
+            issues.append(
+                _issue(
+                    "PACKET_COVERAGE_DISPOSITIONS_UNEXPECTED",
+                    "coverage_dispositions",
+                    "Coverage dispositions require a bound Coverage context.",
+                )
+            )
+        return issues
+    expected: dict[tuple[str, str], str] = {}
+    for item in _dict_items(context.get("items")):
+        item_id = item.get("item_id")
+        if not isinstance(item_id, str):
+            continue
+        for allocation in _dict_items(item.get("allocations")):
+            target_ref = allocation.get("target_ref")
+            kind = allocation.get("kind")
+            if isinstance(target_ref, str) and isinstance(kind, str):
+                expected[(item_id, target_ref)] = kind
+    if completed and dispositions is None:
+        issues.append(
+            _issue(
+                "PACKET_COVERAGE_DISPOSITIONS_REQUIRED",
+                "coverage_dispositions",
+                "A completed writer must disposition every Coverage allocation.",
+            )
+        )
+        return issues
+    if dispositions is None:
+        return issues
+    if (
+        not isinstance(dispositions, list)
+        or len(dispositions) != len(expected)
+        or len(dispositions) > 1_024
+    ):
+        issues.append(
+            _issue(
+                "PACKET_COVERAGE_DISPOSITIONS_INVALID",
+                "coverage_dispositions",
+                "Coverage dispositions must match the exact bounded allocation set.",
+            )
+        )
+        return issues
+
+    seen: set[tuple[str, str]] = set()
+    has_conflict = False
+    for index, item in enumerate(dispositions):
+        path = f"coverage_dispositions[{index}]"
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "item_id",
+                "target_ref",
+                "disposition",
+                "reason",
+                "evidence_refs",
+            }
+            or not _line(item.get("item_id"), 128)
+            or not _line(item.get("target_ref"), 512)
+            or not _line(item.get("reason"), 1_000)
+            or item.get("disposition")
+            not in {
+                "applied",
+                "not_applicable",
+                "conflict",
+                "deferred",
+            }
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_COVERAGE_DISPOSITION_INVALID",
+                    path,
+                    "Coverage disposition fields are invalid.",
+                )
+            )
+            continue
+        key = (item["item_id"], item["target_ref"])
+        allocation_kind = expected.get(key)
+        if allocation_kind is None or key in seen:
+            issues.append(
+                _issue(
+                    "PACKET_COVERAGE_DISPOSITION_MISMATCH",
+                    path,
+                    "Coverage disposition is duplicated or outside the projected set.",
+                )
+            )
+        seen.add(key)
+        _evidence(
+            item.get("evidence_refs"),
+            f"{path}.evidence_refs",
+            issues,
+            projection=projection,
+            allow_empty=False,
+        )
+        if (
+            item["disposition"] == "deferred"
+            and allocation_kind
+            not in {"deferred-explicit", "out-of-scope-explicit"}
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_COVERAGE_DEFERRED_UNAUTHORIZED",
+                    f"{path}.disposition",
+                    "Only an explicitly deferred or out-of-scope allocation may be reported as deferred.",
+                )
+            )
+        has_conflict = has_conflict or item["disposition"] == "conflict"
+    if seen != set(expected):
+        issues.append(
+            _issue(
+                "PACKET_COVERAGE_DISPOSITION_SET_MISMATCH",
+                "coverage_dispositions",
+                "Coverage dispositions do not cover the exact projected allocation set.",
+            )
+        )
+    if completed and has_conflict:
+        issues.append(
+            _issue(
+                "PACKET_COVERAGE_CONFLICT_UNRESOLVED",
+                "coverage_dispositions",
+                "A writer cannot complete with an unresolved Coverage conflict.",
             )
         )
     return issues
@@ -1950,6 +2568,10 @@ def validate_terminal_packet(
         fields.add("convention_dispositions")
     if isinstance(packet, dict) and "research_dispositions" in packet:
         fields.add("research_dispositions")
+    if isinstance(packet, dict) and "coverage_dispositions" in packet:
+        fields.add("coverage_dispositions")
+    if isinstance(packet, dict) and "design_assurance_result" in packet:
+        fields.add("design_assurance_result")
     if not _exact(packet, fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != TERMINAL_PACKET_VERSION:
@@ -2056,6 +2678,18 @@ def validate_terminal_packet(
                 "A completed reviewer must return FindingPacket v2.",
             )
         )
+    if (
+        packet["status"] == "completed"
+        and assignment is not None
+        and assignment["output_packet"] == "VerificationVerdict"
+    ):
+        issues.append(
+            _issue(
+                "PACKET_VERIFICATION_PAYLOAD_REQUIRED",
+                "status",
+                "A completed verifier must return VerificationVerdict v1.",
+            )
+        )
     if packet["status"] == "completed" and not refs:
         issues.append(
             _issue(
@@ -2065,6 +2699,81 @@ def validate_terminal_packet(
             )
         )
     projected_value = _projection_value(projection)
+    design_context = (
+        projected_value.get("design_assurance_context")
+        if isinstance(projected_value, dict)
+        else None
+    )
+    design_required = (
+        assignment is not None
+        and assignment["mutation_owner"]
+        and isinstance(design_context, dict)
+        and design_context.get("role") == "implementation"
+    )
+    design_result = packet.get("design_assurance_result")
+    if design_required and design_result is None:
+        issues.append(
+            _issue(
+                "PACKET_DESIGN_ASSURANCE_RESULT_REQUIRED",
+                "design_assurance_result",
+                "An assured Product Design writer must report the exact material decisions and rendered scenarios.",
+            )
+        )
+    elif design_result is not None and not design_required:
+        issues.append(
+            _issue(
+                "PACKET_DESIGN_ASSURANCE_RESULT_UNEXPECTED",
+                "design_assurance_result",
+                "Design assurance results are allowed only for the projected Product Design mutation gate.",
+            )
+        )
+    elif design_required:
+        if repo_path is None:
+            issues.append(
+                _issue(
+                    "PACKET_DESIGN_ASSURANCE_REPO_REQUIRED",
+                    "design_assurance_result",
+                    "Rendered Product Design evidence requires repository-bound validation.",
+                )
+            )
+        else:
+            issues.extend(
+                validate_design_assurance_result(
+                    design_result,
+                    decision_packet=design_context["decision_packet"],
+                    repo_path=repo_path,
+                    completed=packet["status"] == "completed",
+                )
+            )
+            for index, disposition in enumerate(
+                (
+                    design_result.get("decision_dispositions", [])
+                    if isinstance(design_result, dict)
+                    else []
+                )
+            ):
+                if isinstance(disposition, dict):
+                    _evidence(
+                        disposition.get("evidence_refs"),
+                        (
+                            "design_assurance_result."
+                            f"decision_dispositions[{index}].evidence_refs"
+                        ),
+                        issues,
+                        projection=projection,
+                        allow_empty=False,
+                    )
+        required_design_ref = (
+            f"design-decision:{design_context['decision_packet']['packet_id']}"
+        )
+        if packet["status"] == "completed" and required_design_ref not in refs:
+            issues.append(
+                _issue(
+                    "PACKET_DESIGN_ASSURANCE_EVIDENCE_REQUIRED",
+                    "evidence_refs",
+                    "A completed Product Design writer must cite the bound decision Packet.",
+                )
+            )
     research_context = (
         projected_value.get("research_context")
         if isinstance(projected_value, dict)
@@ -2236,7 +2945,303 @@ def validate_terminal_packet(
                 completed=packet["status"] == "completed",
             )
         )
+        issues.extend(
+            _coverage_disposition_issues(
+                packet.get("coverage_dispositions"),
+                projection=projection,
+                completed=packet["status"] == "completed",
+            )
+        )
     return _validation(packet, issues)
+
+
+def validate_verification_verdict(
+    packet: Any,
+    plan: dict[str, Any],
+    assignment_id: str,
+    projection: dict[str, Any] | None = None,
+    *,
+    repo_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Validate a verifier result and its exact upstream model target."""
+
+    issues = _plan_issues(plan, repo_path)
+    plan_value = plan if isinstance(plan, dict) else {}
+    assignment = _assignments(plan).get(assignment_id)
+    if (
+        assignment is None
+        or assignment.get("output_packet") != "VerificationVerdict"
+        or assignment.get("executor_id") != "verifier"
+    ):
+        issues.append(
+            _issue(
+                "VERIFICATION_ASSIGNMENT_INVALID",
+                "assignment_id",
+                "VerificationVerdict requires the exact verifier Assignment.",
+            )
+        )
+    fields = {
+        "schema_version",
+        "plan_id",
+        "assignment_id",
+        "packet_type",
+        "target_assignment_id",
+        "target_execution_unit_id",
+        "target_model_route_id",
+        "verdict",
+        "failure_cause",
+        "failure_categories",
+        "evidence_refs",
+        "summary",
+        "writes_performed",
+    }
+    if isinstance(packet, dict) and "design_verification" in packet:
+        fields.add("design_verification")
+    if not _exact(packet, fields, "$", issues):
+        return _validation(packet, issues)
+    if packet["schema_version"] != VERIFICATION_VERDICT_VERSION:
+        issues.append(
+            _issue(
+                "PACKET_VERSION_INVALID",
+                "schema_version",
+                f"Expected {VERIFICATION_VERDICT_VERSION}.",
+            )
+        )
+    if (
+        packet["plan_id"] != plan_value.get("plan_id")
+        or packet["assignment_id"] != assignment_id
+        or packet["packet_type"] != "VerificationVerdict"
+    ):
+        issues.append(
+            _issue(
+                "VERIFICATION_PACKET_BINDING_MISMATCH",
+                "plan_id",
+                "VerificationVerdict plan, Assignment, or Packet type changed.",
+            )
+        )
+    projected = _projection_value(projection)
+    target = (
+        projected.get("verification_target")
+        if isinstance(projected, dict)
+        else None
+    )
+    expected_target = _expected_verification_target(plan, assignment_id)
+    if (
+        projection is None
+        or not _projection_bound(
+            projection,
+            packet["plan_id"],
+            assignment_id,
+        )
+        or expected_target is None
+        or not isinstance(target, dict)
+        or target != expected_target
+        or packet["target_assignment_id"] != target.get("assignment_id")
+        or packet["target_execution_unit_id"]
+        != target.get("execution_unit_id")
+        or packet["target_model_route_id"] != target.get("model_route_id")
+    ):
+        issues.append(
+            _issue(
+                "VERIFICATION_TARGET_MISMATCH",
+                "target_assignment_id",
+                "VerificationVerdict must bind the projected mutation-owner target.",
+            )
+        )
+    verdict = packet["verdict"]
+    cause = packet["failure_cause"]
+    categories = packet["failure_categories"]
+    if verdict not in _VERIFICATION_VERDICTS:
+        issues.append(
+            _issue(
+                "VERIFICATION_VERDICT_INVALID",
+                "verdict",
+                "Verification verdict must be passed, failed, or inconclusive.",
+            )
+        )
+    if cause not in _VERIFICATION_FAILURE_CAUSES:
+        issues.append(
+            _issue(
+                "VERIFICATION_FAILURE_CAUSE_INVALID",
+                "failure_cause",
+                "Verification failure cause is outside the closed taxonomy.",
+            )
+        )
+    if (
+        not isinstance(categories, list)
+        or len(categories) > 8
+        or len(categories) != len(set(categories))
+        or any(
+            category not in _VERIFICATION_FAILURE_CATEGORIES
+            for category in categories
+        )
+    ):
+        issues.append(
+            _issue(
+                "VERIFICATION_FAILURE_CATEGORY_INVALID",
+                "failure_categories",
+                "Verification failure categories are invalid or duplicated.",
+            )
+        )
+    if verdict == "passed" and (cause != "none" or categories):
+        issues.append(
+            _issue(
+                "VERIFICATION_PASS_CAUSE_CONFLICT",
+                "failure_cause",
+                "A passed verdict must use failure_cause=none and no categories.",
+            )
+        )
+    if verdict == "failed" and (
+        cause in {"none", "unknown"} or not categories
+    ):
+        issues.append(
+            _issue(
+                "VERIFICATION_FAILURE_ATTRIBUTION_REQUIRED",
+                "failure_cause",
+                "A failed verdict needs a bounded non-unknown cause and category.",
+            )
+        )
+    if verdict == "inconclusive" and cause not in {
+        "specification",
+        "environment",
+        "tooling",
+        "unknown",
+    }:
+        issues.append(
+            _issue(
+                "VERIFICATION_INCONCLUSIVE_CAUSE_INVALID",
+                "failure_cause",
+                "Inconclusive verification requires a non-target uncertainty cause.",
+            )
+        )
+    refs = _evidence(
+        packet["evidence_refs"],
+        "evidence_refs",
+        issues,
+        projection=projection,
+        allow_empty=False,
+    )
+    if not refs:
+        issues.append(
+            _issue(
+                "VERIFICATION_EVIDENCE_REQUIRED",
+                "evidence_refs",
+                "VerificationVerdict requires bounded projected evidence.",
+            )
+        )
+    if not _line(packet["summary"], 500):
+        issues.append(
+            _issue(
+                "PACKET_TEXT_INVALID",
+                "summary",
+                "Verification summary must be one bounded line.",
+            )
+        )
+    if packet["writes_performed"] is not False:
+        issues.append(
+            _issue(
+                "VERIFICATION_WRITE_FORBIDDEN",
+                "writes_performed",
+                "The verifier is read-only.",
+            )
+        )
+    design_context = (
+        projected.get("design_assurance_context")
+        if isinstance(projected, dict)
+        else None
+    )
+    design_required = (
+        isinstance(design_context, dict)
+        and design_context.get("role") == "verification"
+    )
+    design_verification = packet.get("design_verification")
+    if design_required and design_verification is None:
+        issues.append(
+            _issue(
+                "DESIGN_VERIFICATION_REQUIRED",
+                "design_verification",
+                "An assured Product Design verifier must report every rendered scenario.",
+            )
+        )
+    elif design_verification is not None and not design_required:
+        issues.append(
+            _issue(
+                "DESIGN_VERIFICATION_UNEXPECTED",
+                "design_verification",
+                "Rendered design verification is allowed only for an assured Product Design projection.",
+            )
+        )
+    elif design_required:
+        if repo_path is None:
+            issues.append(
+                _issue(
+                    "DESIGN_VERIFICATION_REPO_REQUIRED",
+                    "design_verification",
+                    "Rendered Product Design verification requires repository-bound validation.",
+                )
+            )
+        else:
+            issues.extend(
+                validate_design_verification(
+                    design_verification,
+                    decision_packet=design_context["decision_packet"],
+                    implementation_result=design_context[
+                        "implementation_result"
+                    ],
+                    repo_path=repo_path,
+                    overall_verdict=verdict,
+                )
+            )
+        required_design_ref = (
+            f"design-decision:{design_context['decision_packet']['packet_id']}"
+        )
+        render_refs = {
+            (
+                "design-render:"
+                f"{item['scenario_id']}:{item['sha256']}"
+            )
+            for item in design_context[
+                "implementation_result"
+            ].get("rendered_artifacts", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("scenario_id"), str)
+            and isinstance(item.get("sha256"), str)
+        }
+        if required_design_ref not in refs or not (set(refs) & render_refs):
+            issues.append(
+                _issue(
+                    "DESIGN_VERIFICATION_EVIDENCE_REQUIRED",
+                    "evidence_refs",
+                    "Design verification must cite the decision Packet and at least one unchanged rendered artifact.",
+                )
+            )
+    result = _validation(packet, issues)
+    if result["status"] == "PASS":
+        assessment = {
+            "schema_version": "maestro_verification_assessment_v1",
+            "assessment_id": "",
+            "packet_digest": result["packet_digest"],
+            "verifier_assignment_id": assignment_id,
+            "target_assignment_id": packet["target_assignment_id"],
+            "target_execution_unit_id": packet[
+                "target_execution_unit_id"
+            ],
+            "target_model_route_id": packet["target_model_route_id"],
+            "verdict": verdict,
+            "failure_cause": cause,
+            "failure_categories": list(categories),
+            "evidence_refs": list(packet["evidence_refs"]),
+        }
+        assessment["assessment_id"] = sha256_text(
+            canonical_json(
+                {
+                    **assessment,
+                    "assessment_id": "",
+                }
+            )
+        )
+        result["verification_assessment"] = assessment
+    return result
 
 
 def validate_assignment_packet(
@@ -2248,6 +3253,14 @@ def validate_assignment_packet(
     repo_path: str | Path | None = None,
     research_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    route_plan, _, execution_issues = _execution_context(
+        plan,
+        repo_path=repo_path,
+        research_bundle=research_bundle,
+    )
+    if execution_issues:
+        return _validation(packet, execution_issues)
+    plan = route_plan
     version = packet.get("schema_version") if isinstance(packet, dict) else None
     if version == FINDING_PACKET_VERSION:
         result = validate_finding_packet(
@@ -2265,6 +3278,14 @@ def validate_assignment_packet(
             projection,
             repo_path=repo_path,
         )
+    elif version == VERIFICATION_VERDICT_VERSION:
+        result = validate_verification_verdict(
+            packet,
+            plan,
+            assignment_id,
+            projection,
+            repo_path=repo_path,
+        )
     else:
         result = _validation(
             packet,
@@ -2272,7 +3293,10 @@ def validate_assignment_packet(
                 _issue(
                     "PACKET_VERSION_UNSUPPORTED",
                     "schema_version",
-                    "Supported versions are FindingPacket v2 and terminal Packet v1.",
+                    (
+                        "Supported versions are FindingPacket v2, terminal "
+                        "Packet v1, and VerificationVerdict v1."
+                    ),
                 )
             ],
         )
@@ -2300,10 +3324,41 @@ def project_assignment_input(
     dependency_packets: Iterable[dict[str, Any]] = (),
     dependency_projections: Iterable[dict[str, Any]] = (),
     research_bundle: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
+    coverage_admission: dict[str, Any] | None = None,
+    coverage_projection: dict[str, Any] | None = None,
+    expertise_work_plan: dict[str, Any] | None = None,
+    expertise_closure: dict[str, Any] | None = None,
+    design_decision_packet: dict[str, Any] | None = None,
+    expertise_research_bundles: Any = None,
 ) -> dict[str, Any]:
     """Project the explicit allowlist for one Host-executed Assignment."""
 
     repo = ensure_repo(repo_path)
+    route_plan, execution_authorization, execution_issues = (
+        _execution_context(
+            plan,
+            repo_path=repo,
+            research_bundle=research_bundle,
+        )
+    )
+    if execution_issues:
+        return {
+            "schema_version": "maestro_assignment_projection_result_v1",
+            "status": "FAIL",
+            "execution_status": "INVALID",
+            "issues": sorted(
+                execution_issues,
+                key=lambda item: (
+                    item["code"],
+                    item["path"],
+                    item["message"],
+                ),
+            ),
+            "input": None,
+            "writes_performed": False,
+        }
+    plan = route_plan
     try:
         route_validation = validate_route_v2(
             plan,
@@ -2346,6 +3401,27 @@ def project_assignment_input(
                 f"Unknown Assignment: {assignment_id}.",
             )
         )
+    projected_coverage, coverage_issues = _coverage_context(
+        plan_value,
+        goal=(
+            plan_value.get("goal", "")
+            if isinstance(plan_value, dict)
+            else ""
+        ),
+        repo=repo,
+        coverage=coverage,
+        coverage_admission=coverage_admission,
+        coverage_projection=coverage_projection,
+        expertise_work_plan=expertise_work_plan,
+        expertise_closure=expertise_closure,
+        research_bundle=research_bundle,
+        expertise_research_bundles=expertise_research_bundles,
+        require_ready=(
+            assignment is not None
+            and assignment.get("mutation_owner") is True
+        ),
+    )
+    issues.extend(coverage_issues)
     baseline_result = validate_engineering_baseline(
         baseline,
         repo_path=repo,
@@ -2358,6 +3434,62 @@ def project_assignment_input(
         repo,
     )
     issues.extend(research_issues)
+    design_active = product_design_assurance_active(plan_value)
+    design_context: dict[str, Any] | None = None
+    design_decision_pending = False
+    if assignment is not None and design_active:
+        if assignment.get("mutation_owner") is True:
+            if design_decision_packet is None:
+                design_decision_pending = True
+            else:
+                design_validation = validate_design_decision_packet(
+                    design_decision_packet,
+                    plan_value,
+                    repo_path=repo,
+                    research_bundle=research_bundle,
+                )
+                issues.extend(design_validation["issues"])
+                if design_validation["status"] == "PASS":
+                    design_context = {
+                        "role": "implementation",
+                        "requirement": copy.deepcopy(
+                            plan_value["design_assurance"]
+                        ),
+                        "decision_packet": copy.deepcopy(
+                            design_decision_packet
+                        ),
+                    }
+        elif assignment.get("output_packet") == "FindingPacket":
+            if design_decision_packet is not None:
+                issues.append(
+                    _issue(
+                        "PROJECTION_DESIGN_DECISION_UNEXPECTED",
+                        "design_decision_packet",
+                        "Review assignments receive the assurance requirement, not a mutation decision sidecar.",
+                    )
+                )
+            design_context = {
+                "role": "analysis",
+                "requirement": copy.deepcopy(
+                    plan_value["design_assurance"]
+                ),
+            }
+        elif design_decision_packet is not None:
+            issues.append(
+                _issue(
+                    "PROJECTION_DESIGN_DECISION_UNEXPECTED",
+                    "design_decision_packet",
+                    "Only the assured mutation owner accepts a direct design decision Packet.",
+                )
+            )
+    elif design_decision_packet is not None:
+        issues.append(
+            _issue(
+                "PROJECTION_DESIGN_DECISION_UNEXPECTED",
+                "design_decision_packet",
+                "A design decision Packet requires an explicitly classified Product Design route.",
+            )
+        )
 
     surface_artifacts = (
         baseline.get("surface_map", {}).get("artifacts", [])
@@ -2383,6 +3515,7 @@ def project_assignment_input(
                 plan_value,
                 assignment,
                 target_paths,
+                decision_authorized=execution_authorization is not None,
             )
         )
         if (
@@ -2557,6 +3690,60 @@ def project_assignment_input(
                 "Provide exactly one valid Packet for every direct dependency.",
             )
         )
+    if (
+        assignment is not None
+        and design_active
+        and assignment.get("output_packet") == "VerificationVerdict"
+    ):
+        mutation_owner_id = plan_value.get(
+            "mutation_owner_assignment_id"
+        )
+        source_projection = dependency_projection_by_id.get(
+            mutation_owner_id
+        )
+        source_input = _projection_value(source_projection)
+        source_context = (
+            source_input.get("design_assurance_context")
+            if isinstance(source_input, dict)
+            else None
+        )
+        source_packet = dependency_by_id.get(mutation_owner_id)
+        implementation_result = (
+            source_packet.get("design_assurance_result")
+            if isinstance(source_packet, dict)
+            else None
+        )
+        if (
+            not isinstance(source_context, dict)
+            or source_context.get("role") != "implementation"
+            or source_context.get("requirement")
+            != plan_value.get("design_assurance")
+            or not isinstance(
+                source_context.get("decision_packet"),
+                dict,
+            )
+            or not isinstance(implementation_result, dict)
+        ):
+            issues.append(
+                _issue(
+                    "PROJECTION_DESIGN_DEPENDENCY_INVALID",
+                    "dependency_packets",
+                    "Design verification requires the exact assured writer projection and implementation result.",
+                )
+            )
+        else:
+            design_context = {
+                "role": "verification",
+                "requirement": copy.deepcopy(
+                    plan_value["design_assurance"]
+                ),
+                "decision_packet": copy.deepcopy(
+                    source_context["decision_packet"]
+                ),
+                "implementation_result": copy.deepcopy(
+                    implementation_result
+                ),
+            }
 
     gap_ids = (
         [
@@ -2578,6 +3765,24 @@ def project_assignment_input(
                 issues,
                 key=lambda item: (item["code"], item["path"], item["message"]),
             ),
+            "input": None,
+            "writes_performed": False,
+        }
+    if (
+        assignment["mutation_owner"]
+        and design_decision_pending
+    ):
+        return {
+            "schema_version": "maestro_assignment_projection_result_v1",
+            "status": "BLOCKED",
+            "execution_status": "DESIGN_DECISION_REQUIRED",
+            "issues": [
+                _issue(
+                    "PROJECTION_DESIGN_DECISION_REQUIRED",
+                    "design_decision_packet",
+                    "Build and validate the complete Product Design decision Packet before opening repository mutation.",
+                )
+            ],
             "input": None,
             "writes_performed": False,
         }
@@ -2677,6 +3882,18 @@ def project_assignment_input(
     else:
         expertise_application_mode = "not-applicable"
 
+    verification_target = None
+    if assignment.get("output_packet") == "VerificationVerdict":
+        verification_target = _expected_verification_target(
+            plan,
+            assignment_id,
+        )
+        if verification_target is None:
+            raise MaestroError(
+                "ASSIGNMENT_VERIFICATION_TARGET_INVALID",
+                "The mutation owner must be a typed ancestor of the verifier.",
+            )
+
     projected = {
         "schema_version": ASSIGNMENT_INPUT_VERSION,
         "projection_digest": "",
@@ -2684,10 +3901,13 @@ def project_assignment_input(
         "assignment_id": assignment_id,
         "goal_digest": sha256_text(plan["goal"]),
         "task_contract": copy.deepcopy(plan["task_contract"]),
+        "execution_authorization": execution_authorization,
+        "coverage_context": projected_coverage,
         "assignment_contract": {
             field: copy.deepcopy(assignment[field])
             for field in sorted(_ASSIGNMENT_FIELDS)
         },
+        "verification_target": verification_target,
         "surface_map": copy.deepcopy(baseline["surface_map"]),
         "engineering_baseline": copy.deepcopy(baseline["checks"]),
         "selected_lens_cards": lens_cards,
@@ -2735,6 +3955,8 @@ def project_assignment_input(
             "forbidden": list(_FORBIDDEN_CONTEXT),
         },
     }
+    if design_context is not None:
+        projected["design_assurance_context"] = design_context
     payload = copy.deepcopy(projected)
     payload.pop("projection_digest")
     projected["projection_digest"] = sha256_text(canonical_json(payload))

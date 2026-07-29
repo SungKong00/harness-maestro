@@ -12,6 +12,8 @@ from tests.support import ROOT, apply_fresh_init, write_json
 
 from maestro.cli import main
 from maestro.governance import govern_report, record_run
+from maestro.expertise_recomposition import recomposition_nominations
+from maestro.expertise_routing import candidate_routing_policy
 from maestro.planning import route_goal_v2, validate_route_v2
 from maestro.registry import load_registry, validate_registry
 from maestro.snapshot import snapshot_report
@@ -77,8 +79,11 @@ class ExpertiseRegistryTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(
-            "maestro_expertise_candidate_v1",
-            schema["properties"]["schema_version"]["const"],
+            {
+                "maestro_expertise_candidate_v1",
+                "maestro_expertise_candidate_v2",
+            },
+            set(schema["properties"]["schema_version"]["enum"]),
         )
         quality_schema = json.loads(
             (
@@ -95,8 +100,11 @@ class ExpertiseRegistryTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(
-            "maestro_expertise_quality_eval_v1",
-            quality_schema["properties"]["schema_version"]["const"],
+            {
+                "maestro_expertise_quality_eval_v1",
+                "maestro_expertise_quality_eval_v2",
+            },
+            set(quality_schema["properties"]["schema_version"]["enum"]),
         )
         self.assertEqual(
             "maestro_expertise_case_artifact_v1",
@@ -123,6 +131,83 @@ class ExpertiseRegistryTests(unittest.TestCase):
 
 
 class ExpertiseRoutingTests(unittest.TestCase):
+    def test_candidate_routing_policy_separates_validation_from_authority(
+        self,
+    ) -> None:
+        ordinary = candidate_routing_policy(
+            generation_mode="automatic",
+            change_kind="pack-revision",
+        )
+        task_gap = candidate_routing_policy(
+            generation_mode="task-gap",
+            change_kind="new-pack",
+        )
+        complex_change = candidate_routing_policy(
+            generation_mode="user-requested",
+            change_kind="guide-move",
+        )
+        extraction = candidate_routing_policy(
+            generation_mode="user-requested",
+            change_kind="pack-extraction",
+        )
+        grouped = candidate_routing_policy(
+            generation_mode="user-requested",
+            change_kind="new-pack",
+            grouped=True,
+        )
+
+        self.assertEqual("ordinary-route", ordinary["routing_role"])
+        self.assertTrue(ordinary["ordinary_route_allowed"])
+        self.assertEqual(
+            "corrected-task-gap",
+            task_gap["routing_role"],
+        )
+        self.assertTrue(task_gap["corrected_task_gap_allowed"])
+        self.assertEqual(
+            "management-only",
+            complex_change["routing_role"],
+        )
+        self.assertFalse(complex_change["ordinary_route_allowed"])
+        self.assertEqual("management-only", extraction["routing_role"])
+        self.assertEqual(
+            "complex-topology-change",
+            extraction["routing_reason"],
+        )
+        self.assertEqual("management-only", grouped["routing_role"])
+        self.assertEqual("atomic-change-set", grouped["routing_reason"])
+
+    def test_recomposition_nomination_is_a_read_only_review_signal(
+        self,
+    ) -> None:
+        nominations = recomposition_nominations(
+            [
+                {
+                    "fingerprint": "abc123",
+                    "kind": "missing-guide",
+                    "domain": "product design",
+                    "pack_id": "product-design",
+                    "guide_id": "content-hierarchy",
+                    "severity": "high",
+                    "occurrences": 4,
+                    "evidence_refs": ["run:one", "run:two"],
+                    "automatic_candidate_authoring_allowed": True,
+                },
+                {"kind": "missing-pack"},
+            ]
+        )
+
+        self.assertEqual(1, len(nominations))
+        nomination = nominations[0]
+        self.assertEqual("nomination-abc123", nomination["nomination_id"])
+        self.assertEqual(
+            ["pack:product-design", "guide:content-hierarchy"],
+            nomination["subject_refs"],
+        )
+        self.assertTrue(nomination["candidate_authoring_recommended"])
+        self.assertEqual("NONE", nomination["execution_authority"])
+        self.assertFalse(nomination["automatic_change_allowed"])
+        self.assertFalse(nomination["writes_performed"])
+
     def test_korean_content_claim_work_routes_to_marketing_claim_review(
         self,
     ) -> None:

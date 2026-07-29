@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+import re
 from typing import Any
 
 from .errors import MaestroError
@@ -9,7 +10,9 @@ from .util import read_json, safe_target
 
 CHANGE_KIND_TO_OPERATION = {
     "new-pack": "add-pack",
+    "pack-revision": "revise-pack",
     "pack-merge": "merge-packs",
+    "pack-extraction": "extract-pack",
     "pack-split": "split-pack",
     "guide-addition": "add-guide",
     "guide-revision": "revise-guide",
@@ -22,7 +25,9 @@ CHANGE_KIND_TO_OPERATION = {
 }
 OPERATION_LABELS = {
     "add-pack": ("+", "Pack 추가"),
+    "revise-pack": ("~", "Pack 전체 개정"),
     "merge-packs": ("+", "Pack 통합"),
+    "extract-pack": ("⧉", "선택 Guide로 Pack 구성"),
     "split-pack": ("+", "Pack 분할"),
     "add-guide": ("+", "Guide 추가"),
     "revise-guide": ("~", "Guide 수정"),
@@ -35,11 +40,14 @@ OPERATION_LABELS = {
 }
 COMPLEX_OPERATIONS = {
     "merge-packs",
+    "extract-pack",
     "split-pack",
     "move-guide",
     "copy-guide",
 }
 MAX_CHANGE_SET_CANDIDATES = 100
+CHANGE_SET_MANIFEST_VERSION = "maestro_expertise_change_set_manifest_v1"
+ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def _unique(values: list[str]) -> list[str]:
@@ -64,36 +72,142 @@ def _raw_candidate_change(
     return change if isinstance(change, dict) else None
 
 
+def _candidate_change_set_index(
+    repo: Path,
+) -> tuple[dict[str, list[str]], dict[str, str], bool]:
+    """Resolve groups plus their membership certainty without candidate trust."""
+
+    root = safe_target(repo, ".maestro/state/candidates/expertise")
+    groups: dict[str, list[str]] = defaultdict(list)
+    scanned: dict[str, list[str]] = defaultdict(list)
+    unreadable_candidate_exists = False
+    candidate_scan_complete = True
+    if root.is_dir() and not root.is_symlink():
+        candidate_dirs = [
+            path
+            for path in sorted(root.iterdir())
+            if path.is_dir()
+            and not path.is_symlink()
+            and ID_PATTERN.fullmatch(path.name) is not None
+        ]
+        candidate_scan_complete = (
+            len(candidate_dirs) <= MAX_CHANGE_SET_CANDIDATES
+        )
+        candidate_dirs = candidate_dirs[:MAX_CHANGE_SET_CANDIDATES]
+        for candidate_root in candidate_dirs:
+            candidate_path = safe_target(candidate_root, "candidate.json")
+            if candidate_path.is_symlink() or not candidate_path.is_file():
+                unreadable_candidate_exists = True
+                continue
+            try:
+                candidate = read_json(candidate_path)
+            except MaestroError:
+                unreadable_candidate_exists = True
+                continue
+            change = candidate.get("component_change")
+            change_set_id = (
+                change.get("change_set_id")
+                if isinstance(change, dict)
+                else None
+            )
+            if (
+                isinstance(change_set_id, str)
+                and ID_PATTERN.fullmatch(change_set_id) is not None
+            ):
+                scanned[change_set_id].append(candidate_root.name)
+                groups[change_set_id].append(candidate_root.name)
+
+    integrity: dict[str, str] = {}
+    declared: dict[str, list[str]] = {}
+    manifest_root = safe_target(
+        repo,
+        ".maestro/state/candidates/expertise-change-sets",
+    )
+    manifest_scan_complete = True
+    if manifest_root.is_dir() and not manifest_root.is_symlink():
+        manifests = sorted(manifest_root.glob("*.json"))
+        manifest_scan_complete = (
+            len(manifests) <= MAX_CHANGE_SET_CANDIDATES
+        )
+        manifests = manifests[:MAX_CHANGE_SET_CANDIDATES]
+        for manifest_path in manifests:
+            change_set_id = manifest_path.stem
+            if ID_PATTERN.fullmatch(change_set_id) is None:
+                continue
+            member_ids: list[str] = []
+            status = "invalid"
+            try:
+                manifest = read_json(manifest_path)
+            except MaestroError:
+                manifest = None
+            members = (
+                manifest.get("members")
+                if isinstance(manifest, dict)
+                else None
+            )
+            if isinstance(members, list):
+                member_ids = [
+                    member["candidate_id"]
+                    for member in members
+                    if isinstance(member, dict)
+                    and isinstance(member.get("candidate_id"), str)
+                    and ID_PATTERN.fullmatch(member["candidate_id"])
+                    is not None
+                ]
+            if (
+                isinstance(manifest, dict)
+                and manifest.get("schema_version")
+                == CHANGE_SET_MANIFEST_VERSION
+                and manifest.get("change_set_id") == change_set_id
+                and isinstance(members, list)
+                and bool(member_ids)
+                and len(member_ids) == len(members)
+                and len(member_ids) == len(set(member_ids))
+            ):
+                status = "valid"
+            declared[change_set_id] = member_ids
+            integrity[change_set_id] = status
+            groups[change_set_id].extend(member_ids)
+
+    for change_set_id in groups:
+        if change_set_id not in integrity:
+            integrity[change_set_id] = (
+                "uncertain" if unreadable_candidate_exists else "legacy"
+            )
+            continue
+        if (
+            integrity[change_set_id] == "valid"
+            and set(scanned.get(change_set_id, []))
+            != set(declared.get(change_set_id, []))
+        ):
+            integrity[change_set_id] = "invalid"
+
+    normalized: dict[str, list[str]] = {}
+    for change_set_id, candidate_ids in sorted(groups.items()):
+        unique_candidate_ids = list(dict.fromkeys(candidate_ids))
+        if unique_candidate_ids:
+            normalized[change_set_id] = sorted(unique_candidate_ids)
+    scan_complete = candidate_scan_complete and manifest_scan_complete
+    if not scan_complete:
+        for change_set_id in normalized:
+            integrity[change_set_id] = "uncertain"
+    return normalized, integrity, scan_complete
+
+
 def candidate_change_set_groups(
     repo: Path,
 ) -> dict[str, list[str]]:
     """Read candidate grouping without requiring every candidate to validate."""
 
-    root = safe_target(repo, ".maestro/state/candidates/expertise")
-    if root.is_symlink() or not root.is_dir():
-        return {}
-    groups: dict[str, list[str]] = defaultdict(list)
-    for candidate_path in sorted(root.glob("*/candidate.json"))[
-        :MAX_CHANGE_SET_CANDIDATES
-    ]:
-        if candidate_path.is_symlink() or not candidate_path.is_file():
-            continue
-        try:
-            candidate = read_json(candidate_path)
-        except MaestroError:
-            continue
-        change = candidate.get("component_change")
-        change_set_id = (
-            change.get("change_set_id")
-            if isinstance(change, dict)
-            else None
-        )
-        if isinstance(change_set_id, str) and change_set_id:
-            groups[change_set_id].append(candidate_path.parent.name)
-    return {
-        change_set_id: sorted(candidate_ids)
-        for change_set_id, candidate_ids in sorted(groups.items())
-    }
+    groups, _integrity, _scan_complete = _candidate_change_set_index(repo)
+    return groups
+
+
+def candidate_change_set_integrity(repo: Path) -> dict[str, str]:
+    """Return valid, legacy, uncertain, or invalid membership state."""
+
+    _groups, integrity, _scan_complete = _candidate_change_set_index(repo)
+    return integrity
 
 
 def candidate_change_set_context(
@@ -114,11 +228,23 @@ def candidate_change_set_context(
         if isinstance(change, dict)
         else None
     )
+    groups, integrity_by_change_set, scan_complete = (
+        _candidate_change_set_index(repo)
+    )
     candidate_ids = (
-        candidate_change_set_groups(repo).get(change_set_id, [])
+        list(groups.get(change_set_id, []))
         if isinstance(change_set_id, str)
         else []
     )
+    integrity = (
+        integrity_by_change_set.get(change_set_id)
+        if isinstance(change_set_id, str)
+        else None
+    )
+    if isinstance(change_set_id, str) and not scan_complete:
+        integrity = "uncertain"
+    if candidate_ids and candidate_id not in candidate_ids:
+        candidate_ids = sorted([*candidate_ids, candidate_id])
     if not candidate_ids:
         candidate_ids = [candidate_id]
     grouped = len(candidate_ids) > 1
@@ -129,8 +255,13 @@ def candidate_change_set_context(
         "atomic_required": (
             grouped
             or operation in COMPLEX_OPERATIONS
+            or (
+                isinstance(change_set_id, str)
+                and not scan_complete
+            )
         ),
         "operation": operation,
+        "membership_integrity": integrity,
     }
 
 
@@ -146,11 +277,32 @@ def require_change_set(
             "EXPERTISE_CHANGE_SET_ID_INVALID",
             "change_set_id must be a non-empty string.",
         )
-    candidate_ids = candidate_change_set_groups(repo).get(change_set_id)
+    groups, integrity_by_change_set, scan_complete = (
+        _candidate_change_set_index(repo)
+    )
+    if not scan_complete:
+        raise MaestroError(
+            "EXPERTISE_CHANGE_SET_MEMBERSHIP_UNCERTAIN",
+            (
+                "Expertise ChangeSet membership exceeded the bounded scan; "
+                "reduce or partition the candidate inventory before "
+                "managing any set."
+            ),
+        )
+    candidate_ids = groups.get(change_set_id)
     if not candidate_ids:
         raise MaestroError(
             "EXPERTISE_CHANGE_SET_NOT_FOUND",
             f"Expertise ChangeSet is missing: {change_set_id}",
+        )
+    integrity = integrity_by_change_set.get(change_set_id)
+    if integrity in {"invalid", "uncertain"}:
+        raise MaestroError(
+            "EXPERTISE_CHANGE_SET_MEMBERSHIP_UNCERTAIN",
+            (
+                "Expertise ChangeSet membership is incomplete or unreadable; "
+                "repair every member before managing the set."
+            ),
         )
     operations = []
     for candidate_id in candidate_ids:

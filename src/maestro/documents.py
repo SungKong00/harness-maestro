@@ -15,7 +15,7 @@ from .registry import route_goal
 from .util import ensure_repo, read_json, safe_target
 
 MAX_SELECTED_DOCUMENTS = 8
-MAX_SELECTED_DOCUMENT_BYTES = 52 * 1024
+MAX_SELECTED_DOCUMENT_BYTES = 60 * 1024
 MAX_OPTIONAL_DOCUMENTS = 4
 MAX_DOCUMENT_ENTRIES = 5_000
 MAX_DOCUMENT_FILE_BYTES = 1_000_000
@@ -514,7 +514,7 @@ def _discriminating_task_terms(
     )
 
 
-def _document_required_by_task(
+def _document_prioritized_by_task(
     document_type: str,
     task_terms: frozenset[str],
     target_paths: list[str],
@@ -715,6 +715,8 @@ def select_documents(
     task: str,
     lenses: list[str],
     target_paths: list[str] | None = None,
+    *,
+    decision_authorized: bool = False,
 ) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     normalized_target_paths = _normalize_target_paths(target_paths or [])
@@ -732,7 +734,11 @@ def select_documents(
     if custom_handoff is not None:
         return custom_handoff
     inferred_route = (
-        route_goal(task, "medium")
+        route_goal(
+            task,
+            "medium",
+            decision_authorized=decision_authorized,
+        )
         if not lenses and task.strip()
         else None
     )
@@ -862,10 +868,10 @@ def select_documents(
         *[item for item in ranked if item[2]["document_type"] == "convention"],
         *[item for item in ranked if item[2]["document_type"] != "convention"],
     ]
-    required_ranked = [
+    priority_ranked = [
         item
         for item in ranked
-        if _document_required_by_task(
+        if _document_prioritized_by_task(
             item[2]["document_type"],
             raw_task_tokens,
             normalized_target_paths,
@@ -875,7 +881,7 @@ def select_documents(
     optional_ranked = [
         item
         for item in ranked
-        if not _document_required_by_task(
+        if not _document_prioritized_by_task(
             item[2]["document_type"],
             raw_task_tokens,
             normalized_target_paths,
@@ -883,15 +889,15 @@ def select_documents(
         and item[2].get("pinned") is not True
     ]
     pinned_candidates = [
-        item[2] for item in required_ranked if item[2].get("pinned") is True
+        item[2] for item in priority_ranked if item[2].get("pinned") is True
     ]
-    ordinary_required = [
-        item[2] for item in required_ranked if item[2].get("pinned") is not True
+    ordinary_priority = [
+        item[2] for item in priority_ranked if item[2].get("pinned") is not True
     ]
     candidates = (
         pinned_candidates
         + ([selected_index] if selected_index else [])
-        + ordinary_required
+        + ordinary_priority
     )
     optional_documents = [
         {
@@ -973,9 +979,8 @@ def select_documents(
     missing_evidence.extend(
         _core_document_gaps(core_status)
     )
-    # Bounded top-k retrieval intentionally omits lower-ranked ordinary
-    # matches. That is a context policy, not missing evidence. Scan truncation,
-    # missing core authority, and omitted active Conventions still fail closed.
+    # Ranked ordinary matches may remain unloaded. Active Conventions, exact
+    # targets, core authority, and scan truncation still fail closed.
     evidence_status = "insufficient" if missing_evidence else "sufficient"
     selected_conventions = [
         item["path"]

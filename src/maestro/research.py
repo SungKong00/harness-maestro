@@ -583,6 +583,23 @@ def _source_issues(
     return issues, source_id
 
 
+def _source_identity(
+    source: dict[str, Any],
+    artifacts: dict[str, dict[str, Any]],
+) -> tuple[str, str] | None:
+    if isinstance(source.get("url"), str):
+        return ("url", source["url"])
+    artifact = artifacts.get(source.get("artifact_ref"))
+    if not isinstance(artifact, dict):
+        return None
+    identity = {
+        "kind": artifact.get("kind"),
+        "locator": artifact.get("locator"),
+        "sha256": artifact.get("sha256"),
+    }
+    return ("artifact", canonical_json(identity))
+
+
 def _claim_issues(
     claim: Any,
     *,
@@ -1703,6 +1720,10 @@ def validate_research_bundle(
         0: set(),
         1: set(),
     }
+    initial_source_locations_by_lane: dict[
+        str,
+        set[tuple[str, str]],
+    ] = {}
     for index, packet in enumerate(packets):
         prefix = f"bundle.packets[{index}]"
         packet_issues, artifacts, sources, claims = _packet_issues(
@@ -1796,13 +1817,17 @@ def validate_research_bundle(
                 sources_by_id[source_id] = source
             packet_wave = packet.get("wave")
             if packet_wave in {0, 1}:
-                locator = (
-                    ("url", source["url"])
-                    if source.get("url") is not None
-                    else ("artifact", source.get("artifact_ref"))
-                )
-                if isinstance(locator[1], str):
+                locator = _source_identity(source, artifacts)
+                if locator is not None:
                     source_locations_by_wave[packet_wave].add(locator)
+                    if (
+                        packet_wave == 0
+                        and isinstance(lane_id, str)
+                    ):
+                        initial_source_locations_by_lane.setdefault(
+                            lane_id,
+                            set(),
+                        ).add(locator)
         for claim_id, claim in claims.items():
             if claim_id in claims_by_id:
                 _issue(
@@ -1837,6 +1862,29 @@ def validate_research_bundle(
             "bundle.packets",
             "A conflict follow-up must inspect new source material, not repeat an initial source.",
         )
+    if len(initial_source_locations_by_lane) > 1:
+        for lane_id, locations in sorted(
+            initial_source_locations_by_lane.items(),
+        ):
+            other_locations = set().union(
+                *(
+                    other
+                    for other_lane, other in (
+                        initial_source_locations_by_lane.items()
+                    )
+                    if other_lane != lane_id
+                )
+            )
+            if not (locations - other_locations):
+                _issue(
+                    issues,
+                    "RESEARCH_INITIAL_LANE_SOURCE_INDEPENDENCE_REQUIRED",
+                    "bundle.packets",
+                    (
+                        f"Initial lane {lane_id} must inspect at least one "
+                        "source not already covered by another initial lane."
+                    ),
+                )
     if len(artifacts_by_id) > MAX_BUNDLE_ARTIFACTS:
         _issue(
             issues,

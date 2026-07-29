@@ -25,7 +25,10 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_registry_component_candidate_v1"
+      "enum": [
+        "maestro_registry_component_candidate_v1",
+        "maestro_registry_component_candidate_v2"
+      ]
     },
     "candidate_id": {
       "$ref": "#/$defs/id"
@@ -79,6 +82,42 @@
     "evaluation_ref": {
       "$ref": "#/$defs/evaluationRef"
     },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "signal_fingerprint",
+        "unit_id"
+      ],
+      "properties": {
+        "mode": {
+          "const": "task-gap"
+        },
+        "signal_fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{24}$"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "coverage_ref": {
+      "$ref": "#/$defs/coverageRef"
+    },
+    "adaptation_ref": {
+      "$ref": "#/$defs/adaptationRef"
+    },
+    "source_route_ref": {
+      "$ref": "#/$defs/sourceRouteRef"
+    },
+    "source_admission_ref": {
+      "$ref": "#/$defs/sourceAdmissionRef"
+    },
+    "evaluation_result_ref": {
+      "$ref": "#/$defs/evaluationResultRef"
+    },
     "cost": {
       "type": "object",
       "additionalProperties": false,
@@ -131,6 +170,66 @@
       "const": "owner_decision"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "maestro_registry_component_candidate_v2"
+          }
+        },
+        "required": [
+          "schema_version"
+        ]
+      },
+      "then": {
+        "required": [
+          "generation",
+          "coverage_ref",
+          "adaptation_ref",
+          "source_route_ref",
+          "source_admission_ref",
+          "evaluation_result_ref"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "generation"
+              ]
+            },
+            {
+              "required": [
+                "coverage_ref"
+              ]
+            },
+            {
+              "required": [
+                "adaptation_ref"
+              ]
+            },
+            {
+              "required": [
+                "source_route_ref"
+              ]
+            },
+            {
+              "required": [
+                "source_admission_ref"
+              ]
+            },
+            {
+              "required": [
+                "evaluation_result_ref"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",
@@ -224,6 +323,92 @@
       "properties": {
         "path": {
           "const": "evals/cases.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "coverageRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/genericRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/task-coverage.json"
+            }
+          }
+        }
+      ]
+    },
+    "adaptationRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/genericRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/adaptation-plan.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceRouteRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/genericRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-route.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceAdmissionRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/genericRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-admission.json"
+            }
+          }
+        }
+      ]
+    },
+    "evaluationResultRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/genericRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evals/results.json"
+            }
+          }
+        }
+      ]
+    },
+    "genericRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
         },
         "sha256": {
           "$ref": "#/$defs/digest"

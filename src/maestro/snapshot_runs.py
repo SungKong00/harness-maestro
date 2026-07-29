@@ -134,6 +134,70 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
         )
         stage_id = stage.get("assignment_id")
         lane["stage_ids"].append(stage_id)
+        deterministic_stage = (
+            stage.get("execution_kind") == "deterministic"
+            or stage.get("evidence_source") == "deterministic_command"
+        )
+        applied_model_measured = (
+            stage.get("applied_model") is not None
+            and stage.get("model_evidence") == "complete"
+        )
+        if deterministic_stage:
+            model_kind = "not_applicable"
+            model_value = None
+            model_coverage = "not_applicable"
+            reasoning_kind = "not_applicable"
+            reasoning_value = None
+        elif applied_model_measured:
+            model_kind = "actual"
+            model_value = stage.get("applied_model")
+            model_coverage = "complete"
+            reasoning_kind = (
+                "requested"
+                if stage.get("requested_reasoning_effort") is not None
+                else (
+                    "recommended"
+                    if stage.get("reasoning_effort") is not None
+                    else "unavailable"
+                )
+            )
+            reasoning_value = (
+                stage.get("requested_reasoning_effort")
+                or stage.get("reasoning_effort")
+            )
+        elif stage.get("requested_model") is not None:
+            model_kind = "requested"
+            model_value = stage.get("requested_model")
+            model_coverage = "host_request"
+            reasoning_kind = (
+                "requested"
+                if stage.get("requested_reasoning_effort") is not None
+                else (
+                    "recommended"
+                    if stage.get("reasoning_effort") is not None
+                    else "unavailable"
+                )
+            )
+            reasoning_value = (
+                stage.get("requested_reasoning_effort")
+                or stage.get("reasoning_effort")
+            )
+        elif stage.get("route_recommended_model") is not None:
+            model_kind = "recommended"
+            model_value = stage.get("route_recommended_model")
+            model_coverage = "route_plan"
+            reasoning_kind = (
+                "recommended"
+                if stage.get("reasoning_effort") is not None
+                else "unavailable"
+            )
+            reasoning_value = stage.get("reasoning_effort")
+        else:
+            model_kind = "unavailable"
+            model_value = None
+            model_coverage = "unavailable"
+            reasoning_kind = "unavailable"
+            reasoning_value = None
         stages.append(
             {
                 "stage_id": stage_id,
@@ -181,6 +245,14 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
                     ),
                     "applied": stage.get("applied_model"),
                     "applied_evidence": stage.get("model_evidence"),
+                    "model_route_id": stage.get("model_route_id"),
+                    "execution_unit_id": stage.get("execution_unit_id"),
+                    "stage_kind": stage.get("stage_kind"),
+                    "execution_kind": stage.get("execution_kind"),
+                    "selected_class": stage.get("selected_class"),
+                    "quality_profile": stage.get("quality_profile"),
+                    "quality_floor": stage.get("quality_floor"),
+                    "fallback_route": stage.get("fallback_route"),
                 },
                 "measurements": {
                     "duration_ms": stage.get("duration_ms"),
@@ -188,54 +260,38 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
                 },
                 "execution_facts": {
                     "model": {
-                        "kind": (
-                            "actual"
-                            if stage.get("applied_model") is not None
-                            and stage.get("model_evidence") == "complete"
-                            else (
-                                "requested"
-                                if stage.get("requested_model") is not None
-                                else (
-                                    "recommended"
-                                    if stage.get("route_recommended_model")
-                                    is not None
-                                    else "unavailable"
-                                )
-                            )
-                        ),
-                        "value": (
-                            stage.get("applied_model")
-                            or stage.get("requested_model")
-                            or stage.get("route_recommended_model")
-                        ),
-                        "coverage": stage.get(
-                            "model_evidence",
-                            "unavailable",
-                        ),
+                        "kind": model_kind,
+                        "value": model_value,
+                        "coverage": model_coverage,
                     },
                     "reasoning": {
-                        "kind": (
-                            "requested"
-                            if stage.get("requested_reasoning_effort")
-                            is not None
-                            else "unavailable"
-                        ),
-                        "value": stage.get(
-                            "requested_reasoning_effort"
-                        ),
+                        "kind": reasoning_kind,
+                        "value": reasoning_value,
                     },
                     "tokens": {
-                        "value": stage.get("tokens"),
+                        "value": (
+                            None
+                            if deterministic_stage
+                            else stage.get("tokens")
+                        ),
                         "last": None,
                         "scope": (
-                            "assignment"
-                            if stage.get("tokens") is not None
-                            else "unavailable"
+                            "not_applicable"
+                            if deterministic_stage
+                            else (
+                                "assignment"
+                                if stage.get("tokens") is not None
+                                else "unavailable"
+                            )
                         ),
                         "attribution": (
-                            "direct"
-                            if stage.get("tokens") is not None
-                            else "unavailable"
+                            "not_applicable"
+                            if deterministic_stage
+                            else (
+                                "direct"
+                                if stage.get("tokens") is not None
+                                else "unavailable"
+                            )
                         ),
                     },
                     "duration": {
@@ -283,6 +339,10 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
                 },
             }
         )
+        if isinstance(stage.get("model_feedback_ref"), dict):
+            stages[-1]["model_feedback_ref"] = dict(
+                stage["model_feedback_ref"]
+            )
 
     lanes = sorted(
         lanes_by_id.values(),
@@ -298,6 +358,17 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
         run.get("work_spans"),
         flow,
     )
+    feedback_by_assignment = {
+        stage.get("assignment_id"): stage["model_feedback_ref"]
+        for stage in flow
+        if isinstance(stage.get("model_feedback_ref"), dict)
+    }
+    for card in observed_work.get("cards", []):
+        assignment_id = card.get("assignment", {}).get("assignment_id")
+        if assignment_id in feedback_by_assignment:
+            card["model_feedback_ref"] = dict(
+                feedback_by_assignment[assignment_id]
+            )
     plan_edges = list(graph.get("edges", []))
     plan_display = build_display_edge_groups(
         [
@@ -334,6 +405,14 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
                     "unavailable",
                 ),
             },
+            "tokens": {
+                "value": run.get("tokens"),
+                "scope": run.get("token_scope", "unavailable"),
+                "source": run.get("measurement_provenance", {}).get(
+                    "tokens",
+                    "unavailable",
+                ),
+            },
             "corrections": {
                 "count": run.get("correction_count", 0),
                 "summary": list(run.get("correction_summary", [])),
@@ -354,6 +433,12 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "route_recommended": list(
                     models.get("route_recommended", [])
+                ),
+                "route_recommended_reasoning_effort": list(
+                    models.get(
+                        "route_recommended_reasoning_effort",
+                        [],
+                    )
                 ),
                 "applied": list(models.get("applied", [])),
                 "applied_evidence": models.get(
@@ -542,6 +627,15 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                     "planned_model": None,
                     "route_recommended_model": None,
                     "reasoning_effort": None,
+                    "model_route_id": None,
+                    "execution_unit_id": None,
+                    "stage_kind": None,
+                    "task_class": None,
+                    "execution_kind": None,
+                    "selected_class": None,
+                    "quality_profile": None,
+                    "quality_floor": None,
+                    "fallback_route": None,
                     "requested_model": None,
                     "requested_reasoning_effort": None,
                     "actual_model": host_models["applied"],
@@ -601,6 +695,21 @@ def _run_flow(event: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
                 "planned_model": assignment.get("planned_model"),
                 "route_recommended_model": assignment.get("planned_model"),
                 "reasoning_effort": assignment.get("reasoning_effort"),
+                "model_route_id": result.get(
+                    "model_route_id",
+                    assignment.get("model_route_id"),
+                ),
+                "execution_unit_id": result.get(
+                    "execution_unit_id",
+                    assignment.get("execution_unit_id"),
+                ),
+                "stage_kind": assignment.get("stage_kind"),
+                "task_class": assignment.get("task_class"),
+                "execution_kind": assignment.get("execution_kind"),
+                "selected_class": assignment.get("selected_class"),
+                "quality_profile": assignment.get("quality_profile"),
+                "quality_floor": assignment.get("quality_floor"),
+                "fallback_route": assignment.get("fallback_route"),
                 "requested_model": result.get("requested_model"),
                 "requested_reasoning_effort": result.get(
                     "requested_reasoning_effort",
@@ -811,13 +920,81 @@ def _expertise_routing_projection(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _attach_model_feedback_ref(
+    flow: list[dict[str, Any]],
+    *,
+    event: dict[str, Any],
+    history_evidence: dict[str, Any] | None,
+    model_feedback_report: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Attach one observational aggregate only to its exact current subject."""
+
+    if (
+        not isinstance(history_evidence, dict)
+        or history_evidence.get("governance_eligible") is not True
+        or history_evidence.get("definition_status") != "current"
+        or not isinstance(model_feedback_report, dict)
+        or model_feedback_report.get("schema_version")
+        != "maestro_model_feedback_report_v1"
+    ):
+        return None
+    writers = [
+        stage
+        for stage in flow
+        if stage.get("mutation_owner") is True
+        and stage.get("execution_kind") == "model"
+    ]
+    if len(writers) != 1:
+        return None
+    writer = writers[0]
+    subject = {
+        "quality_profile": writer.get("quality_profile"),
+        "stage_kind": writer.get("stage_kind"),
+        "task_class": writer.get("task_class"),
+        "selected_class": writer.get("selected_class"),
+        "selected_model": writer.get("route_recommended_model"),
+        "reasoning_effort": writer.get("reasoning_effort"),
+        "risk": event.get("risk"),
+    }
+    matches = [
+        group
+        for group in model_feedback_report.get("groups", [])
+        if isinstance(group, dict) and group.get("subject") == subject
+    ]
+    if len(matches) != 1:
+        return None
+    reference = {
+        "report_id": model_feedback_report["report_id"],
+        "group_id": matches[0]["group_id"],
+        "subject": subject,
+        "relation": "exact_current_subject",
+        "interpretation": "observational-only",
+    }
+    writer["model_feedback_ref"] = dict(reference)
+    return reference
+
+
 def _run_card(
     event: dict[str, Any],
     display_labels: dict[str, str] | None = None,
+    *,
+    history_evidence: dict[str, Any] | None = None,
+    model_feedback_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     flow, flow_evidence = _run_flow(event)
+    model_feedback_ref = _attach_model_feedback_ref(
+        flow,
+        event=event,
+        history_evidence=history_evidence,
+        model_feedback_report=model_feedback_report,
+    )
     host_observation = event.get("host_observation")
     host_models = _host_model_provenance(host_observation)
+    execution_measurements = event.get("execution_measurements")
+    has_canonical_measurements = isinstance(
+        execution_measurements,
+        dict,
+    )
     event_id = event["event_id"]
     original_task_label = event.get("task_label") or event["run_id"]
     task_label = (display_labels or {}).get(
@@ -851,16 +1028,55 @@ def _run_card(
             ],
         ]
     )
+    if has_canonical_measurements:
+        requested = list(
+            execution_measurements.get("model", {}).get(
+                "requested",
+                [],
+            )
+        )
+        requested_effort = list(
+            execution_measurements.get("reasoning_effort", {}).get(
+                "requested",
+                [],
+            )
+        )
+        observed_applied = list(
+            execution_measurements.get("model", {}).get(
+                "applied",
+                [],
+            )
+        )
     event_tokens = event.get("tokens")
     stage_tokens = _aggregate_stage_tokens(flow)
-    displayed_tokens = event_tokens or stage_tokens
+    canonical_tokens = (
+        execution_measurements.get("tokens", {}).get("value")
+        if has_canonical_measurements
+        else None
+    )
+    canonical_duration = (
+        execution_measurements.get("duration", {}).get("value_ms")
+        if has_canonical_measurements
+        else None
+    )
+    displayed_duration = (
+        canonical_duration
+        if isinstance(canonical_duration, (int, float))
+        and not isinstance(canonical_duration, bool)
+        else event.get("duration_ms")
+    )
+    displayed_tokens = canonical_tokens or event_tokens or stage_tokens
     token_scope = (
-        "run_receipt"
-        if isinstance(event_tokens, dict)
+        "execution_ledger"
+        if canonical_tokens is not None
         else (
-            "observed_stages_aggregate"
-            if isinstance(stage_tokens, dict)
-            else "unavailable"
+            "run_receipt"
+            if isinstance(event_tokens, dict)
+            else (
+                "observed_stages_aggregate"
+                if isinstance(stage_tokens, dict)
+                else "unavailable"
+            )
         )
     )
     stage_tracking_available = flow_evidence == "assignment_observation"
@@ -895,12 +1111,16 @@ def _run_card(
         )
     )
     model_event_evidence = (
-        "complete"
-        if (
-            host_models["evidence"] == "complete"
-            or stage_model_evidence == "complete"
+        execution_measurements.get("model", {}).get("coverage")
+        if has_canonical_measurements
+        else (
+            "complete"
+            if (
+                host_models["evidence"] == "complete"
+                or stage_model_evidence == "complete"
+            )
+            else stage_model_evidence
         )
-        else stage_model_evidence
     )
     applied = (
         observed_applied
@@ -925,32 +1145,56 @@ def _run_card(
             or stage.get("decision_guide_ids")
         ]
     )
+    measurement_provenance = _measurement_provenance(
+        event,
+        token_scope=token_scope,
+    )
+    if canonical_duration is not None:
+        duration_coverage = execution_measurements.get(
+            "duration",
+            {},
+        ).get("coverage", "unavailable")
+        measurement_provenance["duration"] = (
+            f"execution_ledger_{duration_coverage}"
+        )
     run = {
         "event_id": event_id,
         "run_id": event["run_id"],
         "task_label": task_label,
         "original_task_label": original_task_label,
+        "history_evidence": (
+            dict(history_evidence)
+            if isinstance(history_evidence, dict)
+            else {
+                "classification": "unavailable",
+                "history_visibility": "visible",
+                "governance_eligible": None,
+                "definition_status": "unavailable",
+                "reason": "projection_unavailable",
+            }
+        ),
         "timestamp": event["timestamp"],
         "risk": event["risk"],
         "route_depth": event["route_depth"],
         "outcome": event["outcome"],
         "verifier_result": event["verifier_result"],
-        "duration_ms": event.get("duration_ms"),
+        "duration_ms": displayed_duration,
         "planning_duration_ms": event.get("planning_duration_ms"),
         "tokens": displayed_tokens,
         "token_scope": (
-            "run"
-            if token_scope == "run_receipt"
+            "execution_ledger"
+            if token_scope == "execution_ledger"
             else (
-                "observed_stages"
-                if token_scope == "observed_stages_aggregate"
-                else "unavailable"
+                "run"
+                if token_scope == "run_receipt"
+                else (
+                    "observed_stages"
+                    if token_scope == "observed_stages_aggregate"
+                    else "unavailable"
+                )
             )
         ),
-        "measurement_provenance": _measurement_provenance(
-            event,
-            token_scope=token_scope,
-        ),
+        "measurement_provenance": measurement_provenance,
         "stage_coverage": {
             "available": stage_tracking_available,
             "recorded": recorded_stage_count,
@@ -972,6 +1216,7 @@ def _run_card(
             ),
         },
         "execution_binding": event.get("execution_binding"),
+        "execution_measurements": execution_measurements,
         "agent_calls": event.get("agent_calls"),
         "correction_count": event.get("correction_count", 0),
         "correction_summary": list(event.get("correction_summary", [])),
@@ -1002,11 +1247,45 @@ def _run_card(
             "estimated": False,
             "measurement_state": (
                 "host_event_stream_complete"
-                if model_event_evidence == "complete"
+                if (
+                    has_canonical_measurements
+                    and model_event_evidence == "complete"
+                    and host_models["evidence"] == "complete"
+                )
                 else (
-                    "host_not_connected"
-                    if host_observation is None
-                    else "host_request_observed"
+                    "execution_ledger_complete"
+                    if (
+                        has_canonical_measurements
+                        and model_event_evidence == "complete"
+                    )
+                    else (
+                        "execution_ledger_request_only"
+                        if (
+                            has_canonical_measurements
+                            and model_event_evidence == "request_only"
+                            and host_observation is None
+                        )
+                        else (
+                            "host_request_observed"
+                            if (
+                                has_canonical_measurements
+                                and model_event_evidence == "request_only"
+                            )
+                            else (
+                                "execution_ledger_unavailable"
+                                if has_canonical_measurements
+                                else (
+                                    "host_event_stream_complete"
+                                    if model_event_evidence == "complete"
+                                    else (
+                                        "host_not_connected"
+                                        if host_observation is None
+                                        else "host_request_observed"
+                                    )
+                                )
+                            )
+                        )
+                    )
                 )
             ),
         },
@@ -1052,18 +1331,23 @@ def _run_card(
         "evidence_refs": list(event.get("evidence_refs", []))[:8],
         "work_spans": list(event.get("work_spans", [])),
     }
+    if model_feedback_ref is not None:
+        run["model_feedback_ref"] = model_feedback_ref
     run["work_detail"] = _work_detail_projection(run)
     return run
 
 
 def _measurement_coverage(
-    runs: list[dict[str, Any]],
+    records: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    total = len(runs)
+    total = len(records)
 
     def measured(predicate: Any) -> dict[str, Any]:
-        count = sum(bool(predicate(run)) for run in runs)
+        count = sum(bool(predicate(record)) for record in records)
         return {
+            "scope": "request_records",
+            "measured_requests": count,
+            "total_requests": total,
             "measured_runs": count,
             "total_runs": total,
             "ratio": round(count / total, 3) if total else None,
@@ -1075,6 +1359,23 @@ def _measurement_coverage(
         ),
         "duration": measured(lambda run: run.get("duration_ms") is not None),
         "tokens": measured(
+            lambda run: (
+                _has_numeric_token_measurement(run.get("tokens"))
+                or (
+                    isinstance(
+                        run.get("request_measurement", {}).get(
+                            "token_measured_attempts"
+                        ),
+                        int,
+                    )
+                    and run["request_measurement"][
+                        "token_measured_attempts"
+                    ]
+                    > 0
+                )
+            )
+        ),
+        "token_aggregate": measured(
             lambda run: _has_numeric_token_measurement(run.get("tokens"))
         ),
         "plan": measured(

@@ -1391,6 +1391,60 @@ class GovernanceReportTests(unittest.TestCase):
 
             self.assertEqual(0, report["events_considered"])
             self.assertEqual(1, report["invalid_records"])
+            self.assertFalse(
+                report["model_feedback"]["source"]["scan_complete"]
+            )
+
+    def test_unreadable_event_file_disables_feedback_policy_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            events_dir = repo / project["state_root"] / "events"
+            events_dir.mkdir(parents=True)
+            event_path = events_dir / "events.jsonl"
+            event_path.write_text(
+                json.dumps(
+                    event(
+                        project["project_id"],
+                        checkout_id(repo),
+                        "unreadable-run",
+                        "unreadable-gap",
+                    ),
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            original_open = Path.open
+
+            def guarded_open(
+                path: Path,
+                *args: object,
+                **kwargs: object,
+            ):
+                if (
+                    path.name == event_path.name
+                    and path.parent.name == "events"
+                ):
+                    raise OSError("fixture unreadable")
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", guarded_open):
+                report = govern_report(repo, window=20, threshold=2)
+
+            self.assertTrue(report["scan_truncated"])
+            self.assertEqual(1, report["skipped_event_files"])
+            self.assertFalse(
+                report["model_feedback"]["source"]["scan_complete"]
+            )
 
     def test_window_uses_newest_run_timestamps_not_file_order(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1495,6 +1549,15 @@ class GovernanceReportTests(unittest.TestCase):
             self.assertEqual(1, report["events_considered"])
             self.assertEqual(1, report["included_compatible_records"])
             self.assertEqual(0, report["excluded_version_records"])
+            self.assertEqual(
+                0,
+                report["model_feedback"]["source"]["events_received"],
+            )
+            self.assertIsNone(
+                report["model_feedback"]["authority"][
+                    "framework_version"
+                ]
+            )
             self.assertEqual(
                 [{"fingerprint": "compatible-gap", "occurrences": 1}],
                 report["observations"],

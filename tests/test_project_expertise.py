@@ -25,6 +25,7 @@ from maestro.cli import main
 from maestro.dashboard import create_dashboard_server
 from maestro.decisions import build_decision_plan, validate_decision_plan
 from maestro.errors import MaestroError
+from maestro.candidate_origin import build_expertise_candidate_origin
 from maestro.expertise import (
     candidate_expertise_statuses,
     expertise_manifest_digest,
@@ -54,8 +55,13 @@ from maestro.expertise_lifecycle import (
     build_expertise_restore_plan,
     build_expertise_update_plan,
     expertise_inventory,
+    expertise_evaluation_subject,
     validate_expertise_contribution,
     validate_expertise_candidate,
+)
+from maestro.observations import (
+    record_stage_observation,
+    start_run_observation,
 )
 from maestro.expertise_promotion import (
     apply_expertise_promotion_decision_plan,
@@ -99,6 +105,7 @@ def _candidate(
     component_change: dict[str, object] | None = None,
     generation_mode: str = "user-requested",
     signal_fingerprint: str | None = None,
+    attest: bool = True,
 ) -> None:
     root = (
         repo
@@ -113,7 +120,7 @@ def _candidate(
     digest = "0" * 64 if stale_base else expertise_manifest_digest(base)
     resolved_skill_id = skill_id or pack_id
     candidate = {
-        "schema_version": "maestro_expertise_candidate_v1",
+        "schema_version": "maestro_expertise_candidate_v2",
         "candidate_id": candidate_id,
         "expertise_pack_id": pack_id,
         "status": "candidate",
@@ -143,6 +150,11 @@ def _candidate(
         "generation": {
             "mode": generation_mode,
             "signal_fingerprint": signal_fingerprint,
+        },
+        "coverage": {
+            "decision_map_path": "evidence/decision-map.json",
+            "discovery_complete": True,
+            "allocation_complete": True,
         },
     }
     if component_change is not None:
@@ -224,6 +236,46 @@ def _candidate(
             ],
         },
     )
+    write_json(
+        root / "evidence/decision-map.json",
+        {
+            "schema_version": "maestro_expertise_decision_map_v1",
+            "candidate_id": candidate_id,
+            "decision_areas": [
+                {
+                    "area_id": "project-type-hierarchy",
+                    "decision": "Choose the approved project type hierarchy.",
+                    "failure_if_omitted": "The screen uses an unapproved hierarchy.",
+                    "materiality": "important",
+                    "evidence_types": ["external-stable"],
+                    "evidence_refs": ["project-design-system"],
+                    "disposition": {
+                        "kind": "proposed-guide",
+                        "target_id": guide_id,
+                        "rationale": "The Guide owns the reusable decision.",
+                    },
+                }
+            ],
+        },
+    )
+    if generation_mode != "task-gap":
+        write_json(
+            repo
+            / ".maestro/state/candidate-origins/expertise"
+            / f"{candidate_id}.json",
+            build_expertise_candidate_origin(
+                namespace="expertise",
+                candidate_id=candidate_id,
+                subject_ref=f"pack:{pack_id}",
+                mode=generation_mode,
+                signal_fingerprint=signal_fingerprint,
+                authorization_ref=(
+                    f"owner_decision:test:{candidate_id}"
+                    if generation_mode == "user-requested"
+                    else None
+                ),
+            ),
+        )
     evaluation_cases = [
         {
             "case_id": "normal-project-type",
@@ -351,9 +403,254 @@ def _candidate(
             "cases": quality_cases,
         },
     )
+    if attest and generation_mode != "task-gap":
+        _attest_candidate(repo, candidate_id)
+
+
+def _attest_candidate(repo: Path, candidate_id: str) -> None:
+    root = (
+        repo
+        / ".maestro/state/candidates/expertise"
+        / candidate_id
+    )
+    candidate = json.loads(
+        (root / "candidate.json").read_text(encoding="utf-8")
+    )
+    evaluation = json.loads(
+        (root / "evals/cases.json").read_text(encoding="utf-8")
+    )
+    quality_cases = []
+    for case in evaluation["cases"]:
+        artifact_path = f"evals/artifacts/{case['case_id']}.json"
+        artifact_digest = file_sha256(root / artifact_path)
+        assert artifact_digest is not None
+        quality_cases.append(
+            {
+                "case_id": case["case_id"],
+                "artifact": {
+                    "path": artifact_path,
+                    "sha256": artifact_digest,
+                },
+                "criterion_results": [
+                    {
+                        "criterion": criterion,
+                        "verdict": "pass",
+                        "evidence_ref": artifact_path,
+                    }
+                    for criterion in case["observable_criteria"]
+                ],
+                "forbidden_behavior_results": [
+                    {
+                        "behavior": behavior,
+                        "observed": False,
+                        "evidence_ref": artifact_path,
+                    }
+                    for behavior in case["forbidden_behaviors"]
+                ],
+                "verdict": "pass",
+            }
+        )
+    subject = expertise_evaluation_subject(repo, candidate_id)
+    previous_evaluation_run = ""
+    quality_path = root / "evals/quality.json"
+    if quality_path.is_file():
+        previous_quality = json.loads(
+            quality_path.read_text(encoding="utf-8")
+        )
+        previous_evaluator = previous_quality.get("evaluator")
+        if isinstance(previous_evaluator, dict):
+            previous_evaluation_run = str(
+                previous_evaluator.get("evaluation_run_ref", "")
+            )
+    attestation_id = sha256_text(
+        f"{subject['candidate_digest']}:{previous_evaluation_run}"
+    )[:12]
+    authoring_run = f"author-{candidate_id}-{attestation_id}"
+    evaluation_run = f"evaluate-{candidate_id}-{attestation_id}"
+    plan_root = repo / ".maestro/state/test-evaluation-plans"
+    authoring_plan = route_goal_v2(
+        f"Author candidate {candidate_id}",
+        "medium",
+        intent="implementation",
+        repo_path=repo,
+    )
+    authoring_plan_path = (
+        plan_root / f"{candidate_id}-{attestation_id}-author.json"
+    )
+    write_json(authoring_plan_path, authoring_plan)
+    authored = start_run_observation(
+        repo,
+        run_id=authoring_run,
+        task_label=f"Author {candidate_id}",
+        plan_path=authoring_plan_path,
+    )
+    for assignment in authoring_plan["assignments"]:
+        record_stage_observation(
+            repo,
+            observation_id=authored["observation_id"],
+            run_id=authoring_run,
+            assignment_id=assignment["assignment_id"],
+            status="completed",
+            evidence_source="deterministic_command",
+            evidence_refs=(
+                subject["evidence_refs"]
+                if assignment["mutation_owner"]
+                else [f"authoring:{assignment['assignment_id']}"]
+            ),
+        )
+    evaluation_plan = route_goal_v2(
+        f"Evaluate candidate {candidate_id}",
+        "medium",
+        intent="review",
+        repo_path=repo,
+    )
+    evaluation_plan_path = (
+        plan_root / f"{candidate_id}-{attestation_id}-evaluate.json"
+    )
+    write_json(evaluation_plan_path, evaluation_plan)
+    evaluated = start_run_observation(
+        repo,
+        run_id=evaluation_run,
+        task_label=f"Evaluate {candidate_id}",
+        plan_path=evaluation_plan_path,
+    )
+    write_json(
+        quality_path,
+        {
+            "schema_version": "maestro_expertise_quality_eval_v2",
+            "expertise_pack_id": candidate["expertise_pack_id"],
+            "evaluated_on": "2026-07-27",
+            "subject": {
+                "candidate_digest": subject["candidate_digest"],
+                "cases_sha256": subject["cases_sha256"],
+            },
+            "evaluator": {
+                "kind": "fresh-context",
+                "authoring_run_ref": authoring_run,
+                "evaluation_run_ref": evaluation_run,
+                "observation_id": evaluated["observation_id"],
+            },
+            "cases": quality_cases,
+        },
+    )
+    for assignment in evaluation_plan["assignments"]:
+        record_stage_observation(
+            repo,
+            observation_id=evaluated["observation_id"],
+            run_id=evaluation_run,
+            assignment_id=assignment["assignment_id"],
+            status="completed",
+            evidence_source="codex_app_server",
+            evidence_refs=[
+                *subject["evidence_refs"],
+                f"candidate-quality:{file_sha256(quality_path)}",
+            ],
+            requested_model=assignment["model_route"]["selected_model"],
+            requested_reasoning_effort=assignment["model_route"][
+                "reasoning_effort"
+            ],
+            actual_model=assignment["model_route"]["selected_model"],
+            model_evidence="complete",
+            reroutes=[],
+            duration_ms=1.0,
+        )
+
+
+def _write_user_candidate_origin(repo: Path, candidate_id: str) -> None:
+    write_json(
+        repo
+        / ".maestro/state/candidate-origins/expertise"
+        / f"{candidate_id}.json",
+        build_expertise_candidate_origin(
+            namespace="expertise",
+            candidate_id=candidate_id,
+            subject_ref=f"pack:{candidate_id.removesuffix('-v2')}",
+            mode="user-requested",
+            authorization_ref=f"owner_decision:test:{candidate_id}",
+        ),
+    )
 
 
 class ProjectExpertiseLifecycleTests(unittest.TestCase):
+    def test_change_set_scan_limits_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            candidate_root = (
+                repo / ".maestro/state/candidates/expertise"
+            )
+            for index in range(101):
+                candidate_id = f"overflow-{index:03d}"
+                component_change = {
+                    "kind": "guide-revision",
+                    "target_guide_id": "shared-guide",
+                }
+                if index in {0, 100}:
+                    component_change["change_set_id"] = "bounded-set"
+                write_json(
+                    candidate_root / candidate_id / "candidate.json",
+                    {"component_change": component_change},
+                )
+
+            with self.assertRaises(MaestroError) as individual:
+                build_expertise_archive_plan(
+                    repo,
+                    candidate_id="overflow-100",
+                    reason="스캔 밖 후보를 개별 처리하지 않음",
+                )
+            self.assertEqual(
+                "EXPERTISE_CHANGE_SET_ATOMIC_REQUIRED",
+                individual.exception.code,
+            )
+            with self.assertRaises(MaestroError) as grouped:
+                build_expertise_change_set_plan(
+                    repo,
+                    change_set_id="bounded-set",
+                    action="archive",
+                    reason="전체 구성원을 확인할 수 있을 때만 처리",
+                )
+            self.assertEqual(
+                "EXPERTISE_CHANGE_SET_MEMBERSHIP_UNCERTAIN",
+                grouped.exception.code,
+            )
+
+    def test_change_set_manifest_scan_limits_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            manifest_root = (
+                repo
+                / ".maestro/state/candidates/expertise-change-sets"
+            )
+            for index in range(101):
+                change_set_id = f"manifest-{index:03d}"
+                write_json(
+                    manifest_root / f"{change_set_id}.json",
+                    {
+                        "schema_version": (
+                            "maestro_expertise_change_set_manifest_v1"
+                        ),
+                        "change_set_id": change_set_id,
+                        "members": [
+                            {"candidate_id": f"candidate-{index:03d}"}
+                        ],
+                    },
+                )
+
+            with self.assertRaises(MaestroError) as raised:
+                build_expertise_change_set_plan(
+                    repo,
+                    change_set_id="manifest-100",
+                    action="archive",
+                    reason="누락된 manifest를 추측하지 않음",
+                )
+            self.assertEqual(
+                "EXPERTISE_CHANGE_SET_MEMBERSHIP_UNCERTAIN",
+                raised.exception.code,
+            )
+
     def test_atomic_change_set_is_the_only_management_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "project"
@@ -475,8 +772,21 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "claims-move/candidate.json"
             )
             invalid = json.loads(invalid_path.read_text(encoding="utf-8"))
+            invalid_path.write_text("{", encoding="utf-8")
+            unreadable_statuses = candidate_expertise_statuses(repo)
+            self.assertEqual(
+                "change_set_paused",
+                unreadable_statuses["claims-copy"]["runtime_status"],
+            )
+            self.assertFalse(
+                unreadable_statuses["claims-copy"][
+                    "immediate_use_allowed"
+                ],
+            )
+            write_json(invalid_path, invalid)
             invalid["review_after"] = "2020-01-01"
             write_json(invalid_path, invalid)
+            _attest_candidate(repo, "claims-move")
 
             statuses = candidate_expertise_statuses(repo)
             self.assertEqual(
@@ -500,6 +810,27 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
 
             invalid["review_after"] = "2026-08-31"
             write_json(invalid_path, invalid)
+            _attest_candidate(repo, "claims-move")
+            ready_statuses = candidate_expertise_statuses(repo)
+            for candidate_id in ("claims-copy", "claims-move"):
+                with self.subTest(candidate_id=candidate_id):
+                    self.assertEqual(
+                        "available",
+                        ready_statuses[candidate_id]["runtime_status"],
+                    )
+                    self.assertEqual(
+                        "management-only",
+                        ready_statuses[candidate_id]["routing_role"],
+                    )
+                    self.assertEqual(
+                        "atomic-change-set",
+                        ready_statuses[candidate_id]["routing_reason"],
+                    )
+                    self.assertFalse(
+                        ready_statuses[candidate_id][
+                            "immediate_use_allowed"
+                        ],
+                    )
             archive = build_expertise_change_set_plan(
                 repo,
                 change_set_id="claims-redistribution",
@@ -507,6 +838,12 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 reason="변경안 전체를 보관",
             )
             apply_expertise_change_set_plan(archive, repo)
+            mode_path = (
+                repo
+                / ".maestro/state/candidates/expertise/"
+                "claims-copy/candidate.json"
+            )
+            mode_path.chmod(0o744)
             deletion = build_expertise_change_set_plan(
                 repo,
                 change_set_id="claims-redistribution",
@@ -514,6 +851,33 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 confirmation="claims-redistribution",
                 replacement_pack_ids=["marketing"],
             )
+            with patch(
+                (
+                    "maestro.expertise_lifecycle."
+                    "_remove_empty_candidate_roots"
+                ),
+                side_effect=OSError("forced cleanup failure"),
+            ):
+                with self.assertRaises(OSError):
+                    apply_expertise_change_set_plan(deletion, repo)
+            for candidate_id in ("claims-copy", "claims-move"):
+                self.assertTrue(
+                    (
+                        repo
+                        / ".maestro/state/candidates/expertise"
+                        / candidate_id
+                        / "candidate.json"
+                    ).is_file()
+                )
+                self.assertFalse(
+                    (
+                        repo
+                        / ".maestro/state/candidates/"
+                        "expertise-tombstones"
+                        / f"{candidate_id}.json"
+                    ).exists()
+                )
+            self.assertEqual(0o744, mode_path.stat().st_mode & 0o777)
             deleted = apply_expertise_change_set_plan(deletion, repo)
             self.assertEqual("deleted", deleted["status"])
             for candidate_id in ("claims-copy", "claims-move"):
@@ -752,6 +1116,87 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             self.assertTrue(restored["immediate_use_allowed"])
             self.assertIsNone(restored_candidate["disposition"])
 
+    def test_legacy_candidate_is_retained_but_cannot_route_or_publish(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            candidate_path = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design/"
+                "candidate.json"
+            )
+            candidate = json.loads(
+                candidate_path.read_text(encoding="utf-8")
+            )
+            candidate["schema_version"] = (
+                "maestro_expertise_candidate_v1"
+            )
+            candidate.pop("coverage")
+            write_json(candidate_path, candidate)
+
+            validation = validate_expertise_candidate(
+                repo,
+                "project-design",
+            )
+            inventory = expertise_inventory(repo)["candidates"]
+
+            self.assertIn(
+                "EXPERTISE_CANDIDATE_UPGRADE_REQUIRED",
+                {issue["code"] for issue in validation["issues"]},
+            )
+            self.assertEqual(1, len(inventory))
+            self.assertEqual("invalid", inventory[0]["runtime_status"])
+            self.assertFalse(inventory[0]["immediate_use_allowed"])
+
+    def test_duplicate_automatic_signal_candidates_all_fail_closed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            fingerprint = "b" * 24
+            for candidate_id, pack_id in (
+                ("design-gap-a", "design-gap-a"),
+                ("design-gap-b", "design-gap-b"),
+            ):
+                _candidate(
+                    repo,
+                    candidate_id=candidate_id,
+                    pack_id=pack_id,
+                    skill_id=pack_id,
+                    standalone=True,
+                    generation_mode="automatic",
+                    signal_fingerprint=fingerprint,
+                    component_change={
+                        "kind": "new-pack",
+                        "target_guide_id": None,
+                    },
+                )
+
+            for candidate_id in ("design-gap-a", "design-gap-b"):
+                validation = validate_expertise_candidate(
+                    repo,
+                    candidate_id,
+                )
+                self.assertIn(
+                    "EXPERTISE_AUTOMATIC_CANDIDATE_DUPLICATE",
+                    {issue["code"] for issue in validation["issues"]},
+                )
+            statuses = candidate_expertise_statuses(repo)
+            self.assertTrue(
+                all(
+                    statuses[candidate_id]["runtime_status"] == "invalid"
+                    and not statuses[candidate_id][
+                        "immediate_use_allowed"
+                    ]
+                    for candidate_id in ("design-gap-a", "design-gap-b")
+                )
+            )
     def test_component_change_is_visible_and_exports_as_a_review_bundle(
         self,
     ) -> None:
@@ -1194,6 +1639,150 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 "harness_source_applied",
                 candidate["global_adoption"]["status"],
             )
+
+    def test_global_pack_revision_replaces_one_complete_version(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design-v1",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            first = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design-v1",
+                approval_ref="owner_decision:test:global-design-v1",
+            )
+            apply_expertise_global_promotion_plan(first, repo)
+            _candidate(
+                repo,
+                candidate_id="global-design-v2",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                version=2,
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "pack-revision",
+                    "target_guide_id": None,
+                },
+            )
+            preview = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design-v2",
+                approval_ref="owner_decision:test:global-design-v2",
+            )
+            result = apply_expertise_global_promotion_plan(
+                preview,
+                repo,
+            )
+
+            revised = json.loads(
+                (
+                    repo
+                    / "src/maestro/resources/registry/"
+                    "expertise-packs/global-design.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(2, revised["version"])
+            self.assertEqual(
+                "harness_source_applied",
+                result["status"],
+            )
+            self.assertTrue(
+                (
+                    repo
+                    / "skills/maestro-global-design/"
+                    "evidence/decision-map.json"
+                ).is_file()
+            )
+            inventory = {
+                item["candidate_id"]: item
+                for item in expertise_inventory(repo)["candidates"]
+            }
+            self.assertEqual(
+                "globally_promoted",
+                inventory["global-design-v2"]["runtime_status"],
+            )
+
+    def test_global_pack_revision_rejects_silent_routing_removal(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "harness-source"
+            repo.mkdir()
+            shutil.copytree(ROOT / "src", repo / "src")
+            shutil.copytree(ROOT / "skills", repo / "skills")
+            shutil.copy2(ROOT / "pyproject.toml", repo / "pyproject.toml")
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="global-design-v1",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+            first = build_expertise_global_promotion_plan(
+                repo,
+                candidate_id="global-design-v1",
+                approval_ref="owner_decision:test:global-design-v1",
+            )
+            apply_expertise_global_promotion_plan(first, repo)
+            _candidate(
+                repo,
+                candidate_id="global-design-v2",
+                pack_id="global-design",
+                skill_id="maestro-global-design",
+                version=2,
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "pack-revision",
+                    "target_guide_id": None,
+                },
+            )
+            revised_path = (
+                repo
+                / ".maestro/state/candidates/expertise/global-design-v2/"
+                "draft/maestro-pack.json"
+            )
+            revised = json.loads(
+                revised_path.read_text(encoding="utf-8")
+            )
+            revised["triggers"] = ["project typography"]
+            write_json(revised_path, revised)
+            _attest_candidate(repo, "global-design-v2")
+
+            with self.assertRaisesRegex(
+                Exception,
+                "may not silently remove routing coverage",
+            ):
+                build_expertise_global_promotion_plan(
+                    repo,
+                    candidate_id="global-design-v2",
+                    approval_ref=(
+                        "owner_decision:test:global-design-v2"
+                    ),
+                )
 
     def test_global_promotion_updates_manifest_before_catalog_validation(
         self,
@@ -1786,6 +2375,7 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                     "kind": "guide-revision",
                     "target_guide_id": "missing-guide",
                 },
+                attest=False,
             )
 
             report = validate_expertise_candidate(
@@ -2511,6 +3101,7 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
             expired = json.loads(expired_path.read_text(encoding="utf-8"))
             expired["review_after"] = "2020-01-01"
             write_json(expired_path, expired)
+            _attest_candidate(repo, "expired-project-design")
 
             statuses = {
                 item["candidate_id"]: item
@@ -2524,6 +3115,77 @@ class ProjectExpertiseLifecycleTests(unittest.TestCase):
                 statuses["expired-project-design"][
                     "immediate_use_allowed"
                 ]
+            )
+
+    def test_bundled_successor_is_not_reported_as_candidate_validation_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(
+                repo,
+                candidate_id="old-software-engineering",
+                pack_id="software-engineering",
+                skill_id="maestro-software-engineering",
+                standalone=True,
+                portability="global",
+                component_change={
+                    "kind": "new-pack",
+                    "target_guide_id": None,
+                },
+            )
+
+            validation = validate_expertise_candidate(
+                repo,
+                "old-software-engineering",
+            )
+            status = candidate_expertise_statuses(repo)[
+                "old-software-engineering"
+            ]
+
+            self.assertEqual("PASS", validation["status"])
+            self.assertEqual("superseded", status["runtime_status"])
+            self.assertFalse(status["immediate_use_allowed"])
+
+    def test_candidate_v2_requires_complete_decision_area_allocation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "project"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            _candidate(repo)
+            root = (
+                repo
+                / ".maestro/state/candidates/expertise/project-design"
+            )
+            decision_map_path = root / "evidence/decision-map.json"
+
+            self.assertEqual(
+                "PASS",
+                validate_expertise_candidate(
+                    repo,
+                    "project-design",
+                )["status"],
+            )
+
+            decision_map = json.loads(
+                decision_map_path.read_text(encoding="utf-8")
+            )
+            decision_map["decision_areas"][0]["disposition"][
+                "target_id"
+            ] = "missing-guide"
+            write_json(decision_map_path, decision_map)
+            failed = validate_expertise_candidate(
+                repo,
+                "project-design",
+            )
+            self.assertEqual("FAIL", failed["status"])
+            self.assertIn(
+                "EXPERTISE_DECISION_AREA_GUIDE_MISSING",
+                {issue["code"] for issue in failed["issues"]},
             )
 
     def test_same_version_candidate_conflict_blocks_immediate_use(

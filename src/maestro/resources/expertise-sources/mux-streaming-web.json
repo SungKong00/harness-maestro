@@ -1,0 +1,142 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "mux-streaming-web",
+  "verified_on": "2026-07-27",
+  "sources": [
+    {
+      "source_id": "mux-react-player-api",
+      "tier": 1,
+      "authority": "Mux official React player API reference",
+      "url": "https://www.mux.com/docs/guides/player-api-reference/react",
+      "supports": [
+        "Playback ID, stream type, metadata, and purpose-specific player token inputs"
+      ],
+      "used_by": [
+        "playback-integration",
+        "secure-playback"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-player-webapp",
+      "tier": 1,
+      "authority": "Mux official web player integration guidance",
+      "url": "https://www.mux.com/docs/guides/player-integrate-in-your-webapp",
+      "supports": [
+        "Framework-specific Mux Player integration and playback ID usage"
+      ],
+      "used_by": [
+        "playback-integration"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-player-core",
+      "tier": 1,
+      "authority": "Mux official player capability guidance",
+      "url": "https://www.mux.com/docs/guides/player-core-functionality",
+      "supports": [
+        "Player controls, accessibility, captions, previews, recovery, and Mux Data integration"
+      ],
+      "used_by": [
+        "playback-integration",
+        "playback-observability"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-secure-playback",
+      "tier": 1,
+      "authority": "Mux official secure playback guidance",
+      "url": "https://www.mux.com/docs/guides/secure-video-playback",
+      "supports": [
+        "Public and signed playback policy",
+        "Protected JWT signing, purpose-bound token use, expiry, and restrictions"
+      ],
+      "used_by": [
+        "secure-playback"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-webhooks",
+      "tier": 1,
+      "authority": "Mux official webhook delivery guidance",
+      "url": "https://www.mux.com/docs/core/listen-for-webhooks",
+      "supports": [
+        "Asynchronous event delivery, environment scope, acknowledgement, and retry behavior"
+      ],
+      "used_by": [
+        "live-lifecycle",
+        "webhook-state-sync"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-webhook-signatures",
+      "tier": 1,
+      "authority": "Mux official webhook signature verification guidance",
+      "url": "https://www.mux.com/docs/core/verify-webhook-signatures",
+      "supports": [
+        "mux-signature verification against raw request bodies and timestamp tolerance"
+      ],
+      "used_by": [
+        "webhook-state-sync"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-live-streaming",
+      "tier": 1,
+      "authority": "Mux official live streaming guidance",
+      "url": "https://www.mux.com/docs/guides/start-live-streaming",
+      "supports": [
+        "Live stream keys, live playback IDs, and live-stream event lifecycle"
+      ],
+      "used_by": [
+        "live-lifecycle"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-live-recordings",
+      "tier": 1,
+      "authority": "Mux official live recording guidance",
+      "url": "https://www.mux.com/docs/guides/stream-recordings-of-live-streams",
+      "supports": [
+        "Live stream state events and one-live-stream-to-many-recording-assets behavior"
+      ],
+      "used_by": [
+        "live-lifecycle",
+        "webhook-state-sync"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-data-events",
+      "tier": 1,
+      "authority": "Mux official playback event guidance",
+      "url": "https://www.mux.com/docs/guides/mux-data-playback-events",
+      "supports": [
+        "Mux Data playback event semantics for diagnosis"
+      ],
+      "used_by": [
+        "playback-observability"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mux-playback-success",
+      "tier": 1,
+      "authority": "Mux official Playback Success metric guidance",
+      "url": "https://www.mux.com/docs/guides/data-playback-success-metric",
+      "supports": [
+        "Playback Success and playback health interpretation"
+      ],
+      "used_by": [
+        "playback-observability"
+      ],
+      "freshness": "volatile"
+    }
+  ]
+}

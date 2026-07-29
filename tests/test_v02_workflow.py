@@ -5,15 +5,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.support import apply_fresh_init, canonical_document, write_json
+
 from maestro.governance import govern_report, record_run
+from maestro.conventions import CONVENTION_HELD_OUT_EVALUATION_VERSION
 from maestro.doctor import doctor_report
 from maestro.errors import MaestroError
+from maestro.observations import (
+    record_stage_observation,
+    start_run_observation,
+)
+from maestro.planning import route_goal_v2
 from maestro.project import apply_plan, build_init_plan, build_upgrade_plan
 from maestro.registry import load_host_profile, route_goal
 from maestro.status import status_report
 from maestro.decisions import repository_revision
 from maestro.util import canonical_json, file_sha256, sha256_text
-from tests.support import apply_fresh_init, canonical_document, write_json
 
 
 class CoreWorkflowV02Tests(unittest.TestCase):
@@ -443,13 +450,58 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 },
             ]
             revision = repository_revision(repo)
+            candidate_sha256 = file_sha256(convention)
+            authoring_run = "run-provenance-authoring"
+            authoring_plan = route_goal_v2(
+                "Author the provenance Convention",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            authoring_plan_path = Path(temporary) / "authoring-plan.json"
+            write_json(authoring_plan_path, authoring_plan)
+            authored = start_run_observation(
+                repo,
+                run_id=authoring_run,
+                task_label="Author provenance Convention",
+                plan_path=authoring_plan_path,
+            )
+            for assignment in authoring_plan["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=authored["observation_id"],
+                    run_id=authoring_run,
+                    assignment_id=assignment["assignment_id"],
+                    status="completed",
+                    evidence_source="deterministic_command",
+                    evidence_refs=(
+                        [f"convention-candidate:{candidate_sha256}"]
+                        if assignment["mutation_owner"]
+                        else [f"authoring:{assignment['assignment_id']}"]
+                    ),
+                )
+            evaluation_run = "run-provenance-evaluation"
+            evaluation_plan = route_goal_v2(
+                "Evaluate the provenance Convention",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+            evaluation_plan_path = Path(temporary) / "evaluation-plan.json"
+            write_json(evaluation_plan_path, evaluation_plan)
+            evaluated = start_run_observation(
+                repo,
+                run_id=evaluation_run,
+                task_label="Evaluate provenance Convention",
+                plan_path=evaluation_plan_path,
+            )
             write_json(
                 artifact,
                 {
                     "schema_version": (
-                        "maestro_convention_held_out_evaluation_v1"
+                        CONVENTION_HELD_OUT_EVALUATION_VERSION
                     ),
-                    "candidate_sha256": file_sha256(convention),
+                    "candidate_sha256": candidate_sha256,
                     "suite_sha256": sha256_text(canonical_json(cases)),
                     "source_revision": (
                         revision["head"]
@@ -463,6 +515,10 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                         "command": "python -m unittest tests.test_provenance",
                         "exit_code": 0,
                         "executed_at": "2026-07-27T00:00:00Z",
+                        "kind": "fresh-context",
+                        "observation_id": evaluated["observation_id"],
+                        "authoring_run_ref": authoring_run,
+                        "evaluation_run_ref": evaluation_run,
                     },
                     "conditions": {
                         "tool": "unittest",
@@ -471,6 +527,31 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                     },
                 },
             )
+            for assignment in evaluation_plan["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=evaluated["observation_id"],
+                    run_id=evaluation_run,
+                    assignment_id=assignment["assignment_id"],
+                    status="completed",
+                    evidence_source="codex_app_server",
+                    evidence_refs=[
+                        f"convention-candidate:{candidate_sha256}",
+                        f"convention-evaluation:{file_sha256(artifact)}",
+                    ],
+                    requested_model=assignment["model_route"][
+                        "selected_model"
+                    ],
+                    requested_reasoning_effort=assignment["model_route"][
+                        "reasoning_effort"
+                    ],
+                    actual_model=assignment["model_route"][
+                        "selected_model"
+                    ],
+                    model_evidence="complete",
+                    reroutes=[],
+                    duration_ms=1.0,
+                )
             receipt_path = Path(temporary) / "receipt.json"
             receipt = {
                 "run_id": "run-active-provenance",

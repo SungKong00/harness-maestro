@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from tests.support import ROOT, write_json
 
+from maestro.authorization import resolve_authorized_write_roots
 from maestro.cli import main
 from maestro.decisions import (
     DECISION_BUNDLE_VERSION,
@@ -20,9 +21,11 @@ from maestro.decisions import (
     build_execution_plan,
     validate_decision_bundle,
     validate_decision_plan,
+    validate_execution_plan,
     validate_specialist_packet,
 )
 from maestro.errors import MaestroError
+from maestro.model_policy import LEGACY_MODEL_ROUTE_FIELDS
 from maestro.planning import route_goal_v2
 from maestro.registry import resolve_request_contract, route_goal
 from maestro.util import canonical_json, sha256_text
@@ -245,6 +248,23 @@ class RequestBoundaryTests(unittest.TestCase):
 
 
 class DecisionPlanTests(unittest.TestCase):
+    def test_three_lens_route_fails_instead_of_silently_dropping_one(
+        self,
+    ) -> None:
+        with self.assertRaises(MaestroError) as raised:
+            build_decision_plan(
+                ROOT,
+                "authentication transaction deploy를 검토한 후 구현해줘",
+                "high",
+            )
+
+        self.assertEqual(
+            "DECISION_COVERAGE_CAPACITY_EXCEEDED",
+            raised.exception.code,
+        )
+        self.assertIn("rollback-observability-review", raised.exception.message)
+        self.assertIn("Nothing was truncated", raised.exception.message)
+
     def test_every_selected_product_design_guide_is_assigned(self) -> None:
         plan = build_decision_plan(
             ROOT,
@@ -334,6 +354,38 @@ class DecisionPlanTests(unittest.TestCase):
                 for item in plan["assignments"]
             )
         )
+        stage_routes = {
+            item["assignment_id"]: item["model_route"]
+            for item in plan["assignments"]
+        }
+        self.assertEqual(
+            "gpt-5.6-terra",
+            stage_routes["visual-design-review"]["selected_model"],
+        )
+        self.assertEqual(
+            "high",
+            stage_routes["visual-design-review"]["reasoning_effort"],
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            stage_routes["synthesis-1"]["selected_model"],
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            stage_routes["final-synthesis"]["selected_model"],
+        )
+        self.assertEqual(
+            {
+                "specialist-review",
+                "intermediate-synthesis",
+                "technical-feasibility",
+                "final-synthesis",
+            },
+            {
+                route["stage_kind"]
+                for route in stage_routes.values()
+            },
+        )
         visual = next(
             item
             for item in plan["specialist_contracts"]
@@ -360,6 +412,71 @@ class DecisionPlanTests(unittest.TestCase):
         self.assertEqual(
             "after_decision",
             plan["request_contract"]["side_effect_policy"],
+        )
+
+    def test_legacy_decision_routes_require_regeneration(self) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        for assignment in plan["assignments"]:
+            route = assignment["model_route"]
+            for field in list(route):
+                if field not in LEGACY_MODEL_ROUTE_FIELDS:
+                    route.pop(field)
+            route["executor"] = 42
+            route["risk"] = []
+        payload = copy.deepcopy(plan)
+        payload.pop("plan_id")
+        plan["plan_id"] = sha256_text(canonical_json(payload))
+
+        validation = validate_decision_plan(plan)
+
+        self.assertEqual("FAIL", validation["status"])
+        self.assertIn(
+            "DECISION_MODEL_ROUTE_MISMATCH",
+            {issue["code"] for issue in validation["issues"]},
+        )
+
+    def test_specialist_packet_enforces_finding_and_escalation_limits(
+        self,
+    ) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        packet = _packet(plan, "visual-design")
+        packet["findings"] = [
+            copy.deepcopy(packet["findings"][0]) for _ in range(6)
+        ]
+
+        finding_result = validate_specialist_packet(packet, plan)
+
+        self.assertIn(
+            "SPECIALIST_FINDING_LIMIT_EXCEEDED",
+            {issue["code"] for issue in finding_result["issues"]},
+        )
+
+        escalation_packet = _packet(plan, "visual-design")
+        escalation_packet["escalations"] = [
+            {
+                "target_specialism": "ux-product",
+                "question": f"Clarify evidence boundary {index}.",
+                "evidence_refs": [f"artifact:boundary-{index}"],
+            }
+            for index in range(4)
+        ]
+
+        escalation_result = validate_specialist_packet(
+            escalation_packet,
+            plan,
+        )
+
+        self.assertIn(
+            "SPECIALIST_ESCALATION_LIMIT_EXCEEDED",
+            {issue["code"] for issue in escalation_result["issues"]},
         )
 
     def test_unknown_pack_uses_generic_guide_bounded_specialist(self) -> None:
@@ -581,6 +698,37 @@ class DecisionPlanTests(unittest.TestCase):
 
 
 class DecisionEnactmentTests(unittest.TestCase):
+    def test_execution_scope_resolves_only_existing_regular_directories(
+        self,
+    ) -> None:
+        self.assertEqual(
+            [(ROOT / "src" / "maestro").resolve()],
+            resolve_authorized_write_roots(
+                ROOT,
+                ["src/maestro"],
+            ),
+        )
+        invalid_paths = [
+            ".",
+            "..",
+            str(ROOT),
+            "missing-directory-for-enactment",
+            "pyproject.toml",
+        ]
+        for invalid_path in invalid_paths:
+            with self.subTest(path=invalid_path):
+                with self.assertRaises(MaestroError):
+                    resolve_authorized_write_roots(
+                        ROOT,
+                        [invalid_path],
+                    )
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            (repo / "real").mkdir()
+            (repo / "linked").symlink_to(repo / "real", target_is_directory=True)
+            with self.assertRaises(MaestroError):
+                resolve_authorized_write_roots(repo, ["linked"])
+
     def test_valid_bundle_authorizes_existing_one_writer_route(self) -> None:
         plan = build_decision_plan(
             ROOT,
@@ -615,6 +763,115 @@ class DecisionEnactmentTests(unittest.TestCase):
         self.assertEqual(
             "implementation",
             execution["route_plan"]["mutation_owner_assignment_id"],
+        )
+        self.assertEqual(
+            "PASS",
+            validate_execution_plan(
+                execution,
+                repo_path=ROOT,
+            )["status"],
+        )
+
+    def test_execution_wrapper_cannot_self_attest_decision_evidence(
+        self,
+    ) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        packets = _packets(plan)
+        execution = build_execution_plan(
+            ROOT,
+            plan,
+            _bundle(plan, packets),
+            packets,
+            authorization_source="prior_explicit_request",
+        )
+        forged = copy.deepcopy(execution)
+        forged.pop("decision_evidence")
+        forged["execution_plan_id"] = ""
+        forged["execution_plan_id"] = sha256_text(
+            canonical_json(
+                {
+                    key: value
+                    for key, value in forged.items()
+                    if key != "execution_plan_id"
+                }
+            )
+        )
+
+        result = validate_execution_plan(
+            forged,
+            repo_path=ROOT,
+        )
+
+        self.assertEqual("FAIL", result["status"])
+        self.assertIn(
+            "EXECUTION_DECISION_EVIDENCE_INVALID",
+            {issue["code"] for issue in result["issues"]},
+        )
+
+    def test_execution_scope_is_bound_to_validated_decision_bundle(
+        self,
+    ) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        packets = _packets(plan)
+        execution = build_execution_plan(
+            ROOT,
+            plan,
+            _bundle(plan, packets),
+            packets,
+            authorization_source="prior_explicit_request",
+        )
+        execution["execution_authorization"]["allowed_paths"] = ["."]
+        payload = copy.deepcopy(execution)
+        payload.pop("execution_plan_id")
+        execution["execution_plan_id"] = sha256_text(
+            canonical_json(payload)
+        )
+
+        result = validate_execution_plan(
+            execution,
+            repo_path=ROOT,
+        )
+
+        self.assertEqual("FAIL", result["status"])
+        self.assertIn(
+            "EXECUTION_AUTHORIZATION_SCOPE_MISMATCH",
+            {issue["code"] for issue in result["issues"]},
+        )
+
+    def test_decision_bundle_rejects_unexecutable_write_roots(self) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        packets = _packets(plan)
+        bundle = _bundle(plan, packets)
+        bundle["execution_scope"]["allowed_paths"] = [
+            "missing-directory-for-enactment"
+        ]
+        payload = copy.deepcopy(bundle)
+        payload.pop("bundle_digest")
+        bundle["bundle_digest"] = sha256_text(canonical_json(payload))
+
+        result = validate_decision_bundle(
+            bundle,
+            plan,
+            packets,
+            ROOT,
+        )
+
+        self.assertEqual("FAIL", result["status"])
+        self.assertIn(
+            "EXECUTION_SCOPE_INVALID",
+            {issue["code"] for issue in result["issues"]},
         )
 
     def test_open_research_gate_blocks_enactment(self) -> None:

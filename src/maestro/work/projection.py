@@ -162,6 +162,24 @@ def project_observed_work(
         for stage in stages
         if isinstance(stage.get("assignment_id"), str)
     }
+    stage_model_routes = {
+        stage["assignment_id"]: {
+            "route_recommended": stage.get("route_recommended_model"),
+            "route_recommended_reasoning_effort": stage.get(
+                "reasoning_effort"
+            ),
+            "model_route_id": stage.get("model_route_id"),
+            "execution_unit_id": stage.get("execution_unit_id"),
+            "stage_kind": stage.get("stage_kind"),
+            "execution_kind": stage.get("execution_kind"),
+            "selected_class": stage.get("selected_class"),
+            "quality_profile": stage.get("quality_profile"),
+            "quality_floor": stage.get("quality_floor"),
+            "fallback_route": stage.get("fallback_route"),
+        }
+        for stage in stages
+        if isinstance(stage.get("assignment_id"), str)
+    }
     lanes_by_id: dict[str, dict[str, Any]] = {}
     cards = []
     for position, node in enumerate(execution["nodes"]):
@@ -201,6 +219,9 @@ def project_observed_work(
                 "assignment": {
                     "assignment_id": span["assignment_id"],
                     "label": stage_titles.get(span["assignment_id"]),
+                    "model_route": stage_model_routes.get(
+                        span["assignment_id"]
+                    ),
                     "source": (
                         "explicit_assignment_binding"
                         if span["assignment_id"] is not None

@@ -9,6 +9,15 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
+
+from tests.support import (
+    ROOT,
+    application_work_span,
+    apply_fresh_init,
+    record_managed_completion_graph,
+    write_json,
+)
 
 from maestro.cli import parser
 from maestro.dashboard import (
@@ -22,6 +31,7 @@ from maestro.expertise_lifecycle import expertise_inventory
 from maestro.governance import (
     expertise_management_signals,
     finalize_run,
+    recent_run_events,
     record_run,
 )
 from maestro.history import (
@@ -30,6 +40,7 @@ from maestro.history import (
     history_inventory,
     set_run_display_label,
 )
+from maestro.model_feedback import validate_model_feedback_report
 from maestro.observations import (
     attach_run_plan,
     import_codex_app_server_trace,
@@ -40,6 +51,7 @@ from maestro.observations import (
     start_run_observation,
 )
 from maestro.planning import route_goal_v2
+from maestro.registry import definition_digest_maps
 from maestro.snapshot import _expertise_review_attention, snapshot_report
 from maestro.snapshot_runs import (
     _aggregate_stage_tokens,
@@ -54,12 +66,6 @@ from maestro.verification import (
     apply_verification_approval_plan,
     build_verification_approval_plan,
     verification_inventory,
-)
-from tests.support import (
-    ROOT,
-    application_work_span,
-    apply_fresh_init,
-    write_json,
 )
 
 
@@ -401,12 +407,18 @@ class OperationsViewerTests(unittest.TestCase):
                 plan,
             )
             pending = snapshot_report(repo)["inflight"][0]
-            self.assertEqual("receipt_pending", pending["status"])
+            self.assertEqual("in_progress", pending["status"])
             self.assertEqual(
                 pending["planned_stage_count"],
                 pending["recorded_stage_count"],
             )
 
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="observed-pipeline",
+                plan=plan,
+            )
             finalized = finalize_run(
                 repo,
                 run_id="observed-pipeline",
@@ -1112,6 +1124,12 @@ class OperationsViewerTests(unittest.TestCase):
                 "late-fallback-run",
                 plan,
             )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="late-fallback-run",
+                plan=plan,
+            )
             receipt = _receipt_from_plan(plan)
             receipt["run_id"] = "late-fallback-run"
             receipt_path = root / "receipt.json"
@@ -1154,6 +1172,12 @@ class OperationsViewerTests(unittest.TestCase):
                 started["observation_id"],
                 "viewer-run-1",
                 plan,
+            )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="viewer-run-1",
+                plan=plan,
             )
             write_json(receipt_path, _receipt_from_plan(plan))
 
@@ -1217,6 +1241,15 @@ class OperationsViewerTests(unittest.TestCase):
             self.assertEqual([], snapshot["inflight"])
             self.assertEqual(1, smallest_snapshot["window"])
             self.assertEqual(3, smallest_snapshot["governance"]["window"])
+            self.assertEqual(
+                200,
+                smallest_snapshot["governance"]["model_feedback_window"],
+            )
+            self.assertTrue(
+                validate_model_feedback_report(
+                    smallest_snapshot["governance"]["model_feedback"]
+                )
+            )
             self.assertIn(
                 "decision_guide_usage",
                 snapshot["governance"],
@@ -1256,6 +1289,12 @@ class OperationsViewerTests(unittest.TestCase):
                 "definition-drift-run",
                 plan,
             )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="definition-drift-run",
+                plan=plan,
+            )
             receipt_path = root / "receipt.json"
             write_json(receipt_path, receipt)
             recorded = record_run(
@@ -1266,16 +1305,206 @@ class OperationsViewerTests(unittest.TestCase):
             event_path = repo / recorded["event_path"]
             event = json.loads(event_path.read_text(encoding="utf-8"))
             executor_id = next(iter(event["executor_definition_digests"]))
-            event["executor_definition_digests"][executor_id] = "0" * 64
-            event_path.write_text(
-                json.dumps(event, sort_keys=True) + "\n",
-                encoding="utf-8",
+            drifted_definitions = definition_digest_maps()
+            drifted_definitions["executors"][executor_id] = "0" * 64
+            with patch(
+                "maestro.governance.definition_digest_maps",
+                return_value=drifted_definitions,
+            ):
+                snapshot = snapshot_report(repo)
+                history_plan = build_history_bundle_plan(
+                    repo,
+                    label="이전 정의 작업",
+                    event_ids=[event["event_id"]],
+                )
+
+            self.assertEqual(1, len(snapshot["runs"]))
+            self.assertEqual(
+                "definition-drift-run",
+                snapshot["runs"][0]["run_id"],
+            )
+            self.assertEqual(
+                "정의 변경 전 완료한 작업",
+                snapshot["runs"][0]["task_label"],
+            )
+            self.assertEqual(
+                {
+                    "classification": "definition",
+                    "history_visibility": "visible",
+                    "governance_eligible": False,
+                    "definition_status": "historical",
+                    "reason": "definition_digest_mismatch",
+                },
+                snapshot["runs"][0]["history_evidence"],
+            )
+            self.assertEqual(1, len(snapshot["request_records"]))
+            self.assertEqual(
+                ["definition-drift-run"],
+                snapshot["request_records"][0]["source_run_ids"],
+            )
+            self.assertEqual(
+                {
+                    "definition_status": "historical",
+                    "governance_eligible": False,
+                    "governance_eligible_attempts": 0,
+                    "attempts_total": 1,
+                    "latest_attempt": {
+                        "classification": "definition",
+                        "history_visibility": "visible",
+                        "governance_eligible": False,
+                        "definition_status": "historical",
+                        "reason": "definition_digest_mismatch",
+                    },
+                },
+                snapshot["request_records"][0]["history_evidence"],
+            )
+            self.assertEqual(1, snapshot["overview"]["runs"])
+            self.assertEqual(1, snapshot["overview"]["requests"])
+            self.assertEqual(
+                {
+                    "display_runs": 1,
+                    "governance_eligible_runs": 0,
+                    "historical_definition_runs": 1,
+                    "historical_definition_records": 1,
+                    "invalid_records": 0,
+                    "scan_truncated": False,
+                },
+                snapshot["history_projection"],
+            )
+            self.assertEqual(0, snapshot["governance"]["runs_considered"])
+            self.assertEqual(0, snapshot["governance"]["events_considered"])
+            self.assertEqual(
+                1,
+                snapshot["governance"]["excluded_definition_records"],
+            )
+            self.assertEqual(
+                [],
+                snapshot["automation"]["expertise_signals"],
+            )
+            self.assertEqual(
+                [event["event_id"]],
+                list(history_plan["added_event_digests"]),
+            )
+            self.assertEqual([], snapshot["inflight"])
+
+    def test_history_projection_separates_mixed_evidence_without_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            plan = route_goal_v2(
+                "혼합 작업 이력 경계를 검증한다",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            receipt = _receipt_from_plan(plan)
+            receipt["run_id"] = "current-definition-run"
+            receipt_path = root / "receipt.json"
+            write_json(receipt_path, receipt)
+            recorded = record_run(repo, receipt_path)
+            event_path = repo / recorded["event_path"]
+            current = json.loads(event_path.read_text(encoding="utf-8"))
+            current["timestamp"] = "2026-01-01T00:00:00Z"
+
+            historical = json.loads(json.dumps(current))
+            historical["event_id"] = "historical-definition-event"
+            historical["run_id"] = "historical-definition-run"
+            historical["timestamp"] = "2026-01-02T00:00:00Z"
+            executor_id = next(
+                iter(historical["executor_definition_digests"])
+            )
+            current_digest = historical["executor_definition_digests"][
+                executor_id
+            ]
+            historical["executor_definition_digests"][executor_id] = (
+                ("1" if current_digest == "0" * 64 else "0") * 64
             )
 
-            snapshot = snapshot_report(repo)
+            foreign_project = json.loads(json.dumps(current))
+            foreign_project["event_id"] = "foreign-project-event"
+            foreign_project["run_id"] = "foreign-project-run"
+            foreign_project["project_id"] = "another-project"
+            foreign_project["timestamp"] = "2026-01-03T00:00:00Z"
 
-            self.assertEqual([], snapshot["runs"])
-            self.assertEqual([], snapshot["inflight"])
+            foreign_checkout = json.loads(json.dumps(current))
+            foreign_checkout["event_id"] = "foreign-checkout-event"
+            foreign_checkout["run_id"] = "foreign-checkout-run"
+            foreign_checkout["checkout_id"] = "another-checkout"
+            foreign_checkout["timestamp"] = "2026-01-04T00:00:00Z"
+
+            raw_lines = [
+                json.dumps(current, sort_keys=True),
+                json.dumps(historical, sort_keys=True),
+                json.dumps(foreign_project, sort_keys=True),
+                json.dumps(foreign_checkout, sort_keys=True),
+                "{malformed",
+            ]
+            raw_before = ("\n".join(raw_lines) + "\n").encode("utf-8")
+            event_path.write_bytes(raw_before)
+
+            history = recent_run_events(repo, window=20)
+            snapshot = snapshot_report(repo, window=20)
+
+            self.assertEqual(raw_before, event_path.read_bytes())
+            self.assertEqual(
+                ["current-definition-run"],
+                [event["run_id"] for event in history["runs"]],
+            )
+            self.assertEqual(
+                [
+                    "historical-definition-run",
+                    "current-definition-run",
+                ],
+                [event["run_id"] for event in history["display_runs"]],
+            )
+            self.assertEqual(
+                {
+                    "historical-definition-event",
+                    current["event_id"],
+                },
+                set(history["run_evidence"]),
+            )
+            self.assertEqual(
+                {
+                    "classification": "eligible",
+                    "history_visibility": "visible",
+                    "governance_eligible": True,
+                    "definition_status": "current",
+                    "reason": None,
+                },
+                history["run_evidence"][current["event_id"]],
+            )
+            self.assertEqual(
+                {
+                    "classification": "definition",
+                    "history_visibility": "visible",
+                    "governance_eligible": False,
+                    "definition_status": "historical",
+                    "reason": "definition_digest_mismatch",
+                },
+                history["run_evidence"]["historical-definition-event"],
+            )
+            self.assertEqual(1, history["invalid_records"])
+            self.assertEqual(1, history["historical_definition_records"])
+            self.assertEqual(
+                [
+                    "historical-definition-run",
+                    "current-definition-run",
+                ],
+                [run["run_id"] for run in snapshot["runs"]],
+            )
+            self.assertEqual(1, snapshot["governance"]["runs_considered"])
+            self.assertEqual(1, snapshot["governance"]["events_considered"])
+            self.assertEqual(
+                1,
+                snapshot["governance"]["excluded_definition_records"],
+            )
+            self.assertEqual(
+                1,
+                snapshot["history_projection"]["invalid_records"],
+            )
 
     def test_completed_observation_becomes_receipt_stale_from_completion_time(
         self,
@@ -1448,6 +1677,7 @@ class OperationsViewerTests(unittest.TestCase):
                 applied_model="gpt-host-observed",
                 model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
+                trusted_event_stream=True,
             )
             repeated = record_host_observation(
                 repo,
@@ -1461,6 +1691,7 @@ class OperationsViewerTests(unittest.TestCase):
                 applied_model="gpt-host-observed",
                 model_event_evidence="complete",
                 tokens={"input": 70, "output": 30, "total": 100},
+                trusted_event_stream=True,
             )
             receipt = _receipt_from_plan(plan)
             receipt["run_id"] = "host-observed-run"
@@ -1470,6 +1701,12 @@ class OperationsViewerTests(unittest.TestCase):
                 started["observation_id"],
                 "host-observed-run",
                 plan,
+            )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="host-observed-run",
+                plan=plan,
             )
             receipt_path = root / "receipt.json"
             write_json(receipt_path, receipt)
@@ -1560,6 +1797,7 @@ class OperationsViewerTests(unittest.TestCase):
                 correlation_id="thread-1:turn-3",
                 requested_model="gpt-5.6-sol",
                 requested_reasoning_effort="xhigh",
+                model_event_evidence="request_only",
             )
             inflight = snapshot_report(repo)["inflight"][0]
             self.assertEqual(
@@ -1578,6 +1816,12 @@ class OperationsViewerTests(unittest.TestCase):
                 started["observation_id"],
                 "requested-only-run",
                 plan,
+            )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="requested-only-run",
+                plan=plan,
             )
             receipt_path = root / "receipt.json"
             write_json(receipt_path, receipt)
@@ -1606,7 +1850,7 @@ class OperationsViewerTests(unittest.TestCase):
                 run["models"]["route_recommended"],
             )
             self.assertEqual(
-                "unavailable",
+                "request_only",
                 run["models"]["model_event_evidence"],
             )
 
@@ -1679,7 +1923,7 @@ class OperationsViewerTests(unittest.TestCase):
                     applied_model="gpt-5.6-terra",
                 )
             self.assertEqual(
-                "HOST_OBSERVATION_INVALID",
+                "HOST_OBSERVATION_TRUST_REQUIRED",
                 rejected.exception.code,
             )
 
@@ -1700,6 +1944,7 @@ class OperationsViewerTests(unittest.TestCase):
                         "reason": "service reroute",
                     }
                 ],
+                trusted_event_stream=True,
             )
             self.assertEqual(
                 "gpt-5.6-terra",
@@ -1887,8 +2132,10 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn('id="run-workspace"', viewer_markup)
         self.assertIn("function workLocation(", viewer_source)
         self.assertIn("function workSelectionFromLocation(", viewer_source)
-        self.assertIn("toggle.href = workLocation(run.event_id)", viewer_source)
-        self.assertIn("state.selectedRun = run.event_id", viewer_source)
+        self.assertIn("toggle.href = workLocation(recordId)", viewer_source)
+        self.assertIn("state.selectedRun = recordId", viewer_source)
+        self.assertIn("function requestRecords(snapshot)", viewer_source)
+        self.assertIn("function requestRecordId(run)", viewer_source)
         self.assertIn('text: "작업 열기"', viewer_source)
         self.assertIn("renderRunWorkspace(snapshot", viewer_source)
         self.assertIn("buildStageMap(", viewer_source)
@@ -1932,6 +2179,11 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn(".work-card-detail.work-inspector", viewer_styles)
         self.assertIn(".work-edges-linearized", viewer_styles)
         self.assertIn(".work-parallel-badge", viewer_styles)
+        self.assertIn("const sharedEdgeTypes = [", viewer_source)
+        self.assertIn(
+            '.work-edge[data-edge-type~="joins_into"]',
+            viewer_styles,
+        )
         self.assertIn("overflow: visible;", viewer_styles)
         self.assertIn("scroll-margin-top: 124px;", viewer_styles)
         self.assertIn("관계상 독립 가능", viewer_source)
@@ -1962,13 +2214,14 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertIn("다음 위임 완료 조건", viewer_source)
         self.assertIn("work-edges-linearized", viewer_source)
         self.assertIn(
-            '`요청 ${facts.reasoning.value.replaceAll("_", " ")}`',
+            "`${reasoningKind} ${displayReasoningEffort(facts.reasoning.value)}`",
             viewer_source,
         )
-        self.assertIn(
-            'facts.model?.kind === "actual"',
-            viewer_source,
-        )
+        self.assertIn('actual: "실측"', viewer_source)
+        self.assertIn('hook_point: "Hook"', viewer_source)
+        self.assertIn('requested: "요청"', viewer_source)
+        self.assertIn('recommended: "권고"', viewer_source)
+        self.assertIn('not_applicable: "해당 없음"', viewer_source)
         self.assertIn(
             'facts.tokens?.attribution === "direct"',
             viewer_source,
@@ -1979,8 +2232,21 @@ class OperationsViewerTests(unittest.TestCase):
         )
         self.assertIn('element("span", { className: "work-stage-footer" })', viewer_source)
         self.assertNotIn('element("footer", { className: "work-stage-footer" })', viewer_source)
+        self.assertIn('className: "work-stage-footer-line"', viewer_source)
         self.assertIn('"완료 상태"', viewer_source)
-        self.assertIn('"기록된 수정"', viewer_source)
+        self.assertIn('"요청 추론 강도"', viewer_source)
+        self.assertIn('"토큰"', viewer_source)
+        self.assertIn('"실행 시도 시간 합계"', viewer_source)
+        self.assertIn('"작업 단계 시간"', viewer_source)
+        self.assertIn('"모델 호출 시간"', viewer_source)
+        self.assertIn(
+            "작업 단계 시간을 모델 호출 latency로 대신 표시하지 않습니다.",
+            viewer_source,
+        )
+        self.assertIn("기록된 수정", viewer_source)
+        self.assertIn('"Maestro 권고"', viewer_source)
+        self.assertIn('"Host 요청"', viewer_source)
+        self.assertIn('"실측 적용 모델"', viewer_source)
         self.assertIn("`계획 단계 ${String(stage.rank + 1)", viewer_source)
         self.assertIn("pendingWorkFocusRestore", viewer_source)
         self.assertIn(
@@ -2025,7 +2291,973 @@ class OperationsViewerTests(unittest.TestCase):
         workspace_source = viewer_source[workspace_start:workspace_end]
         self.assertIn("expertiseRoutingText(run)", header_source)
         self.assertIn('"work-routing-summary"', header_source)
+        self.assertIn("work.header.tokens", header_source)
+        self.assertIn("route_recommended_reasoning_effort", header_source)
         self.assertIn("buildWorkHeader(run, work)", workspace_source)
+        self.assertIn("grid-template-columns: repeat(6", viewer_styles)
+        self.assertIn("@media (max-width: 800px)", viewer_styles)
+        self.assertIn("#view-work .run-row td::before", viewer_styles)
+        self.assertIn("모델·추론·토큰", viewer_markup)
+        self.assertIn("function observedFlowPresentation(", viewer_source)
+        self.assertIn('"제어 시작"', viewer_source)
+        self.assertIn('"위임된 독립 검토"', viewer_source)
+        self.assertIn('"검토 결과 합성"', viewer_source)
+        self.assertIn('"후속 판단"', viewer_source)
+        self.assertIn('"관계 미연결"', viewer_source)
+        self.assertIn("실제 병렬 여부 확인 불가", viewer_source)
+        self.assertIn("마지막 카드의 완료 표시", viewer_source)
+        self.assertIn("요청 최종 결과는", viewer_source)
+        self.assertIn('className: "work-card-relationship"', viewer_source)
+        self.assertIn(".work-flow-transition", viewer_styles)
+        self.assertIn(".work-card-request-outcome", viewer_styles)
+        self.assertIn('[data-flow-role="control_start"]', viewer_styles)
+
+    def test_observed_flow_presentation_separates_control_and_outcome(
+        self,
+    ) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest(
+                "Node.js is required for the flow presentation test"
+            )
+        viewer_source = (
+            ROOT / "src/maestro/resources/viewer/app.js"
+        ).read_text(encoding="utf-8")
+        helper_start = viewer_source.index(
+            "const observedFlowRoleDefinitions"
+        )
+        helper_end = viewer_source.index(
+            "function legacyDisplayEdgeGroups(",
+            helper_start,
+        )
+        script = (
+            'const assert = require("node:assert/strict");\n'
+            + viewer_source[helper_start:helper_end]
+            + r"""
+const relationship = (
+  parent = null,
+  depends = [],
+  joins = [],
+  followup = null,
+) => ({
+  parent_work_id: parent,
+  depends_on_work_ids: depends,
+  joins_work_ids: joins,
+  followup_of_work_id: followup,
+});
+const card = (
+  workId,
+  kind,
+  rank,
+  role,
+  relationships,
+  status = "completed",
+) => ({
+  work_id: workId,
+  kind,
+  rank,
+  role,
+  relationships,
+  status: {value: status},
+});
+const cards = [
+  card("control", "orchestration", 0, "메인 오케스트레이터", relationship()),
+  card(
+    "review-a",
+    "review",
+    1,
+    "계약 검토 담당",
+    relationship("control", ["control"]),
+  ),
+  card(
+    "review-b",
+    "review",
+    1,
+    "검증 검토 담당",
+    relationship("control", ["control"]),
+  ),
+  card(
+    "review-c",
+    "review",
+    1,
+    "동시성 검토 담당",
+    relationship("control", ["control"]),
+  ),
+  card(
+    "synthesis",
+    "synthesis",
+    2,
+    "결과 종합 담당",
+    relationship(null, ["review-a", "review-b", "review-c"], [
+      "review-a",
+      "review-b",
+      "review-c",
+    ]),
+  ),
+  card(
+    "stop-decision",
+    "orchestration",
+    3,
+    "중단 판단 담당",
+    relationship(null, ["synthesis"], [], "synthesis"),
+  ),
+];
+const link = (from, to, relationTypes) => ({
+  from,
+  to,
+  relation_types: relationTypes,
+});
+const graph = {
+  actual_concurrency: "unavailable",
+  concurrent_work_pairs: [],
+  terminal_work_ids: ["stop-decision"],
+  display_edge_groups: [
+    {
+      from_rank: 0,
+      to_rank: 1,
+      source_node_ids: ["control"],
+      target_node_ids: ["review-a", "review-b", "review-c"],
+      links: [
+        link("control", "review-a", [
+          "delegates_to",
+          "depends_on",
+          "reports_to",
+        ]),
+        link("control", "review-b", [
+          "delegates_to",
+          "depends_on",
+          "reports_to",
+        ]),
+        link("control", "review-c", [
+          "delegates_to",
+          "depends_on",
+          "reports_to",
+        ]),
+      ],
+    },
+    {
+      from_rank: 1,
+      to_rank: 2,
+      source_node_ids: ["review-a", "review-b", "review-c"],
+      target_node_ids: ["synthesis"],
+      links: [
+        link("review-a", "synthesis", ["depends_on", "joins_into"]),
+        link("review-b", "synthesis", ["depends_on", "joins_into"]),
+        link("review-c", "synthesis", ["depends_on", "joins_into"]),
+      ],
+    },
+    {
+      from_rank: 2,
+      to_rank: 3,
+      source_node_ids: ["synthesis"],
+      target_node_ids: ["stop-decision"],
+      links: [
+        link("synthesis", "stop-decision", [
+          "depends_on",
+          "followup_of",
+        ]),
+      ],
+    },
+  ],
+};
+const graphBefore = structuredClone(graph);
+const presentation = observedFlowPresentation(
+  cards,
+  graph,
+  "blocked",
+  [
+    {title: "구현", status: {value: "blocked"}},
+    {title: "결과 검증", status: {value: "skipped"}},
+  ],
+);
+assert.deepEqual(
+  presentation.waves.map((wave) => wave.label),
+  ["제어 시작", "위임된 독립 검토", "검토 결과 합성", "후속 판단"],
+);
+assert.equal(
+  presentation.waves[1].count_text,
+  "3개 관계상 독립 작업",
+);
+assert.equal(
+  presentation.waves[1].concurrency_text,
+  "실제 병렬 여부 확인 불가",
+);
+assert.deepEqual(
+  presentation.transitions.map((transition) => transition.text),
+  [
+    "지시 → 독립 검토 3건 · 보고 관계 3건",
+    "검토 결과 3건 합류 → 결과 종합",
+    "앞 단계 종합 결과 → 후속 판단",
+  ],
+);
+assert.equal(
+  presentation.cards.find((item) => item.work_id === "control").role_label,
+  "제어",
+);
+assert.equal(
+  presentation.cards.find((item) => item.work_id === "review-a").role_label,
+  "위임 검토",
+);
+assert.match(
+  presentation.cards.find((item) => item.work_id === "review-a")
+    .relation_text,
+  /결과는 다음 종합 단계로 전달/,
+);
+const terminal = presentation.cards.find(
+  (item) => item.work_id === "stop-decision",
+);
+assert.equal(terminal.role_label, "후속 판단");
+assert.equal(terminal.local_status_label, "단계 완료");
+assert.equal(terminal.is_terminal, true);
+assert.match(terminal.relation_text, /이 흐름의 마지막 기록/);
+assert.equal(presentation.outcome.visible, true);
+assert.deepEqual(presentation.outcome.impacts, [
+  {title: "구현", status: "blocked"},
+  {title: "결과 검증", status: "skipped"},
+]);
+assert.deepEqual(graph, graphBefore);
+assert.equal(
+  observedFlowPresentation(cards, graph, "completed").outcome.visible,
+  false,
+);
+const disconnected = card(
+  "unlinked",
+  "orchestration",
+  0,
+  "별도 실행 컨텍스트",
+  relationship(),
+);
+const withDisconnected = observedFlowPresentation(
+  [...cards, disconnected],
+  graph,
+  "blocked",
+);
+assert.equal(
+  withDisconnected.waves[0].label,
+  "시작과 관계 미연결 기록",
+);
+assert.equal(
+  withDisconnected.waves[0].count_text,
+  "1개 연결된 시작 · 1개 관계 미연결 기록",
+);
+const disconnectedPresentation = withDisconnected.cards.find(
+  (item) => item.work_id === "unlinked",
+);
+assert.equal(disconnectedPresentation.role_label, "관계 미연결");
+assert.match(
+  disconnectedPresentation.relation_text,
+  /병렬 실행을 뜻하지 않음/,
+);
+const independentRoot = card(
+  "independent-root",
+  "orchestration",
+  0,
+  "별도 실행 컨텍스트",
+  relationship(),
+);
+const independentRootTwo = {
+  ...independentRoot,
+  work_id: "independent-root-two",
+  role: "두 번째 실행 컨텍스트",
+};
+const independentRootThree = {
+  ...independentRoot,
+  work_id: "independent-root-three",
+  role: "세 번째 실행 컨텍스트",
+};
+const independentSynthesis = card(
+  "independent-synthesis",
+  "synthesis",
+  1,
+  "독립 결과 종합",
+  relationship(null, ["independent-root"], ["independent-root"]),
+);
+const independentPresentation = observedFlowPresentation(
+  [
+    cards[0],
+    independentRoot,
+    independentRootTwo,
+    independentRootThree,
+    independentSynthesis,
+  ],
+  {
+    actual_concurrency: "none_observed",
+    concurrent_work_pairs: [],
+    terminal_work_ids: ["independent-synthesis"],
+    display_edge_groups: [
+      {
+        from_rank: 0,
+        to_rank: 1,
+        source_node_ids: ["control"],
+        target_node_ids: ["independent-synthesis"],
+        links: [
+          link(
+            "control",
+            "independent-synthesis",
+            ["depends_on"],
+          ),
+        ],
+      },
+      {
+        from_rank: 0,
+        to_rank: 1,
+        source_node_ids: [
+          "independent-root",
+          "independent-root-two",
+          "independent-root-three",
+        ],
+        target_node_ids: ["independent-synthesis"],
+        links: [
+          link(
+            "independent-root",
+            "independent-synthesis",
+            ["depends_on", "joins_into"],
+          ),
+          link(
+            "independent-root-two",
+            "independent-synthesis",
+            ["depends_on", "joins_into"],
+          ),
+          link(
+            "independent-root-three",
+            "independent-synthesis",
+            ["depends_on", "joins_into"],
+          ),
+        ],
+      },
+    ],
+  },
+  "blocked",
+);
+assert.equal(
+  independentPresentation.waves[0].label,
+  "제어 시작과 독립 실행",
+);
+assert.equal(
+  independentPresentation.waves[0].count_text,
+  "1개 제어 시작 · 3개 독립 실행",
+);
+const independentCard = independentPresentation.cards.find(
+  (item) => item.work_id === "independent-root",
+);
+assert.equal(independentCard.role_label, "독립 실행");
+assert.equal(
+  independentCard.relation_text,
+  "독립 실행 결과가 다음 종합 단계에 합류",
+);
+const retrySource = {
+  ...card("attempt-one", "synthesis", 0, "첫 시도 종합", relationship()),
+  request_attempt: 1,
+};
+const retryTarget = {
+  ...card(
+    "attempt-two",
+    "orchestration",
+    1,
+    "재시도 제어",
+    relationship(null, ["attempt-one"], [], "attempt-one"),
+  ),
+  request_attempt: 2,
+};
+const retryPresentation = observedFlowPresentation(
+  [retrySource, retryTarget],
+  {
+    actual_concurrency: "unavailable",
+    terminal_work_ids: ["attempt-two"],
+    edges: [{
+      from: "attempt-one",
+      to: "attempt-two",
+      type: "followup_of",
+      provenance: "request_record_projection",
+    }],
+    display_edge_groups: [{
+      from_rank: 0,
+      to_rank: 1,
+      source_node_ids: ["attempt-one"],
+      target_node_ids: ["attempt-two"],
+      links: [
+        {
+          ...link("attempt-one", "attempt-two", [
+            "depends_on",
+            "followup_of",
+          ]),
+          raw_edge_indexes: [0],
+        },
+      ],
+    }],
+  },
+  "blocked",
+);
+assert.equal(
+  retryPresentation.transitions[0].text,
+  "요청 시도 1 종료 → 요청 시도 2 재시작",
+);
+const ordinaryCrossAttempt = observedFlowPresentation(
+  [retrySource, retryTarget],
+  {
+    actual_concurrency: "unavailable",
+    terminal_work_ids: ["attempt-two"],
+    edges: [{
+      from: "attempt-one",
+      to: "attempt-two",
+      type: "joins_into",
+      provenance: "observed_work",
+    }],
+    display_edge_groups: [{
+      from_rank: 0,
+      to_rank: 1,
+      source_node_ids: ["attempt-one"],
+      target_node_ids: ["attempt-two"],
+      links: [{
+        ...link(
+          "attempt-one",
+          "attempt-two",
+          ["depends_on", "joins_into"],
+        ),
+        raw_edge_indexes: [0],
+      }],
+    }],
+  },
+  "blocked",
+);
+assert.equal(
+  ordinaryCrossAttempt.transitions[0].text,
+  "앞 단계 결과 1건 합류 → 결과 종합",
+);
+assert.doesNotMatch(
+  ordinaryCrossAttempt.transitions[0].text,
+  /요청 시도|재시작/,
+);
+const rawOnlyCards = [
+  card(
+    "raw-source",
+    "orchestration",
+    0,
+    "원거리 관계 시작",
+    relationship(),
+  ),
+  card(
+    "raw-target",
+    "verification",
+    2,
+    "원거리 관계 도착",
+    relationship(null, ["raw-source"]),
+  ),
+];
+const rawOnlyPresentation = observedFlowPresentation(
+  rawOnlyCards,
+  {
+    actual_concurrency: "unavailable",
+    terminal_work_ids: ["raw-target"],
+    edges: [{
+      from: "raw-source",
+      to: "raw-target",
+      type: "depends_on",
+      provenance: "observed_work",
+    }],
+    display_edge_groups: [],
+  },
+  "blocked",
+);
+assert.equal(
+  rawOnlyPresentation.cards.some(
+    (item) => item.role_id === "unlinked_record",
+  ),
+  false,
+);
+assert.match(
+  rawOnlyPresentation.cards.find(
+    (item) => item.work_id === "raw-source",
+  ).relation_text,
+  /상세 관계 1개 기록/,
+);
+const detailOnlyPredecessor = card(
+  "detail-only-predecessor",
+  "implementation",
+  0,
+  "원거리 선행 작업",
+  relationship(),
+);
+const dependentControl = card(
+  "dependent-control",
+  "orchestration",
+  2,
+  "선행 결과를 받은 제어",
+  relationship(null, ["detail-only-predecessor"]),
+);
+const dependentSynthesis = card(
+  "dependent-synthesis",
+  "synthesis",
+  3,
+  "후속 종합",
+  relationship(null, ["dependent-control"], ["dependent-control"]),
+);
+const detailOnlyPresentation = observedFlowPresentation(
+  [detailOnlyPredecessor, dependentControl, dependentSynthesis],
+  {
+    actual_concurrency: "unavailable",
+    terminal_work_ids: ["dependent-synthesis"],
+    edges: [
+      {
+        from: "detail-only-predecessor",
+        to: "dependent-control",
+        type: "depends_on",
+        provenance: "observed_work",
+      },
+      {
+        from: "dependent-control",
+        to: "dependent-synthesis",
+        type: "joins_into",
+        provenance: "observed_work",
+      },
+    ],
+    display_edge_groups: [{
+      from_rank: 2,
+      to_rank: 3,
+      source_node_ids: ["dependent-control"],
+      target_node_ids: ["dependent-synthesis"],
+      links: [{
+        ...link(
+          "dependent-control",
+          "dependent-synthesis",
+          ["depends_on", "joins_into"],
+        ),
+        raw_edge_indexes: [1],
+      }],
+    }],
+  },
+  "blocked",
+);
+const dependentControlPresentation = detailOnlyPresentation.cards.find(
+  (item) => item.work_id === "dependent-control",
+);
+assert.equal(dependentControlPresentation.role_id, "control_decision");
+assert.equal(dependentControlPresentation.role_label, "제어 판단");
+assert.match(
+  dependentControlPresentation.relation_text,
+  /생략된 선행 관계 1개를 받아 수행/,
+);
+"""
+        )
+        completed = subprocess.run(
+            [node, "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
+
+    def test_request_record_contract_fails_closed_without_raw_run_fallback(
+        self,
+    ) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest(
+                "Node.js is required for the snapshot contract test"
+            )
+        contract_path = (
+            ROOT
+            / "src/maestro/resources/viewer/snapshot-contract.js"
+        )
+        script = r"""
+const assert = require("node:assert/strict");
+const contract = require(process.argv[1]);
+
+const request = {
+  schema_version: "maestro_request_record_v1",
+  request_record_id: "request-one",
+  source_event_ids: ["run-1", "run-2"],
+  run_id: "run-2",
+  task_label: "요청 계약",
+  outcome: "completed",
+  models: {
+    requested: ["gpt-5.6-terra"],
+    requested_reasoning_effort: ["high"],
+    applied: [],
+    route_recommended: ["gpt-5.6-terra"],
+    route_recommended_reasoning_effort: ["high"],
+    measurement_state: "host_request_observed",
+  },
+  expertise: {
+    packs: [],
+    guides: [],
+    observations: [],
+  },
+  flow: [],
+  flow_graph: {},
+  stage_coverage: {
+    available: false,
+    recorded: 0,
+    planned: 0,
+    complete: false,
+  },
+  work_detail: {
+    schema_version: "maestro_work_detail_v2",
+    header: {
+      result: {value: "completed"},
+      verification: {value: "passed"},
+      duration: {value_ms: null},
+      planning_duration: {value_ms: null},
+      tokens: {value: null},
+      corrections: {count: 0, summary: []},
+      models: {
+        requested: ["gpt-5.6-terra"],
+        requested_reasoning_effort: ["high"],
+        applied: [],
+        route_recommended: ["gpt-5.6-terra"],
+        route_recommended_reasoning_effort: ["high"],
+      },
+    },
+    lanes: [],
+    stages: [],
+    execution: {cards: [], graph: {}},
+  },
+};
+const feedbackAuthority = {
+  project_id: null,
+  checkout_id: null,
+  registry_digest: null,
+  framework_version: null,
+  policy_digest: "a".repeat(64),
+};
+const feedbackReport = {
+  schema_version: "maestro_model_feedback_report_v1",
+  report_id: "b".repeat(64),
+  source: {
+    scope: "mutation-owner-only",
+    coverage: "latest-current-definition-runs",
+    evidence_window: 200,
+    scan_complete: true,
+    events_received: 0,
+    run_count: 0,
+    run_ids_digest: "c".repeat(64),
+    excluded_event_count: 0,
+    exclusion_reasons: {},
+  },
+  authority: feedbackAuthority,
+  policy: {
+    confidence_level: 0.95,
+    minimum_eligible_samples: 20,
+    minimum_failures: 3,
+    max_acceptable_failure_rate: 0.10,
+    max_escalation_steps: 1,
+    automatic_downgrade_allowed: false,
+  },
+  groups: [],
+  causal_interpretation: "observational-only",
+  automatic_policy_mutation_allowed: false,
+  writes_performed: false,
+};
+const valid = {
+  schema_version: "maestro_snapshot_v1",
+  project_id: null,
+  runs: [{ event_id: "run-1" }, { event_id: "run-2" }],
+  request_records: [request],
+  governance: {
+    model_feedback_window: 200,
+    model_feedback_authority: feedbackAuthority,
+    model_feedback: feedbackReport,
+  },
+};
+assert.equal(contract.validateSnapshot(valid), valid);
+assert.deepEqual(contract.requestRecords(valid), [request]);
+
+for (const snapshot of [
+  { schema_version: "maestro_snapshot_v1", runs: [] },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: null,
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: null,
+    request_records: [],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{ event_id: "raw-run" }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [request, request],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      request_record_id: "request-unsupported-measurement",
+      models: { measurement_state: "future_unknown_state" },
+    }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{...request, work_detail: null}],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      work_detail: {
+        ...request.work_detail,
+        header: {
+          ...request.work_detail.header,
+          duration: {value_ms: "not-a-number"},
+        },
+      },
+    }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      work_detail: {
+        ...request.work_detail,
+        header: {
+          ...request.work_detail.header,
+          tokens: {value: {total: "not-a-number"}},
+        },
+      },
+    }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      work_detail: {...request.work_detail, stages: [null]},
+    }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      work_detail: {
+        ...request.work_detail,
+        execution: {cards: [null], graph: {}},
+      },
+    }],
+  },
+]) {
+  assert.throws(
+    () => contract.validateSnapshot(snapshot),
+    (reason) => (
+      reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID"
+      && reason.message.includes("DASHBOARD_REQUEST_RECORDS_INVALID")
+    ),
+  );
+}
+"""
+        completed = subprocess.run(
+            [node, "-e", script, str(contract_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
+
+        viewer_root = ROOT / "src/maestro/resources/viewer"
+        viewer_source = (viewer_root / "app.js").read_text(encoding="utf-8")
+        viewer_markup = (viewer_root / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "snapshot.request_records || snapshot.runs",
+            viewer_source,
+        )
+        self.assertIn(
+            "return MaestroSnapshotContract.requestRecords(snapshot)",
+            viewer_source,
+        )
+        self.assertIn(
+            "return run.request_record_id",
+            viewer_source,
+        )
+        self.assertNotIn(
+            "run.request_record_id || run.event_id",
+            viewer_source,
+        )
+        self.assertNotIn(
+            "assignedStage?.models",
+            viewer_source,
+        )
+        self.assertIn(
+            "return MaestroSnapshotContract.validateSnapshot(payload)",
+            viewer_source,
+        )
+        self.assertEqual(
+            [
+                "return state.snapshot.runs.filter((run) => (",
+                (
+                    "const recentEventIds = new Set("
+                    "snapshot.runs.map((run) => run.event_id));"
+                ),
+            ],
+            [
+                line.strip()
+                for line in viewer_source.splitlines()
+                if "snapshot.runs" in line
+            ],
+        )
+        self.assertLess(
+            viewer_markup.index("/assets/snapshot-contract.js"),
+            viewer_markup.index("/assets/app.js"),
+        )
+        self.assertLess(
+            viewer_markup.index("/assets/expertise-projection.js"),
+            viewer_markup.index("/assets/app.js"),
+        )
+
+    def test_expertise_projection_keeps_work_queues_disjoint(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest(
+                "Node.js is required for the expertise projection test"
+            )
+        projection_path = (
+            ROOT
+            / "src/maestro/resources/viewer/expertise-projection.js"
+        )
+        script = r"""
+const assert = require("node:assert/strict");
+const projection = require(process.argv[1]);
+
+const candidate = (candidateId, runtimeStatus, disposition = null) => ({
+  candidate_id: candidateId,
+  runtime_status: runtimeStatus,
+  disposition,
+});
+const buckets = projection.projectExpertiseBuckets({
+  packs: [{ expertise_pack_id: "active-one" }],
+  change_sets: [
+    {
+      change_set_id: "review",
+      state: "candidate",
+      candidate_ids: ["review-member"],
+    },
+    {
+      change_set_id: "paused",
+      state: "paused",
+      candidate_ids: ["paused-member"],
+    },
+    {
+      change_set_id: "approved",
+      state: "project_approved",
+      candidate_ids: ["approved-member"],
+    },
+    {
+      change_set_id: "archived",
+      state: "archived",
+      atomic_required: true,
+      candidate_ids: ["archived-member"],
+    },
+    {
+      change_set_id: "rejected",
+      state: "rejected",
+      atomic_required: true,
+      candidate_ids: ["rejected-member"],
+    },
+    {
+      change_set_id: "archived-single",
+      state: "archived",
+      atomic_required: false,
+      candidate_ids: ["archived-single"],
+    },
+  ],
+  candidates: [
+    candidate("review-member", "available"),
+    candidate("paused-member", "change_set_paused"),
+    candidate("approved-member", "published"),
+    candidate(
+      "archived-member",
+      "available",
+      { status: "archived", reason: "retained" },
+    ),
+    candidate(
+      "rejected-member",
+      "available",
+      { status: "rejected", reason: "declined" },
+    ),
+    candidate(
+      "archived-single",
+      "available",
+      { status: "archived", reason: "retained individually" },
+    ),
+    candidate("standalone-complete", "globally_promoted"),
+    {
+      ...candidate("standalone-decision", "available"),
+      ready_for_activation_review: true,
+    },
+  ],
+  recomposition_nominations: [{ nomination_id: "nomination-one" }],
+  deleted_candidates: [{ candidate_id: "deleted-one" }],
+});
+
+assert.deepEqual(
+  buckets.inbox.map((item) => item.change_set_id),
+  ["review", "paused"],
+);
+assert.deepEqual(
+  buckets.archiveChangeSets.map((item) => item.change_set_id),
+  ["archived", "rejected"],
+);
+assert.deepEqual(
+  buckets.completedChangeSets.map((item) => item.change_set_id),
+  ["approved"],
+);
+assert.deepEqual(
+  buckets.completedCandidates.map((item) => item.candidate_id),
+  ["standalone-complete"],
+);
+assert.deepEqual(
+  buckets.archivedCandidates.map((item) => item.candidate_id),
+  ["archived-single"],
+);
+assert.deepEqual(
+  buckets.evaluationGroups.attention.map((item) => item.candidate_id),
+  ["paused-member"],
+);
+assert.deepEqual(
+  buckets.evaluationGroups.decision.map((item) => item.candidate_id),
+  ["standalone-decision"],
+);
+assert.deepEqual(
+  buckets.evaluationGroups.observing.map((item) => item.candidate_id),
+  ["review-member"],
+);
+assert.equal(buckets.nominations.length, 1);
+assert.equal(buckets.counts.active, 1);
+assert.equal(buckets.counts.inbox, 2);
+assert.equal(buckets.counts.completed, 2);
+assert.equal(buckets.counts.archive, 4);
+"""
+        completed = subprocess.run(
+            [node, "-e", script, str(projection_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
 
     def test_expertise_routing_text_distinguishes_recorded_states(
         self,
@@ -2144,6 +3376,57 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
             completed.stdout + completed.stderr,
         )
 
+    def test_model_route_policy_helpers_render_structured_floor_and_fallback(
+        self,
+    ) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is required for the viewer helper test")
+        viewer_source = (
+            ROOT / "src/maestro/resources/viewer/app.js"
+        ).read_text(encoding="utf-8")
+        helper_start = viewer_source.index("function qualityFloorText(")
+        helper_end = viewer_source.index(
+            "function directTokenDetail(",
+            helper_start,
+        )
+        script = (
+            'const assert = require("node:assert/strict");\n'
+            + viewer_source[helper_start:helper_end]
+            + r"""
+const floor = qualityFloorText({
+  acceptable_routes: [
+    {selected_class: "economy", reasoning_effort: "high"},
+    {selected_class: "balanced", reasoning_effort: "medium"},
+  ],
+  failure_action: "reject-or-reroute",
+});
+assert.match(floor, /economy\/high/);
+assert.match(floor, /balanced\/medium/);
+assert.doesNotMatch(floor, /\[object Object\]/);
+assert.equal(
+  fallbackRouteText({
+    selected_model: "gpt-5.6-terra",
+    reasoning_effort: "medium",
+    trigger: "selected-model-unavailable",
+  }),
+  "fallback gpt-5.6-terra/medium (selected-model-unavailable)",
+);
+"""
+        )
+        completed = subprocess.run(
+            [node, "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            0,
+            completed.returncode,
+            completed.stdout + completed.stderr,
+        )
+
     def test_status_matrix_keeps_run_and_stage_scopes_distinct(self) -> None:
         stage_statuses = [
             "completed",
@@ -2223,6 +3506,58 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
                 run_outcome,
                 _run_card({**event, "outcome": run_outcome})["outcome"],
             )
+
+    def test_canonical_ledger_duration_overrides_receipt_duration(
+        self,
+    ) -> None:
+        event = {
+            "event_id": "canonical-duration",
+            "run_id": "canonical-duration",
+            "task_label": "canonical duration",
+            "timestamp": "2026-07-29T00:00:00Z",
+            "risk": "medium",
+            "route_depth": "standard",
+            "outcome": "completed",
+            "verifier_result": "passed",
+            "duration_ms": 100,
+            "planning_duration_ms": None,
+            "tokens": None,
+            "selected_lenses": [],
+            "selected_expertise_packs": [],
+            "selected_decision_guides": [],
+            "primary_executor_id": "implementation-engineer",
+            "executor_ids": ["implementation-engineer"],
+            "evidence_refs": ["tests:canonical-duration"],
+            "stage_results": [],
+            "execution_measurements": {
+                "model": {
+                    "requested": [],
+                    "applied": [],
+                    "coverage": "unavailable",
+                },
+                "reasoning_effort": {
+                    "requested": [],
+                    "applied": [],
+                    "coverage": "unavailable",
+                },
+                "tokens": {
+                    "value": None,
+                    "coverage": "unavailable",
+                },
+                "duration": {
+                    "value_ms": 2500,
+                    "coverage": "complete",
+                },
+            },
+        }
+
+        run = _run_card(event)
+
+        self.assertEqual(2500, run["duration_ms"])
+        self.assertEqual(
+            "execution_ledger_complete",
+            run["measurement_provenance"]["duration"],
+        )
 
     def test_history_bundle_hides_selected_runs_without_deleting_receipts(
         self,
@@ -2563,7 +3898,10 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
         self.assertIn('event.key === "Escape" && navigationIsOpen()', viewer_source)
         self.assertIn('closeMobileNavigation({ returnFocus: true })', viewer_source)
         self.assertIn('mobileNavigation.addEventListener("change"', viewer_source)
-        self.assertIn('duration.dataset.label = "걸린 시간"', viewer_source)
+        self.assertIn(
+            'duration.dataset.label = "시도 시간 합계"',
+            viewer_source,
+        )
         self.assertIn("@media (prefers-reduced-motion: reduce)", viewer_styles)
         self.assertIn("전문 지식 묶음의 사용 단계", viewer_markup)
         self.assertIn('evidence_gathering: "사용 결과 수집 중"', viewer_source)
@@ -2583,7 +3921,7 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
             viewer_source,
         )
         self.assertIn(
-            "검증된 후보나 프로젝트 확정본을 한 번의 확인",
+            "후보와 재구성 묶음은 검증·승인·전환 전까지",
             viewer_markup,
         )
         self.assertIn(
@@ -2601,6 +3939,15 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
             viewer_source,
         )
         self.assertIn('action: "approve_change_set"', viewer_source)
+        self.assertIn(
+            'const changeSets = buckets.inbox',
+            viewer_source,
+        )
+        self.assertIn("보관된 묶음 변경안", viewer_source)
+        self.assertIn(
+            "const archivedChangeSets = buckets.archiveChangeSets",
+            viewer_source,
+        )
         self.assertIn(
             "이번 후보는 기본 Pack으로 올리지 않음",
             viewer_source,
@@ -2625,10 +3972,6 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
         self.assertIn("연결된 평가 사례", viewer_source)
         self.assertIn("details.candidate-detail", viewer_source)
         self.assertIn("Guide를 누르면 기준·출처·평가가 펼쳐집니다", viewer_source)
-        self.assertIn(
-            "내부 기여 묶음은 저장소 간 전달에만 사용",
-            viewer_markup,
-        )
         self.assertIn('id="project-select"', viewer_markup)
         self.assertIn('id="project-rename-form"', viewer_markup)
         self.assertIn("프로젝트 ID는 바뀌지 않으며", viewer_markup)
@@ -2645,19 +3988,51 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
             "선택한 프로젝트의 데이터를 불러오지 못했습니다",
             viewer_source,
         )
-        self.assertIn("후보에서 선택할 수 있는 두 경로", viewer_markup)
-        self.assertIn("후보 자동 사용 종료일", viewer_markup)
-        self.assertIn("프로젝트에 확정", viewer_markup)
-        self.assertIn("기본 Pack으로 올리기", viewer_markup)
-        self.assertIn("서로 다른 작업에서 적용이 5회 확인", viewer_markup)
         self.assertIn(
-            "변경 내용 확인 → Harness 소스 반영",
+            'clear(document.getElementById("pipeline-summary"))',
+            viewer_source,
+        )
+        self.assertIn("bundleControls.hidden = true", viewer_source)
+        self.assertIn("state.selectedEventIds.clear()", viewer_source)
+        self.assertIn("EXPERTISE CONTROL PLANE", viewer_markup)
+        self.assertIn("현재 활성 Pack이 작업의 라우팅 권위", viewer_markup)
+        self.assertIn('data-expertise-section="active"', viewer_markup)
+        self.assertIn('data-expertise-section="inbox"', viewer_markup)
+        self.assertIn('data-expertise-section="evaluation"', viewer_markup)
+        self.assertIn('data-expertise-section="outcomes"', viewer_markup)
+        self.assertIn('data-expertise-section="archive"', viewer_markup)
+        self.assertIn("보관·기각된 항목은 이 목록에 나타나지 않습니다", viewer_markup)
+        self.assertIn("복합 후보는 검증을 통과해도", viewer_markup)
+        self.assertIn(
+            "필요한 영역을 먼저 모두 찾고 Pack·Guide 수에 맞춰 줄이지 않습니다",
             viewer_markup,
         )
         self.assertIn(
-            "Codex가 기본 Pack 반영 여부를 사용자에게 확인",
+            "시간 이벤트가 없는 상태를 연대기 이력처럼 만들지 않습니다",
             viewer_markup,
         )
+        self.assertIn(
+            'role="status" aria-live="polite" tabindex="-1"',
+            viewer_markup,
+        )
+        self.assertIn(
+            "function setExpertiseSection(section)",
+            viewer_source,
+        )
+        self.assertIn(
+            "function restoreExpertiseActionFocus()",
+            viewer_source,
+        )
+        self.assertLess(
+            viewer_source.index(
+                "restoreExpertiseActionFocus();\n      await refresh();",
+            ),
+            viewer_source.index(
+                "function restoreExpertiseActionFocus()",
+            ),
+        )
+        self.assertNotIn("setExpertiseTab", viewer_source)
+        self.assertNotIn('button.setAttribute("role", "listitem")', viewer_source)
         self.assertIn('"3 · 본문 불러오기"', viewer_source)
         self.assertIn('"4 · 결과에 적용"', viewer_source)
         self.assertNotIn("최근 사용 ${usage}", viewer_source)
@@ -2680,6 +4055,18 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
         )
         self.assertIn(
             'host_event_stream_complete: "실제 실행 모델 기록됨"',
+            viewer_source,
+        )
+        self.assertIn(
+            'execution_ledger_complete: "실행 Ledger 실측 기록됨"',
+            viewer_source,
+        )
+        self.assertIn(
+            'execution_ledger_request_only: "실행 Ledger 요청 설정만 기록됨"',
+            viewer_source,
+        )
+        self.assertIn(
+            'execution_ledger_unavailable: "실행 Ledger 측정값 없음"',
             viewer_source,
         )
         self.assertIn('"작업 기준"', viewer_source)
@@ -2742,6 +4129,24 @@ assert.equal(compactWorkDuration(null), "시간 기록 없음");
                     self.assertEqual(200, response.status)
                     self.assertIn(
                         "createProjectSnapshotLoader",
+                        response.read().decode("utf-8"),
+                    )
+                with urllib.request.urlopen(
+                    f"{base}/assets/snapshot-contract.js",
+                    timeout=5,
+                ) as response:
+                    self.assertEqual(200, response.status)
+                    self.assertIn(
+                        "DASHBOARD_REQUEST_RECORDS_INVALID",
+                        response.read().decode("utf-8"),
+                    )
+                with urllib.request.urlopen(
+                    f"{base}/assets/expertise-projection.js",
+                    timeout=5,
+                ) as response:
+                    self.assertEqual(200, response.status)
+                    self.assertIn(
+                        "projectExpertiseBuckets",
                         response.read().decode("utf-8"),
                     )
                 with self.assertRaises(urllib.error.HTTPError) as denied:

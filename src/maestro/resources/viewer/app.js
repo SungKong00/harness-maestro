@@ -22,7 +22,9 @@ const state = {
   runExpertiseOnly: false,
   runVisibleLimit: 10,
   expertiseSearch: "",
-  expertiseTab: "active",
+  expertiseSection: "active",
+  selectedChangeSet: null,
+  expertiseActionTrigger: null,
 };
 
 const VIEW_NAMES = new Set(["overview", "work", "expertise", "management"]);
@@ -50,6 +52,10 @@ const outcomeLabels = {
   host_not_connected: "모델·토큰 기록 없음",
   host_request_observed: "채팅에서 선택한 설정만 기록됨",
   host_event_stream_complete: "실제 실행 모델 기록됨",
+  execution_ledger_complete: "실행 Ledger 실측 기록됨",
+  execution_ledger_request_only: "실행 Ledger 요청 설정만 기록됨",
+  execution_ledger_unavailable: "실행 Ledger 측정값 없음",
+  request_attempts_measured: "요청 시도별 실측 기록됨",
   active: "진행 중",
   in_progress: "진행 중",
   receipt_pending: "실행 종료 · 최종 기록 대기",
@@ -82,8 +88,8 @@ const outcomeLabels = {
   approved: "승인됨",
   detected: "승인 검토 가능",
   conflict: "같은 버전 후보 겹침",
-  rejected: "보관 중 · 사용 안 함",
-  archived: "보관 중 · 사용 안 함",
+  rejected: "기각됨 · 보관",
+  archived: "보관 중",
   paused: "기준 변경 확인 필요",
   project_approved: "프로젝트 승인됨",
   group_review_required: "묶음 검토 필요",
@@ -101,6 +107,10 @@ const statusDescriptions = {
   host_not_connected: "이 작업은 모델·토큰 기록 기능과 연결되지 않았습니다. 작업 실패를 뜻하지 않습니다.",
   host_request_observed: "채팅에서 선택한 모델과 추론 강도는 기록됐지만 실제 실행 모델과 토큰 사용량은 기록되지 않았습니다.",
   host_event_stream_complete: "작업 완료 이벤트가 기록되어 실제로 실행된 모델을 확인할 수 있습니다.",
+  execution_ledger_complete: "실행 Ledger의 완료 기록에서 적용 모델과 측정값을 확인했습니다.",
+  execution_ledger_request_only: "실행 Ledger에 요청 설정만 있고 적용 모델과 사용량 측정값은 없습니다.",
+  execution_ledger_unavailable: "실행 Ledger는 연결됐지만 이 작업의 적용 모델과 사용량을 측정할 기록이 없습니다.",
+  request_attempts_measured: "같은 사용자 요청의 실행 시도에서 직접 관측된 측정값만 합산했습니다.",
   in_progress: "마에스트로가 시작 기록을 남겼고 아직 최종 작업 기록은 없습니다.",
   receipt_pending: "실행 환경에서는 작업 종료가 확인됐지만 결과·검증을 담은 최종 작업 기록은 아직 저장되지 않았습니다.",
   receipt_stale: "실행 종료가 확인된 뒤 24시간이 지났지만 결과·검증을 담은 최종 작업 기록이 없습니다.",
@@ -166,12 +176,12 @@ const candidateRuntimeStates = {
     description: "같은 변경안의 모든 후보가 다시 유효해질 때까지 개별 후보도 작업에서 제외됩니다.",
   },
   rejected: {
-    label: "보관 중 · 사용 안 함",
+    label: "기각됨 · 보관",
     tone: "neutral",
-    description: "후보 파일은 보관하지만 작업 사용, 프로젝트 확정과 기본 Pack 반영을 중지했습니다.",
+    description: "검토에서 기각됐으며 후보 파일과 이유는 보존됩니다. 작업 사용, 프로젝트 확정과 기본 Pack 반영은 중지됩니다.",
   },
   archived: {
-    label: "보관 중 · 사용 안 함",
+    label: "보관 중",
     tone: "neutral",
     description: "후보 파일과 근거는 보관하지만 작업 사용과 승격은 중지했습니다.",
   },
@@ -473,29 +483,95 @@ function formatModels(values, fallback = "모델 기록 없음") {
     : fallback;
 }
 
+function formatReasoningEfforts(values, fallback = "추론 기록 없음") {
+  return Array.isArray(values) && values.length
+    ? values.map(displayReasoningEffort).join(", ")
+    : fallback;
+}
+
 function measurementSummary(run) {
   const stateValue = run.models.measurement_state;
-  if (stateValue === "host_event_stream_complete") {
+  const requestedModel = formatModels(
+    run.models.requested,
+    "모델 요청 기록 없음",
+  );
+  const requestedReasoning = formatReasoningEfforts(
+    run.models.requested_reasoning_effort,
+    "추론 요청 기록 없음",
+  );
+  const recommendedModel = formatModels(
+    run.models.route_recommended,
+    "모델 권고 기록 없음",
+  );
+  const recommendedReasoning = formatReasoningEfforts(
+    run.models.route_recommended_reasoning_effort,
+    "추론 권고 기록 없음",
+  );
+  const recommendation = (
+    `Maestro 권고 · 모델 ${recommendedModel}`
+    + ` · 추론 ${recommendedReasoning}`
+  );
+  if (stateValue === "request_attempts_measured") {
+    const coverage = run.request_measurement || {};
+    const total = coverage.attempts_total || run.attempt_count || 1;
+    const modelText = coverage.model_measured_attempts
+      ? `실측 · 모델 ${formatModels(run.models.applied)}`
+      : "실측 · 모델 기록 없음";
+    const tokenText = coverage.token_aggregation
+      === "not_aggregated_mixed_scopes"
+      ? (
+        "실측 · 토큰 시도별 기록 있음 · scope가 달라 합산하지 않음"
+        + ` (${coverage.token_measured_attempts}/${total}회)`
+      )
+      : coverage.token_measured_attempts
+        ? `실측 · 토큰 ${formatTokens(run.tokens)} `
+          + `(${coverage.token_measured_attempts}/${total}회)`
+      : "실측 · 토큰 기록 없음";
     return {
-      title: run.models.applied.length
-        ? `실제로 실행된 모델 ${formatModels(run.models.applied)}`
-        : "실제로 실행된 모델 기록 없음",
-      detail: run.tokens?.total === null || run.tokens?.total === undefined
-        ? "토큰 사용량은 별도로 기록되지 않음"
-        : `토큰 사용량 ${formatTokens(run.tokens)}`,
+      title: modelText,
+      detail: (
+        `Host 요청 · 모델 ${requestedModel}`
+        + ` · 추론 ${requestedReasoning} · ${tokenText}`
+      ),
+      recommendation,
     };
   }
-  if (stateValue === "host_request_observed") {
+  if (
+    stateValue === "host_event_stream_complete"
+    || stateValue === "execution_ledger_complete"
+  ) {
     return {
-      title: run.models.requested.length
-        ? `채팅에서 선택한 모델 ${formatModels(run.models.requested)}`
-        : "채팅에서 선택한 설정만 기록됨",
-      detail: "실제 실행 모델·토큰은 기록되지 않음",
+      title: run.models.applied.length
+        ? `실측 · 모델 ${formatModels(run.models.applied)}`
+        : "실측 · 모델 기록 없음",
+      detail: run.tokens?.total === null || run.tokens?.total === undefined
+        ? `Host 요청 · 추론 ${requestedReasoning} · 실측 · 토큰 기록 없음`
+        : `Host 요청 · 추론 ${requestedReasoning}`
+          + ` · 실측 · 토큰 ${formatTokens(run.tokens)}`,
+      recommendation,
+    };
+  }
+  if (
+    stateValue === "host_request_observed"
+    || stateValue === "execution_ledger_request_only"
+  ) {
+    return {
+      title: `Host 요청 · 모델 ${requestedModel}`,
+      detail: (
+        `Host 요청 · 추론 ${requestedReasoning}`
+        + " · 실측 · 모델·토큰 기록 없음"
+      ),
+      recommendation,
     };
   }
   return {
-    title: "모델·토큰 기록 없음",
-    detail: "작업 실패를 뜻하지 않음",
+    title: "실측 · 모델·추론·토큰 기록 없음",
+    detail: (
+      stateValue === "execution_ledger_unavailable"
+        ? "실행 ledger · 측정값 없음"
+        : "관측 연결 없음 · 작업 실패를 뜻하지 않음"
+    ),
+    recommendation,
   };
 }
 
@@ -525,14 +601,41 @@ function pill(text, className) {
 }
 
 function candidateRuntimePresentation(candidate) {
-  const status = candidate.disposition
-    ? "rejected"
-    : candidate.runtime_status || "invalid";
-  return candidateRuntimeStates[status] || {
+  const status = candidate.disposition?.status
+    || candidate.runtime_status
+    || "invalid";
+  const base = candidateRuntimeStates[status] || {
     label: displayStatus(status),
     tone: "neutral",
     description: statusDescription(status) || "후보의 현재 상태를 확인하세요.",
   };
+  if (
+    status === "available"
+    && candidate.routing_role === "management-only"
+  ) {
+    return {
+      label: "검증됨 · 관리 전용",
+      tone: "warn",
+      description: (
+        "후보 계약은 유효하지만 복합 재구성 또는 원자 ChangeSet이므로 "
+        + "현재 작업 라우팅에는 들어가지 않습니다."
+      ),
+    };
+  }
+  if (
+    status === "available"
+    && candidate.routing_role === "corrected-task-gap"
+  ) {
+    return {
+      label: "생성 작업에서만 사용 가능",
+      tone: "neutral",
+      description: (
+        "정확히 결속된 producing route의 한 번의 수정 경로에서만 "
+        + "사용할 수 있으며 일반 작업에는 자동 선택되지 않습니다."
+      ),
+    };
+  }
+  return base;
 }
 
 function candidateRuntimePill(candidate) {
@@ -547,6 +650,12 @@ function candidateRuntimePill(candidate) {
     `${presentation.label}: ${presentation.description}`,
   );
   return node;
+}
+
+function expertiseBuckets(snapshot) {
+  return window.MaestroExpertiseProjection.projectExpertiseBuckets(
+    snapshot.expertise || {},
+  );
 }
 
 function candidateGlobalRequestPresentation(candidate) {
@@ -944,7 +1053,9 @@ function lifecycleTone(status) {
 function componentChangeLabel(kind) {
   return {
     "new-pack": "새 Pack",
+    "pack-revision": "Pack 전체 개정",
     "pack-merge": "기존 Pack 통합",
+    "pack-extraction": "선택 Guide로 Pack 구성",
     "guide-addition": "Guide 추가",
     "guide-revision": "Guide 수정",
     "guide-deprecation": "Guide 사용 종료",
@@ -995,7 +1106,7 @@ function renderMetrics(snapshot) {
     },
     {
       label: "최근 완료 작업",
-      value: `${snapshot.overview.runs}건`,
+      value: `${snapshot.overview.requests ?? snapshot.overview.runs}건`,
       note: `정리된 작업 묶음 ${snapshot.overview.history_bundles || 0}개`,
       tone: "neutral",
     },
@@ -1031,7 +1142,11 @@ function renderMetrics(snapshot) {
     label.append(element("strong", {
       text: value.ratio === null
         ? "기록 없음"
-        : `${value.measured_runs}/${value.total_runs} · ${percentage}%`,
+        : `${
+          value.measured_requests ?? value.measured_runs
+        }/${
+          value.total_requests ?? value.total_runs
+        } · ${percentage}%`,
     }));
     const track = element("span", { className: "coverage-track" });
     const fill = element("span", { className: "coverage-fill" });
@@ -1086,9 +1201,11 @@ function renderPipelineSummary(snapshot) {
     },
     {
       label: "최종 작업 기록",
-      value: `최근 ${snapshot.overview.runs}건`,
+      value: `최근 ${snapshot.overview.requests ?? snapshot.overview.runs}건`,
       note: "결과·검증·모델·토큰·전문 지식 근거 중 실제로 받은 값만 남깁니다.",
-      tone: snapshot.overview.runs ? "good" : "quiet",
+      tone: (snapshot.overview.requests ?? snapshot.overview.runs)
+        ? "good"
+        : "quiet",
     },
     {
       label: "목표 단위 정리",
@@ -1328,6 +1445,7 @@ function showConnectionError(reason) {
   const labels = {
     PROJECT_STATE_STALE: "프로젝트 상태 갱신 필요",
     PROJECT_EXPERTISE_INVALID: "전문 지식 활성 항목 충돌",
+    DASHBOARD_REQUEST_RECORDS_INVALID: "작업 기록 계약 오류",
     DASHBOARD_TOKEN_REQUIRED: "대시보드 인증 만료",
     DASHBOARD_REQUEST_REJECTED: "대시보드 요청 차단됨",
     DASHBOARD_PROJECT_NOT_ALLOWED: "프로젝트 접근 불가",
@@ -1339,6 +1457,11 @@ function showConnectionError(reason) {
 
 function renderProjectLoadFailure(reason, projectId = state.selectedProject) {
   state.snapshot = null;
+  state.selectedEventIds.clear();
+  state.verificationPlan = null;
+  state.historyPlan = null;
+  state.expertisePlan = null;
+  state.expertiseActionTrigger = null;
   const selected = state.projects.find(
     (project) => project.id === projectId,
   );
@@ -1348,6 +1471,11 @@ function renderProjectLoadFailure(reason, projectId = state.selectedProject) {
       ? (
         "같은 ID의 전역 Pack과 프로젝트 Pack이 서로 다른 내용으로 "
         + "동시에 활성화되어 있습니다. Pack 계보와 버전을 확인하세요."
+      )
+    : reason?.code === "DASHBOARD_REQUEST_RECORDS_INVALID"
+      ? (
+        "요청 단위 작업 기록이 없거나 형식이 올바르지 않아 작업 화면을 "
+        + "표시하지 않았습니다. 원본 실행 기록으로 임의 대체하지 않습니다."
       )
     : "선택한 프로젝트의 데이터를 불러오지 못했습니다.";
   document.getElementById("repo-path").textContent = (
@@ -1365,17 +1493,44 @@ function renderProjectLoadFailure(reason, projectId = state.selectedProject) {
     "history-bundles",
     "expertise",
     "expertise-detail",
+    "expertise-nominations",
+    "expertise-change-sets",
     "expertise-candidates",
+    "expertise-outcomes",
+    "expertise-archive",
+    "expertise-deleted",
     "verification",
     "governance",
+    "model-feedback",
   ].forEach((id) => {
     const target = document.getElementById(id);
     clear(target);
     target.append(empty(message));
   });
+  clear(document.getElementById("pipeline-summary"));
   clear(document.getElementById("run-table"));
   document.getElementById("run-filter-count").textContent = "0개 작업";
+  const bundleControls = document.getElementById("bundle-controls");
+  bundleControls.hidden = true;
+  document.getElementById("selected-count").textContent = "0개 선택";
+  document.getElementById("new-bundle-label").value = "";
+  const existingBundle = document.getElementById("existing-bundle");
+  clear(existingBundle);
+  const bundlePlaceholder = element("option", {
+    text: "기존 묶음 없음",
+  });
+  bundlePlaceholder.value = "";
+  existingBundle.append(bundlePlaceholder);
+  document.getElementById("add-to-bundle").disabled = true;
   document.getElementById("expertise-pack-count").textContent = "0개 묶음";
+  [
+    "expertise-active-count",
+    "expertise-inbox-count",
+    "expertise-evaluation-count",
+    "expertise-outcome-count",
+  ].forEach((id) => {
+    document.getElementById(id).textContent = "0";
+  });
   renderVerificationPreview(null);
   renderHistoryPreview(null);
   renderExpertisePreview(null);
@@ -1383,6 +1538,7 @@ function renderProjectLoadFailure(reason, projectId = state.selectedProject) {
   setTabCount("work-tab-count", 0);
   setTabCount("expertise-tab-count", 0);
   setTabCount("management-tab-count", 0);
+  setExpertiseSection(state.expertiseSection);
   restoreViewFromLocation();
 }
 
@@ -1605,8 +1761,9 @@ async function previewHistoryBundle({ label, bundleId }) {
 }
 
 function visibleRuns(snapshot) {
+  const records = requestRecords(snapshot);
   const query = state.runSearch.trim().toLocaleLowerCase("ko-KR");
-  return snapshot.runs.filter((run) => {
+  return records.filter((run) => {
     if (
       query
       && !`${run.task_label} ${run.run_id}`
@@ -1621,6 +1778,18 @@ function visibleRuns(snapshot) {
   });
 }
 
+function requestRecords(snapshot) {
+  return MaestroSnapshotContract.requestRecords(snapshot);
+}
+
+function requestRecordId(run) {
+  return run.request_record_id;
+}
+
+function requestSourceEventIds(run) {
+  return run.source_event_ids;
+}
+
 function expertiseSelectionText(run) {
   if (!run.expertise.packs.length) return "전문 지식 선택 없음";
   const packText = run.expertise.packs.map(packName).join(", ");
@@ -1628,6 +1797,16 @@ function expertiseSelectionText(run) {
 }
 
 function runFlowPreview(run) {
+  const observed = run.work_detail?.execution;
+  if (observed?.mode === "observed" && observed.cards?.length) {
+    const attempts = run.attempt_count || 1;
+    return {
+      coverage: `${observed.cards.length}개 실제 작업 단계`,
+      sequence: (
+        `${attempts}개 실행 시도 · 관계 ${observed.graph?.edges?.length || 0}개`
+      ),
+    };
+  }
   if (!run.flow.length) {
     return {
       coverage: "계획·실행 기록 없음",
@@ -1642,13 +1821,13 @@ function runFlowPreview(run) {
   );
   if (!run.stage_coverage.available) {
     return {
-      coverage: "계획·실행 요약",
-      sequence,
+      coverage: "계획만 기록됨",
+      sequence: `${sequence} · 실제 작업 단계 기록 없음`,
     };
   }
   return {
     coverage: run.stage_coverage.complete
-      ? `계획·실행 ${run.stage_coverage.recorded}/${run.stage_coverage.planned} 완료`
+      ? `계획·실행 ${run.stage_coverage.recorded}/${run.stage_coverage.planned} 단계 종료 기록`
       : `계획·실행 ${run.stage_coverage.recorded}/${run.stage_coverage.planned} 기록`,
     sequence,
   };
@@ -1657,12 +1836,13 @@ function runFlowPreview(run) {
 function renderRuns(snapshot) {
   const target = document.getElementById("run-table");
   clear(target);
+  const records = requestRecords(snapshot);
   const matchedRuns = visibleRuns(snapshot);
   const runs = matchedRuns.slice(0, state.runVisibleLimit);
   const count = document.getElementById("run-filter-count");
-  count.textContent = matchedRuns.length === snapshot.runs.length
-    ? `최근 ${runs.length}개`
-    : `${snapshot.runs.length}개 중 ${matchedRuns.length}개 검색`;
+  count.textContent = matchedRuns.length === records.length
+    ? `최근 요청 ${runs.length}개`
+    : `${records.length}개 요청 중 ${matchedRuns.length}개 검색`;
   if (runs.length < matchedRuns.length) {
     count.textContent += ` · ${runs.length}개 표시`;
   }
@@ -1670,13 +1850,13 @@ function renderRuns(snapshot) {
   showMore.hidden = runs.length >= matchedRuns.length;
   showMore.textContent = `다음 ${Math.min(10, matchedRuns.length - runs.length)}개 보기`;
   if (!runs.length) {
-    if (!snapshot.runs.length) state.selectedEventIds.clear();
+    if (!records.length) state.selectedEventIds.clear();
     const row = element("tr");
     const cell = element("td", {
       className: "muted",
-      text: snapshot.runs.length
+      text: records.length
         ? "조건에 맞는 작업이 없습니다."
-        : "아직 기록된 작업이 없습니다.",
+        : "아직 기록된 작업 요청이 없습니다.",
     });
     cell.colSpan = 6;
     row.append(cell);
@@ -1685,14 +1865,17 @@ function renderRuns(snapshot) {
     return;
   }
 
+  const recentEventIds = new Set(snapshot.runs.map((run) => run.event_id));
   state.selectedEventIds = new Set(
     [...state.selectedEventIds].filter((eventId) => (
-      snapshot.runs.some((run) => run.event_id === eventId)
+      recentEventIds.has(eventId)
     )),
   );
 
   runs.forEach((run) => {
-    const selected = state.selectedRun === run.event_id;
+    const recordId = requestRecordId(run);
+    const sourceEventIds = requestSourceEventIds(run);
+    const selected = state.selectedRun === recordId;
     const row = element("tr", { className: "run-row" });
     row.dataset.runId = run.run_id;
     if (selected) row.classList.add("selected");
@@ -1700,11 +1883,15 @@ function renderRuns(snapshot) {
     checkCell.dataset.label = "묶음 선택";
     const checkbox = element("input");
     checkbox.type = "checkbox";
-    checkbox.checked = state.selectedEventIds.has(run.event_id);
+    checkbox.checked = sourceEventIds.every(
+      (eventId) => state.selectedEventIds.has(eventId),
+    );
     checkbox.setAttribute("aria-label", `${run.task_label} 묶음 선택`);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) state.selectedEventIds.add(run.event_id);
-      else state.selectedEventIds.delete(run.event_id);
+      sourceEventIds.forEach((eventId) => {
+        if (checkbox.checked) state.selectedEventIds.add(eventId);
+        else state.selectedEventIds.delete(eventId);
+      });
       syncBundleControls(snapshot);
     });
     checkCell.append(checkbox);
@@ -1712,7 +1899,7 @@ function renderRuns(snapshot) {
     const task = element("td");
     task.dataset.label = "작업";
     const toggle = element("a", { className: "run-toggle run-open-link" });
-    toggle.href = workLocation(run.event_id);
+    toggle.href = workLocation(recordId);
     const disclosure = element("span", {
       className: "disclosure-icon",
       text: "→",
@@ -1726,7 +1913,9 @@ function renderRuns(snapshot) {
     }));
     taskIdentity.append(element("span", {
       className: "run-id",
-      text: run.run_id,
+      text: run.attempt_count > 1
+        ? `${run.attempt_count}개 실행 기록`
+        : run.run_id,
     }));
     const flowPreview = runFlowPreview(run);
     const flowPreviewElement = element("span", {
@@ -1750,11 +1939,28 @@ function renderRuns(snapshot) {
     result.dataset.label = "결과";
     result.append(pill(run.outcome));
     row.append(result);
-    const duration = element("td", { text: formatDuration(run.duration_ms) });
-    duration.dataset.label = "걸린 시간";
+    const duration = element("td", { className: "duration-summary" });
+    duration.dataset.label = "시도 시간 합계";
+    duration.append(element("strong", {
+      text: formatDuration(run.duration_ms),
+    }));
+    const durationCoverage = run.request_measurement || {};
+    if (durationCoverage.attempts_total) {
+      duration.append(element("small", {
+        text: (
+          `${durationCoverage.duration_measured_attempts || 0}`
+          + `/${durationCoverage.attempts_total}회`
+          + (
+            durationCoverage.duration_coverage === "partial"
+              ? " · 알려진 시도만 합산"
+              : " · 시도별 실행시간 합계"
+          )
+        ),
+      }));
+    }
     row.append(duration);
     const observation = element("td", { className: "observation-summary" });
-    observation.dataset.label = "모델·토큰 기록";
+    observation.dataset.label = "모델·추론·토큰";
     const measurement = measurementSummary(run);
     observation.append(element("strong", {
       text: measurement.title,
@@ -1762,6 +1968,11 @@ function renderRuns(snapshot) {
     observation.append(element("small", {
       text: measurement.detail,
     }));
+    if (measurement.recommendation) {
+      observation.append(element("small", {
+        text: measurement.recommendation,
+      }));
+    }
     row.append(observation);
     const expertise = element("td", { className: "expertise-summary" });
     expertise.dataset.label = "전문 지식";
@@ -1774,9 +1985,9 @@ function renderRuns(snapshot) {
     row.append(expertise);
 
     const select = () => {
-      state.selectedRun = run.event_id;
+      state.selectedRun = recordId;
       state.selectedStage = null;
-      writeWorkSelectionToLocation(run.event_id);
+      writeWorkSelectionToLocation(recordId);
       renderRunWorkspace(snapshot, { focus: true });
     };
     toggle.addEventListener("click", (event) => {
@@ -2496,7 +2707,7 @@ function buildWorkHeader(run, work) {
   const title = element("div", { className: "work-title-copy" });
   title.append(element("p", {
     className: "eyebrow",
-    text: "단일 작업 공간",
+    text: "하나의 사용자 요청",
   }));
   title.append(element("h2", {
     text: run.task_label,
@@ -2504,11 +2715,20 @@ function buildWorkHeader(run, work) {
   title.lastChild.id = "work-workspace-title";
   title.lastChild.tabIndex = -1;
   const identifier = element("p", { className: "work-identifier" });
-  const runId = element("code", { text: run.run_id });
+  const runId = element("code", {
+    text: run.attempt_count > 1
+      ? `${run.attempt_count}개 실행 기록`
+      : run.run_id,
+  });
   runId.setAttribute("translate", "no");
   identifier.append(
     runId,
-    element("span", { text: `최종 기록 ${formatDate(run.timestamp)}` }),
+    element("span", {
+      text: (
+        `최종 기록 ${formatDate(run.timestamp)}`
+        + (run.rework_count ? ` · 재작업 ${run.rework_count}회` : "")
+      ),
+    }),
   );
   title.append(identifier);
   const titleActions = element("div", { className: "work-title-actions" });
@@ -2522,16 +2742,52 @@ function buildWorkHeader(run, work) {
   identity.append(title, titleActions);
   header.append(identity);
 
-  const appliedModels = work.header.models.applied;
-  const requestedModels = work.header.models.requested;
+  const appliedModels = work.header.models.applied || [];
+  const requestedModels = work.header.models.requested || [];
+  const recommendedModels = work.header.models.route_recommended || [];
+  const requestedReasoning = (
+    work.header.models.requested_reasoning_effort || []
+  );
+  const recommendedReasoning = (
+    work.header.models.route_recommended_reasoning_effort || []
+  );
+  const requestCoverage = run.request_measurement || {};
+  const requestAttemptTotal = (
+    requestCoverage.attempts_total
+    || run.attempt_count
+    || 1
+  );
   const actualModel = appliedModels.length
     ? appliedModels.join(", ")
     : "실제 모델 확인 불가";
-  const actualModelNote = appliedModels.length
-    ? "완전한 실행 이벤트에서 확인"
-    : requestedModels.length
-      ? `요청 ${requestedModels.join(", ")} · 실제값 아님`
-      : "실행 모델 기록 없음";
+  const actualModelNote = [
+    appliedModels.length
+      ? `실측: ${requestCoverage.model_measured_attempts || 0}/${requestAttemptTotal}회`
+      : "실측: 기록 없음",
+    `Host 요청: ${formatModels(requestedModels, "기록 없음")}`,
+    `Maestro 권고: ${formatModels(recommendedModels, "기록 없음")}`,
+  ].join(" · ");
+  const reasoningValue = requestedReasoning.length
+    ? formatReasoningEfforts(requestedReasoning)
+    : "요청 추론 확인 불가";
+  const reasoningNote = [
+    `Host 요청: ${formatReasoningEfforts(requestedReasoning, "기록 없음")} `
+      + `(${requestCoverage.reasoning_request_observed_attempts || 0}/${requestAttemptTotal}회)`,
+    `Maestro 권고: ${formatReasoningEfforts(
+      recommendedReasoning,
+      "기록 없음",
+    )}`,
+    "실측 추론 강도: 제공되지 않음",
+  ].join(" · ");
+  const tokens = work.header.tokens?.value ?? run.tokens;
+  const tokenMeasured = (
+    tokens?.total !== null
+    && tokens?.total !== undefined
+  );
+  const tokenScopesMixed = (
+    requestCoverage.token_aggregation
+    === "not_aggregated_mixed_scopes"
+  );
   const correctionNote = work.header.corrections.summary.length
     ? work.header.corrections.summary.slice(0, 2).join(" · ")
     : "단계별 재시도 계보는 별도 기록 없음";
@@ -2556,19 +2812,101 @@ function buildWorkHeader(run, work) {
       appliedModels.length ? "measured" : "unavailable",
     ),
     workspaceMetric(
-      "걸린 시간",
-      formatDuration(work.header.duration.value_ms),
-      `계획 확정까지 ${formatDuration(work.header.planning_duration.value_ms)}`,
-      work.header.duration.value_ms === null ? "unavailable" : "measured",
+      "요청 추론 강도",
+      reasoningValue,
+      reasoningNote,
+      requestedReasoning.length ? "measured" : "unavailable",
     ),
     workspaceMetric(
-      "기록된 수정",
-      `${work.header.corrections.count}회`,
-      correctionNote,
-      work.header.corrections.count ? "attention" : "",
+      "토큰",
+      formatTokens(tokens),
+      tokenMeasured
+        ? (
+          `실측: ${requestCoverage.token_measured_attempts || 0}/${requestAttemptTotal}회`
+          + ` · scope ${work.header.tokens?.scope || run.token_scope || "unavailable"}`
+        )
+        : tokenScopesMixed
+          ? (
+            "시도별 토큰 scope가 달라 요청 합계는 표시하지 않음"
+            + ` · scopes ${(requestCoverage.token_scopes || []).join(", ")}`
+          )
+          : "실측: 기록 없음 · 0토큰이라는 뜻이 아님",
+      tokenMeasured ? "measured" : "unavailable",
+    ),
+    workspaceMetric(
+      "실행 시도 시간 합계",
+      formatDuration(work.header.duration.value_ms),
+      (
+        `실측: ${requestCoverage.duration_measured_attempts || 0}/${requestAttemptTotal}회`
+        + ` · source ${work.header.duration.source || "unavailable"}`
+        + ` · 계획 확정까지 ${formatDuration(
+          work.header.planning_duration.value_ms,
+        )}`
+      ),
+      work.header.duration.value_ms === null
+        || work.header.duration.value_ms === undefined
+        ? "unavailable"
+        : "measured",
     ),
   );
   header.append(summary);
+  if (Array.isArray(run.attempts) && run.attempts.length) {
+    const attempts = element("details", {
+      className: "work-attempt-measurements",
+    });
+    attempts.open = run.attempts.length > 1;
+    attempts.append(element("summary", {
+      text: `시도별 모델·토큰·시간 ${run.attempts.length}개`,
+    }));
+    const list = element("ol", {
+      className: "work-attempt-measurement-list",
+    });
+    run.attempts.forEach((attempt) => {
+      const item = element("li");
+      item.append(element("strong", {
+        text: `시도 ${attempt.attempt} · ${displayStatus(attempt.outcome)}`,
+      }));
+      item.append(element("span", {
+        text: (
+          `실행시간 ${formatDuration(attempt.duration_ms)}`
+          + ` · source ${attempt.duration_source || "unavailable"}`
+        ),
+      }));
+      item.append(element("span", {
+        text: (
+          `Maestro 권고 ${formatModels(
+            attempt.route_recommended_models,
+            "기록 없음",
+          )}`
+          + ` · Host 요청 ${formatModels(
+            attempt.requested_models,
+            "기록 없음",
+          )}`
+          + ` · 실측 ${formatModels(
+            attempt.applied_models,
+            "기록 없음",
+          )}`
+        ),
+      }));
+      item.append(element("span", {
+        text: (
+          `토큰 ${formatTokens(attempt.tokens)}`
+          + ` · scope ${attempt.token_scope || "unavailable"}`
+        ),
+      }));
+      list.append(item);
+    });
+    attempts.append(list);
+    header.append(attempts);
+  }
+  const correctionSummary = element("p", {
+    className: "muted work-correction-summary",
+    text: (
+      `기록된 수정 ${work.header.corrections.count}회`
+      + ` · ${correctionNote}`
+    ),
+  });
+  header.append(correctionSummary);
   const routingSummary = element("p", {
     className: "muted work-routing-summary",
     text: `전문성 라우팅 · ${expertiseRoutingText(run)}`,
@@ -2746,12 +3084,22 @@ function compactWorkDuration(value) {
 
 function workExecutionFooter(facts, provenance = "") {
   const footer = element("span", { className: "work-stage-footer" });
-  const summary = `${facts.model} - ${facts.reasoning}, `
-    + `${facts.tokens}, ${facts.duration}`;
-  footer.append(element("span", {
+  const summary = `${facts.model} · ${facts.reasoning}; `
+    + `${facts.tokens} · ${facts.duration}`;
+  const summaryNode = element("span", {
     className: "work-stage-footer-summary",
-    text: summary,
-  }));
+  });
+  summaryNode.append(
+    element("span", {
+      className: "work-stage-footer-line",
+      text: `${facts.model} · ${facts.reasoning}`,
+    }),
+    element("span", {
+      className: "work-stage-footer-line",
+      text: `${facts.tokens} · ${facts.duration}`,
+    }),
+  );
+  footer.append(summaryNode);
   footer.setAttribute("aria-label", provenance || summary);
   if (provenance) footer.title = provenance;
   return footer;
@@ -2760,35 +3108,45 @@ function workExecutionFooter(facts, provenance = "") {
 function workExecutionFooterFromProjection(facts) {
   if (!facts) return null;
   const modelKind = {
-    actual: "실제 적용 모델",
-    hook_point: "Hook 시점 모델",
-    requested: "요청 모델",
-    recommended: "권장 모델",
-    unavailable: "모델",
-  }[facts.model?.kind] || "모델";
-  const model = facts.model?.kind === "actual"
-    ? compactModelName(facts.model.value)
-    : "모델 기록 없음";
-  const reasoning = facts.reasoning?.kind === "requested"
-    && facts.reasoning.value
-    ? `요청 ${facts.reasoning.value.replaceAll("_", " ")}`
-    : "추론 기록 없음";
+    actual: "실측",
+    hook_point: "Hook",
+    requested: "요청",
+    recommended: "권고",
+    not_applicable: "해당 없음",
+    unavailable: "미기록",
+  }[facts.model?.kind] || "미기록";
+  const model = facts.model?.kind === "not_applicable"
+    ? "모델 해당 없음"
+    : facts.model?.value
+      ? `${modelKind} ${compactModelName(facts.model.value)}`
+      : "모델 미기록";
+  const reasoningKind = {
+    requested: "요청 추론",
+    recommended: "권고 추론",
+    not_applicable: "추론 해당 없음",
+    unavailable: "추론 미기록",
+  }[facts.reasoning?.kind] || "추론 미기록";
+  const reasoning = facts.reasoning?.value
+    ? `${reasoningKind} ${displayReasoningEffort(facts.reasoning.value)}`
+    : reasoningKind;
   const tokens = (
     facts.tokens?.attribution === "direct"
     && ["assignment", "work_turn"].includes(facts.tokens?.scope)
   )
-    ? compactTokenValue({ total: facts.tokens?.value })
-    : "토큰 기록 없음";
+    ? `실측 토큰 ${compactTokenValue({ total: facts.tokens?.value })}`
+    : facts.tokens?.scope === "not_applicable"
+      ? "토큰 해당 없음"
+      : "토큰 미기록";
   const duration = facts.duration?.value_ms === null
     || facts.duration?.value_ms === undefined
     ? facts.duration?.state === "running"
       ? "실행 중"
-      : "시간 기록 없음"
-    : compactWorkDuration(facts.duration.value_ms);
+      : "작업 시간 미기록"
+    : `작업 시간 ${compactWorkDuration(facts.duration.value_ms)}`;
   const provenance = [
-    `${modelKind}: ${facts.model?.value || "기록 없음"} `
+    `모델 ${modelKind}: ${facts.model?.value || "기록 없음"} `
       + `(coverage ${facts.model?.coverage || "unavailable"})`,
-    `요청 추론 강도: ${facts.reasoning?.value || "기록 없음"}`,
+    `${reasoningKind}: ${facts.reasoning?.value || "기록 없음"}`,
     `토큰: ${tokens} (scope ${facts.tokens?.scope || "unavailable"})`,
     `시간: ${duration} (coverage ${
       facts.duration?.coverage || "unavailable"
@@ -2834,6 +3192,105 @@ function appendWorkCardEvidence(section, references) {
     list.append(element("li", { text: reference }));
   });
   section.append(list);
+}
+
+function modelAndReasoningText(model, reasoning, fallback) {
+  if (!model && !reasoning) return fallback;
+  return [
+    model ? `모델 ${model}` : "모델 기록 없음",
+    reasoning
+      ? `추론 ${displayReasoningEffort(reasoning)}`
+      : "추론 기록 없음",
+  ].join(" · ");
+}
+
+function qualityFloorText(floor) {
+  if (!floor || !Array.isArray(floor.acceptable_routes)) return null;
+  const routes = floor.acceptable_routes.map((route) => {
+    if (!route || route.selected_class === null) return "deterministic";
+    return `${route.selected_class}/${route.reasoning_effort || "unknown"}`;
+  });
+  if (!routes.length) return null;
+  return `quality floor ${routes.join(", ")} · ${
+    floor.failure_action || "action unknown"
+  }`;
+}
+
+function fallbackRouteText(route) {
+  if (!route) return null;
+  return (
+    `fallback ${route.selected_model || route.selected_class || "unknown"}`
+    + `/${route.reasoning_effort || "unknown"}`
+    + ` (${route.trigger || "trigger unknown"})`
+  );
+}
+
+function modelRoutePolicyNote(models) {
+  return [
+    models?.model_route_id
+      ? `route ${models.model_route_id}`
+      : "route ID 기록 없음",
+    models?.quality_profile ? `profile ${models.quality_profile}` : null,
+    qualityFloorText(models?.quality_floor),
+    fallbackRouteText(models?.fallback_route),
+  ].filter(Boolean).join(" · ");
+}
+
+function directTokenDetail(facts) {
+  if (facts?.scope === "not_applicable") {
+    return {
+      value: "해당 없음",
+      note: "결정론적 명령에는 모델 토큰을 귀속하지 않습니다.",
+    };
+  }
+  if (
+    facts?.attribution !== "direct"
+    || !["assignment", "work_turn"].includes(facts?.scope)
+  ) {
+    return {
+      value: "토큰 기록 없음",
+      note: `scope ${facts?.scope || "unavailable"} · 누락값은 0으로 표시하지 않습니다.`,
+    };
+  }
+  return {
+    value: compactTokenValue({ total: facts.value }),
+    note: `scope ${facts.scope} · attribution ${facts.attribution}`,
+  };
+}
+
+function durationDetail(facts) {
+  if (
+    facts?.value_ms === null
+    || facts?.value_ms === undefined
+  ) {
+    return {
+      value: facts?.state === "running"
+        ? "실행 중"
+        : "작업 단계 시간 기록 없음",
+      note: `coverage ${facts?.coverage || "unavailable"}`,
+    };
+  }
+  return {
+    value: compactWorkDuration(facts.value_ms),
+    note: `coverage ${facts.coverage || "unavailable"}`,
+  };
+}
+
+function modelCallDurationDetail(facts) {
+  const modelCall = facts?.model_call_duration;
+  if (
+    modelCall?.value_ms === null
+    || modelCall?.value_ms === undefined
+  ) {
+    return {
+      value: "모델 호출 시간 기록 없음",
+      note: "작업 단계 시간을 모델 호출 latency로 대신 표시하지 않습니다.",
+    };
+  }
+  return {
+    value: compactWorkDuration(modelCall.value_ms),
+    note: `coverage ${modelCall.coverage || "unavailable"}`,
+  };
 }
 
 function buildStageCardDetail(run, work, stage) {
@@ -2904,6 +3361,59 @@ function buildStageCardDetail(run, work, stage) {
   ]);
   appendWorkCardEvidence(evidence, stage.evidence.refs);
   detail.append(evidence);
+
+  const deterministic = (
+    stage.execution_facts?.model?.kind === "not_applicable"
+  );
+  const stageTokens = directTokenDetail(stage.execution_facts?.tokens);
+  const stageDuration = durationDetail(stage.execution_facts?.duration);
+  const stageModelCallDuration = modelCallDurationDetail(
+    stage.execution_facts,
+  );
+  detail.append(workCardDetailSection("모델·추론·사용량", [
+    [
+      "Maestro 권고",
+      deterministic
+        ? "해당 없음 (결정론적 명령)"
+        : modelAndReasoningText(
+          stage.models.route_recommended,
+          stage.models.route_recommended_reasoning_effort,
+          "권고 기록 없음",
+        ),
+      modelRoutePolicyNote(stage.models),
+    ],
+    [
+      "Host 요청",
+      deterministic
+        ? "해당 없음 (결정론적 명령)"
+        : modelAndReasoningText(
+          stage.models.requested,
+          stage.models.requested_reasoning_effort,
+          "요청 기록 없음",
+        ),
+      "요청값은 실제 적용 모델의 대체값이 아닙니다.",
+    ],
+    [
+      "실측 적용 모델",
+      stage.models.applied
+        && stage.models.applied_evidence === "complete"
+        ? stage.models.applied
+        : deterministic
+          ? "해당 없음 (결정론적 명령)"
+          : "실측 기록 없음",
+      stage.models.applied
+        && stage.models.applied_evidence === "complete"
+        ? "완전한 실행 이벤트에서 확인"
+        : "권고·요청값으로 채우지 않습니다.",
+    ],
+    ["토큰", stageTokens.value, stageTokens.note],
+    ["작업 단계 시간", stageDuration.value, stageDuration.note],
+    [
+      "모델 호출 시간",
+      stageModelCallDuration.value,
+      stageModelCallDuration.note,
+    ],
+  ]));
 
   detail.append(workCardDetailSection("담당 전문지식", [
     [
@@ -3079,6 +3589,53 @@ function buildObservedWorkCardDetail(run, work, card) {
   appendWorkCardEvidence(evidence, card.evidence.refs);
   detail.append(evidence);
 
+  const cardModelRoute = card.assignment.model_route || {};
+  const appliedObserved = (
+    card.models.applied
+    && card.models.coverage === "complete_stream"
+  );
+  const cardTokens = directTokenDetail(card.execution_facts?.tokens);
+  const cardDuration = durationDetail(card.execution_facts?.duration);
+  const cardModelCallDuration = modelCallDurationDetail(
+    card.execution_facts,
+  );
+  detail.append(workCardDetailSection("모델·추론·사용량", [
+    [
+      "Maestro 권고",
+      modelAndReasoningText(
+        cardModelRoute.route_recommended,
+        cardModelRoute.route_recommended_reasoning_effort,
+        "권고 기록 없음",
+      ),
+      modelRoutePolicyNote(cardModelRoute),
+    ],
+    [
+      "Host 요청",
+      modelAndReasoningText(
+        card.models.requested,
+        card.models.requested_reasoning_effort,
+        "요청 기록 없음",
+      ),
+      "요청값은 실제 적용 모델의 대체값이 아닙니다.",
+    ],
+    [
+      "실측 적용 모델",
+      appliedObserved ? card.models.applied : "실측 기록 없음",
+      appliedObserved
+        ? "complete_stream에서 확인"
+        : card.models.observed && card.models.coverage === "hook_point"
+          ? `Hook 시점 ${card.models.observed}만 관측 · 전체 적용값 아님`
+          : "권고·요청값으로 채우지 않습니다.",
+    ],
+    ["토큰", cardTokens.value, cardTokens.note],
+    ["작업 단계 시간", cardDuration.value, cardDuration.note],
+    [
+      "모델 호출 시간",
+      cardModelCallDuration.value,
+      cardModelCallDuration.note,
+    ],
+  ]));
+
   detail.append(workCardDetailSection("담당 전문지식", [
     [
       "Pack",
@@ -3200,7 +3757,7 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
       model: "모델 기록 없음",
       reasoning: "추론 기록 없음",
       tokens: "토큰 기록 없음",
-      duration: "시간 기록 없음",
+      duration: "작업 시간 기록 없음",
     }),
   );
   card.append(button);
@@ -3216,6 +3773,530 @@ function stageCard(stage, selected, onSelect, stagesById, detail) {
     card.append(detail);
   }
   return card;
+}
+
+const observedFlowRoleDefinitions = {
+  control_start: {
+    label: "제어",
+    wave_label: "제어 시작",
+    count_label: "오케스트레이션",
+  },
+  control_decision: {
+    label: "제어 판단",
+    wave_label: "제어 판단",
+    count_label: "제어 판단",
+  },
+  followup_decision: {
+    label: "후속 판단",
+    wave_label: "후속 판단",
+    count_label: "후속 판단",
+  },
+  delegated_work: {
+    label: "위임 작업",
+    wave_label: "위임된 독립 작업",
+    count_label: "위임 작업",
+  },
+  delegated_research: {
+    label: "위임 조사",
+    wave_label: "위임된 독립 조사",
+    count_label: "조사",
+  },
+  research: {
+    label: "근거 조사",
+    wave_label: "근거 조사",
+    count_label: "조사",
+  },
+  delegated_review: {
+    label: "위임 검토",
+    wave_label: "위임된 독립 검토",
+    count_label: "검토",
+  },
+  review: {
+    label: "독립 검토",
+    wave_label: "독립 검토",
+    count_label: "검토",
+  },
+  implementation: {
+    label: "구현",
+    wave_label: "구현",
+    count_label: "구현",
+  },
+  synthesis: {
+    label: "결과 합성",
+    wave_label: "검토 결과 합성",
+    count_label: "결과 합성",
+  },
+  verification: {
+    label: "검증",
+    wave_label: "결과 검증",
+    count_label: "검증",
+  },
+  unlinked_record: {
+    label: "관계 미연결",
+    wave_label: "관계 미연결 기록",
+    count_label: "미연결 기록",
+  },
+  independent_input: {
+    label: "독립 실행",
+    wave_label: "종합 전 독립 실행",
+    count_label: "독립 실행",
+  },
+  execution: {
+    label: "실행 작업",
+    wave_label: "실행 작업",
+    count_label: "작업",
+  },
+};
+
+const observedFlowSuccessfulOutcomes = new Set([
+  "completed",
+  "corrected",
+  "no_change",
+  "passed",
+]);
+
+const observedFlowOrderingEdgeTypes = new Set([
+  "delegates_to",
+  "depends_on",
+  "followup_of",
+  "joins_into",
+]);
+
+function observedFlowRole(card) {
+  if (card.kind === "orchestration") {
+    if (card.relationships?.followup_of_work_id) {
+      return "followup_decision";
+    }
+    return card.rank === 0 ? "control_start" : "control_decision";
+  }
+  if (card.kind === "delegation") return "delegated_work";
+  if (card.kind === "research") {
+    return card.relationships?.parent_work_id
+      ? "delegated_research"
+      : "research";
+  }
+  if (card.kind === "review") {
+    return card.relationships?.parent_work_id
+      ? "delegated_review"
+      : "review";
+  }
+  if (card.kind === "implementation") return "implementation";
+  if (card.kind === "synthesis") return "synthesis";
+  if (card.kind === "verification") return "verification";
+  return "execution";
+}
+
+function observedFlowLocalStatusLabel(value) {
+  return {
+    running: "단계 진행 중",
+    completed: "단계 완료",
+    failed: "단계 실패",
+    blocked: "단계 진행 불가",
+    interrupted: "단계 중단",
+  }[value] || "단계 상태 미기록";
+}
+
+function observedFlowTransition(
+  group,
+  cardsById,
+  roleByWorkId = null,
+  rawEdges = [],
+) {
+  const links = Array.isArray(group.links) ? group.links : [];
+  const relationTypes = new Set(
+    links.flatMap((link) => link.relation_types || []),
+  );
+  const groupRawEdges = [
+    ...new Set(
+      links.flatMap((link) => link.raw_edge_indexes || []),
+    ),
+  ]
+    .map((index) => rawEdges[index])
+    .filter(Boolean);
+  const isProjectedRequestRetry = groupRawEdges.some(
+    (edge) => (
+      edge.type === "followup_of"
+      && edge.provenance === "request_record_projection"
+    ),
+  );
+  const sourceIds = [...new Set(group.source_node_ids || [])];
+  const targetIds = [...new Set(group.target_node_ids || [])];
+  const sourceKinds = new Set(
+    sourceIds.map((workId) => cardsById.get(workId)?.kind).filter(Boolean),
+  );
+  const targetKinds = new Set(
+    targetIds.map((workId) => cardsById.get(workId)?.kind).filter(Boolean),
+  );
+  const sourceAttempts = new Set(
+    sourceIds
+      .map((workId) => cardsById.get(workId)?.request_attempt)
+      .filter((value) => Number.isInteger(value)),
+  );
+  const targetAttempts = new Set(
+    targetIds
+      .map((workId) => cardsById.get(workId)?.request_attempt)
+      .filter((value) => Number.isInteger(value)),
+  );
+  if (
+    isProjectedRequestRetry
+    &&
+    sourceAttempts.size === 1
+    && targetAttempts.size === 1
+    && [...sourceAttempts][0] !== [...targetAttempts][0]
+  ) {
+    return (
+      `요청 시도 ${[...sourceAttempts][0]} 종료`
+      + ` → 요청 시도 ${[...targetAttempts][0]} 재시작`
+    );
+  }
+
+  if (relationTypes.has("delegates_to")) {
+    const targetLabel = [...targetKinds].every(
+      (kind) => ["research", "review"].includes(kind),
+    )
+      ? "독립 검토"
+      : "독립 작업";
+    const reportText = relationTypes.has("reports_to")
+      ? ` · 보고 관계 ${targetIds.length}건`
+      : "";
+    return `지시 → ${targetLabel} ${targetIds.length}건${reportText}`;
+  }
+  if (
+    relationTypes.has("joins_into")
+    || targetKinds.has("synthesis")
+  ) {
+    const sourceLabel = (
+      roleByWorkId
+      && sourceIds.every(
+        (workId) => roleByWorkId.get(workId) === "independent_input",
+      )
+    )
+      ? "독립 실행 결과"
+      : [...sourceKinds].every(
+        (kind) => ["research", "review"].includes(kind),
+      )
+        ? "검토 결과"
+        : "앞 단계 결과";
+    return `${sourceLabel} ${sourceIds.length}건 합류 → 결과 종합`;
+  }
+  if (relationTypes.has("followup_of")) {
+    return "앞 단계 종합 결과 → 후속 판단";
+  }
+  if (targetKinds.has("implementation")) {
+    return `앞 단계 판단 ${sourceIds.length}건 → 구현`;
+  }
+  if (targetKinds.has("verification")) {
+    return `앞 단계 결과 ${sourceIds.length}건 → 검증`;
+  }
+  return (
+    `앞 단계 작업 ${sourceIds.length}건`
+    + ` → 다음 단계 작업 ${targetIds.length}건`
+  );
+}
+
+function observedFlowCardRelation(
+  card,
+  cardsById,
+  displayGroups,
+  terminalWorkIds,
+  roleId,
+  rawEdges = [],
+) {
+  const incoming = displayGroups.filter(
+    (group) => (group.target_node_ids || []).includes(card.work_id),
+  );
+  const outgoing = displayGroups.filter(
+    (group) => (group.source_node_ids || []).includes(card.work_id),
+  );
+  const relationTypes = (group) => new Set(
+    (group?.links || []).flatMap((link) => link.relation_types || []),
+  );
+  const parent = cardsById.get(card.relationships?.parent_work_id);
+  const rawIncoming = rawEdges.filter(
+    (edge) => edge?.to === card.work_id,
+  );
+  const rawOutgoing = rawEdges.filter(
+    (edge) => edge?.from === card.work_id,
+  );
+  const rawIncomingOrdering = rawIncoming.filter(
+    (edge) => observedFlowOrderingEdgeTypes.has(edge.type),
+  );
+  let text = "";
+
+  if (roleId === "unlinked_record") {
+    text = (
+      "다른 카드와의 연결 관계가 기록되지 않음"
+      + " · 같은 행의 동료 작업이나 병렬 실행을 뜻하지 않음"
+    );
+  } else if (roleId === "independent_input") {
+    text = "독립 실행 결과가 다음 종합 단계에 합류";
+  } else if (!incoming.length && rawIncomingOrdering.length) {
+    text = (
+      `화면에서 생략된 선행 관계 ${rawIncomingOrdering.length}개를 받아 수행`
+      + " · 연결선은 바로 앞뒤 단계 관계만 표시"
+    );
+  } else if (
+    !incoming.length
+    && !outgoing.length
+    && (rawIncoming.length || rawOutgoing.length)
+  ) {
+    const relationCount = rawIncoming.length + rawOutgoing.length;
+    text = (
+      `상세 관계 ${relationCount}개 기록`
+      + " · 연결선은 바로 앞뒤 단계 관계만 표시"
+    );
+  } else if (roleId === "control_start") {
+    const delegation = outgoing.find(
+      (group) => relationTypes(group).has("delegates_to"),
+    );
+    text = delegation
+      ? `아래 ${delegation.target_node_ids.length}개 작업에 각각 지시`
+      : "이 실행 흐름의 제어 시작";
+  } else if (
+    ["delegated_review", "delegated_research", "delegated_work"]
+      .includes(roleId)
+  ) {
+    const handoff = outgoing.find(
+      (group) => relationTypes(group).has("joins_into"),
+    );
+    text = parent
+      ? `${parent.role}의 지시를 받아 독립 수행`
+      : "상위 지시를 받아 독립 수행";
+    if (handoff) text += " · 결과는 다음 종합 단계로 전달";
+  } else if (roleId === "synthesis") {
+    const join = incoming.find(
+      (group) => relationTypes(group).has("joins_into"),
+    );
+    text = join
+      ? `앞 단계 ${join.source_node_ids.length}개 결과를 하나의 판단으로 종합`
+      : "앞 단계 결과를 하나의 판단으로 종합";
+  } else if (roleId === "followup_decision") {
+    text = "앞 단계 종합 결과를 받아 후속 판단";
+  } else if (incoming.length) {
+    const sourceCount = new Set(
+      incoming.flatMap((group) => group.source_node_ids || []),
+    ).size;
+    text = `앞 단계 ${sourceCount}개 작업 결과를 받아 수행`;
+  } else {
+    text = "선행 작업 없이 시작";
+  }
+
+  if (terminalWorkIds.has(card.work_id)) {
+    text += " · 이 흐름의 마지막 기록";
+  }
+  return text;
+}
+
+function observedFlowPresentation(
+  cards,
+  graph,
+  requestOutcome,
+  stages = [],
+) {
+  const cardsById = new Map(
+    cards.map((card) => [card.work_id, card]),
+  );
+  const displayGroups = Array.isArray(graph.display_edge_groups)
+    ? graph.display_edge_groups
+    : [];
+  const rawEdges = Array.isArray(graph.edges) ? graph.edges : [];
+  const terminalWorkIds = new Set(graph.terminal_work_ids || []);
+  const connectedWorkIds = new Set(
+    [
+      ...displayGroups.flatMap((group) => [
+        ...(group.source_node_ids || []),
+        ...(group.target_node_ids || []),
+      ]),
+      ...rawEdges.flatMap((edge) => [edge?.from, edge?.to]),
+    ].filter((workId) => typeof workId === "string" && workId),
+  );
+  const groupRelationTypes = (group) => new Set(
+    (group.links || []).flatMap((link) => link.relation_types || []),
+  );
+  const independentInputIds = new Set(
+    cards
+      .filter((card) => {
+        if (card.kind !== "orchestration") return false;
+        const incoming = displayGroups.filter(
+          (group) => (group.target_node_ids || []).includes(card.work_id),
+        );
+        const outgoing = displayGroups.filter(
+          (group) => (group.source_node_ids || []).includes(card.work_id),
+        );
+        const hasRawPredecessor = rawEdges.some(
+          (edge) => (
+            edge?.to === card.work_id
+            && observedFlowOrderingEdgeTypes.has(edge.type)
+          ),
+        );
+        return (
+          !incoming.length
+          && !hasRawPredecessor
+          && outgoing.some(
+            (group) => groupRelationTypes(group).has("joins_into"),
+          )
+          && !outgoing.some(
+            (group) => groupRelationTypes(group).has("delegates_to"),
+          )
+        );
+      })
+      .map((card) => card.work_id),
+  );
+  const roleByWorkId = new Map(
+    cards.map((card) => [
+      card.work_id,
+      independentInputIds.has(card.work_id)
+        ? "independent_input"
+        : cards.length > 1 && !connectedWorkIds.has(card.work_id)
+          ? "unlinked_record"
+          : observedFlowRole(card),
+    ]),
+  );
+  const concurrentWorkIds = new Set(
+    graph.actual_concurrency === "observed"
+      ? (graph.concurrent_work_pairs || []).flat()
+      : [],
+  );
+  const byRank = new Map();
+  cards.forEach((card) => {
+    if (!byRank.has(card.rank)) byRank.set(card.rank, []);
+    byRank.get(card.rank).push(card);
+  });
+  const waves = [...byRank.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([rank, waveCards]) => {
+      const roleIds = [...new Set(
+        waveCards.map((card) => roleByWorkId.get(card.work_id)),
+      )];
+      const unlinkedCount = waveCards.filter(
+        (card) => roleByWorkId.get(card.work_id) === "unlinked_record",
+      ).length;
+      const independentCount = waveCards.filter(
+        (card) => roleByWorkId.get(card.work_id) === "independent_input",
+      ).length;
+      let role = roleIds.length === 1
+        ? observedFlowRoleDefinitions[roleIds[0]]
+        : observedFlowRoleDefinitions.execution;
+      if (
+        unlinkedCount
+        && roleIds.includes("control_start")
+      ) {
+        role = {
+          label: "시작·미연결",
+          wave_label: "시작과 관계 미연결 기록",
+          count_label: "진입 기록",
+        };
+      } else if (
+        independentCount
+        && roleIds.includes("control_start")
+      ) {
+        role = {
+          label: "제어·독립 실행",
+          wave_label: "제어 시작과 독립 실행",
+          count_label: "진입 기록",
+        };
+      } else if (roleIds.length > 1) {
+        role = {
+          label: "분기 진행",
+          wave_label: "서로 다른 분기 진행",
+          count_label: "작업",
+        };
+      }
+      const hasMeasuredParallel = waveCards.some(
+        (card) => concurrentWorkIds.has(card.work_id),
+      );
+      return {
+        rank,
+        label: role.wave_label,
+        count_text: unlinkedCount
+          ? (
+            waveCards.length === unlinkedCount
+              ? `${unlinkedCount}개 관계 미연결 기록`
+              : (
+                `${waveCards.length - unlinkedCount}개 연결된 시작`
+                + ` · ${unlinkedCount}개 관계 미연결 기록`
+              )
+          )
+          : independentCount && roleIds.includes("control_start")
+            ? (
+              `${waveCards.length - independentCount}개 제어 시작`
+              + ` · ${independentCount}개 독립 실행`
+            )
+            : roleIds.length > 1
+              ? roleIds.map((roleId) => {
+                const count = waveCards.filter(
+                  (card) => roleByWorkId.get(card.work_id) === roleId,
+                ).length;
+                return (
+                  `${observedFlowRoleDefinitions[roleId].count_label}`
+                  + ` ${count}개`
+                );
+              }).join(" · ")
+              : waveCards.length > 1
+                ? `${waveCards.length}개 관계상 독립 작업`
+                : `${role.count_label} 1개`,
+        concurrency_text: waveCards.length > 1
+          ? (
+            hasMeasuredParallel
+              ? "실측 병렬 작업 포함"
+              : graph.actual_concurrency === "none_observed"
+                ? "실측 병렬로 확인된 작업 없음"
+                : "실제 병렬 여부 확인 불가"
+          )
+          : null,
+      };
+    });
+  const cardPresentations = cards.map((card) => {
+    const roleId = roleByWorkId.get(card.work_id);
+    return {
+      work_id: card.work_id,
+      role_id: roleId,
+      role_label: observedFlowRoleDefinitions[roleId].label,
+      local_status_label: observedFlowLocalStatusLabel(card.status?.value),
+      relation_text: observedFlowCardRelation(
+        card,
+        cardsById,
+        displayGroups,
+        terminalWorkIds,
+        roleId,
+        rawEdges,
+      ),
+      is_terminal: terminalWorkIds.has(card.work_id),
+    };
+  });
+  const impactStatuses = new Set([
+    "failed",
+    "blocked",
+    "skipped",
+    "interrupted",
+  ]);
+  return {
+    cards: cardPresentations,
+    waves,
+    transitions: displayGroups.map((group) => ({
+      from_rank: group.from_rank,
+      to_rank: group.to_rank,
+      text: observedFlowTransition(
+        group,
+        cardsById,
+        roleByWorkId,
+        rawEdges,
+      ),
+    })),
+    outcome: {
+      value: requestOutcome,
+      visible: (
+        Boolean(requestOutcome)
+        && !observedFlowSuccessfulOutcomes.has(requestOutcome)
+      ),
+      impacts: stages
+        .filter((stage) => impactStatuses.has(stage.status?.value))
+        .map((stage) => ({
+          title: stage.title,
+          status: stage.status.value,
+        })),
+    },
+  };
 }
 
 function legacyDisplayEdgeGroups(graph, cards, idKey) {
@@ -3248,13 +4329,22 @@ function displayEdgeGroups(graph, cards, idKey) {
   return legacyDisplayEdgeGroups(graph, cards, idKey);
 }
 
-function appendWorkEdgePath(svg, pathData, className, marker = false) {
+function appendWorkEdgePath(
+  svg,
+  pathData,
+  className,
+  marker = false,
+  edgeTypes = [],
+) {
   const path = document.createElementNS(
     "http://www.w3.org/2000/svg",
     "path",
   );
   path.setAttribute("d", pathData);
   path.setAttribute("class", className);
+  if (edgeTypes.length) {
+    path.dataset.edgeType = edgeTypes.join(" ");
+  }
   if (marker) path.setAttribute("marker-end", "url(#work-edge-arrow)");
   svg.append(path);
   return path;
@@ -3333,17 +4423,22 @@ function drawWorkEdges(
         const x2 = target.left + target.width / 2 - canvasRect.left;
         const y2 = target.top - canvasRect.top;
         const bend = y1 + Math.max(18, (y2 - y1) / 2);
-        const path = appendWorkEdgePath(
+        appendWorkEdgePath(
           svg,
           `M ${x1} ${y1} V ${bend} H ${x2} V ${y2}`,
           "work-edge work-edge-individual",
           true,
+          link.relation_types,
         );
-        path.dataset.edgeType = link.relation_types.join(" ");
       });
       return;
     }
 
+    const sharedEdgeTypes = [
+      ...new Set(
+        group.links.flatMap((link) => link.relation_types || []),
+      ),
+    ];
     const sourceAnchors = sources.map((rect) => ({
       x: rect.left + rect.width / 2 - canvasRect.left,
       y: rect.bottom - canvasRect.top,
@@ -3369,12 +4464,16 @@ function drawWorkEdges(
         svg,
         `M ${anchor.x} ${anchor.y} V ${trunkY}`,
         "work-edge work-edge-stem",
+        false,
+        sharedEdgeTypes,
       );
     });
     appendWorkEdgePath(
       svg,
       `M ${Math.min(...allX)} ${trunkY} H ${Math.max(...allX)}`,
       "work-edge work-edge-trunk",
+      false,
+      sharedEdgeTypes,
     );
     targetAnchors.forEach((anchor) => {
       appendWorkEdgePath(
@@ -3382,6 +4481,7 @@ function drawWorkEdges(
         `M ${anchor.x} ${trunkY} V ${anchor.y}`,
         "work-edge work-edge-stem",
         true,
+        sharedEdgeTypes,
       );
     });
   });
@@ -3447,14 +4547,16 @@ function observedWorkCard(
   card,
   selected,
   onSelect,
-  cardsById,
   detail,
   actualParallel,
+  presentation,
+  requestOutcome,
 ) {
   const article = element("article", {
     className: `work-stage-card work-attempt-card ${outcomeClass(card.status.value)}`,
   });
   article.dataset.workId = card.work_id;
+  article.dataset.flowRole = presentation.role_id;
   if (selected) article.classList.add("expanded");
   const detailId = workDomId("work-card-detail", card.work_id);
   const button = element("button", { className: "work-card-toggle" });
@@ -3468,15 +4570,34 @@ function observedWorkCard(
     element("span", {
       className: "work-stage-sequence",
       text: (
-        `실행 단계 ${String(card.rank + 1).padStart(2, "0")}`
-        + ` · ${card.attempt}차`
+        `관계 ${String(card.rank + 1).padStart(2, "0")}`
+        + (
+          Number.isInteger(card.request_attempt)
+            ? ` · 요청 시도 ${card.request_attempt}`
+            : ` · 작업 시도 ${card.attempt}`
+        )
+        + (
+          Number.isInteger(card.request_attempt) && card.attempt > 1
+            ? ` · 작업 재시도 ${card.attempt}`
+            : ""
+        )
       ),
     }),
+  );
+  const topMeta = element("span", { className: "work-card-top-meta" });
+  topMeta.append(
     element("span", {
-      className: "work-stage-kind",
-      text: card.title,
+      className: "work-card-role-badge",
+      text: presentation.role_label,
+    }),
+    element("span", {
+      className: (
+        `work-card-local-status ${outcomeClass(card.status.value)}`
+      ),
+      text: presentation.local_status_label,
     }),
   );
+  top.append(topMeta);
   button.append(top);
   button.append(element("strong", {
     className: "work-stage-purpose",
@@ -3512,13 +4633,24 @@ function observedWorkCard(
     responsibility.append(badge);
   }
   button.append(responsibility);
-  const parent = cardsById.get(card.relationships.parent_work_id);
   button.append(element("span", {
-    className: "work-stage-dependencies",
-    text: parent
-      ? `지시·보고 대상 ${parent.role}`
-      : "최상위 실행 담당",
+    className: "work-card-relationship",
+    text: presentation.relation_text,
   }));
+  if (
+    presentation.is_terminal
+    && !observedFlowSuccessfulOutcomes.has(requestOutcome)
+  ) {
+    button.append(element("span", {
+      className: (
+        `work-card-request-outcome ${outcomeClass(requestOutcome)}`
+      ),
+      text: (
+        `${presentation.role_label} 자체는 ${displayStatus(card.status.value)}`
+        + ` · 요청 최종 결과는 ${displayStatus(requestOutcome)}`
+      ),
+    }));
+  }
   button.append(
     workExecutionFooterFromProjection(card.execution_facts)
     || workExecutionFooter({
@@ -3527,7 +4659,7 @@ function observedWorkCard(
       tokens: "토큰 기록 없음",
       duration: card.status.value === "running"
         ? "실행 중"
-        : "시간 기록 없음",
+        : "작업 시간 기록 없음",
     }),
   );
   article.append(button);
@@ -3542,8 +4674,23 @@ function observedWorkCard(
   return article;
 }
 
-function appendWorkWaves(target, items, renderCard) {
+function appendWorkWaves(
+  target,
+  items,
+  renderCard,
+  presentation = null,
+) {
   const byRank = new Map();
+  const wavePresentation = new Map(
+    (presentation?.waves || []).map((wave) => [wave.rank, wave]),
+  );
+  const transitionsByRank = new Map();
+  (presentation?.transitions || []).forEach((transition) => {
+    if (!transitionsByRank.has(transition.from_rank)) {
+      transitionsByRank.set(transition.from_rank, []);
+    }
+    transitionsByRank.get(transition.from_rank).push(transition);
+  });
   items.forEach((item) => {
     if (!byRank.has(item.rank)) byRank.set(item.rank, []);
     byRank.get(item.rank).push(item);
@@ -3554,29 +4701,110 @@ function appendWorkWaves(target, items, renderCard) {
       const wave = element("section", { className: "work-wave" });
       wave.dataset.rank = String(rank);
       const header = element("header", { className: "work-wave-header" });
-      header.append(
+      const semantic = wavePresentation.get(rank);
+      const title = element("div", { className: "work-wave-title" });
+      title.append(
         element("span", {
           className: "work-wave-index",
-          text: `단계 ${String(rank + 1).padStart(2, "0")}`,
+          text: String(rank + 1).padStart(2, "0"),
         }),
-        element("small", {
-          text: waveItems.length > 1
-            ? `${waveItems.length}개 관계상 독립 작업`
-            : "1개 작업",
+        element("strong", {
+          text: semantic?.label || "실행 단계",
         }),
       );
+      const meta = element("div", { className: "work-wave-meta" });
+      meta.append(element("small", {
+        text: semantic?.count_text || (
+          waveItems.length > 1
+            ? `${waveItems.length}개 관계상 독립 작업`
+            : "1개 작업"
+        ),
+      }));
+      if (semantic?.concurrency_text) {
+        meta.append(element("small", {
+          className: "work-wave-concurrency",
+          text: semantic.concurrency_text,
+        }));
+      }
+      header.append(title, meta);
       const cards = element("div", { className: "work-wave-cards" });
       waveItems
         .sort((left, right) => left.position - right.position)
         .forEach((item) => cards.append(renderCard(item)));
       wave.append(header, cards);
       target.append(wave);
+      const transitions = transitionsByRank.get(rank) || [];
+      if (transitions.length) {
+        const transitionGroup = element("div", {
+          className: "work-flow-transitions",
+        });
+        transitions.forEach((transition) => {
+          transitionGroup.append(element("p", {
+            className: "work-flow-transition",
+            text: transition.text,
+          }));
+        });
+        target.append(transitionGroup);
+      }
     });
+}
+
+function buildObservedWorkOutcomeNotice(presentation) {
+  if (!presentation.outcome.visible) return null;
+  const notice = element("aside", {
+    className: (
+      `work-flow-outcome ${outcomeClass(presentation.outcome.value)}`
+    ),
+  });
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  const copy = element("div", { className: "work-flow-outcome-copy" });
+  copy.append(
+    element("strong", {
+      text: `최종 결과 · ${displayStatus(presentation.outcome.value)}`,
+    }),
+    element("p", {
+      text: (
+        "마지막 카드의 완료 표시는 그 단계의 판단이 끝났다는 뜻입니다. "
+        + "사용자 요청 전체가 완료됐다는 뜻은 아닙니다."
+      ),
+    }),
+  );
+  notice.append(copy);
+  if (presentation.outcome.impacts.length) {
+    const impacts = element("ul", {
+      className: "work-flow-outcome-impacts",
+    });
+    presentation.outcome.impacts.forEach((impact) => {
+      impacts.append(element("li", {
+        text: `${impact.title}: ${displayStatus(impact.status)}`,
+      }));
+    });
+    notice.append(impacts);
+  }
+  return notice;
 }
 
 function buildObservedWorkMap(run, work, onSelect) {
   const observed = work.execution;
   const section = element("section", { className: "work-map-panel" });
+  const groups = displayEdgeGroups(
+    observed.graph,
+    observed.cards,
+    "work_id",
+  );
+  const presentation = observedFlowPresentation(
+    observed.cards,
+    {
+      ...observed.graph,
+      display_edge_groups: groups,
+    },
+    work.header.result.value,
+    work.stages,
+  );
+  const cardPresentation = new Map(
+    presentation.cards.map((card) => [card.work_id, card]),
+  );
   const heading = element("div", { className: "work-map-heading" });
   const copy = element("div");
   copy.append(
@@ -3585,14 +4813,22 @@ function buildObservedWorkMap(run, work, onSelect) {
   );
   const legend = element("div", { className: "work-map-legend" });
   legend.append(
-    element("span", { text: "위→아래 관계 순서" }),
-    element("span", { text: "같은 단계 독립 분기" }),
+    element("span", { text: "선행 관계 위→아래" }),
+    element("span", {
+      text: observed.graph.actual_concurrency === "observed"
+        ? "실측 병렬 작업에 배지 표시"
+        : observed.graph.actual_concurrency === "none_observed"
+          ? "실측 병렬로 확인된 작업 없음"
+          : "실제 병렬 여부 확인 불가",
+    }),
     workInfoDisclosure(
       "observed-map",
       "작업 흐름 표시 기준",
       observed.graph.actual_concurrency === "observed"
         ? "같은 source·schema·clock domain의 완전한 시간 구간이 겹친 작업만 실제 병렬 실행으로 확인했습니다. 선은 인접 단계의 검증된 관계만 단순화해 표시하며 원본 관계는 상세에 보존합니다."
-        : "같은 행은 관계상 독립 분기이며 실제 동시 실행을 뜻하지 않습니다. 선은 인접 단계의 검증된 관계만 단순화해 표시하며 원본 관계는 상세에 보존합니다.",
+        : observed.graph.actual_concurrency === "none_observed"
+          ? "비교 가능한 완전한 시간 구간에서는 겹침이 확인되지 않았습니다. 기록 범위 밖의 작업까지 직렬 실행이었다는 뜻은 아닙니다. 선은 인접 단계의 검증된 관계만 단순화해 표시합니다."
+          : "같은 행은 관계상 독립 분기이며 실제 동시 실행을 뜻하지 않습니다. 선은 인접 단계의 검증된 관계만 단순화해 표시하며 원본 관계는 상세에 보존합니다.",
     ),
   );
   heading.append(copy, legend);
@@ -3600,6 +4836,22 @@ function buildObservedWorkMap(run, work, onSelect) {
   selectionStatus.id = "work-selection-status";
   selectionStatus.setAttribute("aria-live", "polite");
   section.append(heading, selectionStatus);
+  const outcomeNotice = buildObservedWorkOutcomeNotice(presentation);
+  if (outcomeNotice) section.append(outcomeNotice);
+  const readingGuide = element("aside", {
+    className: "work-flow-reading-guide",
+  });
+  readingGuide.append(
+    element("strong", { text: "읽는 법" }),
+    element("span", {
+      text: (
+        "각 행은 실제 시각이 아니라 선행 관계 단계입니다. "
+        + "같은 행은 서로 직접 의존하지 않는 분기이며, "
+        + "동시에 실행됐다는 뜻은 아닙니다."
+      ),
+    }),
+  );
+  section.append(readingGuide);
 
   const flow = element("div", { className: "work-map-scroll" });
   const canvas = element("div", { className: "work-map-canvas" });
@@ -3611,34 +4863,29 @@ function buildObservedWorkMap(run, work, onSelect) {
   svg.setAttribute("aria-hidden", "true");
   canvas.append(svg);
 
-  const cardsById = new Map(
-    observed.cards.map((card) => [card.work_id, card]),
-  );
   const parallelWorkIds = new Set(
     observed.graph.actual_concurrency === "observed"
       ? (observed.graph.concurrent_work_pairs || []).flat()
       : [],
   );
-  const waves = element("div", { className: "work-waves" });
+  const waves = element("div", {
+    className: "work-waves observed-work-waves",
+  });
   appendWorkWaves(waves, observed.cards, (card) => {
     const selected = card.work_id === state.selectedStage;
     return observedWorkCard(
       card,
       selected,
       onSelect,
-      cardsById,
       buildObservedWorkCardDetail(run, work, card),
       parallelWorkIds.has(card.work_id),
+      cardPresentation.get(card.work_id),
+      work.header.result.value,
     );
-  });
+  }, presentation);
   canvas.append(waves);
   flow.append(canvas);
   section.append(flow);
-  const groups = displayEdgeGroups(
-    observed.graph,
-    observed.cards,
-    "work_id",
-  );
   window.requestAnimationFrame(() => drawWorkEdges(
     canvas,
     groups,
@@ -4276,7 +5523,7 @@ function selectWorkStage(run, work, stageId) {
   if (state.selectedStage === stageId) {
     state.selectedStage = null;
     writeWorkSelectionToLocation(
-      run.event_id,
+      requestRecordId(run),
       null,
       "replaceState",
     );
@@ -4291,7 +5538,7 @@ function selectWorkStage(run, work, stageId) {
   if (observedCard) {
     state.selectedStage = observedCard.work_id;
     writeWorkSelectionToLocation(
-      run.event_id,
+      requestRecordId(run),
       observedCard.work_id,
       "replaceState",
     );
@@ -4304,7 +5551,7 @@ function selectWorkStage(run, work, stageId) {
   if (!stage) return;
   state.selectedStage = stage.stage_id;
   writeWorkSelectionToLocation(
-    run.event_id,
+    requestRecordId(run),
     stage.stage_id,
     "replaceState",
   );
@@ -4330,8 +5577,8 @@ function renderRunWorkspace(snapshot, options = {}) {
   list.hidden = true;
   target.hidden = false;
   clear(target);
-  const run = snapshot.runs.find(
-    (item) => item.event_id === state.selectedRun,
+  const run = requestRecords(snapshot).find(
+    (item) => requestRecordId(item) === state.selectedRun,
   );
   if (!run) {
     const back = element("button", {
@@ -4372,7 +5619,7 @@ function renderRunWorkspace(snapshot, options = {}) {
     : selectedNode?.stage_id || null;
   if (state.selectedStage !== workSelectionFromLocation().stageId) {
     writeWorkSelectionToLocation(
-      run.event_id,
+      requestRecordId(run),
       state.selectedStage,
       "replaceState",
     );
@@ -4834,7 +6081,9 @@ function renderExpertiseDetail(snapshot, pack, packHealth) {
     });
     changeButton.type = "button";
     changeButton.addEventListener("click", () => {
-      setExpertiseTab("changes");
+      state.selectedChangeSet = changeSetIds[0];
+      setExpertiseSection("inbox");
+      window.requestAnimationFrame(focusSelectedExpertiseChangeSet);
     });
     status.append(changeButton);
   }
@@ -5009,16 +6258,9 @@ function renderExpertiseDetail(snapshot, pack, packHealth) {
 
 }
 
-function renderExpertiseChangeSets(snapshot) {
-  const target = document.getElementById("expertise-change-sets");
-  clear(target);
-  const changeSets = snapshot.expertise.change_sets || [];
-  if (!changeSets.length) {
-    target.append(empty("검토할 전문 지식 변경안이 없습니다."));
-    return;
-  }
-  changeSets.forEach((changeSet) => {
-    const details = element("details", { className: "candidate-detail" });
+function renderExpertiseChangeSetCard(changeSet) {
+  const details = element("details", { className: "candidate-detail" });
+    details.dataset.changeSetId = changeSet.change_set_id;
     bindExclusiveDisclosure(details, "details.candidate-detail");
     const summary = element("summary");
     const identity = element("span", {
@@ -5092,6 +6334,8 @@ function renderExpertiseChangeSets(snapshot) {
     }));
     const actions = element("div", { className: "inline-actions" });
     if (
+      changeSet.atomic_required
+      &&
       changeSet.state === "candidate"
       && changeSet.project_approval?.status === "group_review_required"
     ) {
@@ -5108,7 +6352,10 @@ function renderExpertiseChangeSets(snapshot) {
       }));
       actions.append(approve);
     }
-    if (["candidate", "paused"].includes(changeSet.state)) {
+    if (
+      changeSet.atomic_required
+      && ["candidate", "paused"].includes(changeSet.state)
+    ) {
       const archive = element("button", {
         className: "secondary-button compact-button",
         text: "변경안 전체를 보관",
@@ -5122,7 +6369,10 @@ function renderExpertiseChangeSets(snapshot) {
       }));
       actions.append(archive);
     }
-    if (["archived", "rejected"].includes(changeSet.state)) {
+    if (
+      changeSet.atomic_required
+      && ["archived", "rejected"].includes(changeSet.state)
+    ) {
       const restore = element("button", {
         className: "compact-button",
         text: "변경안 전체를 다시 사용",
@@ -5163,26 +6413,111 @@ function renderExpertiseChangeSets(snapshot) {
       confirmationLabel.append(confirmation);
       actions.append(restore, confirmationLabel, remove);
     }
+    if (
+      !changeSet.atomic_required
+      && ["candidate", "paused"].includes(changeSet.state)
+    ) {
+      const inspectCandidate = element("button", {
+        className: "secondary-button compact-button",
+        text: "평가·전환에서 후보 보기",
+      });
+      inspectCandidate.type = "button";
+      inspectCandidate.addEventListener("click", () => {
+        setExpertiseSection("evaluation");
+        document.querySelector(
+          '[data-expertise-section="evaluation"]',
+        )?.focus();
+      });
+      actions.append(inspectCandidate);
+    }
     if (actions.childElementCount) body.append(actions);
-    details.append(body);
-    target.append(details);
+  details.append(body);
+  return details;
+}
+
+function renderExpertiseNominations(snapshot, buckets) {
+  const target = document.getElementById("expertise-nominations");
+  clear(target);
+  if (!buckets.nominations.length) return;
+  const heading = element("div", { className: "subsection-heading" });
+  const headingIdentity = element("div");
+  headingIdentity.append(
+    element("p", { className: "eyebrow", text: "NOMINATIONS" }),
+    element("h3", { text: "재구성 검토 신호" }),
+  );
+  heading.append(headingIdentity);
+  heading.append(element("p", {
+    className: "muted",
+    text: "반복 관찰은 AI 검토를 시작할 근거일 뿐, 후보 생성·승인·활성화 권한이 아닙니다.",
+  }));
+  target.append(heading);
+  buckets.nominations.forEach((nomination) => {
+    const card = element("article", {
+      className: "recomposition-nomination",
+    });
+    const top = element("div", { className: "nomination-heading" });
+    const identity = element("div");
+    identity.append(element("strong", {
+      text: nomination.domain || "전문 지식 재구성 검토",
+    }));
+    identity.append(element("code", { text: nomination.nomination_id }));
+    top.append(identity, pill(
+      nomination.severity || "medium",
+      nomination.severity === "critical" ? "bad" : "warn",
+    ));
+    card.append(top);
+    card.append(element("p", {
+      text: (
+        `${nomination.occurrences || 0}개 독립 작업에서 관찰 · `
+        + `${(nomination.subject_refs || []).join(" · ") || "대상 미지정"}`
+      ),
+    }));
+    card.append(element("p", {
+      className: "muted",
+      text: (
+        "다음 단계: AI가 같은 판단 생명주기인지 확인하고, 부족한 근거를 "
+        + "조사한 뒤 새 후보 또는 기존 Pack 개편 중 무엇이 맞는지 제안합니다."
+      ),
+    }));
+    const boundary = element("div", { className: "nomination-boundary" });
+    boundary.append(
+      pill("실행 권한 없음", "neutral"),
+      pill("자동 변경 없음", "neutral"),
+    );
+    card.append(boundary);
+    target.append(card);
   });
 }
 
-function renderExpertiseArchive(snapshot) {
+function renderExpertiseChangeSets(snapshot, buckets) {
+  const target = document.getElementById("expertise-change-sets");
+  clear(target);
+  const changeSets = buckets.inbox;
+  if (!changeSets.length) {
+    target.append(empty("검토할 전문 지식 변경안이 없습니다."));
+    return;
+  }
+  changeSets.forEach((changeSet) => {
+    target.append(renderExpertiseChangeSetCard(changeSet));
+  });
+}
+
+function renderExpertiseArchive(snapshot, buckets) {
   const target = document.getElementById("expertise-archive");
   const deletedTarget = document.getElementById("expertise-deleted");
   clear(target);
   clear(deletedTarget);
-  const archived = (snapshot.expertise.candidates || []).filter(
-    (candidate) => candidate.disposition,
-  );
-  const atomicCandidateIds = new Set(
-    (snapshot.expertise.change_sets || [])
-      .filter((changeSet) => changeSet.atomic_required)
-      .flatMap((changeSet) => changeSet.candidate_ids),
-  );
-  if (!archived.length) {
+  const archivedChangeSets = buckets.archiveChangeSets;
+  if (archivedChangeSets.length) {
+    target.append(element("h3", { text: "보관된 묶음 변경안" }));
+    archivedChangeSets.forEach((changeSet) => {
+      target.append(renderExpertiseChangeSetCard(changeSet));
+    });
+  }
+  const archived = buckets.archivedCandidates;
+  if (archived.length) {
+    target.append(element("h3", { text: "보관된 개별 후보" }));
+  } else if (!archivedChangeSets.length) {
     target.append(empty("보관 중인 후보가 없습니다."));
   }
   archived.forEach((candidate) => {
@@ -5195,14 +6530,6 @@ function renderExpertiseArchive(snapshot) {
       className: "muted",
       text: candidate.disposition.reason,
     }));
-    if (atomicCandidateIds.has(candidate.candidate_id)) {
-      card.append(element("p", {
-        className: "muted",
-        text: "이 후보는 위 변경안 카드에서 전체 묶음으로만 복원하거나 제거할 수 있습니다.",
-      }));
-      target.append(card);
-      return;
-    }
     const actions = element("div", { className: "inline-actions" });
     const restore = element("button", {
       className: "compact-button",
@@ -5244,7 +6571,7 @@ function renderExpertiseArchive(snapshot) {
     card.append(actions);
     target.append(card);
   });
-  const deleted = snapshot.expertise.deleted_candidates || [];
+  const deleted = buckets.deletedCandidates;
   if (deleted.length) {
     const heading = element("div", { className: "section-heading" });
     heading.append(element("h3", { text: "영구 제거 기록" }));
@@ -5261,14 +6588,16 @@ function renderExpertiseArchive(snapshot) {
   }
 }
 
-function renderExpertiseCandidates(snapshot) {
+function renderExpertiseCandidates(snapshot, buckets) {
   const target = document.getElementById("expertise-candidates");
   clear(target);
-  const candidates = (snapshot.expertise.candidates || []).filter(
-    (candidate) => !candidate.disposition,
-  );
+  const candidates = [
+    ...buckets.evaluationGroups.attention,
+    ...buckets.evaluationGroups.observing,
+    ...buckets.evaluationGroups.decision,
+  ];
   if (!candidates.length) {
-    target.append(empty("이 프로젝트에서 만든 전문 지식 후보가 없습니다."));
+    target.append(empty("평가하거나 전환할 전문 지식 후보가 없습니다."));
     return;
   }
   const candidateHealth = new Map(
@@ -5281,7 +6610,36 @@ function renderExpertiseCandidates(snapshot) {
       .filter((changeSet) => changeSet.atomic_required)
       .flatMap((changeSet) => changeSet.candidate_ids),
   );
+  const groupLabels = {
+    attention: [
+      "확인 필요",
+      "검증 실패·만료·충돌·묶음 중단처럼 먼저 해결할 조건입니다.",
+    ],
+    observing: [
+      "근거 관찰 중",
+      "후보는 고정돼 있으며 적용·검증 근거를 모으고 있습니다.",
+    ],
+    decision: [
+      "전환 결정 가능",
+      "프로젝트 확정 또는 공통 Pack 반영 여부를 검토할 수 있습니다.",
+    ],
+  };
+  let renderedGroup = null;
   candidates.forEach((candidate) => {
+    const group = window.MaestroExpertiseProjection
+      .candidateEvaluationStage(candidate);
+    if (group !== renderedGroup) {
+      renderedGroup = group;
+      const heading = element("div", {
+        className: "evaluation-group-heading",
+      });
+      heading.append(element("h3", { text: groupLabels[group][0] }));
+      heading.append(element("p", {
+        className: "muted",
+        text: groupLabels[group][1],
+      }));
+      target.append(heading);
+    }
     const runtime = candidateHealth.get(candidate.candidate_id) || {};
     const runtimePresentation = candidateRuntimePresentation(candidate);
     const row = element("details", {
@@ -5661,26 +7019,123 @@ function renderExpertiseCandidates(snapshot) {
   });
 }
 
-function setExpertiseTab(tab) {
-  if (!["active", "changes", "archive"].includes(tab)) return;
-  state.expertiseTab = tab;
-  document.querySelectorAll("[data-expertise-tab]").forEach((button) => {
-    const selected = button.dataset.expertiseTab === tab;
+function renderExpertiseOutcomes(snapshot, buckets) {
+  const target = document.getElementById("expertise-outcomes");
+  clear(target);
+  if (
+    !buckets.completedChangeSets.length
+    && !buckets.completedCandidates.length
+  ) {
+    target.append(empty("현재 snapshot에서 확인되는 완료 결과가 없습니다."));
+    return;
+  }
+  if (buckets.completedChangeSets.length) {
+    const heading = element("div", { className: "evaluation-group-heading" });
+    heading.append(element("h3", { text: "프로젝트 승인 ChangeSet" }));
+    heading.append(element("p", {
+      className: "muted",
+      text: "같은 ChangeSet의 member는 중복하지 않고 한 결과로 표시합니다.",
+    }));
+    target.append(heading);
+    buckets.completedChangeSets.forEach((changeSet) => {
+      target.append(renderExpertiseChangeSetCard(changeSet));
+    });
+  }
+  if (buckets.completedCandidates.length) {
+    const heading = element("div", { className: "evaluation-group-heading" });
+    heading.append(element("h3", { text: "개별 후보 완료 결과" }));
+    heading.append(element("p", {
+      className: "muted",
+      text: "프로젝트 확정 또는 Harness 기본 소스 반영 상태만 보여줍니다.",
+    }));
+    target.append(heading);
+    buckets.completedCandidates.forEach((candidate) => {
+      const card = element("article", { className: "outcome-card" });
+      const top = element("div", { className: "nomination-heading" });
+      const identity = element("div");
+      identity.append(element("strong", {
+        text: packName(
+          candidate.expertise_pack_id || candidate.candidate_id,
+        ),
+      }));
+      identity.append(element("code", { text: candidate.candidate_id }));
+      top.append(identity, candidateRuntimePill(candidate));
+      card.append(top);
+      card.append(element("p", {
+        text: candidate.runtime_status === "globally_promoted"
+          ? "Harness Registry와 공통 Skill 소스에 반영된 결과입니다."
+          : "프로젝트에서 추적 가능한 Pack으로 확정된 결과입니다.",
+      }));
+      if (candidate.definition_digest) {
+        card.append(element("code", {
+          text: `digest ${candidate.definition_digest.slice(0, 12)}…`,
+        }));
+      }
+      target.append(card);
+    });
+  }
+}
+
+function renderExpertiseCounts(buckets) {
+  const counts = {
+    "expertise-active-count": buckets.counts.active,
+    "expertise-inbox-count": buckets.counts.inbox,
+    "expertise-evaluation-count": buckets.counts.evaluation,
+    "expertise-outcome-count": buckets.counts.completed,
+  };
+  Object.entries(counts).forEach(([id, value]) => {
+    document.getElementById(id).textContent = String(value);
+  });
+}
+
+function setExpertiseSection(section) {
+  const sections = [
+    "active",
+    "inbox",
+    "evaluation",
+    "outcomes",
+    "archive",
+  ];
+  if (!sections.includes(section)) return;
+  state.expertiseSection = section;
+  document.querySelectorAll("[data-expertise-section]").forEach((button) => {
+    const selected = button.dataset.expertiseSection === section;
     button.classList.toggle("selected", selected);
     if (selected) {
-      button.setAttribute("aria-current", "page");
+      button.setAttribute("aria-current", "location");
     } else {
       button.removeAttribute("aria-current");
     }
   });
   document.querySelectorAll("[data-expertise-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.expertisePanel !== tab;
+    panel.hidden = panel.dataset.expertisePanel !== section;
+  });
+}
+
+function focusSelectedExpertiseChangeSet() {
+  if (!state.selectedChangeSet) return;
+  const cards = document.querySelectorAll(
+    "#expertise-inbox-panel [data-change-set-id]",
+  );
+  const selected = [...cards].find(
+    (card) => card.dataset.changeSetId === state.selectedChangeSet,
+  );
+  if (!selected) return;
+  selected.open = true;
+  selected.querySelector("summary")?.focus();
+  selected.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "nearest",
   });
 }
 
 function renderExpertise(snapshot) {
   const target = document.getElementById("expertise");
   clear(target);
+  const buckets = expertiseBuckets(snapshot);
+  renderExpertiseCounts(buckets);
   const allPacks = snapshot.expertise.packs || [];
   const query = state.expertiseSearch.trim().toLocaleLowerCase("ko-KR");
   const packs = allPacks.filter((pack) => {
@@ -5716,10 +7171,12 @@ function renderExpertise(snapshot) {
         : "등록된 전문 지식 묶음이 없습니다.",
     ));
     renderExpertiseDetail(snapshot, null, null);
-    renderExpertiseChangeSets(snapshot);
-    renderExpertiseCandidates(snapshot);
-    renderExpertiseArchive(snapshot);
-    setExpertiseTab(state.expertiseTab);
+    renderExpertiseNominations(snapshot, buckets);
+    renderExpertiseChangeSets(snapshot, buckets);
+    renderExpertiseCandidates(snapshot, buckets);
+    renderExpertiseOutcomes(snapshot, buckets);
+    renderExpertiseArchive(snapshot, buckets);
+    setExpertiseSection(state.expertiseSection);
     return;
   }
   if (!packs.some((pack) => pack.expertise_pack_id === state.selectedPack)) {
@@ -5732,7 +7189,6 @@ function renderExpertise(snapshot) {
       className: `pack-list-item${selected ? " selected" : ""}`,
     });
     button.type = "button";
-    button.setAttribute("role", "listitem");
     button.setAttribute("aria-pressed", String(selected));
     const top = element("span", { className: "pack-list-top" });
     const identity = element("span");
@@ -5770,7 +7226,10 @@ function renderExpertise(snapshot) {
       state.selectedPack = pack.expertise_pack_id;
       renderExpertise(snapshot);
     });
-    target.append(button);
+    const listItem = element("div");
+    listItem.setAttribute("role", "listitem");
+    listItem.append(button);
+    target.append(listItem);
   });
   const selectedPack = packs.find(
     (pack) => pack.expertise_pack_id === state.selectedPack,
@@ -5780,10 +7239,12 @@ function renderExpertise(snapshot) {
     selectedPack,
     healthByPack.get(state.selectedPack),
   );
-  renderExpertiseChangeSets(snapshot);
-  renderExpertiseCandidates(snapshot);
-  renderExpertiseArchive(snapshot);
-  setExpertiseTab(state.expertiseTab);
+  renderExpertiseNominations(snapshot, buckets);
+  renderExpertiseChangeSets(snapshot, buckets);
+  renderExpertiseCandidates(snapshot, buckets);
+  renderExpertiseOutcomes(snapshot, buckets);
+  renderExpertiseArchive(snapshot, buckets);
+  setExpertiseSection(state.expertiseSection);
 }
 
 function renderExpertisePreview(preview) {
@@ -5861,6 +7322,7 @@ function renderExpertisePreview(preview) {
       });
       state.expertisePlan = null;
       renderExpertisePreview(null);
+      restoreExpertiseActionFocus();
       await refresh();
     } catch (reason) {
       showError(reason);
@@ -5876,6 +7338,7 @@ function renderExpertisePreview(preview) {
   cancel.addEventListener("click", () => {
     state.expertisePlan = null;
     renderExpertisePreview(null);
+    restoreExpertiseActionFocus();
   });
   actions.append(apply, cancel);
   target.append(actions);
@@ -5890,6 +7353,9 @@ async function previewExpertiseAction({
   replacementPackIds = [],
 }) {
   try {
+    state.expertiseActionTrigger = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     const preview = await actionRequest("/api/expertise-actions/preview", {
       action,
       candidate_id: candidateId,
@@ -5900,13 +7366,29 @@ async function previewExpertiseAction({
     });
     state.expertisePlan = preview;
     renderExpertisePreview(preview);
-    document.getElementById("expertise-preview").scrollIntoView({
-      behavior: "smooth",
+    const previewTarget = document.getElementById("expertise-preview");
+    previewTarget.focus({ preventScroll: true });
+    previewTarget.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
       block: "nearest",
     });
   } catch (reason) {
     showError(reason);
   }
+}
+
+function restoreExpertiseActionFocus() {
+  const trigger = state.expertiseActionTrigger;
+  state.expertiseActionTrigger = null;
+  if (trigger?.isConnected) {
+    trigger.focus();
+    return;
+  }
+  document.querySelector(
+    `[data-expertise-section="${state.expertiseSection}"]`,
+  )?.focus();
 }
 
 function renderGovernance(snapshot) {
@@ -5924,6 +7406,166 @@ function renderGovernance(snapshot) {
     card.append(element("span", { className: "muted", text: label }));
     card.append(element("h3", { text: value }));
     target.append(card);
+  });
+}
+
+function formatFeedbackRate(value) {
+  return typeof value === "number"
+    ? `${(value * 100).toFixed(1)}%`
+    : "표본 없음";
+}
+
+function formatFeedbackInterval(interval) {
+  if (
+    typeof interval?.lower !== "number"
+    || typeof interval?.upper !== "number"
+  ) {
+    return "Wilson 95% 구간 없음";
+  }
+  return (
+    `Wilson 95% ${(interval.lower * 100).toFixed(1)}`
+    + `–${(interval.upper * 100).toFixed(1)}%`
+  );
+}
+
+function feedbackMetricCard(label, metric) {
+  const card = element("div", { className: "model-feedback-metric" });
+  card.append(
+    element("span", { className: "muted", text: label }),
+    element("strong", {
+      text: `${metric.failure_count}/${metric.sample_count} 실패`,
+    }),
+    element("span", {
+      className: "model-feedback-rate",
+      text: formatFeedbackRate(metric.failure_rate),
+    }),
+    element("small", {
+      className: "muted",
+      text: formatFeedbackInterval(metric.interval),
+    }),
+  );
+  return card;
+}
+
+function feedbackAdviceLabel(advice) {
+  const labels = {
+    collect_more_evidence: "증거 더 수집",
+    keep_route: "현재 경로 유지",
+    quality_escalation: "한 단계 상향 검토",
+    needs_decision: "소유자 판단 필요",
+  };
+  return labels[advice?.action] || "판단 불가";
+}
+
+function feedbackSubjectLabel(subject) {
+  return [
+    subject.stage_kind,
+    subject.task_class,
+    `${subject.selected_model} · ${displayReasoningEffort(
+      subject.reasoning_effort,
+    )}`,
+    `${subject.selected_class} · 위험 ${displayStatus(subject.risk)}`,
+  ].join(" · ");
+}
+
+function renderModelFeedback(snapshot) {
+  const target = document.getElementById("model-feedback");
+  clear(target);
+  const report = snapshot.governance?.model_feedback;
+  if (!report) {
+    target.append(empty("모델 정책 피드백 보고서가 없습니다."));
+    return;
+  }
+  const summary = element("aside", {
+    className: "model-feedback-summary",
+  });
+  summary.append(
+    element("strong", {
+      text: "관찰 통계 · 자동 정책 변경 없음 · 자동 하향 없음",
+    }),
+    element("span", {
+      text: (
+        `최근 ${report.source.evidence_window}개 작업 증거 창`
+        + " · 구현 mutation owner만"
+        + ` · 현재 표본 ${report.source.run_count}개`
+        + (
+          report.source.scan_complete
+            ? ""
+            : " · 스캔 불완전: 정책 후보 비활성"
+        )
+      ),
+    }),
+  );
+  target.append(summary);
+  if (!report.groups.length) {
+    target.append(empty(
+      "아직 같은 조건으로 묶을 수 있는 검증 완료 작업이 없습니다.",
+    ));
+    return;
+  }
+  report.groups.forEach((group) => {
+    const article = element("article", {
+      className: "model-feedback-group card",
+    });
+    const heading = element("div", {
+      className: "model-feedback-group-heading",
+    });
+    const identity = element("div");
+    identity.append(
+      element("p", { className: "eyebrow", text: "정확히 같은 현재 조건" }),
+      element("h3", { text: feedbackSubjectLabel(group.subject) }),
+    );
+    heading.append(
+      identity,
+      pill(
+        group.evaluation_gate.state === "eligible"
+          ? "평가 기준 충족"
+          : "표본 수집 중",
+        group.evaluation_gate.state === "eligible" ? "good" : "neutral",
+      ),
+    );
+    const metrics = element("div", {
+      className: "model-feedback-metrics",
+    });
+    metrics.append(
+      feedbackMetricCard(
+        "경로 권고 후 검증 실패",
+        group.route_recommendation_failure,
+      ),
+      feedbackMetricCard(
+        "실제 적용 모델에서 검증 실패",
+        group.applied_model_failure,
+      ),
+      feedbackMetricCard(
+        "모델에 귀속 가능한 구현 실패",
+        group.model_attributed_failure,
+      ),
+    );
+    const exclusions = group.model_attributed_failure.exclusion_reasons;
+    const exclusionText = Object.entries(exclusions).length
+      ? Object.entries(exclusions)
+        .map(([reason, count]) => `${reason} ${count}`)
+        .join(" · ")
+      : "없음";
+    const footer = element("div", {
+      className: "model-feedback-group-footer",
+    });
+    footer.append(
+      element("span", {
+        text: (
+          `귀속 제외 ${group.model_attributed_failure.excluded_count}개`
+          + ` · ${exclusionText}`
+        ),
+      }),
+      element("strong", {
+        text: (
+          `권고: ${feedbackAdviceLabel(group.advice)}`
+          + " (정책 후보일 뿐 현재 경로 아님)"
+        ),
+      }),
+    );
+    article.append(heading, metrics, footer);
+    target.append(article);
   });
 }
 
@@ -5968,6 +7610,7 @@ function render(snapshot) {
   renderExpertise(snapshot);
   renderExpertisePreview(state.expertisePlan);
   renderGovernance(snapshot);
+  renderModelFeedback(snapshot);
   setTabCount(
     "overview-tab-count",
     snapshot.overview.attention,
@@ -6003,6 +7646,9 @@ function resetProjectContext() {
   state.pendingWorkFocus = null;
   state.pendingWorkFocusRestore = null;
   state.selectedPack = null;
+  state.selectedChangeSet = null;
+  state.expertiseActionTrigger = null;
+  state.expertiseSection = "active";
   state.selectedEventIds.clear();
   state.verificationPlan = null;
   state.historyPlan = null;
@@ -6094,7 +7740,7 @@ const projectSnapshotLoader = createProjectSnapshotLoader({
     if (!response.ok) {
       throw responseError(payload, response.status, "조회 실패");
     }
-    return payload;
+    return MaestroSnapshotContract.validateSnapshot(payload);
   },
   onStart: (projectId) => {
     state.pendingWorkFocus = captureWorkFocus();
@@ -6233,8 +7879,8 @@ document.addEventListener("keydown", (event) => {
       ".work-stage-card, .work-attempt-card",
     )
   ) {
-    const run = state.snapshot?.runs?.find(
-      (item) => item.event_id === state.selectedRun,
+    const run = requestRecords(state.snapshot).find(
+      (item) => requestRecordId(item) === state.selectedRun,
     );
     if (run?.work_detail) {
       event.preventDefault();
@@ -6288,9 +7934,9 @@ document.getElementById("expertise-search").addEventListener(
     if (state.snapshot) renderExpertise(state.snapshot);
   },
 );
-document.querySelectorAll("[data-expertise-tab]").forEach((button) => {
+document.querySelectorAll("[data-expertise-section]").forEach((button) => {
   button.addEventListener("click", () => {
-    setExpertiseTab(button.dataset.expertiseTab);
+    setExpertiseSection(button.dataset.expertiseSection);
   });
 });
 document.getElementById("create-bundle").addEventListener("click", async () => {

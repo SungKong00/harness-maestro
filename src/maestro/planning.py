@@ -7,14 +7,33 @@ from pathlib import Path
 from typing import Any
 
 from .errors import MaestroError
+from .design_assurance import (
+    build_assurance_requirement,
+    product_design_assurance_active,
+    validate_assurance_requirement,
+)
 from .expertise import select_expertise
 from .expertise_routing import (
     enforce_conflict_policy,
     require_reroute_lineage,
 )
 from .research import require_completed_research_bundle
+from .model_policy import (
+    LEGACY_MODEL_ROUTE_FIELDS,
+    MODEL_ROUTE_FIELDS as STAGE_MODEL_ROUTE_FIELDS,
+    MODEL_ROUTE_VERSION,
+    default_stage_kind,
+    is_deterministic_command,
+    validate_model_route_shape,
+)
+from .model_feedback import (
+    current_model_policy_authority,
+    validate_model_policy_overlay,
+    validate_model_policy_overlay_authority,
+)
 from .registry import (
     _model_route,
+    load_host_profile,
     load_registry,
     registry_digest,
     resolve_request_contract,
@@ -60,8 +79,16 @@ ROUTE_V2_FIELDS = {
     "terminal_assignments",
     "mutation_owner_assignment_id",
     "expertise",
+    "coverage_binding",
+    "design_assurance",
+    "model_policy_overlays",
 }
-ROUTE_V2_OPTIONAL_FIELDS = {"expertise"}
+ROUTE_V2_OPTIONAL_FIELDS = {
+    "expertise",
+    "coverage_binding",
+    "design_assurance",
+    "model_policy_overlays",
+}
 
 ASSIGNMENT_FIELDS = {
     "assignment_id",
@@ -94,20 +121,11 @@ V2_EXTENSION_FIELDS = {
     "terminal_assignments",
     "mutation_owner_assignment_id",
     "expertise",
+    "coverage_binding",
+    "design_assurance",
 }
 SOURCE_ROUTE_FIELDS = ROUTE_V2_FIELDS - V2_EXTENSION_FIELDS
-MODEL_ROUTE_FIELDS = {
-    "executor",
-    "task_class",
-    "risk",
-    "host",
-    "selected_class",
-    "selected_model",
-    "reasoning_effort",
-    "selection_reason",
-    "escalation_allowed",
-    "fallback",
-}
+MODEL_ROUTE_FIELDS = set(STAGE_MODEL_ROUTE_FIELDS)
 TASK_CONTRACT_FIELDS = {
     "objective",
     "allowed_side_effects",
@@ -150,6 +168,42 @@ def _plan_id(plan: dict[str, Any]) -> str:
     return sha256_text(canonical_json(payload))
 
 
+def build_coverage_binding(
+    coverage: Any,
+    *,
+    goal: str,
+    repo_path: str | Path | None,
+) -> dict[str, Any]:
+    """Project complete Task Coverage identity without importing its body."""
+
+    from .task_coverage import validate_task_coverage
+
+    validation = validate_task_coverage(
+        coverage,
+        goal=goal,
+        repo_path=repo_path,
+        require_current_revision=repo_path is not None,
+    )
+    if (
+        validation["status"] != "PASS"
+        or validation["coverage_status"] != "COMPLETE"
+    ):
+        first = next(
+            iter(validation["issues"]),
+            {
+                "code": "TASK_COVERAGE_INCOMPLETE",
+                "message": "Task Coverage must be complete before route binding.",
+            },
+        )
+        raise MaestroError(first["code"], first["message"])
+    return {
+        "schema_version": "maestro_task_coverage_binding_v1",
+        "coverage_id": coverage["coverage_id"],
+        "goal_digest": sha256_text(goal),
+        "required_for_mutation": True,
+    }
+
+
 def _source_route_projection(plan: dict[str, Any]) -> dict[str, Any]:
     source = {
         key: copy.deepcopy(plan[key])
@@ -164,7 +218,11 @@ def _source_route_digest(plan: dict[str, Any]) -> str:
     return sha256_text(canonical_json(_source_route_projection(plan)))
 
 
-def _reconstruct_source_route(plan: dict[str, Any]) -> dict[str, Any] | None:
+def _reconstruct_source_route(
+    plan: dict[str, Any],
+    *,
+    repo_path: str | Path | None,
+) -> dict[str, Any] | None:
     selected = plan.get("selected_lenses")
     reasons = plan.get("selection_reasons")
     top_model_route = plan.get("model_route")
@@ -201,8 +259,33 @@ def _reconstruct_source_route(plan: dict[str, Any]) -> dict[str, Any] | None:
         top_model_route["host"],
         route_intent,
     )
+    overlays = plan.get("model_policy_overlays")
+    if overlays is not None and (
+        repo_path is None
+        or
+        not isinstance(overlays, list)
+        or any(
+            not validate_model_policy_overlay_authority(
+                item,
+                repo_path=repo_path,
+            )
+            for item in overlays
+        )
+    ):
+        return None
+    authority = (
+        current_model_policy_authority(repo_path)
+        if overlays
+        else None
+    )
     try:
-        return route_goal(*arguments, decision_authorized=True)
+        return route_goal(
+            *arguments,
+            decision_authorized=True,
+            model_policy_overlays=overlays,
+            model_policy_authority=authority,
+            repo_path=repo_path,
+        )
     except MaestroError as exc:
         if exc.code != "CONFLICT_EVIDENCE_REQUIRED":
             return None
@@ -212,6 +295,9 @@ def _reconstruct_source_route(plan: dict[str, Any]) -> dict[str, Any] | None:
             "validator-reconstruction",
             *arguments[5:],
             decision_authorized=True,
+            model_policy_overlays=overlays,
+            model_policy_authority=authority,
+            repo_path=repo_path,
         )
     except MaestroError:
         return None
@@ -230,7 +316,13 @@ def _model_route_shape_issues(
             )
         ]
     issues: list[dict[str, Any]] = []
-    for field in sorted(MODEL_ROUTE_FIELDS - set(value)):
+    value_fields = set(value)
+    accepted_fields = (
+        LEGACY_MODEL_ROUTE_FIELDS
+        if value_fields == LEGACY_MODEL_ROUTE_FIELDS
+        else MODEL_ROUTE_FIELDS
+    )
+    for field in sorted(accepted_fields - value_fields):
         issues.append(
             _diagnostic(
                 "ADAG_REQUIRED_FIELD_MISSING",
@@ -238,12 +330,36 @@ def _model_route_shape_issues(
                 f"Required model_route field is missing: {field}.",
             )
         )
-    for field in sorted(set(value) - MODEL_ROUTE_FIELDS):
+    for field in sorted(
+        value_fields
+        - (MODEL_ROUTE_FIELDS | LEGACY_MODEL_ROUTE_FIELDS)
+    ):
         issues.append(
             _diagnostic(
                 "ADAG_UNKNOWN_FIELD",
                 f"{path}.{field}",
                 f"Unsupported model_route field: {field}.",
+            )
+        )
+    if value_fields == MODEL_ROUTE_FIELDS:
+        shape_error = validate_model_route_shape(value)
+        if shape_error is not None:
+            issues.append(
+                _diagnostic(
+                    "ADAG_MODEL_ROUTE_INVALID",
+                    path,
+                    shape_error,
+                )
+            )
+    if (
+        value_fields != LEGACY_MODEL_ROUTE_FIELDS
+        and value.get("schema_version") != MODEL_ROUTE_VERSION
+    ):
+        issues.append(
+            _diagnostic(
+                "ADAG_MODEL_ROUTE_INVALID",
+                f"{path}.schema_version",
+                f"model_route schema_version must be {MODEL_ROUTE_VERSION}.",
             )
         )
     id_fields = ("executor", "task_class", "host")
@@ -296,6 +412,10 @@ def _model_route_shape_issues(
             )
         )
     return issues
+
+
+def _legacy_model_route(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == LEGACY_MODEL_ROUTE_FIELDS
 
 
 def _canonical_flow_issues(
@@ -423,14 +543,56 @@ def _assignment_model_route(
     route: dict[str, Any],
     executor: dict[str, Any],
     lens_ids: list[str],
+    *,
+    assignment_id: str,
+    kind: str,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     host_id = route["model_route"]["host"]
+    if not isinstance(kind, str):
+        raise MaestroError(
+            "MODEL_STAGE_UNKNOWN",
+            "Assignment kind must be a string with an explicit model stage policy.",
+        )
+    stage_kind = {
+        "implementation": "implementation",
+        "review": "semantic-review",
+        "research": "research",
+        "verification": (
+            "deterministic-verification"
+            if route["model_route"]["task_class"]
+            == "deterministic-verification"
+            else "semantic-verification"
+        ),
+    }.get(kind)
+    if stage_kind is None:
+        raise MaestroError(
+            "MODEL_STAGE_UNKNOWN",
+            f"Assignment kind {kind!r} has no model stage policy.",
+        )
+    overlays = route.get("model_policy_overlays")
+    authority = (
+        overlays[0].get("authority")
+        if isinstance(overlays, list)
+        and overlays
+        and all(
+            isinstance(item, dict)
+            and item.get("authority") == overlays[0].get("authority")
+            for item in overlays
+        )
+        else None
+    )
     return _model_route(
         route["goal"],
         route["risk"],
         lens_ids,
         executor,
         host_id,
+        execution_unit_id=assignment_id,
+        stage_kind=stage_kind,
+        model_policy_overlays=overlays,
+        model_policy_authority=authority,
+        repo_path=repo_path,
     )
 
 
@@ -445,8 +607,17 @@ def _assignment(
     depends_on: list[str],
     read_only: bool,
     mutation_owner: bool,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     executor = executors[executor_id]
+    model_route = _assignment_model_route(
+        route,
+        executor,
+        lens_ids,
+        assignment_id=assignment_id,
+        kind=kind,
+        repo_path=repo_path,
+    )
     assignment = {
         "assignment_id": assignment_id,
         "kind": kind,
@@ -454,11 +625,18 @@ def _assignment(
         "lens_ids": lens_ids,
         "depends_on": depends_on,
         "input_packets": list(executor["accepts"]),
-        "output_packet": executor["returns"][0],
+        "output_packet": (
+            "TerminalPacket"
+            if (
+                kind == "verification"
+                and model_route["execution_kind"] == "deterministic"
+            )
+            else executor["returns"][0]
+        ),
         "read_only": read_only,
         "mutation_owner": mutation_owner,
         "allowed_side_effects": [] if read_only else ["repository_write"],
-        "model_route": _assignment_model_route(route, executor, lens_ids),
+        "model_route": model_route,
         "may_spawn": False,
         "max_children": 0,
         "max_rounds": 1,
@@ -477,6 +655,8 @@ def _assignment(
 def _review_assignments(
     route: dict[str, Any],
     executors: dict[str, dict[str, Any]],
+    *,
+    repo_path: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     lens_ids = list(route["selected_lenses"])
     if route["binding"]["fresh_context_per_lens"] and len(lens_ids) > 1:
@@ -491,6 +671,7 @@ def _review_assignments(
                 depends_on=[],
                 read_only=True,
                 mutation_owner=False,
+                repo_path=repo_path,
             )
             for lens_id in lens_ids
         ]
@@ -505,6 +686,7 @@ def _review_assignments(
             depends_on=[],
             read_only=True,
             mutation_owner=False,
+            repo_path=repo_path,
         )
     ]
 
@@ -516,6 +698,7 @@ def compile_route_v2(
     prior_route_plan: dict[str, Any] | None = None,
     research_evidence: dict[str, Any] | None = None,
     repo_path: str | Path | None = None,
+    coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Normalize a v1 route into a bounded, host-executed Assignment DAG."""
 
@@ -575,12 +758,17 @@ def compile_route_v2(
                 depends_on=[],
                 read_only=True,
                 mutation_owner=False,
+                repo_path=repo_path,
             )
         )
     elif intent == "implementation":
         review_ids: list[str] = []
         if bound_executor == "lens-reviewer":
-            reviews = _review_assignments(route_context, executors)
+            reviews = _review_assignments(
+                route_context,
+                executors,
+                repo_path=repo_path,
+            )
             assignments.extend(reviews)
             review_ids = [item["assignment_id"] for item in reviews]
 
@@ -600,6 +788,7 @@ def compile_route_v2(
                 depends_on=review_ids,
                 read_only=False,
                 mutation_owner=True,
+                repo_path=repo_path,
             )
         )
         assignments.append(
@@ -613,6 +802,7 @@ def compile_route_v2(
                 depends_on=["implementation"],
                 read_only=True,
                 mutation_owner=False,
+                repo_path=repo_path,
             )
         )
     elif intent == "research":
@@ -627,10 +817,17 @@ def compile_route_v2(
                 depends_on=[],
                 read_only=True,
                 mutation_owner=False,
+                repo_path=repo_path,
             )
         )
     elif bound_executor == "lens-reviewer":
-        assignments.extend(_review_assignments(route_context, executors))
+        assignments.extend(
+            _review_assignments(
+                route_context,
+                executors,
+                repo_path=repo_path,
+            )
+        )
     else:
         assignments.append(
             _assignment(
@@ -643,6 +840,7 @@ def compile_route_v2(
                 depends_on=[],
                 read_only=True,
                 mutation_owner=False,
+                repo_path=repo_path,
             )
         )
 
@@ -709,6 +907,18 @@ def compile_route_v2(
     plan["entry_assignments"] = entry_assignments
     plan["terminal_assignments"] = terminal_assignments
     plan["mutation_owner_assignment_id"] = mutation_owner
+    if product_design_assurance_active(route_context):
+        plan["design_assurance"] = build_assurance_requirement(
+            route_context["expertise"]["route_hints"][
+                "design_assurance_mode"
+            ]
+        )
+    if coverage is not None:
+        plan["coverage_binding"] = build_coverage_binding(
+            coverage,
+            goal=route_v1["goal"],
+            repo_path=repo_path,
+        )
     plan["plan_id"] = _plan_id(plan)
 
     require_reroute_lineage(
@@ -733,7 +943,23 @@ def route_goal_v2(
     repo_path: str | Path | None = None,
     route_hints: dict[str, Any] | None = None,
     prior_route_plan: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    authority = None
+    if model_policy_overlays:
+        if repo_path is None or any(
+            not validate_model_policy_overlay_authority(
+                overlay,
+                repo_path=repo_path,
+            )
+            for overlay in model_policy_overlays
+        ):
+            raise MaestroError(
+                "MODEL_POLICY_OVERLAY_AUTHORITY_INVALID",
+                "Route overlays must match the exact current project, checkout, Registry, and policy.",
+            )
+        authority = current_model_policy_authority(repo_path)
     route = route_goal(
         goal,
         risk,
@@ -743,6 +969,9 @@ def route_goal_v2(
         host_id,
         intent,
         decision_authorized,
+        model_policy_overlays,
+        authority,
+        repo_path,
     )
     return compile_route_v2(
         route,
@@ -750,6 +979,7 @@ def route_goal_v2(
         prior_route_plan=prior_route_plan,
         research_evidence=research_evidence,
         repo_path=repo_path,
+        coverage=coverage,
     )
 
 
@@ -822,6 +1052,47 @@ def validate_route_v2(
                 "goal must be a non-empty string.",
             )
         )
+    coverage_binding = plan.get("coverage_binding")
+    if coverage_binding is not None:
+        if (
+            not isinstance(coverage_binding, dict)
+            or set(coverage_binding)
+            != {
+                "schema_version",
+                "coverage_id",
+                "goal_digest",
+                "required_for_mutation",
+            }
+            or coverage_binding.get("schema_version")
+            != "maestro_task_coverage_binding_v1"
+            or not isinstance(coverage_binding.get("coverage_id"), str)
+            or DIGEST_PATTERN.fullmatch(
+                coverage_binding["coverage_id"]
+            )
+            is None
+            or coverage_binding.get("goal_digest")
+            != sha256_text(plan.get("goal", ""))
+            or coverage_binding.get("required_for_mutation") is not True
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_COVERAGE_BINDING_INVALID",
+                    "coverage_binding",
+                    "Coverage binding must carry the complete Coverage and goal digests.",
+                )
+            )
+
+    diagnostics.extend(
+        _diagnostic(
+            item["code"],
+            item["path"],
+            item["message"],
+        )
+        for item in validate_assurance_requirement(
+            plan.get("design_assurance"),
+            plan=plan,
+        )
+    )
 
     scalar_checks = {
         "intent": {"implementation", "review", "research"},
@@ -1043,7 +1314,10 @@ def validate_route_v2(
                 "ResearchBundle input requires a selected Expertise research gate.",
             )
         )
-    expected_source = _reconstruct_source_route(plan)
+    expected_source = _reconstruct_source_route(
+        plan,
+        repo_path=repo_path,
+    )
     preserved_source = _source_route_projection(plan)
     if expected_source is None:
         diagnostics.append(
@@ -1054,7 +1328,12 @@ def validate_route_v2(
             )
         )
     else:
+        legacy_source_route = _legacy_model_route(
+            preserved_source.get("model_route")
+        )
         for field in sorted(set(expected_source) | set(preserved_source)):
+            if field == "model_route" and legacy_source_route:
+                continue
             if expected_source.get(field) != preserved_source.get(field):
                 diagnostics.append(
                     _diagnostic(
@@ -1128,10 +1407,40 @@ def validate_route_v2(
                     ),
                     top_executor,
                     plan_host,
+                    execution_unit_id="route",
+                    stage_kind=(
+                        "deterministic-verification"
+                        if is_deterministic_command(plan["goal"])
+                        else default_stage_kind(
+                            executor_id=top_executor["executor_id"],
+                            goal=plan["goal"],
+                        )
+                    ),
+                    model_policy_overlays=plan.get(
+                        "model_policy_overlays",
+                    ),
+                    model_policy_authority=(
+                        plan["model_policy_overlays"][0].get(
+                            "authority"
+                        )
+                        if isinstance(
+                            plan.get("model_policy_overlays"),
+                            list,
+                        )
+                        and plan["model_policy_overlays"]
+                        else None
+                    ),
+                    repo_path=repo_path,
                 )
             except MaestroError:
                 expected_top_route = None
-            if expected_top_route is None or top_model_route != expected_top_route:
+            if (
+                expected_top_route is None
+                or (
+                    not _legacy_model_route(top_model_route)
+                    and top_model_route != expected_top_route
+                )
+            ):
                 diagnostics.append(
                     _diagnostic(
                         "ADAG_MODEL_ROUTE_MISMATCH",
@@ -1466,6 +1775,34 @@ def validate_route_v2(
                         [executor_id],
                     )
                 )
+            if _legacy_model_route(model_route):
+                selected_class = model_route.get("selected_class")
+                try:
+                    host_profile = load_host_profile(plan_host)
+                except MaestroError:
+                    host_profile = None
+                expected_model = (
+                    None
+                    if selected_class is None or host_profile is None
+                    else host_profile["classes"][selected_class]["model"]
+                )
+                if (
+                    host_profile is None
+                    or model_route.get("selected_model")
+                    != expected_model
+                    or (
+                        selected_class is None
+                        and model_route.get("reasoning_effort") is not None
+                    )
+                ):
+                    diagnostics.append(
+                        _diagnostic(
+                            "ADAG_MODEL_ROUTE_MISMATCH",
+                            f"{path}.model_route",
+                            "Legacy model_route must preserve the Host model mapping.",
+                            [executor_id],
+                        )
+                    )
             if (
                 isinstance(plan.get("goal"), str)
                 and isinstance(plan.get("risk"), str)
@@ -1478,10 +1815,19 @@ def validate_route_v2(
                         plan,
                         executor,
                         assignment_lenses,
+                        assignment_id=assignment_id,
+                        kind=assignment.get("kind", ""),
+                        repo_path=repo_path,
                     )
                 except MaestroError:
                     expected_model_route = None
-                if expected_model_route is None or model_route != expected_model_route:
+                if (
+                    expected_model_route is None
+                    or (
+                        not _legacy_model_route(model_route)
+                        and model_route != expected_model_route
+                    )
+                ):
                     diagnostics.append(
                         _diagnostic(
                             "ADAG_MODEL_ROUTE_MISMATCH",
@@ -1934,6 +2280,69 @@ def validate_route_v2(
             )
         )
 
+    overlays = plan.get("model_policy_overlays")
+    if overlays is not None:
+        overlay_valid = (
+            isinstance(overlays, list)
+            and 1 <= len(overlays) <= 16
+            and len(
+                {
+                    item.get("overlay_id")
+                    for item in overlays
+                    if isinstance(item, dict)
+                }
+            )
+            == len(overlays)
+            and all(
+                validate_model_policy_overlay(item)
+                for item in overlays
+            )
+            and repo_path is not None
+            and all(
+                validate_model_policy_overlay_authority(
+                    item,
+                    repo_path=repo_path,
+                )
+                for item in overlays
+            )
+        )
+        if not overlay_valid:
+            diagnostics.append(
+                _diagnostic(
+                    "ADAG_MODEL_POLICY_OVERLAY_INVALID",
+                    "model_policy_overlays",
+                    "Model-policy overlays must be unique accepted one-tier artifacts.",
+                )
+            )
+        else:
+            routed_values = [
+                plan.get("model_route"),
+                *[
+                    item.get("model_route")
+                    for item in plan.get("assignments", [])
+                    if isinstance(item, dict)
+                ],
+            ]
+            unused = [
+                item["overlay_id"]
+                for item in overlays
+                if not any(
+                    isinstance(route, dict)
+                    and item["overlay_id"]
+                    in str(route.get("selection_reason", ""))
+                    for route in routed_values
+                )
+            ]
+            if unused:
+                diagnostics.append(
+                    _diagnostic(
+                        "ADAG_MODEL_POLICY_OVERLAY_UNUSED",
+                        "model_policy_overlays",
+                        "Every supplied overlay must match at least one newly typed route.",
+                        sorted(unused),
+                    )
+                )
+
     if plan.get("registry_digest") != registry_digest():
         diagnostics.append(
             _diagnostic(
@@ -1951,11 +2360,25 @@ def validate_route_v2(
             item["message"],
         )
     )
+    legacy_routes_present = (
+        _legacy_model_route(plan.get("model_route"))
+        or any(
+            _legacy_model_route(assignment.get("model_route"))
+            for assignment in (
+                plan.get("assignments")
+                if isinstance(plan.get("assignments"), list)
+                else []
+            )
+            if isinstance(assignment, dict)
+        )
+    )
     return {
         "schema_version": "maestro_route_validation_v1",
         "status": "PASS" if not diagnostics else "FAIL",
         "execution_status": (
-            "RESEARCH_REQUIRED"
+            "UPGRADE_REQUIRED"
+            if not diagnostics and legacy_routes_present
+            else "RESEARCH_REQUIRED"
             if (
                 not diagnostics
                 and (

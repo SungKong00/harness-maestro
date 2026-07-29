@@ -4,13 +4,13 @@
   "classes": {
     "economy": {
       "model": "gpt-5.6-luna",
-      "reasoning_effort": "low",
-      "fallback": "gpt-5.6-terra with low reasoning"
+      "reasoning_effort": "high",
+      "fallback": "gpt-5.6-terra with medium reasoning"
     },
     "balanced": {
       "model": "gpt-5.6-terra",
-      "reasoning_effort": "medium",
-      "fallback": "gpt-5.6-sol with medium reasoning"
+      "reasoning_effort": "high",
+      "fallback": "gpt-5.6-sol with high reasoning"
     },
     "frontier": {
       "model": "gpt-5.6-sol",

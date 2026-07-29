@@ -21,6 +21,10 @@
     "verifier_result",
     "command_artifact_ref"
   ],
+  "dependentRequired": {
+    "completion_policy": ["completion_closure", "execution_measurements"],
+    "completion_closure": ["completion_policy"]
+  },
   "properties": {
     "kind": {
       "enum": [
@@ -242,6 +246,15 @@
     "execution_binding": {
       "$ref": "#/$defs/executionBinding"
     },
+    "execution_measurements": {
+      "$ref": "#/$defs/executionMeasurements"
+    },
+    "completion_policy": {
+      "$ref": "#/$defs/completionPolicy"
+    },
+    "completion_closure": {
+      "$ref": "#/$defs/completionClosure"
+    },
     "project_convention_action": {
       "enum": [
         "none",
@@ -353,6 +366,543 @@
     }
   },
   "$defs": {
+    "completionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "policy_id",
+        "mode",
+        "required_work_schema_version",
+        "require_assignment_terminal_work",
+        "require_plan_dependency_paths",
+        "require_single_final_synthesis"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_completion_policy_v1"
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "mode": {
+          "const": "managed_execution_graph"
+        },
+        "required_work_schema_version": {
+          "const": "maestro_work_span_v2"
+        },
+        "require_assignment_terminal_work": {
+          "const": true
+        },
+        "require_plan_dependency_paths": {
+          "const": true
+        },
+        "require_single_final_synthesis": {
+          "const": true
+        }
+      }
+    },
+    "completionClosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "closure_digest",
+        "policy",
+        "assignment_bindings",
+        "plan_dependency_paths",
+        "final_synthesis",
+        "pre_seal_ledger",
+        "receipt_intent_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_completion_closure_v1"
+        },
+        "closure_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policy": {
+          "$ref": "#/$defs/completionPolicy"
+        },
+        "assignment_bindings": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "assignment_id",
+              "stage_status",
+              "terminal_work_ids"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "stage_status": {
+                "enum": [
+                  "completed",
+                  "failed",
+                  "blocked",
+                  "interrupted"
+                ]
+              },
+              "terminal_work_ids": {
+                "type": "array",
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                }
+              }
+            }
+          }
+        },
+        "plan_dependency_paths": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "upstream_assignment_id",
+              "upstream_terminal_work_id",
+              "downstream_assignment_id",
+              "work_path"
+            ],
+            "properties": {
+              "upstream_assignment_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "upstream_terminal_work_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "downstream_assignment_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "work_path": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                }
+              }
+            }
+          }
+        },
+        "final_synthesis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "work_id",
+            "joined_work_ids",
+            "required_terminal_work_ids",
+            "consumption_paths"
+          ],
+          "properties": {
+            "work_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "joined_work_ids": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "required_terminal_work_ids": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "consumption_paths": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "terminal_work_id",
+                  "work_path"
+                ],
+                "properties": {
+                  "terminal_work_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96
+                  },
+                  "work_path": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 64,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 96
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "pre_seal_ledger": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "revision",
+            "event_count",
+            "digest"
+          ],
+          "properties": {
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "event_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "receipt_intent_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "executionMeasurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "ledger_revision",
+        "ledger_event_count",
+        "ledger_digest",
+        "model",
+        "reasoning_effort",
+        "tokens",
+        "duration",
+        "producer_coverage"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_execution_measurements_v1"
+        },
+        "ledger_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "ledger_event_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "ledger_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "model": {
+          "$ref": "#/$defs/modelMeasurementSummary"
+        },
+        "reasoning_effort": {
+          "$ref": "#/$defs/reasoningMeasurementSummary"
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokenMeasurementSummary"
+        },
+        "duration": {
+          "$ref": "#/$defs/durationMeasurementSummary"
+        },
+        "producer_coverage": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/producerMeasurementCoverage"
+          }
+        }
+      }
+    },
+    "modelMeasurementSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "applied", "coverage", "missing_reason"],
+      "properties": {
+        "requested": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "applied": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "coverage": {
+          "enum": ["complete", "request_only", "unavailable"]
+        },
+        "missing_reason": {
+          "$ref": "#/$defs/measurementMissingReason"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"coverage": {"const": "complete"}}},
+          "then": {
+            "properties": {
+              "applied": {"minItems": 1},
+              "missing_reason": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"coverage": {"const": "request_only"}}},
+          "then": {
+            "properties": {
+              "requested": {"minItems": 1},
+              "applied": {"maxItems": 0},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"coverage": {"const": "unavailable"}}},
+          "then": {
+            "properties": {
+              "requested": {"maxItems": 0},
+              "applied": {"maxItems": 0},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        }
+      ]
+    },
+    "reasoningMeasurementSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "applied", "coverage", "missing_reason"],
+      "properties": {
+        "requested": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 40}
+        },
+        "applied": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "coverage": {
+          "enum": ["request_only", "unavailable"]
+        },
+        "missing_reason": {
+          "$ref": "#/$defs/measurementMissingReason"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"coverage": {"const": "request_only"}}},
+          "then": {
+            "properties": {
+              "requested": {"minItems": 1},
+              "applied": {"maxItems": 0},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"coverage": {"const": "unavailable"}}},
+          "then": {
+            "properties": {
+              "requested": {"maxItems": 0},
+              "applied": {"maxItems": 0},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        }
+      ]
+    },
+    "tokenMeasurementSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "coverage",
+        "scope",
+        "attribution",
+        "source",
+        "missing_reason"
+      ],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          ]
+        },
+        "coverage": {"enum": ["complete", "unavailable"]},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 40},
+        "attribution": {"type": "string", "minLength": 1, "maxLength": 40},
+        "source": {"type": "string", "minLength": 1, "maxLength": 80},
+        "missing_reason": {
+          "$ref": "#/$defs/measurementMissingReason"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"value": {"type": "null"}}},
+          "then": {
+            "properties": {
+              "coverage": {"const": "unavailable"},
+              "attribution": {"const": "unavailable"},
+              "source": {"const": "unavailable"},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"value": {"type": "object"}}},
+          "then": {
+            "properties": {
+              "coverage": {"const": "complete"},
+              "scope": {"not": {"const": "unavailable"}},
+              "attribution": {"const": "direct"},
+              "source": {"not": {"const": "unavailable"}},
+              "missing_reason": {"type": "null"}
+            }
+          }
+        }
+      ]
+    },
+    "durationMeasurementSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value_ms",
+        "coverage",
+        "scope",
+        "attribution",
+        "missing_reason"
+      ],
+      "properties": {
+        "value_ms": {"type": ["number", "null"], "minimum": 0},
+        "coverage": {"enum": ["complete", "collector_clock", "unavailable"]},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 40},
+        "attribution": {"type": "string", "minLength": 1, "maxLength": 40},
+        "missing_reason": {
+          "$ref": "#/$defs/measurementMissingReason"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"value_ms": {"type": "null"}}},
+          "then": {
+            "properties": {
+              "coverage": {"const": "unavailable"},
+              "attribution": {"const": "unavailable"},
+              "missing_reason": {"not": {"type": "null"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"value_ms": {"type": "number"}}},
+          "then": {
+            "properties": {
+              "coverage": {"enum": ["complete", "collector_clock"]},
+              "scope": {"not": {"const": "unavailable"}},
+              "attribution": {"const": "direct"},
+              "missing_reason": {"type": "null"}
+            }
+          }
+        }
+      ]
+    },
+    "producerMeasurementCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "interface",
+        "capability",
+        "event_coverage",
+        "model",
+        "reasoning_effort",
+        "tokens",
+        "duration"
+      ],
+      "properties": {
+        "event_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "event_type": {"type": "string", "minLength": 1},
+        "interface": {"type": "string", "minLength": 1},
+        "capability": {"type": "string", "minLength": 1},
+        "event_coverage": {"type": "string", "minLength": 1},
+        "model": {"$ref": "#/$defs/measurementCoverage"},
+        "reasoning_effort": {"$ref": "#/$defs/measurementCoverage"},
+        "tokens": {"$ref": "#/$defs/measurementCoverage"},
+        "duration": {"$ref": "#/$defs/measurementCoverage"}
+      }
+    },
+    "measurementCoverage": {
+      "enum": [
+        "complete",
+        "partial",
+        "request_only",
+        "collector_clock",
+        "unavailable"
+      ]
+    },
+    "measurementMissingReason": {
+      "enum": [
+        null,
+        "producer_did_not_expose",
+        "request_metadata_only",
+        "partial_stream",
+        "work_running",
+        "not_applicable",
+        "legacy_unmeasured"
+      ]
+    },
     "executionBinding": {
       "oneOf": [
         {
@@ -658,6 +1208,7 @@
         "model_event_evidence": {
           "enum": [
             "unavailable",
+            "request_only",
             "complete"
           ]
         },
@@ -695,6 +1246,10 @@
         "tokens": {
           "$ref": "#/$defs/tokenSummary"
         },
+        "duration_ms": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
         "observed_at": {
           "type": "string",
           "format": "date-time"
@@ -730,6 +1285,16 @@
               "type": "object"
             }
           }
+        },
+        {
+          "required": [
+            "duration_ms"
+          ],
+          "properties": {
+            "duration_ms": {
+              "type": "number"
+            }
+          }
         }
       ],
       "allOf": [
@@ -743,6 +1308,28 @@
           },
           "then": {
             "properties": {
+              "applied_model": {
+                "type": "null"
+              },
+              "reroutes": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "model_event_evidence": {
+                "const": "request_only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_model": {
+                "type": "string"
+              },
               "applied_model": {
                 "type": "null"
               },
@@ -940,6 +1527,64 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "execution_contract": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "execution_plan_id",
+                "decision_plan_id",
+                "decision_bundle_digest"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "direct-route"
+                },
+                "execution_plan_id": {
+                  "type": "null"
+                },
+                "decision_plan_id": {
+                  "type": "null"
+                },
+                "decision_bundle_digest": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "execution_plan_id",
+                "decision_plan_id",
+                "decision_bundle_digest"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "decision-enactment"
+                },
+                "execution_plan_id": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "decision_plan_id": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "decision_bundle_digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "execution_receipts_required": {
+          "const": true
+        },
         "intent": {
           "type": "string",
           "minLength": 1
@@ -974,6 +1619,31 @@
         },
         "expertise_routing": {
           "$ref": "#/$defs/expertiseRoutingSummary"
+        },
+        "route_correction": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "prior_plan_id",
+                "prior_source_route_digest"
+              ],
+              "properties": {
+                "prior_plan_id": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "prior_source_route_digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "assignments": {
           "type": "array",
@@ -1022,13 +1692,138 @@
               "read_only": {
                 "type": "boolean"
               },
-              "planned_model": {
+              "may_spawn": {
+                "type": "boolean"
+              },
+              "max_children": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 63
+              },
+              "model_route_id": {
                 "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "execution_unit_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "task_class": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "execution_unit": {
+                "$ref": "execution-unit.schema.json#/$defs/executionUnit"
+              },
+              "stage_kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "execution_kind": {
+                "enum": [
+                  "model",
+                  "deterministic"
+                ]
+              },
+              "quality_profile": {
+                "const": "pro-quality"
+              },
+              "selected_class": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quality_floor": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "acceptable_routes",
+                  "failure_action"
+                ],
+                "properties": {
+                  "acceptable_routes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "selected_class",
+                        "reasoning_effort"
+                      ],
+                      "properties": {
+                        "selected_class": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reasoning_effort": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "failure_action": {
+                    "const": "reject-or-reroute"
+                  }
+                }
+              },
+              "fallback_route": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "selected_class",
+                      "selected_model",
+                      "reasoning_effort",
+                      "trigger"
+                    ],
+                    "properties": {
+                      "selected_class": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "selected_model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "reasoning_effort": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "trigger": {
+                        "const": "selected-model-unavailable"
+                      }
+                    }
+                  }
+                ]
+              },
+              "planned_model": {
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "minLength": 1,
                 "maxLength": 128
               },
               "reasoning_effort": {
                 "enum": [
+                  null,
                   "low",
                   "medium",
                   "high",
@@ -2044,9 +2839,25 @@
           "minLength": 1,
           "maxLength": 40
         },
+        "model_route_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "execution_unit_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "verification_assessment": {
+          "$ref": "model-feedback.schema.json#/$defs/verificationAssessment"
+        },
+        "execution_unit_receipt": {
+          "$ref": "execution-unit.schema.json#/$defs/executionUnitReceipt"
+        },
         "model_evidence": {
           "enum": [
             "unavailable",
+            "request_only",
             "complete"
           ]
         },
@@ -2119,6 +2930,25 @@
             "properties": {
               "model_evidence": {
                 "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actual_model": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "model_evidence"
+            ],
+            "properties": {
+              "model_evidence": {
+                "const": "request_only"
               }
             }
           },

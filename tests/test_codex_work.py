@@ -124,6 +124,41 @@ class CodexCollaborationTrackerTests(unittest.TestCase):
         self.assertNotIn("SECRET-AGENT-MESSAGE", serialized)
         self.assertNotIn("child-1", serialized)
 
+    def test_forbidden_spawn_is_rejected_before_tracker_state_changes(
+        self,
+    ) -> None:
+        tracker = CodexCollaborationTracker(
+            root_work_id="root",
+            root_thread_id="parent-thread",
+            root_turn_id="parent-turn",
+            assignment_id="verification",
+            read_only=True,
+            may_spawn=False,
+            max_children=0,
+        )
+
+        with self.assertRaises(MaestroError) as raised:
+            tracker.consume(
+                method="item/started",
+                params=collab_params(
+                    item_id="spawn-forbidden",
+                    tool="spawnAgent",
+                    status="inProgress",
+                    targets=["child-1"],
+                    states={"child-1": "running"},
+                    timestamp=1_785_217_057_000,
+                ),
+            )
+
+        self.assertEqual(
+            "CODEX_WORK_DELEGATION_FORBIDDEN",
+            raised.exception.code,
+        )
+        self.assertEqual(0, tracker.observed_work_count)
+        self.assertEqual(0, tracker.decision_work_count)
+        self.assertEqual([], tracker.running_work_ids)
+        self.assertFalse(tracker.root_terminal)
+
     def test_failed_spawn_is_terminal_and_replay_is_idempotent(self) -> None:
         tracker = self._tracker()
         params = collab_params(

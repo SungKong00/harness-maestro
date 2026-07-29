@@ -7,11 +7,20 @@ import subprocess
 from pathlib import Path
 from typing import Any, Iterable
 
+from .authorization import resolve_authorized_write_roots
 from .errors import MaestroError
-from .expertise import select_expertise
-from .planning import route_goal_v2
+from .expertise import load_expertise_catalog, select_expertise
+from .expertise_routing import require_route_hints
+from .planning import (
+    build_coverage_binding,
+    route_goal_v2,
+    validate_route_v2,
+)
+from .model_policy import LEGACY_MODEL_ROUTE_FIELDS
 from .research import require_completed_research_bundle
 from .registry import (
+    _model_route,
+    load_registry,
     registry_digest,
     resolve_request_contract,
     route_goal,
@@ -27,6 +36,29 @@ DECISION_PLAN_VERSION = "maestro_decision_plan_v1"
 FINDING_PACKET_VERSION = "maestro_specialist_finding_packet_v1"
 DECISION_BUNDLE_VERSION = "maestro_decision_bundle_v1"
 EXECUTION_PLAN_VERSION = "maestro_execution_plan_v1"
+EXECUTION_PLAN_FIELDS = {
+    "schema_version",
+    "execution_plan_id",
+    "decision_plan_id",
+    "decision_bundle_digest",
+    "decision_evidence",
+    "execution_authorization",
+    "route_plan",
+    "writes_performed",
+}
+EXECUTION_DECISION_EVIDENCE_FIELDS = {
+    "decision_plan",
+    "decision_bundle",
+    "specialist_packets",
+}
+EXECUTION_AUTHORIZATION_FIELDS = {
+    "decision_bundle_digest",
+    "authorization_source",
+    "allowed_side_effects",
+    "allowed_paths",
+    "prohibited_changes",
+    "status",
+}
 MAX_DECISION_ASSIGNMENTS = 5
 DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -61,7 +93,9 @@ DECISION_PLAN_FIELDS = {
     "deliberation",
     "warnings",
     "writes_performed",
+    "coverage_binding",
 }
+DECISION_PLAN_OPTIONAL_FIELDS = {"coverage_binding"}
 DECISION_ASSIGNMENT_FIELDS = {
     "assignment_id",
     "kind",
@@ -88,6 +122,77 @@ def _digest_payload(value: dict[str, Any], digest_field: str) -> str:
 
 def _error(code: str, path: str, message: str) -> dict[str, str]:
     return {"code": code, "path": path, "message": message}
+
+
+def _route_expertise_binding(route_plan: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical expertise view used by build and validation."""
+
+    expertise = route_plan.get("expertise")
+    if isinstance(expertise, dict):
+        return expertise
+    return {
+        "selected_pack_ids": [],
+        "selected_guide_ids": [],
+        "pack_definition_digests": {},
+        "research_requirement": {
+            "mode": "reuse",
+            "gate": "not-required",
+            "reasons": [],
+            "evidence_digest": None,
+        },
+    }
+
+
+def _decision_expertise_preflight_gaps(
+    coverage: dict[str, Any],
+    expertise: dict[str, Any],
+    *,
+    repo_path: str | Path,
+) -> list[str]:
+    """Return material Guide allocations missing from the staged decision."""
+
+    selected_pack_ids = set(expertise.get("selected_pack_ids", []))
+    selected_guide_ids = set(expertise.get("selected_guide_ids", []))
+    catalog = load_expertise_catalog(
+        repo_path,
+        include_candidates=True,
+    )
+    guide_owners: dict[str, set[str]] = {}
+    for pack in catalog:
+        if pack.get("status") not in {"pilot", "active"}:
+            continue
+        pack_id = pack["expertise_pack_id"]
+        for guide in pack["guides"]:
+            guide_owners.setdefault(guide["guide_id"], set()).add(pack_id)
+
+    missing: list[str] = []
+    for item in coverage.get("items", []):
+        if (
+            not isinstance(item, dict)
+            or item.get("materiality") not in {"blocking", "important"}
+        ):
+            continue
+        for allocation in item.get("allocations", []):
+            if (
+                not isinstance(allocation, dict)
+                or allocation.get("kind") != "expertise-guide"
+                or not isinstance(allocation.get("target_ref"), str)
+            ):
+                continue
+            target_ref = allocation["target_ref"]
+            target = target_ref.removeprefix("guide:")
+            if "/" in target:
+                pack_id, guide_id = target.split("/", 1)
+            else:
+                guide_id = target
+                owners = guide_owners.get(guide_id, set())
+                pack_id = next(iter(owners)) if len(owners) == 1 else ""
+            if (
+                pack_id not in selected_pack_ids
+                or guide_id not in selected_guide_ids
+            ):
+                missing.append(f"{item.get('item_id')}:{target_ref}")
+    return sorted(set(missing))
 
 
 def _git(repo: Path, *arguments: str) -> bytes:
@@ -616,7 +721,7 @@ def _lens_specialists(
     lens_cards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     specialists: list[dict[str, Any]] = []
-    for lens in lens_cards[:2]:
+    for lens in lens_cards:
         specialists.append(
             _specialist(
                 f"{lens['lens_id']}-review",
@@ -697,12 +802,64 @@ def _decision_assignment(
     }
 
 
+def _decision_model_route(
+    *,
+    goal: str,
+    risk: str,
+    host_id: str,
+    assignment_id: str,
+    kind: str,
+) -> dict[str, Any]:
+    stage_kind = {
+        "specialist-review": (
+            "technical-feasibility"
+            if assignment_id == "technical-feasibility-review"
+            else "specialist-review"
+        ),
+        "synthesis": (
+            "final-synthesis"
+            if assignment_id == "final-synthesis"
+            else "intermediate-synthesis"
+        ),
+    }.get(kind)
+    if stage_kind is None:
+        raise MaestroError(
+            "MODEL_STAGE_UNKNOWN",
+            f"Decision assignment kind {kind!r} has no model stage policy.",
+        )
+    executor = next(
+        item
+        for item in load_registry()["executors"]
+        if item["executor_id"] == "lens-reviewer"
+    )
+    return _model_route(
+        goal,
+        risk,
+        [],
+        executor,
+        host_id,
+        execution_unit_id=assignment_id,
+        stage_kind=stage_kind,
+    )
+
+
 def _decision_assignments(
     specialists: list[dict[str, Any]],
     *,
     product_design: bool,
-    model_route: dict[str, Any],
+    goal: str,
+    risk: str,
+    host_id: str,
 ) -> list[dict[str, Any]]:
+    def model_route(assignment_id: str, kind: str) -> dict[str, Any]:
+        return _decision_model_route(
+            goal=goal,
+            risk=risk,
+            host_id=host_id,
+            assignment_id=assignment_id,
+            kind=kind,
+        )
+
     if product_design:
         initial = [
             _decision_assignment(
@@ -716,7 +873,10 @@ def _decision_assignments(
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
-                model_route=model_route,
+                model_route=model_route(
+                    "visual-design-review",
+                    "specialist-review",
+                ),
             ),
             _decision_assignment(
                 "ux-product-review",
@@ -729,7 +889,10 @@ def _decision_assignments(
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
-                model_route=model_route,
+                model_route=model_route(
+                    "ux-product-review",
+                    "specialist-review",
+                ),
             ),
         ]
     else:
@@ -745,7 +908,10 @@ def _decision_assignments(
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
-                model_route=model_route,
+                model_route=model_route(
+                    f"{specialist['specialist_id']}-assignment",
+                    "specialist-review",
+                ),
             )
             for specialist in specialists
             if specialist["specialist_id"] != "technical-feasibility"
@@ -762,7 +928,7 @@ def _decision_assignments(
             input_packets=["SpecialistFindingPacket"],
             output_packet="SynthesisPacket",
             conclusion_visibility="dependencies-only",
-            model_route=model_route,
+            model_route=model_route("synthesis-1", "synthesis"),
         ),
         _decision_assignment(
             "technical-feasibility-review",
@@ -776,7 +942,10 @@ def _decision_assignments(
             ],
             output_packet="SpecialistFindingPacket",
             conclusion_visibility="synthesis-only",
-            model_route=model_route,
+            model_route=model_route(
+                "technical-feasibility-review",
+                "specialist-review",
+            ),
         ),
         _decision_assignment(
             "final-synthesis",
@@ -789,7 +958,7 @@ def _decision_assignments(
             ],
             output_packet="DecisionBundle",
             conclusion_visibility="dependencies-only",
-            model_route=model_route,
+            model_route=model_route("final-synthesis", "synthesis"),
         ),
     ]
 
@@ -802,6 +971,9 @@ def build_decision_plan(
     host_id: str = "codex",
     intent: str = "implementation",
     research_evidence: dict[str, Any] | None = None,
+    route_hints: dict[str, Any] | None = None,
+    prior_route_plan: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a read-only specialist decision plan.
 
@@ -824,6 +996,38 @@ def build_decision_plan(
             ],
         }
 
+    normalized_route_hints = (
+        require_route_hints(route_hints)
+        if route_hints is not None
+        else None
+    )
+    if (
+        normalized_route_hints is not None
+        and normalized_route_hints["route_attempt"] == 2
+    ):
+        if not isinstance(prior_route_plan, dict):
+            raise MaestroError(
+                "EXPERTISE_REROUTE_LINEAGE_REQUIRED",
+                "A corrected decision route requires the exact prior route v2 plan.",
+            )
+        prior_validation = validate_route_v2(
+            prior_route_plan,
+            repo_path=repo_path,
+        )
+        if prior_validation["status"] != "PASS":
+            first = prior_validation["issues"][0]
+            raise MaestroError(first["code"], first["message"])
+        if (
+            normalized_route_hints["prior_plan_id"]
+            != prior_route_plan["plan_id"]
+            or normalized_route_hints["prior_source_route_digest"]
+            != prior_route_plan["source_route_digest"]
+        ):
+            raise MaestroError(
+                "EXPERTISE_REROUTE_LINEAGE_MISMATCH",
+                "Decision route hints do not match the supplied prior route plan.",
+            )
+
     expertise_intent = (
         "review"
         if request_contract["side_effect_policy"] == "forbidden"
@@ -832,6 +1036,7 @@ def build_decision_plan(
     expertise, _ = select_expertise(
         goal,
         intent=expertise_intent,
+        route_hints=normalized_route_hints,
         repo_path=repo_path,
     )
     if research_evidence is not None:
@@ -844,6 +1049,7 @@ def build_decision_plan(
         expertise, _ = select_expertise(
             goal,
             intent=expertise_intent,
+            route_hints=normalized_route_hints,
             research_evidence_digest=validation["artifact_digest"],
             repo_path=repo_path,
         )
@@ -853,6 +1059,30 @@ def build_decision_plan(
         host_id=host_id,
         intent="review",
     )
+    coverage_binding: dict[str, Any] | None = None
+    if coverage is not None:
+        coverage_binding = build_coverage_binding(
+            coverage,
+            goal=goal,
+            repo_path=repo_path,
+        )
+        preflight_gaps = _decision_expertise_preflight_gaps(
+            coverage,
+            expertise,
+            repo_path=repo_path,
+        )
+        if preflight_gaps:
+            raise MaestroError(
+                "DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED",
+                (
+                    "A staged decision cannot run before all material Coverage "
+                    "Guide judgments are available. The staged pre-specialist "
+                    "multi-Pack closure binding is not implemented; use the "
+                    "ordinary multi-Pack route only when direction is already "
+                    "settled. Missing allocations: "
+                    + ", ".join(preflight_gaps)
+                ),
+            )
     selected_pack_ids = expertise["selected_pack_ids"]
     selected_families = {
         *selected_pack_ids,
@@ -885,6 +1115,20 @@ def build_decision_plan(
             *_lens_specialists(review_route["lens_cards"]),
             _technical_specialist(),
         ]
+        review_specialist_ids = [
+            specialist["specialist_id"]
+            for specialist in specialists
+            if specialist["specialist_id"] != "technical-feasibility"
+        ]
+        if len(review_specialist_ids) > 2:
+            raise MaestroError(
+                "DECISION_COVERAGE_CAPACITY_EXCEEDED",
+                (
+                    "The decision plan selected more independent Lens reviews "
+                    "than the five-assignment execution contract can preserve: "
+                    f"{', '.join(review_specialist_ids)}. Nothing was truncated."
+                ),
+            )
     specialists = _bind_specialist_expertise(
         specialists,
         expertise["pack_cards"],
@@ -892,7 +1136,9 @@ def build_decision_plan(
     assignments = _decision_assignments(
         specialists,
         product_design=product_design,
-        model_route=review_route["model_route"],
+        goal=goal,
+        risk=risk,
+        host_id=host_id,
     )
     if len(assignments) > MAX_DECISION_ASSIGNMENTS:
         raise MaestroError(
@@ -935,6 +1181,11 @@ def build_decision_plan(
                 "pack_definition_digests"
             ],
             "research_requirement": expertise["research_requirement"],
+            **(
+                {"route_hints": copy.deepcopy(normalized_route_hints)}
+                if normalized_route_hints is not None
+                else {}
+            ),
         },
         "specialist_contracts": specialists,
         "assignments": assignments,
@@ -963,6 +1214,8 @@ def build_decision_plan(
         "warnings": warnings,
         "writes_performed": False,
     }
+    if coverage_binding is not None:
+        plan["coverage_binding"] = coverage_binding
     plan["plan_id"] = _digest_payload(plan, "plan_id")
     result = validate_decision_plan(plan)
     if result["status"] != "PASS":
@@ -1246,7 +1499,11 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
             _error("DECISION_PLAN_INVALID", "$", "Decision plan must be an object.")
         )
     else:
-        if set(plan) != DECISION_PLAN_FIELDS:
+        if (
+            set(plan) - DECISION_PLAN_OPTIONAL_FIELDS
+            != DECISION_PLAN_FIELDS - DECISION_PLAN_OPTIONAL_FIELDS
+            or set(plan) - DECISION_PLAN_FIELDS
+        ):
             issues.append(
                 _error(
                     "DECISION_PLAN_FIELDS_INVALID",
@@ -1304,6 +1561,34 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                     "DECISION_PLAN_CONTEXT_INVALID",
                     "$",
                     "Risk, host, or Registry digest is invalid.",
+                )
+            )
+        coverage_binding = plan.get("coverage_binding")
+        if coverage_binding is not None and (
+            not isinstance(coverage_binding, dict)
+            or set(coverage_binding)
+            != {
+                "schema_version",
+                "coverage_id",
+                "goal_digest",
+                "required_for_mutation",
+            }
+            or coverage_binding.get("schema_version")
+            != "maestro_task_coverage_binding_v1"
+            or not isinstance(coverage_binding.get("coverage_id"), str)
+            or DIGEST_PATTERN.fullmatch(
+                coverage_binding["coverage_id"]
+            )
+            is None
+            or coverage_binding.get("goal_digest")
+            != plan.get("goal_digest")
+            or coverage_binding.get("required_for_mutation") is not True
+        ):
+            issues.append(
+                _error(
+                    "DECISION_COVERAGE_BINDING_INVALID",
+                    "coverage_binding",
+                    "Decision Coverage binding is invalid.",
                 )
             )
         specialists = plan.get("specialist_contracts")
@@ -1400,6 +1685,17 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                 issues,
             )
         expertise = plan.get("expertise")
+        if isinstance(expertise, dict) and "route_hints" in expertise:
+            try:
+                require_route_hints(expertise["route_hints"])
+            except MaestroError as exc:
+                issues.append(
+                    _error(
+                        exc.code,
+                        "expertise.route_hints",
+                        exc.message,
+                    )
+                )
         selected_guide_ids = (
             expertise.get("selected_guide_ids", [])
             if isinstance(expertise, dict)
@@ -1633,23 +1929,42 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                 )
             )
         try:
-            expected_model_route = route_goal(
-                plan.get("goal", ""),
-                plan.get("risk", ""),
-                host_id=plan.get("host", ""),
-                intent="review",
-            )["model_route"]
-        except (MaestroError, TypeError):
-            expected_model_route = None
-        if expected_model_route is None or any(
-            assignment.get("model_route") != expected_model_route
-            for assignment in by_id.values()
+            expected_model_routes = {
+                assignment_id: _decision_model_route(
+                    goal=plan.get("goal", ""),
+                    risk=plan.get("risk", ""),
+                    host_id=plan.get("host", ""),
+                    assignment_id=assignment_id,
+                    kind=assignment.get("kind", ""),
+                )
+                for assignment_id, assignment in by_id.items()
+            }
+        except (MaestroError, TypeError, StopIteration):
+            expected_model_routes = {}
+        legacy_routes = {
+            assignment_id
+            for assignment_id, assignment in by_id.items()
+            if isinstance(assignment.get("model_route"), dict)
+            and set(assignment["model_route"]) == LEGACY_MODEL_ROUTE_FIELDS
+        }
+        if (
+            set(expected_model_routes) != set(by_id)
+            or bool(legacy_routes)
+            or any(
+                assignment.get("model_route")
+                != expected_model_routes.get(assignment_id)
+                for assignment_id, assignment in by_id.items()
+            )
         ):
             issues.append(
                 _error(
                     "DECISION_MODEL_ROUTE_MISMATCH",
                     "assignments",
-                    "Decision Assignment model routes must match the current read-only review route.",
+                    (
+                        "Decision Assignment model routes must be typed and "
+                        "match their explicit stage policies; legacy routes "
+                        "must be regenerated before reuse."
+                    ),
                 )
             )
         if isinstance(plan.get("assignments"), list):
@@ -1799,6 +2114,14 @@ def validate_specialist_packet(
                 )
             )
             findings = []
+        elif len(findings) > 5:
+            issues.append(
+                _error(
+                    "SPECIALIST_FINDING_LIMIT_EXCEEDED",
+                    "findings",
+                    "Specialist packets permit at most five findings.",
+                )
+            )
         for index, finding in enumerate(findings):
             path = f"findings[{index}]"
             if not isinstance(finding, dict) or set(finding) != {
@@ -1884,6 +2207,14 @@ def validate_specialist_packet(
                 )
             )
             escalations = []
+        elif len(escalations) > 3:
+            issues.append(
+                _error(
+                    "SPECIALIST_ESCALATION_LIMIT_EXCEEDED",
+                    "escalations",
+                    "Specialist packets permit at most three escalations.",
+                )
+            )
         for index, escalation in enumerate(escalations):
             path = f"escalations[{index}]"
             if not isinstance(escalation, dict) or set(escalation) != {
@@ -2164,16 +2495,13 @@ def validate_decision_bundle(
                     )
                 )
     scope = bundle.get("execution_scope")
-    if (
-        not isinstance(scope, dict)
-        or set(scope) != {"allowed_paths", "prohibited_changes"}
-        or not _valid_string_list(scope.get("allowed_paths"), nonempty=True)
-        or not _valid_string_list(scope.get("prohibited_changes"))
-        or any(
-            Path(item).is_absolute() or ".." in Path(item).parts
-            for item in scope.get("allowed_paths", [])
-        )
-    ):
+    scope_shape_valid = (
+        isinstance(scope, dict)
+        and set(scope) == {"allowed_paths", "prohibited_changes"}
+        and _valid_string_list(scope.get("allowed_paths"), nonempty=True)
+        and _valid_string_list(scope.get("prohibited_changes"))
+    )
+    if not scope_shape_valid:
         issues.append(
             _error(
                 "EXECUTION_SCOPE_INVALID",
@@ -2181,6 +2509,20 @@ def validate_decision_bundle(
                 "Execution scope needs safe repository-relative allowed paths.",
             )
         )
+    else:
+        try:
+            resolve_authorized_write_roots(
+                repo_path,
+                scope["allowed_paths"],
+            )
+        except MaestroError as exc:
+            issues.append(
+                _error(
+                    "EXECUTION_SCOPE_INVALID",
+                    "execution_scope.allowed_paths",
+                    exc.message,
+                )
+            )
     research_gate = bundle.get("research_gate")
     gate = (
         research_gate.get("gate")
@@ -2259,11 +2601,22 @@ def build_execution_plan(
     authorization_source: str,
     host_id: str | None = None,
     research_evidence: dict[str, Any] | None = None,
+    prior_route_plan: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    packet_list = sorted(
+        [copy.deepcopy(packet) for packet in packets],
+        key=lambda packet: str(
+            packet.get("assignment_id")
+            if isinstance(packet, dict)
+            else ""
+        ),
+    )
     validation = validate_decision_bundle(
         bundle,
         plan,
-        packets,
+        packet_list,
         repo_path,
     )
     if validation["status"] != "PASS":
@@ -2314,6 +2667,37 @@ def build_execution_plan(
             "RESEARCH_EVIDENCE_NOT_APPLICABLE",
             "This decision bundle has no satisfied research gate.",
         )
+    route_hints = plan.get("expertise", {}).get("route_hints")
+    coverage_binding = plan.get("coverage_binding")
+    if coverage_binding is not None:
+        if coverage is None:
+            raise MaestroError(
+                "TASK_COVERAGE_REQUIRED",
+                "Enactment requires the exact Task Coverage bound by the decision plan.",
+            )
+        if build_coverage_binding(
+            coverage,
+            goal=bundle["goal"],
+            repo_path=repo_path,
+        ) != coverage_binding:
+            raise MaestroError(
+                "TASK_COVERAGE_BINDING_MISMATCH",
+                "Enactment Task Coverage does not match the decision plan.",
+            )
+    elif coverage is not None:
+        raise MaestroError(
+            "TASK_COVERAGE_NOT_APPLICABLE",
+            "Unbound Task Coverage cannot be introduced during enactment.",
+        )
+    if (
+        isinstance(route_hints, dict)
+        and route_hints.get("route_attempt") == 2
+        and prior_route_plan is None
+    ):
+        raise MaestroError(
+            "EXPERTISE_REROUTE_LINEAGE_REQUIRED",
+            "Enactment of a corrected decision requires the exact prior route v2 plan.",
+        )
     route_plan = route_goal_v2(
         bundle["goal"],
         bundle["risk"],
@@ -2322,21 +2706,12 @@ def build_execution_plan(
         research_evidence=research_evidence,
         decision_authorized=True,
         repo_path=repo_path,
+        route_hints=route_hints,
+        prior_route_plan=prior_route_plan,
+        coverage=coverage,
+        model_policy_overlays=model_policy_overlays,
     )
-    current_expertise = route_plan.get(
-        "expertise",
-        {
-            "selected_pack_ids": [],
-            "selected_guide_ids": [],
-            "pack_definition_digests": {},
-            "research_requirement": {
-                "mode": "reuse",
-                "gate": "not-required",
-                "reasons": [],
-                "evidence_digest": None,
-            },
-        },
-    )
+    current_expertise = _route_expertise_binding(route_plan)
     if (
         current_expertise["selected_pack_ids"]
         != bundle["expertise"]["selected_pack_ids"]
@@ -2346,6 +2721,8 @@ def build_execution_plan(
         != bundle["expertise"]["pack_definition_digests"]
         or current_expertise["research_requirement"]
         != bundle["expertise"]["research_requirement"]
+        or current_expertise.get("route_hints")
+        != bundle["expertise"].get("route_hints")
     ):
         raise MaestroError(
             "DECISION_EXPERTISE_STALE",
@@ -2367,6 +2744,11 @@ def build_execution_plan(
         "execution_plan_id": "",
         "decision_plan_id": plan["plan_id"],
         "decision_bundle_digest": bundle["bundle_digest"],
+        "decision_evidence": {
+            "decision_plan": copy.deepcopy(plan),
+            "decision_bundle": copy.deepcopy(bundle),
+            "specialist_packets": packet_list,
+        },
         "execution_authorization": execution_authorization,
         "route_plan": route_plan,
         "writes_performed": False,
@@ -2376,3 +2758,350 @@ def build_execution_plan(
         "execution_plan_id",
     )
     return execution
+
+
+def validate_execution_plan(
+    execution: Any,
+    *,
+    repo_path: str | Path | None = None,
+    research_bundle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate the decision authorization wrapper and its executable route."""
+
+    issues: list[dict[str, str]] = []
+    if not isinstance(execution, dict):
+        issues.append(
+            _error(
+                "EXECUTION_PLAN_INVALID",
+                "$",
+                "Execution plan must be an object.",
+            )
+        )
+        execution = {}
+    elif set(execution) != EXECUTION_PLAN_FIELDS:
+        issues.append(
+            _error(
+                "EXECUTION_PLAN_FIELDS_INVALID",
+                "$",
+                "Execution plan fields do not match the published contract.",
+            )
+        )
+
+    if execution.get("schema_version") != EXECUTION_PLAN_VERSION:
+        issues.append(
+            _error(
+                "EXECUTION_PLAN_VERSION_INVALID",
+                "schema_version",
+                f"Expected {EXECUTION_PLAN_VERSION}.",
+            )
+        )
+    execution_plan_id = execution.get("execution_plan_id")
+    if (
+        not isinstance(execution_plan_id, str)
+        or DIGEST_PATTERN.fullmatch(execution_plan_id) is None
+        or execution_plan_id != _digest_payload(execution, "execution_plan_id")
+    ):
+        issues.append(
+            _error(
+                "EXECUTION_PLAN_DIGEST_MISMATCH",
+                "execution_plan_id",
+                "Execution plan digest does not match its canonical content.",
+            )
+        )
+    for field in ("decision_plan_id", "decision_bundle_digest"):
+        value = execution.get(field)
+        if (
+            not isinstance(value, str)
+            or DIGEST_PATTERN.fullmatch(value) is None
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_PLAN_BINDING_INVALID",
+                    field,
+                    f"{field} must be a SHA-256 digest.",
+                )
+            )
+    if execution.get("writes_performed") is not False:
+        issues.append(
+            _error(
+                "EXECUTION_PLAN_WRITE_INVALID",
+                "writes_performed",
+                "Building an execution plan must remain read-only.",
+            )
+        )
+
+    decision_evidence = execution.get("decision_evidence")
+    evidence_plan: Any = None
+    evidence_bundle: Any = None
+    evidence_packets: Any = None
+    if (
+        not isinstance(decision_evidence, dict)
+        or set(decision_evidence)
+        != EXECUTION_DECISION_EVIDENCE_FIELDS
+    ):
+        issues.append(
+            _error(
+                "EXECUTION_DECISION_EVIDENCE_INVALID",
+                "decision_evidence",
+                (
+                    "Execution authorization requires the exact bounded "
+                    "DecisionPlan, DecisionBundle, and Specialist packets."
+                ),
+            )
+        )
+    else:
+        evidence_plan = decision_evidence.get("decision_plan")
+        evidence_bundle = decision_evidence.get("decision_bundle")
+        evidence_packets = decision_evidence.get("specialist_packets")
+        if not isinstance(evidence_packets, list):
+            issues.append(
+                _error(
+                    "EXECUTION_DECISION_EVIDENCE_INVALID",
+                    "decision_evidence.specialist_packets",
+                    "Specialist evidence packets must be a bounded list.",
+                )
+            )
+        elif not isinstance(evidence_plan, dict) or not isinstance(
+            evidence_bundle,
+            dict,
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_DECISION_EVIDENCE_INVALID",
+                    "decision_evidence",
+                    "DecisionPlan and DecisionBundle evidence must be objects.",
+                )
+            )
+        elif repo_path is None:
+            issues.append(
+                _error(
+                    "EXECUTION_AUTHORIZATION_CONTEXT_REQUIRED",
+                    "decision_evidence",
+                    "Execution authorization must be verified against one repository.",
+                )
+            )
+        else:
+            decision_validation = validate_decision_bundle(
+                evidence_bundle,
+                evidence_plan,
+                evidence_packets,
+                repo_path,
+            )
+            if decision_validation["status"] != "PASS":
+                for issue in decision_validation["issues"]:
+                    issues.append(
+                        _error(
+                            "EXECUTION_DECISION_EVIDENCE_INVALID",
+                            (
+                                "decision_evidence."
+                                + issue.get("path", "$")
+                            ),
+                            issue.get(
+                                "message",
+                                "Decision evidence is invalid.",
+                            ),
+                        )
+                    )
+        if (
+            not isinstance(evidence_plan, dict)
+            or evidence_plan.get("plan_id")
+            != execution.get("decision_plan_id")
+            or not isinstance(evidence_bundle, dict)
+            or evidence_bundle.get("bundle_digest")
+            != execution.get("decision_bundle_digest")
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_DECISION_EVIDENCE_BINDING_MISMATCH",
+                    "decision_evidence",
+                    "Embedded decision evidence does not match the execution wrapper.",
+                )
+            )
+
+    authorization = execution.get("execution_authorization")
+    if (
+        not isinstance(authorization, dict)
+        or set(authorization) != EXECUTION_AUTHORIZATION_FIELDS
+    ):
+        issues.append(
+            _error(
+                "EXECUTION_AUTHORIZATION_INVALID",
+                "execution_authorization",
+                "Execution authorization fields are invalid.",
+            )
+        )
+    else:
+        if (
+            authorization.get("decision_bundle_digest")
+            != execution.get("decision_bundle_digest")
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_AUTHORIZATION_BINDING_MISMATCH",
+                    "execution_authorization.decision_bundle_digest",
+                    "Execution authorization must bind the wrapper DecisionBundle digest.",
+                )
+            )
+        if authorization.get("authorization_source") not in {
+            "explicit_user",
+            "prior_explicit_request",
+        }:
+            issues.append(
+                _error(
+                    "EXECUTION_AUTHORIZATION_INVALID",
+                    "execution_authorization.authorization_source",
+                    "Execution authorization source is unsupported.",
+                )
+            )
+        if (
+            authorization.get("allowed_side_effects")
+            != ["repository_write"]
+            or authorization.get("status") != "authorized"
+            or not _valid_string_list(
+                authorization.get("allowed_paths"),
+                nonempty=True,
+            )
+            or not _valid_string_list(
+                authorization.get("prohibited_changes")
+            )
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_AUTHORIZATION_INVALID",
+                    "execution_authorization",
+                    "Execution authorization must contain one writer effect, bounded paths, and prohibited changes.",
+                )
+            )
+        if isinstance(evidence_bundle, dict):
+            scope = evidence_bundle.get("execution_scope")
+            if (
+                not isinstance(scope, dict)
+                or authorization.get("allowed_paths")
+                != scope.get("allowed_paths")
+                or authorization.get("prohibited_changes")
+                != scope.get("prohibited_changes")
+            ):
+                issues.append(
+                    _error(
+                        "EXECUTION_AUTHORIZATION_SCOPE_MISMATCH",
+                        "execution_authorization",
+                        "Execution authorization scope must exactly match the validated DecisionBundle.",
+                    )
+                )
+            if (
+                evidence_bundle.get("risk") in {"high", "critical"}
+                and authorization.get("authorization_source")
+                != "explicit_user"
+            ):
+                issues.append(
+                    _error(
+                        "USER_DECISION_REQUIRED",
+                        "execution_authorization.authorization_source",
+                        "High or critical risk enactment requires explicit user authorization.",
+                    )
+                )
+
+    route_plan = execution.get("route_plan")
+    try:
+        route_validation = validate_route_v2(
+            route_plan,
+            repo_path=repo_path,
+            research_bundle=research_bundle,
+        )
+    except (MaestroError, OSError, TypeError, ValueError) as exc:
+        route_validation = {
+            "status": "FAIL",
+            "execution_status": "INVALID",
+            "issues": [
+                {
+                    "code": "EXECUTION_ROUTE_INVALID",
+                    "path": "route_plan",
+                    "message": str(exc),
+                }
+            ],
+        }
+    if route_validation["status"] != "PASS":
+        for issue in route_validation.get("issues", []):
+            issues.append(
+                _error(
+                    "EXECUTION_ROUTE_INVALID",
+                    f"route_plan.{issue.get('path', '$')}",
+                    issue.get("message", "Execution route is invalid."),
+                )
+            )
+    elif (
+        route_validation.get("execution_status") != "READY"
+        or not isinstance(route_plan, dict)
+        or route_plan.get("intent") != "implementation"
+        or route_plan.get("mutation_owner_assignment_id") is None
+    ):
+        issues.append(
+            _error(
+                "EXECUTION_ROUTE_NOT_READY",
+                "route_plan",
+                "Execution authorization requires one ready implementation route with a mutation owner.",
+            )
+        )
+    elif isinstance(evidence_plan, dict) and isinstance(
+        evidence_bundle,
+        dict,
+    ):
+        route_expertise = _route_expertise_binding(route_plan)
+        if (
+            route_plan.get("goal") != evidence_bundle.get("goal")
+            or route_plan.get("risk") != evidence_bundle.get("risk")
+            or route_plan.get("registry_digest")
+            != evidence_bundle.get("registry_digest")
+            or route_plan.get("coverage_binding")
+            != evidence_plan.get("coverage_binding")
+            or route_expertise.get("selected_pack_ids", [])
+            != evidence_bundle.get("expertise", {}).get(
+                "selected_pack_ids",
+                [],
+            )
+            or route_expertise.get("selected_guide_ids", [])
+            != evidence_bundle.get("expertise", {}).get(
+                "selected_guide_ids",
+                [],
+            )
+            or route_expertise.get("pack_definition_digests", {})
+            != evidence_bundle.get("expertise", {}).get(
+                "pack_definition_digests",
+                {},
+            )
+            or route_expertise.get("research_requirement")
+            != evidence_bundle.get("research_gate")
+            or route_expertise.get("route_hints")
+            != evidence_bundle.get("expertise", {}).get("route_hints")
+        ):
+            issues.append(
+                _error(
+                    "EXECUTION_DECISION_ROUTE_MISMATCH",
+                    "route_plan",
+                    "Executable route does not preserve the validated Decision evidence.",
+                )
+            )
+
+    issues.sort(key=lambda item: (item["code"], item["path"], item["message"]))
+    return {
+        "schema_version": "maestro_execution_plan_validation_v1",
+        "status": "PASS" if not issues else "FAIL",
+        "execution_status": (
+            "READY"
+            if not issues
+            else (
+                "RESEARCH_REQUIRED"
+                if route_validation.get("execution_status")
+                == "RESEARCH_REQUIRED"
+                else "INVALID"
+            )
+        ),
+        "execution_plan_id": execution_plan_id,
+        "route_plan_id": (
+            route_plan.get("plan_id")
+            if isinstance(route_plan, dict)
+            else None
+        ),
+        "issues": issues,
+        "writes_performed": False,
+    }

@@ -28,6 +28,108 @@ def apply_fresh_init(repo: Path) -> dict[str, Any]:
     return apply_plan(plan_path, repo)
 
 
+def record_managed_completion_graph(
+    repo: Path,
+    *,
+    observation_id: str,
+    run_id: str,
+    plan: dict[str, Any],
+    prefix: str = "fixture-completion",
+) -> None:
+    """Close a test observation with Assignment work and one final synthesis."""
+
+    from maestro.observations import (
+        observation_receipt_fields,
+        record_work_finish,
+        record_work_start,
+    )
+
+    assignment_work: dict[str, str] = {}
+    for assignment in plan["assignments"]:
+        assignment_id = assignment["assignment_id"]
+        work_id = f"{prefix}-{assignment_id}"
+        record_work_start(
+            repo,
+            observation_id=observation_id,
+            run_id=run_id,
+            work_id=work_id,
+            assignment_id=assignment_id,
+            kind="synthesis",
+            role="fixture Assignment completion",
+            executor_id=assignment["executor_id"],
+            task_summary=f"{assignment_id} terminal fixture work를 기록합니다.",
+            read_only=assignment["read_only"],
+            source="host_adapter",
+            depends_on_work_ids=[
+                assignment_work[dependency]
+                for dependency in assignment["depends_on"]
+            ],
+        )
+        record_work_finish(
+            repo,
+            observation_id=observation_id,
+            run_id=run_id,
+            work_id=work_id,
+            status="completed",
+            result_summary=f"{assignment_id} fixture work가 완료되었습니다.",
+            evidence_refs=[f"tests:completion:{assignment_id}"],
+        )
+        assignment_work[assignment_id] = work_id
+
+    spans = observation_receipt_fields(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+    )["work_spans"]
+    work_ids = {span["work_id"] for span in spans}
+    non_leaves = {
+        predecessor
+        for span in spans
+        for predecessor in (
+            span["parent_work_id"],
+            span["followup_of_work_id"],
+            *span["depends_on_work_ids"],
+            *span["joins_work_ids"],
+        )
+        if predecessor in work_ids
+    }
+    leaves = sorted(work_ids - non_leaves)
+    final_work_id = f"{prefix}-final"
+    record_work_start(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+        work_id=final_work_id,
+        assignment_id=None,
+        kind="synthesis",
+        role="fixture final synthesis",
+        executor_id="fixture-finalizer",
+        task_summary="모든 실행 leaf를 하나의 최종 결과로 합성합니다.",
+        read_only=True,
+        source="host_adapter",
+        joins_work_ids=leaves,
+        outcome={
+            "finding_summary": None,
+            "conclusion": "모든 fixture 실행 leaf가 소비되었습니다.",
+            "decision": "Fixture execution graph를 종료합니다.",
+            "next_action": "finish",
+            "consumed_work_ids": leaves,
+            "handoff": None,
+            "artifacts": [],
+            "verification": None,
+        },
+    )
+    record_work_finish(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+        work_id=final_work_id,
+        status="completed",
+        result_summary="Fixture final synthesis가 완료되었습니다.",
+        evidence_refs=["tests:completion:final"],
+    )
+
+
 def check_by_id(report: dict[str, Any], check_id: str) -> dict[str, str]:
     return next(item for item in report["checks"] if item["id"] == check_id)
 

@@ -448,6 +448,8 @@ class CodexHostWorkTests(unittest.TestCase):
                     "version": "codex-cli 0.144.1",
                     "schema_digest": "a" * 64,
                     "capability": "full_stream",
+                    "experimental_api": False,
+                    "runtime_workspace_roots": False,
                 },
             ):
                 result = run_codex_host(
@@ -501,6 +503,8 @@ class CodexHostWorkTests(unittest.TestCase):
                     "version": "codex-cli 0.144.1",
                     "schema_digest": "b" * 64,
                     "capability": "full_stream",
+                    "experimental_api": False,
+                    "runtime_workspace_roots": False,
                 },
             ):
                 result = run_codex_host(

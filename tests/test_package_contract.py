@@ -6,9 +6,10 @@ import tomllib
 import unittest
 from importlib import resources
 
+from tests.support import ROOT
+
 from maestro import __version__
 from maestro.project import AGENTS_BODY
-from tests.support import ROOT
 
 
 class PackageContractTests(unittest.TestCase):
@@ -52,6 +53,7 @@ class PackageContractTests(unittest.TestCase):
         for relative in (
             "viewer/index.html",
             "viewer/styles.css",
+            "viewer/snapshot-contract.js",
             "viewer/app.js",
         ):
             self.assertTrue(resource_root.joinpath(relative).is_file(), relative)
@@ -67,6 +69,38 @@ class PackageContractTests(unittest.TestCase):
                 re.findall(r"references/[A-Za-z0-9_.-]+\.md", text)
             ):
                 self.assertTrue((skill_root / reference).is_file(), reference)
+
+    def test_maestro_skill_declares_host_multi_pack_work_allocation(self) -> None:
+        skill_root = ROOT / "skills" / "maestro"
+        skill = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+        allocation = (
+            skill_root / "references" / "expertise-work-allocation.md"
+        ).read_text(encoding="utf-8")
+        architecture = (
+            ROOT / "docs" / "architecture" / "expertise-packs.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("`expertise-check`", skill)
+        self.assertIn("`route-capacity`", skill)
+        self.assertIn("`true-expertise-gap`", skill)
+        self.assertIn("references/expertise-work-allocation.md", skill)
+
+        for contract in (
+            "The AI owns semantic work",
+            "(coverage_item_id, pack_id, guide_id)",
+            "one Pack and at most four Guides",
+            "Assign every canonical pair exactly once",
+            "read-only expertise pass",
+            "`BLOCKED` is preserved",
+            "one authorized writer",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, allocation)
+        self.assertIn("`READY`", allocation)
+
+        self.assertIn("여러 기존 Pack의 typed 작업 배분", architecture)
+        self.assertIn("다섯 sidecar", architecture)
+        self.assertIn("작업 batch runtime 자동 스케줄링·retry", architecture)
 
     def test_root_guidance_matches_generated_self_improvement_policy(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

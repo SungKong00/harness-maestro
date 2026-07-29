@@ -5,6 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.support import (
+    ROOT,
+    apply_fresh_init,
+    record_managed_completion_graph,
+    write_json,
+)
+
 from maestro.errors import MaestroError
 from maestro.expertise_routing import normalize_route_hints
 from maestro.governance import finalize_run
@@ -17,7 +24,6 @@ from maestro.observations import (
 )
 from maestro.planning import route_goal_v2
 from maestro.snapshot import snapshot_report
-from tests.support import ROOT, apply_fresh_init, write_json
 
 
 class WorkObservationTests(unittest.TestCase):
@@ -164,6 +170,40 @@ class WorkObservationTests(unittest.TestCase):
                         f"tests:stage:{assignment['assignment_id']}"
                     ],
                 )
+            verification = next(
+                assignment
+                for assignment in plan["assignments"]
+                if assignment["kind"] == "verification"
+            )
+            record_work_start(
+                repo,
+                observation_id=observation_id,
+                run_id="observed-work",
+                work_id="orchestrator-verification",
+                assignment_id=verification["assignment_id"],
+                kind="verification",
+                role="오케스트레이터 결과 검증 담당",
+                executor_id=verification["executor_id"],
+                task_summary="관찰된 구현 오케스트레이션 결과를 검증합니다.",
+                read_only=verification["read_only"],
+                source="host_adapter",
+                depends_on_work_ids=["orchestrator"],
+            )
+            record_work_finish(
+                repo,
+                observation_id=observation_id,
+                run_id="observed-work",
+                work_id="orchestrator-verification",
+                status="completed",
+                result_summary="관찰된 구현 오케스트레이션 검증이 완료되었습니다.",
+                evidence_refs=["tests:test_work_observations:verification"],
+            )
+            record_managed_completion_graph(
+                repo,
+                observation_id=observation_id,
+                run_id="observed-work",
+                plan=plan,
+            )
             finalized = finalize_run(
                 repo,
                 run_id="observed-work",
@@ -177,7 +217,15 @@ class WorkObservationTests(unittest.TestCase):
                 (repo / finalized["event_path"]).read_text(encoding="utf-8")
             )
             self.assertEqual(
-                ["orchestrator", "domain-review", "synthesis"],
+                [
+                    "orchestrator",
+                    "domain-review",
+                    "synthesis",
+                    "orchestrator-verification",
+                    "fixture-completion-implementation",
+                    "fixture-completion-verification",
+                    "fixture-completion-final",
+                ],
                 [span["work_id"] for span in event["work_spans"]],
             )
             work_detail = snapshot_report(repo)["runs"][0]["work_detail"]
@@ -193,11 +241,164 @@ class WorkObservationTests(unittest.TestCase):
                 2,
                 work_detail["execution"]["summary"]["report_count"],
             )
+            orchestrator_card = next(
+                card
+                for card in work_detail["execution"]["cards"]
+                if card["work_id"] == "orchestrator"
+            )
+            self.assertEqual(
+                implementation["model_route"]["selected_model"],
+                orchestrator_card["assignment"]["model_route"][
+                    "route_recommended"
+                ],
+            )
+            self.assertEqual(
+                implementation["model_route"]["model_route_id"],
+                orchestrator_card["assignment"]["model_route"][
+                    "model_route_id"
+                ],
+            )
             self.assertEqual(
                 "plan_summary",
                 snapshot_report(repo)["runs"][0]["expertise"]["routing"][
                     "evidence"
                 ],
+            )
+
+    def test_assignment_work_preserves_fallback_access_and_spawn_policy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, plan, plan_path = self._repo_and_plan(root)
+            started = start_run_observation(
+                repo,
+                run_id="assignment-work-policy",
+                task_label="Assignment 작업 권한",
+                plan_path=plan_path,
+            )
+            implementation = next(
+                assignment
+                for assignment in plan["assignments"]
+                if assignment["kind"] == "implementation"
+            )
+
+            with self.assertRaises(MaestroError) as raised:
+                record_work_start(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="assignment-work-policy",
+                    work_id="writer",
+                    assignment_id=implementation["assignment_id"],
+                    kind="orchestration",
+                    role="writer",
+                    executor_id=implementation["executor_id"],
+                    task_summary="Execute the planned writer work.",
+                    read_only=implementation["read_only"],
+                )
+            self.assertEqual(
+                "RUN_EXECUTION_FALLBACK_REQUIRED",
+                raised.exception.code,
+            )
+
+            observation = observation_receipt_fields(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="assignment-work-policy",
+            )
+            self.assertEqual([], observation["work_spans"])
+
+            verification = next(
+                assignment
+                for assignment in plan["assignments"]
+                if assignment["kind"] == "verification"
+            )
+            with self.assertRaises(MaestroError) as raised:
+                record_work_start(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="assignment-work-policy",
+                    work_id="wrong-access",
+                    assignment_id=verification["assignment_id"],
+                    kind="review",
+                    role="reviewer",
+                    executor_id=verification["executor_id"],
+                    task_summary="Attempt mismatched write access.",
+                    read_only=not verification["read_only"],
+                    source="host_adapter",
+                )
+            self.assertEqual(
+                "WORK_ASSIGNMENT_ACCESS_MISMATCH",
+                raised.exception.code,
+            )
+
+            with self.assertRaises(MaestroError) as raised:
+                record_work_start(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="assignment-work-policy",
+                    work_id="forbidden-child",
+                    assignment_id=verification["assignment_id"],
+                    kind="delegation",
+                    role="child",
+                    executor_id=verification["executor_id"],
+                    task_summary="Attempt forbidden delegation.",
+                    read_only=verification["read_only"],
+                    source="host_adapter",
+                )
+            self.assertEqual(
+                "WORK_DELEGATION_FORBIDDEN",
+                raised.exception.code,
+            )
+
+    def test_successful_run_outcome_cannot_override_failed_stage_facts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, plan, plan_path = self._repo_and_plan(root)
+            started = start_run_observation(
+                repo,
+                run_id="stage-outcome-conflict",
+                task_label="단계 결과 우선",
+                plan_path=plan_path,
+                execution_binding={
+                    "schema_version": "maestro_execution_binding_v1",
+                    "mode": "explicit_fallback",
+                    "reason": "capability_unavailable",
+                    "evidence": "The test exercises terminal stage consistency.",
+                },
+            )
+            for assignment in plan["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=started["observation_id"],
+                    run_id="stage-outcome-conflict",
+                    assignment_id=assignment["assignment_id"],
+                    status=(
+                        "failed"
+                        if assignment["kind"] == "implementation"
+                        else "skipped"
+                    ),
+                    evidence_source="current_host",
+                    evidence_refs=[
+                        f"tests:stage:{assignment['assignment_id']}"
+                    ],
+                )
+
+            with self.assertRaises(MaestroError) as raised:
+                finalize_run(
+                    repo,
+                    run_id="stage-outcome-conflict",
+                    observation_id=started["observation_id"],
+                    outcome="completed",
+                    evidence_refs=["tests:stage-outcome-conflict"],
+                    verifier_result="not_run",
+                    command_artifact_ref="tests:stage-outcome-conflict",
+                )
+            self.assertEqual(
+                "RUN_STAGE_OUTCOME_CONFLICT",
+                raised.exception.code,
             )
 
     def test_corrected_routing_summary_flows_into_event_and_snapshot(
@@ -223,7 +424,7 @@ class WorkObservationTests(unittest.TestCase):
                 route_hints=normalize_route_hints(
                     work_kinds=[
                         "software-structure",
-                        "user-interface",
+                        "content-claim",
                     ],
                     route_attempt=2,
                     prior_plan_id=initial["plan_id"],
@@ -259,6 +460,12 @@ class WorkObservationTests(unittest.TestCase):
                         f"tests:stage:{assignment['assignment_id']}"
                     ],
                 )
+            record_managed_completion_graph(
+                repo,
+                observation_id=started["observation_id"],
+                run_id="corrected-routing",
+                plan=corrected,
+            )
             finalized = finalize_run(
                 repo,
                 run_id="corrected-routing",
@@ -446,6 +653,40 @@ class WorkObservationTests(unittest.TestCase):
                         f"tests:stage:{item['assignment_id']}"
                     ],
                 )
+            verification = next(
+                item
+                for item in plan["assignments"]
+                if item["kind"] == "verification"
+            )
+            record_work_start(
+                repo,
+                observation_id=observation_id,
+                run_id="complete-stream",
+                work_id="implementation-work-verification",
+                assignment_id=verification["assignment_id"],
+                kind="verification",
+                role="완전한 stream 검증 담당",
+                executor_id=verification["executor_id"],
+                task_summary="완전한 implementation stream 결과를 검증합니다.",
+                read_only=verification["read_only"],
+                source="host_adapter",
+                depends_on_work_ids=["implementation-work"],
+            )
+            record_work_finish(
+                repo,
+                observation_id=observation_id,
+                run_id="complete-stream",
+                work_id="implementation-work-verification",
+                status="completed",
+                result_summary="완전한 implementation stream 검증이 완료되었습니다.",
+                evidence_refs=["tests:test_complete_stream:verification"],
+            )
+            record_managed_completion_graph(
+                repo,
+                observation_id=observation_id,
+                run_id="complete-stream",
+                plan=plan,
+            )
             finalized = finalize_run(
                 repo,
                 run_id="complete-stream",
@@ -461,6 +702,41 @@ class WorkObservationTests(unittest.TestCase):
             self.assertEqual(
                 "maestro_work_span_v2",
                 event["work_spans"][0]["schema_version"],
+            )
+            self.assertEqual(
+                ["gpt-5.6-sol"],
+                event["execution_measurements"]["model"]["applied"],
+            )
+            self.assertEqual(
+                200,
+                event["execution_measurements"]["tokens"]["value"]["total"],
+            )
+            self.assertEqual(
+                "direct_work_attempts",
+                event["execution_measurements"]["tokens"]["source"],
+            )
+            sealed_measurements = observation_receipt_fields(
+                repo,
+                observation_id=observation_id,
+                run_id="complete-stream",
+            )["execution_measurements"]
+            self.assertEqual(
+                sealed_measurements,
+                event["execution_measurements"],
+            )
+            self.assertTrue(
+                any(
+                    item["model"] == "complete"
+                    and item["tokens"] == "complete"
+                    for item in sealed_measurements["producer_coverage"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["model"] == "unavailable"
+                    and item["tokens"] == "unavailable"
+                    for item in sealed_measurements["producer_coverage"]
+                )
             )
             card = snapshot_report(repo)["runs"][0]["work_detail"][
                 "execution"

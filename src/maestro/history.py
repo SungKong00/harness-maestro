@@ -183,9 +183,10 @@ def history_inventory(repo_path: str | Path) -> dict[str, Any]:
 
 
 def _recent_events(repo: Path) -> dict[str, dict[str, Any]]:
+    history = recent_run_events(repo, window=100)
     return {
         event["event_id"]: event
-        for event in recent_run_events(repo, window=100)["runs"]
+        for event in history.get("display_runs", history["runs"])
     }
 
 

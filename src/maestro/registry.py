@@ -3,10 +3,16 @@ from __future__ import annotations
 import json
 import re
 from importlib import resources
+from pathlib import Path
 from typing import Any, Iterable
 
 from .errors import MaestroError
 from .matching import searchable_terms, term_matches
+from .model_policy import (
+    build_stage_model_route,
+    default_stage_kind,
+    is_deterministic_command,
+)
 from .util import canonical_json, sha256_text
 
 LENS_FORBIDDEN = {"model", "models", "tools", "permissions", "capabilities", "context_policy"}
@@ -981,8 +987,13 @@ REMOTE_WRITE_TERMS = (
 STAGED_REQUEST_PATTERNS = (
     r"\b(?:review|assess|analy[sz]e|design|plan)\b.{0,40}\b(?:then|before)\b.{0,40}\b(?:implement|change|modify|build)\b",
     r"\b(?:implement|change|modify|build)\b.{0,40}\bafter\b.{0,40}\b(?:review|assessment|analysis|design|plan)\b",
+    r"\b(?:choose|select|decide)\b.{0,80}\b(?:between|from)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
+    r"\b(?:compare|evaluate)\b.{0,80}\b(?:options?|alternatives?)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
+    r"\b(?:implement|change|modify|build|apply)\b.{0,80}\b(?:winner|chosen|selected)\b",
     r"(?:검토|판단|분석|설계|기획|확정)\s*(?:한|한\s*뒤|후|뒤|하고\s*나서).{0,40}(?:구현|개발|수정|변경)",
     r"(?:먼저|우선).{0,40}(?:검토|판단|분석|설계|기획).{0,40}(?:그\s*후|이후|다음|나서).{0,40}(?:구현|개발|수정|변경)",
+    r"(?:비교|검토|판단).{0,80}(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
+    r"(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
 )
 
 
@@ -1106,6 +1117,7 @@ def resolve_request_contract(
             "rename",
             "format",
             "sort",
+            "extract metadata",
             "update",
             "추가",
             "변경",
@@ -1116,6 +1128,7 @@ def resolve_request_contract(
             "이름 변경",
             "포맷",
             "정렬",
+            "메타데이터 추출",
         ),
     ):
         return {
@@ -1171,6 +1184,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
             "migrate",
             "modify",
             "remove",
+            "extract metadata",
             "update",
             "추가",
             "변경",
@@ -1178,6 +1192,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
             "수정",
             "구현",
             "마이그레이션",
+            "메타데이터 추출",
         ),
     )
     if mutation_intent:
@@ -1333,151 +1348,25 @@ def _classify_model_task(
     risk: str,
     lens_ids: list[str],
 ) -> tuple[str, str, str]:
-    folded = goal.casefold()
-    mutation_intent = _goal_has(
-        goal,
-        (
-            "add",
-            "change",
-            "delete",
-            "fix",
-            "implement",
-            "migrate",
-            "modify",
-            "remove",
-            "update",
-            "추가",
-            "변경",
-            "삭제",
-            "수정",
-            "구현",
-            "마이그레이션",
-        ),
+    executor = next(
+        item
+        for item in load_registry()["executors"]
+        if item["executor_id"] == "implementation-engineer"
     )
-    deterministic_command = (
-        re.search(
-            r"\b(?:run|execute)\b.*\b(?:tests?|lint|build|schema checks?)\b",
-            folded,
-        )
-        is not None
-        or any(
-            phrase in folded
-            for phrase in (
-                "테스트 실행",
-                "린트 실행",
-                "빌드 실행",
-                "스키마 검사",
-            )
-        )
+    route = build_stage_model_route(
+        goal=goal,
+        risk=risk,
+        lens_ids=lens_ids,
+        executor=executor,
+        host_id="codex",
+        host_profile=load_host_profile("codex"),
+        execution_unit_id="classification-preview",
+        stage_kind="implementation",
     )
-    if deterministic_command and not mutation_intent:
-        return (
-            "deterministic-verification",
-            "none",
-            "Deterministic project commands, not model judgment, decide the result.",
-        )
-    high_impact_terms = (
-        "auth",
-        "authentication",
-        "authorization",
-        "permission",
-        "security",
-        "migration",
-        "transaction",
-        "data integrity",
-        "data loss",
-        "irreversible",
-        "tenant",
-        "material conflict",
-        "important conflict",
-        "architecture conflict",
-        "인증",
-        "인가",
-        "권한",
-        "보안",
-        "마이그레이션",
-        "트랜잭션",
-        "데이터 무결성",
-        "데이터 손실",
-        "비가역",
-        "중대한 충돌",
-        "중요한 충돌",
-    )
-    high_impact_lenses = {
-        "auth-boundary",
-        "data-integrity",
-        "transaction-concurrency",
-    }
-    if (
-        _goal_has(goal, high_impact_terms)
-        or bool(high_impact_lenses.intersection(lens_ids))
-        or risk == "critical"
-    ):
-        return (
-            "high-impact-judgment",
-            "frontier",
-            "Security, data, transaction, migration, irreversible, or material-conflict risk raises failure cost.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "metadata",
-            "frontmatter",
-            "extract metadata",
-            "classify files",
-            "format conversion",
-            "메타데이터",
-            "분류",
-            "형식 변환",
-        ),
-    ):
-        return (
-            "metadata-extraction",
-            "economy",
-            "The task is bounded, mechanical, and directly verifiable.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "rename",
-            "format",
-            "sort",
-            "generated fixtures",
-            "mechanical",
-            "이름 변경",
-            "포맷",
-            "정렬",
-        ),
-    ):
-        return (
-            "mechanical-change",
-            "economy",
-            "The change is repetitive and has a deterministic verification path.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "review",
-            "analyze",
-            "research",
-            "architecture",
-            "compare",
-            "검토",
-            "분석",
-            "리서치",
-            "아키텍처",
-            "비교",
-        ),
-    ):
-        return (
-            "general-analysis",
-            "balanced",
-            "The task needs ordinary repository reasoning without a high-impact boundary.",
-        )
     return (
-        "general-implementation",
-        "default",
-        "General implementation uses the Executor default and deterministic verification.",
+        route["task_class"],
+        route["selected_class"] or "none",
+        route["selection_reason"],
     )
 
 
@@ -1487,77 +1376,33 @@ def _model_route(
     lens_ids: list[str],
     executor: dict[str, Any],
     host_id: str,
+    *,
+    execution_unit_id: str | None = None,
+    stage_kind: str | None = None,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
+    model_policy_authority: dict[str, str] | None = None,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    task_class, selected_class, selection_reason = _classify_model_task(
-        goal,
-        risk,
-        lens_ids,
-    )
-    policy = executor["model_policy"]
     host_profile = load_host_profile(host_id)
-    if selected_class == "none":
-        return {
-            "executor": executor["executor_id"],
-            "task_class": task_class,
-            "risk": risk,
-            "host": host_id,
-            "selected_class": None,
-            "selected_model": None,
-            "reasoning_effort": None,
-            "selection_reason": selection_reason,
-            "escalation_allowed": False,
-            "fallback": "Use the actual command result.",
-        }
-    if selected_class == "default":
-        selected_class = policy["default_class"]
-        selection_reason = (
-            f"{selection_reason} Executor {executor['executor_id']} defaults to "
-            f"{selected_class}."
-        )
-
-    allowed_classes = policy["allowed_classes"]
-    if selected_class not in allowed_classes:
-        raise MaestroError(
-            "MODEL_CLASS_UNAVAILABLE",
-            f"Executor {executor['executor_id']} does not allow {selected_class}.",
-        )
-    config = host_profile["classes"][selected_class]
-    reasoning_effort = (
-        policy["default_reasoning_effort"]
-        if selected_class == policy["default_class"]
-        else config["reasoning_effort"]
+    resolved_stage = stage_kind or default_stage_kind(
+        executor_id=executor["executor_id"],
+        goal=goal,
     )
-    if (
-        _goal_has(
-            goal,
-            (
-                "material conflict",
-                "important conflict",
-                "architecture conflict",
-                "중대한 충돌",
-                "중요한 충돌",
-            ),
-        )
-        and selected_class == "frontier"
-        and risk == "critical"
-        and policy["maximum_auto_reasoning_effort"] == "xhigh"
-    ):
-        reasoning_effort = "xhigh"
-    return {
-        "executor": executor["executor_id"],
-        "task_class": task_class,
-        "risk": risk,
-        "host": host_id,
-        "selected_class": selected_class,
-        "selected_model": config["model"],
-        "reasoning_effort": reasoning_effort,
-        "selection_reason": selection_reason,
-        "escalation_allowed": (
-            policy["automatic_escalations"] == 1
-            and selected_class != "frontier"
+    return build_stage_model_route(
+        goal=goal,
+        risk=risk,
+        lens_ids=lens_ids,
+        executor=executor,
+        host_id=host_id,
+        host_profile=host_profile,
+        execution_unit_id=(
+            execution_unit_id or executor["executor_id"]
         ),
-        "fallback": config["fallback"],
-    }
+        stage_kind=resolved_stage,
+        model_policy_overlays=model_policy_overlays,
+        model_policy_authority=model_policy_authority,
+        repo_path=repo_path,
+    )
 
 
 def route_goal(
@@ -1569,6 +1414,9 @@ def route_goal(
     host_id: str = "codex",
     intent: str = "auto",
     decision_authorized: bool = False,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
+    model_policy_authority: dict[str, str] | None = None,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -1755,6 +1603,18 @@ def route_goal(
         lens_ids,
         bound_executor,
         host_id,
+        execution_unit_id="route",
+        stage_kind=(
+            "deterministic-verification"
+            if is_deterministic_command(goal)
+            else default_stage_kind(
+                executor_id=bound_executor["executor_id"],
+                goal=goal,
+            )
+        ),
+        model_policy_overlays=model_policy_overlays,
+        model_policy_authority=model_policy_authority,
+        repo_path=repo_path,
     )
     handoff_contract = (
         {
@@ -1825,6 +1685,15 @@ def route_goal(
         "binding": binding,
         "handoff_contract": handoff_contract,
         "model_route": model_route,
+        **(
+            {
+                "model_policy_overlays": list(
+                    model_policy_overlays or []
+                )
+            }
+            if model_policy_overlays
+            else {}
+        ),
         "deliberation": {
             "mode": deliberation,
             **department["deliberation"],

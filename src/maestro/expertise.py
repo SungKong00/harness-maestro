@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from .errors import MaestroError
-from .expertise_changes import candidate_change_set_groups
+from .expertise_changes import (
+    candidate_change_set_groups,
+    candidate_change_set_integrity,
+)
 from .expertise_routing import (
+    candidate_routing_policy,
     require_route_hints,
     resolve_structured_pack,
 )
@@ -229,6 +233,66 @@ def _required_pack_file(skill_root: Path, relative_path: str) -> Path:
     return target
 
 
+def expertise_publication_file_map(
+    candidate: dict[str, Any],
+    pack: dict[str, Any],
+    suite: dict[str, Any],
+    quality: dict[str, Any],
+) -> dict[str, str]:
+    """Map immutable candidate inputs to their published relative paths."""
+
+    source_to_published = {
+        f"draft/{PROJECT_PACK_FILENAME}": PROJECT_PACK_FILENAME,
+        "draft/SKILL.md": "SKILL.md",
+        "draft/agents/openai.yaml": "agents/openai.yaml",
+        "candidate.json": "evidence/candidate.json",
+        "evidence/sources.json": "evidence/sources.json",
+        "evals/cases.json": "evals/cases.json",
+    }
+    evaluation_artifact = suite.get(
+        "evaluation_artifact",
+        {},
+    ).get("path")
+    if isinstance(evaluation_artifact, str):
+        source_to_published[evaluation_artifact] = evaluation_artifact
+    quality_path = candidate["evaluation"]["quality_path"]
+    source_to_published[quality_path] = quality_path
+    for result in quality.get("cases", []):
+        artifact_path = result.get("artifact", {}).get("path")
+        if isinstance(artifact_path, str):
+            source_to_published[artifact_path] = artifact_path
+    for guide in pack["guides"]:
+        guide_id = guide["guide_id"]
+        source_to_published[
+            f"draft/references/{guide_id}.md"
+        ] = f"references/{guide_id}.md"
+    if candidate.get("schema_version") == "maestro_expertise_candidate_v2":
+        source_to_published[
+            "evidence/decision-map.json"
+        ] = "evidence/decision-map.json"
+        source_to_published[
+            "candidate-origin"
+        ] = "evidence/candidate-origin.json"
+    adaptation = candidate.get("adaptation")
+    if isinstance(adaptation, dict):
+        for field in (
+            "coverage_ref",
+            "plan_ref",
+            "source_route_ref",
+            "source_admission_ref",
+            "authoring_research_ref",
+        ):
+            reference = adaptation.get(field)
+            path = (
+                reference.get("path")
+                if isinstance(reference, dict)
+                else None
+            )
+            if isinstance(path, str):
+                source_to_published[path] = path
+    return source_to_published
+
+
 def project_publication_snapshot(
     pack: dict[str, Any],
     *,
@@ -288,40 +352,20 @@ def project_publication_snapshot(
             "Project Expertise publication provenance does not match its Pack.",
         )
 
-    source_to_published = {
-        f"draft/{PROJECT_PACK_FILENAME}": PROJECT_PACK_FILENAME,
-        "draft/SKILL.md": "SKILL.md",
-        "draft/agents/openai.yaml": "agents/openai.yaml",
-        "candidate.json": "evidence/candidate.json",
-        "evidence/sources.json": "evidence/sources.json",
-        "evals/cases.json": "evals/cases.json",
-    }
     try:
         suite = read_json(
             _required_pack_file(skill_root, "evals/cases.json")
         )
-        evaluation_artifact = suite.get(
-            "evaluation_artifact",
-            {},
-        ).get("path")
-        if isinstance(evaluation_artifact, str):
-            source_to_published[evaluation_artifact] = (
-                evaluation_artifact
-            )
         quality_path = candidate["evaluation"]["quality_path"]
-        source_to_published[quality_path] = quality_path
         quality = read_json(
             _required_pack_file(skill_root, quality_path)
         )
-        for result in quality.get("cases", []):
-            artifact_path = result.get("artifact", {}).get("path")
-            if isinstance(artifact_path, str):
-                source_to_published[artifact_path] = artifact_path
-        for guide in pack["guides"]:
-            source_path = f"draft/references/{guide['guide_id']}.md"
-            source_to_published[source_path] = (
-                f"references/{guide['guide_id']}.md"
-            )
+        source_to_published = expertise_publication_file_map(
+            candidate,
+            pack,
+            suite,
+            quality,
+        )
     except (KeyError, TypeError) as exc:
         raise MaestroError(
             "PROJECT_EXPERTISE_PUBLICATION_INVALID",
@@ -419,6 +463,43 @@ def _project_pack_is_superseded_by_bundled_successor(
     return promoted_shape == bundled_pack
 
 
+def _candidate_pack_revision_base(
+    pack: dict[str, Any],
+    *,
+    origin: str,
+    definition_root: Path,
+    bundled_pack: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return the exact bundled predecessor for one eligible candidate revision."""
+
+    if (
+        origin != "candidate"
+        or bundled_pack is None
+        or pack.get("extends") is not None
+        or pack.get("expertise_pack_id")
+        != bundled_pack.get("expertise_pack_id")
+        or pack.get("skill_id") != bundled_pack.get("skill_id")
+        or pack.get("version") != bundled_pack.get("version", 0) + 1
+    ):
+        return None
+    candidate_path = safe_target(definition_root, "candidate.json")
+    if candidate_path.is_symlink() or not candidate_path.is_file():
+        return None
+    try:
+        candidate = read_json(candidate_path)
+    except MaestroError:
+        return None
+    component_change = candidate.get("component_change")
+    if (
+        candidate.get("portability") != "global"
+        or not isinstance(component_change, dict)
+        or component_change.get("kind") != "pack-revision"
+        or component_change.get("target_guide_id") is not None
+    ):
+        return None
+    return bundled_pack
+
+
 def _resolve_local_packs(
     repo: Path,
     bundled_registry: dict[str, list[dict[str, Any]]],
@@ -452,7 +533,33 @@ def _resolve_local_packs(
         )
     ]
 
+    revision_bases: dict[str, dict[str, Any]] = {}
+    for (
+        pack,
+        _,
+        _,
+        origin,
+        _,
+        definition_root,
+    ) in retained_packs:
+        base = _candidate_pack_revision_base(
+            pack,
+            origin=origin,
+            definition_root=definition_root,
+            bundled_pack=bundled_by_id.get(
+                pack.get("expertise_pack_id")
+            ),
+        )
+        if base is not None:
+            revision_bases[pack["expertise_pack_id"]] = base
+
     combined = copy.deepcopy(bundled_registry)
+    if revision_bases:
+        combined["expertise_packs"] = [
+            pack
+            for pack in combined["expertise_packs"]
+            if pack["expertise_pack_id"] not in revision_bases
+        ]
     combined["expertise_packs"].extend(
         pack for pack, *_ in retained_packs
     )
@@ -524,6 +631,15 @@ def _resolve_local_packs(
             for guide in pack["guides"]
         }
         base_card: dict[str, Any] | None = None
+        inherited_skill_digests: dict[str, str] = {}
+        revision_base = revision_bases.get(pack_id)
+        if revision_base is not None:
+            base_card = {
+                "expertise_pack_id": revision_base["expertise_pack_id"],
+                "version": revision_base["version"],
+                "digest": expertise_manifest_digest(revision_base),
+                "skill_id": revision_base["skill_id"],
+            }
         if extends is not None:
             base = bundled_by_id.get(extends["expertise_pack_id"])
             if base is None:
@@ -606,6 +722,11 @@ def _resolve_local_packs(
                 "digest": base_digest,
                 "skill_id": base["skill_id"],
             }
+            inherited_skill_digests[base["skill_id"]] = (
+                load_packaged_release_manifest()["skills"][
+                    base["skill_id"]
+                ]["sha256"]
+            )
 
         local_skill_digest = _skill_tree_digest(skill_root)
         snapshot_path = (
@@ -622,15 +743,7 @@ def _resolve_local_packs(
             "definition_digest": _skill_tree_digest(definition_root),
             "skill_definition_digests": {
                 pack["skill_id"]: local_skill_digest,
-                **(
-                    {
-                        base["skill_id"]: load_packaged_release_manifest()[
-                            "skills"
-                        ][base["skill_id"]]["sha256"]
-                    }
-                    if base_card is not None
-                    else {}
-                ),
+                **inherited_skill_digests,
             },
             "guide_origins": guide_origins,
             "base": base_card,
@@ -705,6 +818,8 @@ def validate_project_expertise_against_registry(
 
 def candidate_expertise_statuses(
     repo_path: str | Path,
+    *,
+    include_task_gap: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """Classify candidate runtime eligibility without mutating project state."""
 
@@ -719,7 +834,10 @@ def candidate_expertise_statuses(
     )
 
     published_candidate_ids: set[str] = set()
-    active_versions: dict[str, int] = {}
+    active_versions: dict[str, int] = {
+        pack["expertise_pack_id"]: pack["version"]
+        for pack in load_registry()["expertise_packs"]
+    }
     for relative_path in _project_pack_paths(repo):
         target, _ = _project_pack_target(repo, relative_path)
         if not target.is_file() or target.is_symlink():
@@ -781,6 +899,17 @@ def candidate_expertise_statuses(
     ][:MAX_RUNTIME_CANDIDATES]
     for path in paths:
         candidate_id = path.name
+        if not include_task_gap:
+            try:
+                raw_candidate = read_json(safe_target(path, "candidate.json"))
+            except MaestroError:
+                raw_candidate = {}
+            generation = raw_candidate.get("generation")
+            if (
+                isinstance(generation, dict)
+                and generation.get("mode") == "task-gap"
+            ):
+                continue
         try:
             disposition = read_candidate_disposition(
                 repo,
@@ -828,6 +957,18 @@ def candidate_expertise_statuses(
             pack = read_json(
                 safe_target(path, f"draft/{PROJECT_PACK_FILENAME}")
             )
+            generation = candidate.get("generation")
+            component_change = candidate.get("component_change")
+            generation_mode = (
+                generation.get("mode")
+                if isinstance(generation, dict)
+                else None
+            )
+            change_kind = (
+                component_change.get("kind")
+                if isinstance(component_change, dict)
+                else None
+            )
             review_after = date.fromisoformat(candidate["review_after"])
             status.update(
                 {
@@ -843,6 +984,12 @@ def candidate_expertise_statuses(
                         disposition["candidate_digest"]
                         if disposition is not None
                         else _skill_tree_digest(path)
+                    ),
+                    "generation_mode": generation_mode,
+                    "change_kind": change_kind,
+                    **candidate_routing_policy(
+                        generation_mode=generation_mode,
+                        change_kind=change_kind,
                     ),
                 }
             )
@@ -884,13 +1031,13 @@ def candidate_expertise_statuses(
                 entry["runtime_status"] = "conflict"
             continue
         latest[0]["runtime_status"] = "available"
-        latest[0]["immediate_use_allowed"] = True
+        latest[0]["immediate_use_allowed"] = latest[0].get(
+            "ordinary_route_allowed",
+            False,
+        )
 
-    for change_set_id, candidate_ids in candidate_change_set_groups(
-        repo
-    ).items():
-        if len(candidate_ids) < 2:
-            continue
+    change_set_integrity = candidate_change_set_integrity(repo)
+    for change_set_id, candidate_ids in candidate_change_set_groups(repo).items():
         member_states = [
             statuses.get(candidate_id, {}).get(
                 "runtime_status",
@@ -898,7 +1045,13 @@ def candidate_expertise_statuses(
             )
             for candidate_id in candidate_ids
         ]
-        if all(state == "available" for state in member_states):
+        membership_state = change_set_integrity.get(
+            change_set_id,
+            "uncertain",
+        )
+        if membership_state in {"invalid", "uncertain"}:
+            change_set_status = "paused"
+        elif all(state == "available" for state in member_states):
             change_set_status = "available"
         elif all(state == "published" for state in member_states):
             change_set_status = "published"
@@ -908,21 +1061,36 @@ def candidate_expertise_statuses(
             status = statuses.get(candidate_id)
             if status is None:
                 continue
+            status.update(
+                candidate_routing_policy(
+                    generation_mode=status.get("generation_mode"),
+                    change_kind=status.get("change_kind"),
+                    grouped=len(candidate_ids) > 1,
+                )
+            )
             status["change_set_id"] = change_set_id
             status["change_set_candidate_ids"] = candidate_ids
             status["change_set_status"] = change_set_status
+            status["change_set_membership"] = membership_state
             if (
                 change_set_status == "paused"
                 and status.get("runtime_status") == "available"
             ):
                 status["runtime_status"] = "change_set_paused"
                 status["immediate_use_allowed"] = False
+            elif status.get("runtime_status") == "available":
+                status["immediate_use_allowed"] = status[
+                    "ordinary_route_allowed"
+                ]
     return statuses
 
 
 def _load_candidate_packs(
     repo: Path,
     bundled_registry: dict[str, list[dict[str, Any]]],
+    *,
+    goal: str | None = None,
+    route_hints: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     raw_packs: list[
         tuple[
@@ -934,10 +1102,56 @@ def _load_candidate_packs(
             Path,
         ]
     ] = []
-    for candidate_id, status in candidate_expertise_statuses(repo).items():
-        if not status["immediate_use_allowed"]:
+    corrected_task_gap = (
+        isinstance(route_hints, dict)
+        and route_hints.get("route_attempt") == 2
+        and isinstance(goal, str)
+        and bool(goal.strip())
+    )
+    for candidate_id, status in candidate_expertise_statuses(
+        repo,
+        include_task_gap=corrected_task_gap,
+    ).items():
+        if status.get("runtime_status") != "available":
+            continue
+        routing_role = status.get("routing_role")
+        if routing_role == "management-only":
+            continue
+        if routing_role == "ordinary-route":
+            if not status.get("immediate_use_allowed"):
+                continue
+        elif routing_role == "corrected-task-gap":
+            if not corrected_task_gap:
+                continue
+        else:
             continue
         candidate_root = safe_target(repo, status["candidate_path"])
+        candidate = read_json(safe_target(candidate_root, "candidate.json"))
+        generation = candidate.get("generation")
+        if (
+            isinstance(generation, dict)
+            and generation.get("mode") == "task-gap"
+        ):
+            if not corrected_task_gap:
+                continue
+            from .expertise_adaptation import task_gap_candidate_binding
+
+            binding = task_gap_candidate_binding(repo, candidate_id)
+            if (
+                not isinstance(binding, dict)
+                or binding.get("same_task_eligible") is not True
+                or binding.get("goal_digest") != sha256_text(goal)
+                or binding.get("source_route_plan_id")
+                != route_hints.get("prior_plan_id")
+                or binding.get("source_route_digest")
+                != route_hints.get("prior_source_route_digest")
+                or (
+                    route_hints.get("explicit_pack_id") is not None
+                    and binding.get("expertise_pack_id")
+                    != route_hints.get("explicit_pack_id")
+                )
+            ):
+                continue
         skill_root = safe_target(candidate_root, "draft")
         pack_path = safe_target(
             skill_root,
@@ -960,6 +1174,8 @@ def load_expertise_catalog(
     repo_path: str | Path | None = None,
     *,
     include_candidates: bool = False,
+    candidate_goal: str | None = None,
+    candidate_route_hints: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -998,7 +1214,12 @@ def load_expertise_catalog(
     published = [*bundled, *_load_project_packs(repo, registry)]
     if not include_candidates:
         return published
-    candidates = _load_candidate_packs(repo, registry)
+    candidates = _load_candidate_packs(
+        repo,
+        registry,
+        goal=candidate_goal,
+        route_hints=candidate_route_hints,
+    )
     candidate_pack_ids = {
         pack["expertise_pack_id"] for pack in candidates
     }
@@ -1026,6 +1247,44 @@ def expertise_definition_map(
 
 def _matches(goal_terms: frozenset[str], trigger: str) -> bool:
     return term_matches(goal_terms, trigger)
+
+
+def _guide_match_score(
+    goal_terms: frozenset[str],
+    guide: dict[str, Any],
+) -> int:
+    """Count distinct declared trigger matches for one Guide."""
+
+    return sum(
+        1
+        for trigger in guide["triggers"]
+        if _matches(goal_terms, trigger)
+    )
+
+
+def evaluate_pack_research_policy(
+    goal: str,
+    pack: dict[str, Any],
+) -> tuple[str, list[str]]:
+    """Evaluate one Pack's research policy without performing route selection."""
+
+    goal_terms = searchable_terms(goal)
+    policy = pack["research_policy"]
+    refresh_matches = [
+        trigger
+        for trigger in policy["refresh_triggers"]
+        if _matches(goal_terms, trigger)
+    ]
+    if refresh_matches:
+        return "refresh", list(dict.fromkeys(refresh_matches))
+    contextual_matches = [
+        trigger
+        for trigger in policy["contextualize_triggers"]
+        if _matches(goal_terms, trigger)
+    ]
+    if contextual_matches:
+        return "contextualize", list(dict.fromkeys(contextual_matches))
+    return policy.get("default_mode", "reuse"), []
 
 
 def _minimal_pack_card(
@@ -1094,6 +1353,8 @@ def select_expertise(
     catalog = load_expertise_catalog(
         repo_path,
         include_candidates=repo_path is not None,
+        candidate_goal=goal,
+        candidate_route_hints=normalized_hints,
     )
 
     goal_terms = searchable_terms(goal)
@@ -1195,6 +1456,7 @@ def select_expertise(
         selected_packs = [item[4] for item in ranked[:MAX_SELECTED_PACKS]]
 
     selected_guide_ids: list[str] = []
+    omitted_guide_ids: list[str] = []
     pack_cards: list[dict[str, Any]] = []
     research_mode = "reuse"
     research_reasons: list[str] = []
@@ -1222,45 +1484,62 @@ def select_expertise(
     for pack in selected_packs:
         guide_by_id = {guide["guide_id"]: guide for guide in pack["guides"]}
         matched_guides = [
-            guide
+            (_guide_match_score(goal_terms, guide), guide)
             for guide in pack["guides"]
-            if any(_matches(goal_terms, trigger) for trigger in guide["triggers"])
+            if _guide_match_score(goal_terms, guide) > 0
         ]
         matched_guides.sort(
-            key=lambda guide: (
-                guide["freshness"] != "volatile",
-                guide["guide_id"],
+            key=lambda scored_guide: (
+                -scored_guide[0],
+                scored_guide[1]["freshness"] != "volatile",
+                scored_guide[1]["guide_id"],
             )
         )
-        ordered_ids = list(
+        all_ordered_ids = list(
             dict.fromkeys(
                 [
-                    *(guide["guide_id"] for guide in matched_guides),
+                    *(
+                        guide["guide_id"]
+                        for _, guide in matched_guides
+                    ),
                     *pack["default_guides"],
                 ]
             )
-        )[:MAX_SELECTED_GUIDES]
+        )
+        ordered_ids = all_ordered_ids[:MAX_SELECTED_GUIDES]
+        omitted_guide_ids.extend(
+            all_ordered_ids[MAX_SELECTED_GUIDES:]
+        )
         selected_guides = [guide_by_id[guide_id] for guide_id in ordered_ids]
         selected_guide_ids.extend(ordered_ids)
         pack_cards.append(_minimal_pack_card(pack, selected_guides))
 
-        policy = pack["research_policy"]
-        refresh_matches = [
-            trigger
-            for trigger in policy["refresh_triggers"]
-            if _matches(goal_terms, trigger)
-        ]
-        contextual_matches = [
-            trigger
-            for trigger in policy["contextualize_triggers"]
-            if _matches(goal_terms, trigger)
-        ]
-        if refresh_matches:
+        pack_research_mode, pack_research_reasons = (
+            evaluate_pack_research_policy(goal, pack)
+        )
+        design_assurance_mode = (
+            normalized_hints.get("design_assurance_mode")
+            if normalized_hints is not None
+            and pack["expertise_pack_id"] == "product-design"
+            else None
+        )
+        if (
+            design_assurance_mode in {"standard", "system"}
+            and pack_research_mode == "reuse"
+        ):
+            pack_research_mode = "contextualize"
+            pack_research_reasons = [
+                f"design-assurance-{design_assurance_mode}"
+            ]
+        if pack_research_mode == "refresh":
             research_mode = "refresh"
-            research_reasons.extend(refresh_matches)
-        elif contextual_matches and research_mode == "reuse":
+            research_reasons.extend(pack_research_reasons)
+        elif (
+            pack_research_mode == "contextualize"
+            and research_mode == "reuse"
+        ):
             research_mode = "contextualize"
-            research_reasons.extend(contextual_matches)
+            research_reasons.extend(pack_research_reasons)
 
         if pack["status"] == "pilot":
             warnings.append(
@@ -1286,6 +1565,21 @@ def select_expertise(
                     ),
                 }
             )
+    if omitted_guide_ids:
+        warnings.append(
+            {
+                "code": "EXPERTISE_GUIDE_CAPACITY_EXCEEDED",
+                "omitted_guide_ids": list(
+                    dict.fromkeys(omitted_guide_ids)
+                ),
+                "message": (
+                    "The route projection reached its four-Guide batch "
+                    "capacity. Resolve required omitted Guides through Task "
+                    "Coverage and multi-Pack work; nothing is silently "
+                    "treated as covered."
+                ),
+            }
+        )
 
     if not selected_packs:
         discovery_matches = [
@@ -1362,6 +1656,12 @@ def select_expertise(
             "returned_guide_bodies": len(selected_guide_ids),
             "max_selected_packs": MAX_SELECTED_PACKS,
             "max_selected_guides": MAX_SELECTED_GUIDES,
+            "guide_capacity_status": (
+                "exceeded" if omitted_guide_ids else "complete"
+            ),
+            "omitted_guide_ids": list(
+                dict.fromkeys(omitted_guide_ids)
+            ),
             "ranked_candidates": [
                 {
                     "expertise_pack_id": item[3],

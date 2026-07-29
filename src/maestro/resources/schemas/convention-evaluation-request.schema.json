@@ -15,11 +15,12 @@
     "artifact_schema",
     "required_categories",
     "suite_digest_rule",
+    "receipt_contract",
     "writes_performed"
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_convention_evaluation_request_v1"
+      "const": "maestro_convention_evaluation_request_v2"
     },
     "command": {
       "enum": [
@@ -58,6 +59,27 @@
     },
     "suite_digest_rule": {
       "const": "sha256(canonical_json(cases))"
+    },
+    "receipt_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoring_evidence_ref",
+        "evaluation_result_ref",
+        "separate_read_only_evaluation_required"
+      ],
+      "properties": {
+        "authoring_evidence_ref": {
+          "type": "string",
+          "pattern": "^convention-candidate:[a-f0-9]{64}$"
+        },
+        "evaluation_result_ref": {
+          "const": "convention-evaluation:<artifact-sha256>"
+        },
+        "separate_read_only_evaluation_required": {
+          "const": true
+        }
+      }
     },
     "writes_performed": {
       "const": false

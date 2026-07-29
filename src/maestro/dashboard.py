@@ -69,6 +69,14 @@ ASSET_TYPES = {
         "viewer/project-switch.js",
         "text/javascript; charset=utf-8",
     ),
+    "/assets/snapshot-contract.js": (
+        "viewer/snapshot-contract.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/expertise-projection.js": (
+        "viewer/expertise-projection.js",
+        "text/javascript; charset=utf-8",
+    ),
     "/assets/app.js": (
         "viewer/app.js",
         "text/javascript; charset=utf-8",

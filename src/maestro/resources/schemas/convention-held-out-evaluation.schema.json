@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_convention_held_out_evaluation_v1"
+      "const": "maestro_convention_held_out_evaluation_v2"
     },
     "candidate_sha256": {
       "$ref": "#/$defs/digest"
@@ -86,7 +86,11 @@
       "required": [
         "command",
         "exit_code",
-        "executed_at"
+        "executed_at",
+        "kind",
+        "observation_id",
+        "authoring_run_ref",
+        "evaluation_run_ref"
       ],
       "properties": {
         "command": {
@@ -98,6 +102,18 @@
         "executed_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "kind": {
+          "enum": ["fresh-context", "human"]
+        },
+        "observation_id": {
+          "$ref": "#/$defs/line"
+        },
+        "authoring_run_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "evaluation_run_ref": {
+          "$ref": "#/$defs/line"
         }
       }
     },

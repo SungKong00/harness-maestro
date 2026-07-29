@@ -10,6 +10,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.support import write_json
+
 from maestro.cli import main
 from maestro.expertise import select_expertise
 from maestro.research import (
@@ -22,7 +24,6 @@ from maestro.research import (
     validate_research_packet,
 )
 from maestro.util import file_sha256
-from tests.support import write_json
 
 
 GOAL = "Find current references for a modern landing page design"
@@ -334,6 +335,46 @@ class ResearchValidationTests(unittest.TestCase):
             "RESEARCH_QUERY_PLAN_MISMATCH",
             {issue["code"] for issue in result["issues"]},
         )
+
+    def test_initial_lanes_need_independent_source_evidence(self) -> None:
+        bundle = _bundle()
+        second = _packet(
+            "repository",
+            wave=0,
+            source_id="source-repository",
+            claim_id="claim-repository",
+            adoption="warning",
+            url=bundle["packets"][0]["sources"][0]["url"],
+            rationale="A separate repository lane checks the same decision.",
+            query="landing page design standards",
+        )
+        bundle["packets"].append(second)
+        bundle["source_plan"]["lanes"].append(
+            {
+                "lane_id": "repository",
+                "wave": 0,
+                "rationale": second["lane_rationale"],
+                "decision_impact": (
+                    "Different standards evidence would change the warning."
+                ),
+                "queries": second["queries_used"],
+            }
+        )
+        bundle["synthesis"]["adopted_claim_ids"].append(
+            "claim-repository"
+        )
+
+        duplicate = validate_research_bundle(bundle)
+        self.assertIn(
+            "RESEARCH_INITIAL_LANE_SOURCE_INDEPENDENCE_REQUIRED",
+            {issue["code"] for issue in duplicate["issues"]},
+        )
+
+        second["sources"][0]["url"] = (
+            "https://standards.example.org/landing-page"
+        )
+        independent = validate_research_bundle(bundle)
+        self.assertEqual("PASS", independent["status"])
 
     def test_follow_up_requires_material_conflict_and_new_evidence(self) -> None:
         bundle = _bundle()

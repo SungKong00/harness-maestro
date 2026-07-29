@@ -11,6 +11,8 @@ from pathlib import Path
 from tests.support import ROOT, write_json
 
 from maestro.cli import main, parser
+from maestro.execution_contracts import normalize_execution_contract
+from maestro.model_policy import LEGACY_MODEL_ROUTE_FIELDS
 from maestro.planning import (
     KIND_EXECUTOR,
     LIMIT_FIELDS,
@@ -77,6 +79,215 @@ class RouteV2ContractTests(unittest.TestCase):
         self.assertIn("--route-version v2", skill)
         self.assertIn("maestro validate-plan", skill)
         self.assertNotIn("validation bypass", skill.casefold())
+
+    def test_assignments_select_models_by_explicit_stage(self) -> None:
+        plan = route_goal_v2(
+            "Implement API behavior and tests",
+            "medium",
+            ["contract", "test-proof"],
+            intent="implementation",
+        )
+        routes = {
+            assignment["assignment_id"]: assignment["model_route"]
+            for assignment in plan["assignments"]
+        }
+
+        self.assertEqual("semantic-review", routes["review"]["stage_kind"])
+        self.assertEqual("implementation", routes["implementation"]["stage_kind"])
+        self.assertEqual(
+            "semantic-verification",
+            routes["verification"]["stage_kind"],
+        )
+        self.assertTrue(
+            all(
+                route["selected_model"] == "gpt-5.6-terra"
+                for route in routes.values()
+            )
+        )
+        self.assertTrue(
+            all(
+                route["reasoning_effort"] == "high"
+                for route in routes.values()
+            )
+        )
+        self.assertEqual(
+            len(routes),
+            len({route["model_route_id"] for route in routes.values()}),
+        )
+
+    def test_high_risk_writer_can_reach_sol_without_keyword_guessing(self) -> None:
+        plan = route_goal_v2(
+            "Implement the approved API behavior",
+            "high",
+            ["contract"],
+            intent="implementation",
+        )
+
+        writer = next(
+            assignment
+            for assignment in plan["assignments"]
+            if assignment["kind"] == "implementation"
+        )
+        self.assertEqual("gpt-5.6-sol", writer["model_route"]["selected_model"])
+
+    def test_explicitly_difficult_medium_risk_writer_can_reach_sol(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Implement a difficult algorithm across multiple compiler passes",
+            "medium",
+            intent="implementation",
+        )
+        writer = next(
+            assignment
+            for assignment in plan["assignments"]
+            if assignment["kind"] == "implementation"
+        )
+
+        self.assertEqual(
+            "complex-implementation",
+            writer["model_route"]["task_class"],
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            writer["model_route"]["selected_model"],
+        )
+        self.assertEqual("high", writer["model_route"]["reasoning_effort"])
+
+        varied_wording = route_goal_v2(
+            (
+                "Implement a difficult compiler optimizer rewrite with "
+                "subtle semantic invariants"
+            ),
+            "medium",
+            intent="implementation",
+        )
+        varied_writer = next(
+            assignment
+            for assignment in varied_wording["assignments"]
+            if assignment["kind"] == "implementation"
+        )
+        self.assertEqual(
+            "complex-implementation",
+            varied_writer["model_route"]["task_class"],
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            varied_writer["model_route"]["selected_model"],
+        )
+
+        ordinary = route_goal_v2(
+            "Implement CRUD within the existing architecture",
+            "medium",
+            intent="implementation",
+        )
+        ordinary_writer = next(
+            assignment
+            for assignment in ordinary["assignments"]
+            if assignment["kind"] == "implementation"
+        )
+        self.assertEqual(
+            "gpt-5.6-terra",
+            ordinary_writer["model_route"]["selected_model"],
+        )
+        architecture = route_goal_v2(
+            "Implement the approved architecture decision for service boundaries",
+            "medium",
+            intent="implementation",
+        )
+        architecture_writer = next(
+            assignment
+            for assignment in architecture["assignments"]
+            if assignment["kind"] == "implementation"
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            architecture_writer["model_route"]["selected_model"],
+        )
+
+    def test_explicitly_difficult_semantic_stage_can_reach_sol(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Research a complex causal interaction and synthesize the evidence",
+            "medium",
+            intent="research",
+        )
+        researcher = next(
+            assignment
+            for assignment in plan["assignments"]
+            if assignment["kind"] == "research"
+        )
+
+        self.assertEqual(
+            "complex-semantic-judgment",
+            researcher["model_route"]["task_class"],
+        )
+        self.assertEqual(
+            "gpt-5.6-sol",
+            researcher["model_route"]["selected_model"],
+        )
+        self.assertEqual("high", researcher["model_route"]["reasoning_effort"])
+
+    def test_legacy_model_routes_remain_readable_but_not_executable(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Implement a CRUD endpoint",
+            "medium",
+            intent="implementation",
+        )
+        for model_route in [
+            plan["model_route"],
+            *(
+                assignment["model_route"]
+                for assignment in plan["assignments"]
+            ),
+        ]:
+            for field in list(model_route):
+                if field not in LEGACY_MODEL_ROUTE_FIELDS:
+                    model_route.pop(field)
+            model_route["reasoning_effort"] = "medium"
+        rehash_source_and_plan(plan)
+
+        validation = validate_route_v2(plan)
+        self.assertEqual("PASS", validation["status"])
+        self.assertEqual(
+            "UPGRADE_REQUIRED",
+            validation["execution_status"],
+        )
+        execution = normalize_execution_contract(plan)
+        self.assertEqual("FAIL", execution["status"])
+        self.assertEqual(
+            "EXECUTION_MODEL_ROUTE_UPGRADE_REQUIRED",
+            execution["issues"][0]["code"],
+        )
+
+    def test_legacy_top_route_cannot_report_ready_with_typed_assignments(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            "Implement a CRUD endpoint",
+            "medium",
+            intent="implementation",
+        )
+        for field in list(plan["model_route"]):
+            if field not in LEGACY_MODEL_ROUTE_FIELDS:
+                plan["model_route"].pop(field)
+        rehash_source_and_plan(plan)
+
+        validation = validate_route_v2(plan)
+        self.assertEqual("PASS", validation["status"])
+        self.assertEqual(
+            "UPGRADE_REQUIRED",
+            validation["execution_status"],
+        )
+        execution = normalize_execution_contract(plan)
+        self.assertEqual("PASS", execution["status"])
+        self.assertEqual(
+            "UPGRADE_REQUIRED",
+            execution["execution_status"],
+        )
 
     def test_frozen_route_cases_produce_valid_bounded_plans(self) -> None:
         cases = json.loads(

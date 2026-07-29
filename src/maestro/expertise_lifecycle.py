@@ -3,23 +3,41 @@ from __future__ import annotations
 import copy
 import json
 import re
+import stat
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
 from .errors import MaestroError
+from .candidate_origin import (
+    validate_candidate_origin_payload,
+    validate_expertise_candidate_origin,
+)
+from .evaluation_attestation import (
+    observed_read_only_evaluation,
+)
 from .expertise import (
     PROJECT_PACK_FILENAME,
     candidate_expertise_statuses,
+    expertise_publication_file_map,
     expertise_manifest_digest,
     load_expertise_catalog,
     project_publication_snapshot,
     validate_project_expertise_against_registry,
 )
+from .expertise_adaptation import validate_task_gap_candidate_lineage
 from .expertise_changes import (
     candidate_change_set_context,
     require_change_set,
+)
+from .expertise_coverage import validate_candidate_decision_map
+from .expertise_revision import undeclared_routing_removals
+from .expertise_topology import (
+    expertise_change_set_manifest_digest,
+    validate_candidate_change_semantics,
+    validate_expertise_change_set_manifest,
+    validate_task_gap_complex_candidate,
 )
 from .project import git_ignored
 from .registry import load_registry, resource_root, validate_registry
@@ -60,13 +78,23 @@ APPROVAL_PATTERN = re.compile(
     r"^(?:owner_decision|held_out_evaluation):\S.+$"
 )
 MAX_CANDIDATES = 100
+MAX_PROPOSED_GUIDES = 24
+MAX_EXPERTISE_SOURCES = 64
 MAX_ACTIVATION_FILE_BYTES = 2_000_000
 MAX_VIEWER_EVALUATION_CASES = 12
+MAX_CONTRIBUTION_FILES = 96
 CANDIDATE_DISPOSITION_FILENAME = "disposition.json"
 CANDIDATE_TOMBSTONE_VERSION = "maestro_expertise_candidate_tombstone_v1"
 CANDIDATE_TOMBSTONE_ROOT = (
     ".maestro/state/candidates/expertise-tombstones"
 )
+
+
+class _OriginalFileState(NamedTuple):
+    content: bytes | None
+    mode: int | None
+
+
 CANDIDATE_DISPOSITION_VERSION = (
     "maestro_expertise_candidate_disposition_v1"
 )
@@ -103,7 +131,12 @@ CANDIDATE_REQUIRED_FIELDS = {
     "proposed_guides",
     "evaluation",
 }
-CANDIDATE_OPTIONAL_FIELDS = {"component_change", "generation"}
+CANDIDATE_OPTIONAL_FIELDS = {
+    "adaptation",
+    "component_change",
+    "coverage",
+    "generation",
+}
 GENERATION_FIELDS = {
     "mode",
     "signal_fingerprint",
@@ -117,11 +150,14 @@ COMPONENT_CHANGE_OPTIONAL_FIELDS = {
     "target_pack_ids",
     "change_set_id",
     "operation_id",
+    "operation_role",
     "summary",
 }
 COMPONENT_CHANGE_KINDS = {
     "new-pack",
+    "pack-revision",
     "pack-merge",
+    "pack-extraction",
     "pack-split",
     "guide-addition",
     "guide-revision",
@@ -159,10 +195,20 @@ QUALITY_EVALUATION_FIELDS = {
     "evaluator",
     "cases",
 }
+QUALITY_EVALUATION_V2_FIELDS = QUALITY_EVALUATION_FIELDS | {
+    "subject",
+}
 QUALITY_EVALUATOR_FIELDS = {
     "kind",
     "authoring_run_ref",
     "evaluation_run_ref",
+}
+QUALITY_EVALUATOR_V2_FIELDS = QUALITY_EVALUATOR_FIELDS | {
+    "observation_id",
+}
+QUALITY_SUBJECT_FIELDS = {
+    "candidate_digest",
+    "cases_sha256",
 }
 QUALITY_CASE_FIELDS = {
     "case_id",
@@ -231,6 +277,7 @@ CHANGE_SET_PLAN_FIELDS = {
     "replacement_pack_ids",
     "deleted_at",
     "member_plan_digests",
+    "topology_manifest_digest",
     "operations",
     "warnings",
     "writes_performed",
@@ -303,7 +350,11 @@ def _candidate_contract_valid(
         not CANDIDATE_REQUIRED_FIELDS.issubset(candidate)
         or set(candidate) - CANDIDATE_REQUIRED_FIELDS
         - CANDIDATE_OPTIONAL_FIELDS
-        or candidate.get("schema_version") != "maestro_expertise_candidate_v1"
+        or candidate.get("schema_version")
+        not in {
+            "maestro_expertise_candidate_v1",
+            "maestro_expertise_candidate_v2",
+        }
         or candidate.get("candidate_id") != candidate_id
         or candidate.get("status") != "candidate"
         or candidate.get("portability") not in {"project", "profile", "global"}
@@ -325,7 +376,10 @@ def _candidate_contract_valid(
     except (TypeError, ValueError):
         return False
     guides = candidate.get("proposed_guides")
-    if not isinstance(guides, list) or not 1 <= len(guides) <= 8:
+    if (
+        not isinstance(guides, list)
+        or not 1 <= len(guides) <= MAX_PROPOSED_GUIDES
+    ):
         return False
     guide_ids: list[str] = []
     for guide in guides:
@@ -361,6 +415,7 @@ def _candidate_contract_valid(
         ):
             return False
         target_guide_id = component_change.get("target_guide_id")
+        operation_role = component_change.get("operation_role")
         source_pack_ids = component_change.get("source_pack_ids", [])
         target_pack_ids = component_change.get("target_pack_ids", [])
         if (
@@ -389,9 +444,21 @@ def _candidate_contract_valid(
                 or ID_PATTERN.fullmatch(value) is None
             ):
                 return False
+        if operation_role is not None and operation_role not in {
+            "source",
+            "target",
+            "result",
+        }:
+            return False
         if (
             component_change["kind"]
-            in {"pack-merge", "pack-split", "guide-move", "guide-copy"}
+            in {
+                "pack-merge",
+                "pack-extraction",
+                "pack-split",
+                "guide-move",
+                "guide-copy",
+            }
             and not isinstance(component_change.get("change_set_id"), str)
         ):
             return False
@@ -412,12 +479,20 @@ def _candidate_contract_valid(
                 component_change["kind"] in {
                     "guide-addition",
                     "guide-revision",
-                    "guide-move",
                     "guide-copy",
                 }
                 and target_guide_id not in guide_ids
             ):
                 return False
+            if component_change["kind"] == "guide-move":
+                if (
+                    operation_role == "source"
+                    and target_guide_id in guide_ids
+                ) or (
+                    operation_role != "source"
+                    and target_guide_id not in guide_ids
+                ):
+                    return False
             if (
                 component_change["kind"] == "guide-deprecation"
                 and target_guide_id in guide_ids
@@ -425,7 +500,10 @@ def _candidate_contract_valid(
                 return False
         elif target_guide_id is not None:
             return False
-        if component_change["kind"] == "pack-merge":
+        if component_change["kind"] in {
+            "pack-merge",
+            "pack-extraction",
+        }:
             if (
                 len(source_pack_ids) < 2
                 or len(guide_ids) < 2
@@ -440,17 +518,28 @@ def _candidate_contract_valid(
                 return False
         elif source_pack_ids or target_pack_ids:
             return False
+        if (
+            component_change["kind"] not in {
+                "pack-merge",
+                "pack-extraction",
+                "pack-split",
+                "guide-move",
+                "guide-copy",
+            }
+            and operation_role is not None
+        ):
+            return False
     generation = candidate.get("generation")
     if generation is not None:
         if (
             not isinstance(generation, dict)
             or set(generation) != GENERATION_FIELDS
             or generation.get("mode")
-            not in {"automatic", "user-requested"}
+            not in {"automatic", "user-requested", "task-gap"}
         ):
             return False
         fingerprint = generation.get("signal_fingerprint")
-        if generation["mode"] == "automatic":
+        if generation["mode"] in {"automatic", "task-gap"}:
             if (
                 not isinstance(fingerprint, str)
                 or re.fullmatch(r"[a-f0-9]{24}", fingerprint) is None
@@ -458,6 +547,54 @@ def _candidate_contract_valid(
                 return False
         elif fingerprint is not None:
             return False
+        if (
+            generation["mode"] == "task-gap"
+            and (
+                candidate.get("schema_version")
+                != "maestro_expertise_candidate_v2"
+                or not isinstance(candidate.get("adaptation"), dict)
+                or not isinstance(candidate.get("component_change"), dict)
+            )
+        ):
+            return False
+        if generation["mode"] == "task-gap":
+            declared_change = candidate["component_change"]
+            if declared_change["kind"] in {
+                "pack-merge",
+                "pack-extraction",
+                "pack-split",
+                "guide-move",
+                "guide-copy",
+            } and (
+                not isinstance(declared_change.get("change_set_id"), str)
+                or not isinstance(declared_change.get("operation_id"), str)
+                or declared_change.get("operation_role")
+                not in {"source", "target", "result"}
+            ):
+                return False
+        if (
+            generation["mode"] != "task-gap"
+            and candidate.get("adaptation") is not None
+        ):
+            return False
+    coverage = candidate.get("coverage")
+    if candidate["schema_version"] == "maestro_expertise_candidate_v2":
+        if (
+            not isinstance(coverage, dict)
+            or set(coverage)
+            != {
+                "decision_map_path",
+                "discovery_complete",
+                "allocation_complete",
+            }
+            or coverage.get("decision_map_path")
+            != "evidence/decision-map.json"
+            or coverage.get("discovery_complete") is not True
+            or coverage.get("allocation_complete") is not True
+        ):
+            return False
+    elif coverage is not None:
+        return False
     evaluation = candidate.get("evaluation")
     return (
         isinstance(evaluation, dict)
@@ -504,6 +641,49 @@ def _candidate_root(repo: Path, candidate_id: str) -> Path:
     )
 
 
+def _duplicate_signal_candidate_ids(
+    repo: Path,
+    candidate: dict[str, Any],
+) -> list[str]:
+    generation = candidate.get("generation")
+    fingerprint = (
+        generation.get("signal_fingerprint")
+        if isinstance(generation, dict)
+        and generation.get("mode") == "automatic"
+        else None
+    )
+    if not isinstance(fingerprint, str):
+        return []
+    root = safe_target(repo, ".maestro/state/candidates/expertise")
+    if root.is_symlink() or not root.is_dir():
+        return []
+    duplicates: list[str] = []
+    for path in sorted(root.iterdir())[:MAX_CANDIDATES]:
+        if (
+            path.is_symlink()
+            or not path.is_dir()
+            or path.name == candidate.get("candidate_id")
+        ):
+            continue
+        candidate_path = safe_target(path, "candidate.json")
+        if candidate_path.is_symlink() or not candidate_path.is_file():
+            continue
+        try:
+            other = read_json(candidate_path)
+            other_generation = other.get("generation")
+            if (
+                isinstance(other_generation, dict)
+                and other_generation.get("mode") == "automatic"
+                and other_generation.get("signal_fingerprint")
+                == fingerprint
+                and read_candidate_disposition(repo, path.name) is None
+            ):
+                duplicates.append(path.name)
+        except (MaestroError, TypeError, ValueError):
+            continue
+    return duplicates
+
+
 def _candidate_tree_digest(root: Path) -> str:
     digests: list[dict[str, str]] = []
     total_bytes = 0
@@ -544,6 +724,89 @@ def _candidate_tree_digest(root: Path) -> str:
             "Candidate has no regular files to review.",
         )
     return sha256_text(canonical_json(digests))
+
+
+def _candidate_evaluation_subject_digest(root: Path) -> str:
+    """Freeze candidate inputs while excluding evaluator-owned outputs."""
+
+    digests: list[dict[str, str]] = []
+    total_bytes = 0
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise MaestroError(
+                "EXPERTISE_CANDIDATE_SYMLINK_UNSAFE",
+                f"Candidate contains a symlink: {path.relative_to(root)}",
+            )
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(root).as_posix()
+        if (
+            relative_path
+            in {
+                CANDIDATE_DISPOSITION_FILENAME,
+                "promotion-decision.json",
+                "evals/quality.json",
+            }
+            or relative_path.startswith("evals/artifacts/")
+        ):
+            continue
+        size = path.stat().st_size
+        total_bytes += size
+        if (
+            size > MAX_ACTIVATION_FILE_BYTES
+            or total_bytes > MAX_ACTIVATION_FILE_BYTES
+            or len(digests) >= 200
+        ):
+            raise MaestroError(
+                "EXPERTISE_CANDIDATE_TOO_LARGE",
+                "Candidate files exceed the bounded evaluation subject limit.",
+            )
+        digests.append(
+            {
+                "path": relative_path,
+                "sha256": sha256_bytes(path.read_bytes()),
+            }
+        )
+    if not digests:
+        raise MaestroError(
+            "EXPERTISE_CANDIDATE_EMPTY",
+            "Candidate has no regular evaluation inputs.",
+        )
+    return sha256_text(canonical_json(digests))
+
+
+def expertise_evaluation_subject(
+    repo_path: str | Path,
+    candidate_id: str,
+) -> dict[str, Any]:
+    """Return the immutable subject refs a separate evaluator must observe."""
+
+    repo = ensure_repo(repo_path)
+    root, candidate = _read_candidate(repo, candidate_id)
+    cases_path = safe_target(root, candidate["evaluation"]["cases_path"])
+    cases_digest = file_sha256(cases_path)
+    if (
+        cases_path.is_symlink()
+        or not cases_path.is_file()
+        or cases_digest is None
+    ):
+        raise MaestroError(
+            "EXPERTISE_EVALUATION_CASES_MISSING",
+            "Candidate evaluation cases are missing or unsafe.",
+        )
+    subject_digest = _candidate_evaluation_subject_digest(root)
+    return {
+        "schema_version": "maestro_expertise_evaluation_subject_v1",
+        "candidate_id": candidate_id,
+        "expertise_pack_id": candidate["expertise_pack_id"],
+        "candidate_digest": subject_digest,
+        "cases_sha256": cases_digest,
+        "evidence_refs": [
+            f"candidate-subject:{subject_digest}",
+            f"candidate-cases:{cases_digest}",
+        ],
+        "writes_performed": False,
+    }
 
 
 def read_candidate_disposition(
@@ -689,6 +952,7 @@ def _quality_artifact_valid(value: Any, case_id: str) -> bool:
 
 
 def _validate_quality_evaluation(
+    repo: Path,
     root: Path,
     candidate: dict[str, Any],
     expected_by_case: dict[str, dict[str, Any]],
@@ -697,16 +961,36 @@ def _validate_quality_evaluation(
     quality_path = candidate["evaluation"]["quality_path"]
     try:
         quality = read_json(safe_target(root, quality_path))
+        quality_version = quality.get("schema_version")
         evaluator = quality.get("evaluator")
         cases = quality.get("cases")
+        is_v2 = quality_version == "maestro_expertise_quality_eval_v2"
+        expected_fields = (
+            QUALITY_EVALUATION_V2_FIELDS
+            if is_v2
+            else QUALITY_EVALUATION_FIELDS
+        )
+        expected_evaluator_fields = (
+            QUALITY_EVALUATOR_V2_FIELDS
+            if is_v2
+            else QUALITY_EVALUATOR_FIELDS
+        )
+        detached_evaluation_required = (
+            candidate.get("schema_version")
+            == "maestro_expertise_candidate_v2"
+        )
         if (
-            set(quality) != QUALITY_EVALUATION_FIELDS
-            or quality.get("schema_version")
-            != "maestro_expertise_quality_eval_v1"
+            set(quality) != expected_fields
+            or quality_version
+            not in {
+                "maestro_expertise_quality_eval_v1",
+                "maestro_expertise_quality_eval_v2",
+            }
+            or (detached_evaluation_required and not is_v2)
             or quality.get("expertise_pack_id")
             != candidate["expertise_pack_id"]
             or not isinstance(evaluator, dict)
-            or set(evaluator) != QUALITY_EVALUATOR_FIELDS
+            or set(evaluator) != expected_evaluator_fields
             or evaluator.get("kind") not in {"fresh-context", "human"}
             or not isinstance(evaluator.get("authoring_run_ref"), str)
             or not evaluator["authoring_run_ref"].strip()
@@ -719,7 +1003,10 @@ def _validate_quality_evaluation(
         ):
             raise MaestroError(
                 "EXPERTISE_QUALITY_EVALUATION_INVALID",
-                "quality.json does not satisfy maestro_expertise_quality_eval_v1.",
+                (
+                    "quality.json does not satisfy the required Expertise "
+                    "quality evaluation contract."
+                ),
             )
         date.fromisoformat(quality["evaluated_on"])
     except (MaestroError, TypeError, ValueError) as exc:
@@ -731,6 +1018,58 @@ def _validate_quality_evaluation(
                 message,
             )
         ]
+
+    if is_v2:
+        subject = quality.get("subject")
+        cases_digest = file_sha256(
+            safe_target(root, candidate["evaluation"]["cases_path"])
+        )
+        expected_subject_digest = _candidate_evaluation_subject_digest(root)
+        if (
+            not isinstance(subject, dict)
+            or set(subject) != QUALITY_SUBJECT_FIELDS
+            or subject.get("candidate_digest")
+            != expected_subject_digest
+            or subject.get("cases_sha256") != cases_digest
+        ):
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_SUBJECT_MISMATCH",
+                    f"{quality_path}.subject",
+                    (
+                        "Quality evaluation must bind the exact frozen "
+                        "candidate inputs and case suite."
+                    ),
+                )
+            )
+        expected_refs = {
+            f"candidate-subject:{expected_subject_digest}",
+            f"candidate-cases:{cases_digest}",
+        }
+        attested = observed_read_only_evaluation(
+            repo,
+            observation_id=evaluator.get("observation_id"),
+            evaluation_run_id=evaluator.get("evaluation_run_ref"),
+            authoring_run_id=evaluator.get("authoring_run_ref"),
+            subject_evidence_refs=expected_refs,
+            result_evidence_ref=(
+                "candidate-quality:"
+                f"{file_sha256(safe_target(root, quality_path))}"
+            ),
+            evaluator_kind=evaluator.get("kind"),
+        )
+        if not attested:
+            issues.append(
+                _candidate_issue(
+                    "EXPERTISE_QUALITY_ATTESTATION_INVALID",
+                    f"{quality_path}.evaluator",
+                    (
+                        "Quality v2 requires one completed Host-observed "
+                        "read-only evaluation bound to the exact subject and "
+                        "case digests."
+                    ),
+                )
+            )
 
     case_ids: set[str] = set()
     for index, result in enumerate(cases):
@@ -885,6 +1224,8 @@ def _validate_quality_evaluation(
 def validate_expertise_candidate(
     repo_path: str | Path,
     candidate_id: str,
+    *,
+    validate_change_set: bool = True,
 ) -> dict[str, Any]:
     """Validate one complete candidate bundle without changing the repository."""
 
@@ -903,9 +1244,96 @@ def validate_expertise_candidate(
             "writes_performed": False,
         }
 
+    generation = candidate.get("generation")
+    if (
+        candidate.get("schema_version")
+        != "maestro_expertise_candidate_v2"
+    ):
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_CANDIDATE_UPGRADE_REQUIRED",
+                "candidate.json.schema_version",
+                (
+                    "Legacy candidates remain stored for review but cannot "
+                    "be routed or published until regenerated with the v2 "
+                    "Decision Map and detached evaluation contract."
+                ),
+            )
+        )
+    duplicate_candidates = _duplicate_signal_candidate_ids(
+        repo,
+        candidate,
+    )
+    if duplicate_candidates:
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_AUTOMATIC_CANDIDATE_DUPLICATE",
+                "candidate.json.generation.signal_fingerprint",
+                (
+                    "Another live candidate already represents this signal: "
+                    + ", ".join(duplicate_candidates)
+                ),
+            )
+        )
+    task_gap_mode = (
+        isinstance(generation, dict)
+        and generation.get("mode") == "task-gap"
+    )
+    reserved_task_gap_paths = (
+        "evidence/task-coverage.json",
+        "evidence/adaptation-plan.json",
+        "evidence/source-route.json",
+        "evidence/source-admission.json",
+    )
+    if not task_gap_mode and any(
+        (
+            target := safe_target(root, relative_path)
+        ).is_file()
+        and not target.is_symlink()
+        for relative_path in reserved_task_gap_paths
+    ):
+        issues.append(
+            _candidate_issue(
+                "EXPERTISE_TASK_GAP_MODE_DOWNGRADE",
+                "candidate.json.generation.mode",
+                (
+                    "A candidate containing task-gap lineage artifacts "
+                    "cannot be reclassified as automatic or user-requested."
+                ),
+            )
+        )
+
+    lineage_issues, task_gap_binding = validate_task_gap_candidate_lineage(
+        repo,
+        root,
+        candidate,
+    )
+    issues.extend(lineage_issues)
+    origin_path = safe_target(
+        repo,
+        (
+            ".maestro/state/candidate-origins/expertise/"
+            f"{candidate_id}.json"
+        ),
+    )
+    if (
+        candidate.get("schema_version")
+        == "maestro_expertise_candidate_v2"
+        or task_gap_mode
+        or origin_path.exists()
+        or origin_path.is_symlink()
+    ):
+        issues.extend(
+            validate_expertise_candidate_origin(
+                repo,
+                candidate=candidate,
+                task_gap_binding=task_gap_binding,
+            )
+        )
+
     try:
         pack = read_json(safe_target(root, f"draft/{PROJECT_PACK_FILENAME}"))
-        _validate_activation_pack(candidate, pack)
+        _validate_candidate_pack_contract(candidate, pack)
     except MaestroError as exc:
         issues.append(
             _candidate_issue(
@@ -915,11 +1343,27 @@ def validate_expertise_candidate(
             )
         )
         pack = None
+    if isinstance(pack, dict):
+        issues.extend(
+            validate_candidate_change_semantics(
+                repo,
+                candidate,
+                pack,
+            )
+        )
+    if validate_change_set:
+        issues.extend(
+            validate_task_gap_complex_candidate(
+                repo,
+                candidate,
+            )
+        )
 
     component_change = candidate.get("component_change")
     if (
         isinstance(component_change, dict)
-        and component_change.get("kind") == "pack-merge"
+        and component_change.get("kind")
+        in {"pack-merge", "pack-extraction"}
     ):
         source_pack_ids = component_change.get("source_pack_ids", [])
         available_pack_ids = {
@@ -932,18 +1376,18 @@ def validate_expertise_candidate(
         if missing_pack_ids:
             issues.append(
                 _candidate_issue(
-                    "EXPERTISE_PACK_MERGE_SOURCE_MISSING",
+                    "EXPERTISE_PACK_RECOMPOSITION_SOURCE_MISSING",
                     "candidate.json",
-                    "Pack integration sources are not active or bundled: "
+                    "Pack recomposition sources are not active or bundled: "
                     + ", ".join(missing_pack_ids),
                 )
             )
         if candidate["expertise_pack_id"] in source_pack_ids:
             issues.append(
                 _candidate_issue(
-                    "EXPERTISE_PACK_MERGE_SELF_REFERENCE",
+                    "EXPERTISE_PACK_RECOMPOSITION_SELF_REFERENCE",
                     "candidate.json",
-                    "A consolidated Pack cannot list itself as a source Pack.",
+                    "A recomposed Pack cannot list itself as a source Pack.",
                 )
             )
 
@@ -999,6 +1443,7 @@ def validate_expertise_candidate(
 
     sources_path = "evidence/sources.json"
     covered_guides: set[str] = set()
+    source_ids: set[str] = set()
     try:
         sources = read_json(safe_target(root, sources_path))
         if (
@@ -1011,6 +1456,7 @@ def validate_expertise_candidate(
             or sources.get("schema_version") != "maestro_expertise_sources_v1"
             or not isinstance(sources.get("sources"), list)
             or not sources["sources"]
+            or len(sources["sources"]) > MAX_EXPERTISE_SOURCES
             or sources.get("expertise_pack_id")
             != candidate["expertise_pack_id"]
         ):
@@ -1019,7 +1465,6 @@ def validate_expertise_candidate(
                 "sources.json does not satisfy maestro_expertise_sources_v1.",
             )
         date.fromisoformat(sources["verified_on"])
-        source_ids: set[str] = set()
         for index, source in enumerate(sources["sources"]):
             path = f"{sources_path}.sources[{index}]"
             allowed = {
@@ -1114,6 +1559,36 @@ def validate_expertise_candidate(
                 f"Non-volatile Guides lack source linkage: {', '.join(uncovered)}.",
             )
         )
+    issues.extend(
+        validate_candidate_decision_map(
+            root,
+            candidate,
+            proposed_guide_ids=guide_ids,
+            source_ids=source_ids,
+            resolved_research_bundle_refs=(
+                {
+                    "research-bundle:"
+                    + task_gap_binding["authoring_research_digest"]
+                }
+                if (
+                    isinstance(task_gap_binding, dict)
+                    and isinstance(
+                        task_gap_binding.get(
+                            "authoring_research_digest"
+                        ),
+                        str,
+                    )
+                )
+                else set()
+                if (
+                    isinstance(candidate.get("generation"), dict)
+                    and candidate["generation"].get("mode")
+                    == "task-gap"
+                )
+                else None
+            ),
+        )
+    )
 
     cases_path = "evals/cases.json"
     expected_by_case: dict[str, dict[str, Any]] = {}
@@ -1277,6 +1752,7 @@ def validate_expertise_candidate(
     if expected_by_case:
         issues.extend(
             _validate_quality_evaluation(
+                repo,
                 root,
                 candidate,
                 expected_by_case,
@@ -1308,12 +1784,19 @@ def _validate_candidate_bundle_or_raise(
         raise MaestroError("EXPERTISE_CANDIDATE_BUNDLE_INVALID", summary)
 
 
-def _validate_activation_pack(
+def _validate_candidate_pack_contract(
     candidate: dict[str, Any],
     pack: dict[str, Any],
 ) -> None:
     registry = load_registry()
     combined = copy.deepcopy(registry)
+    combined["expertise_packs"] = [
+        item
+        for item in combined["expertise_packs"]
+        if item.get("expertise_pack_id")
+        != pack.get("expertise_pack_id")
+        and item.get("skill_id") != pack.get("skill_id")
+    ]
     combined["expertise_packs"].append(pack)
     errors = validate_registry(combined)
     if errors:
@@ -1372,6 +1855,24 @@ def _validate_activation_pack(
         )
 
 
+def _validate_activation_pack(
+    candidate: dict[str, Any],
+    pack: dict[str, Any],
+) -> None:
+    """Validate publication compatibility after bundle integrity has passed."""
+
+    _validate_candidate_pack_contract(candidate, pack)
+    registry = load_registry()
+    combined = copy.deepcopy(registry)
+    combined["expertise_packs"].append(pack)
+    errors = validate_registry(combined)
+    if errors:
+        raise MaestroError(
+            "EXPERTISE_ACTIVATION_PACK_INVALID",
+            "; ".join(errors),
+        )
+
+
 def _validate_approval_ref(approval_ref: str) -> None:
     if (
         not isinstance(approval_ref, str)
@@ -1384,7 +1885,7 @@ def _validate_approval_ref(approval_ref: str) -> None:
         )
 
 
-def _fresh_candidate_pack(
+def _fresh_candidate_bundle(
     repo: Path,
     candidate_id: str,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
@@ -1394,14 +1895,25 @@ def _fresh_candidate_pack(
             "EXPERTISE_CANDIDATE_REJECTED",
             "Restore a rejected candidate before publication or export.",
         )
-    _validate_candidate_bundle_or_raise(repo, candidate_id)
     if date.fromisoformat(candidate["review_after"]) < date.today():
         raise MaestroError(
             "EXPERTISE_CANDIDATE_EXPIRED",
             "Expired candidates must be revalidated before publication.",
         )
+    _validate_candidate_bundle_or_raise(repo, candidate_id)
     pack = read_json(
         safe_target(candidate_root, f"draft/{PROJECT_PACK_FILENAME}")
+    )
+    return candidate_root, candidate, pack
+
+
+def _fresh_candidate_pack(
+    repo: Path,
+    candidate_id: str,
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    candidate_root, candidate, pack = _fresh_candidate_bundle(
+        repo,
+        candidate_id,
     )
     _validate_activation_pack(candidate, pack)
     return candidate_root, candidate, pack
@@ -1432,51 +1944,35 @@ def _project_expertise_configuration(
 
 
 def _candidate_publication_contents(
+    repo: Path,
     candidate_root: Path,
     pack: dict[str, Any],
     destination_root: str,
 ) -> tuple[dict[str, str], str]:
-    source_to_destination = {
-        f"draft/{PROJECT_PACK_FILENAME}": (
-            f"{destination_root}/{PROJECT_PACK_FILENAME}"
-        ),
-        "draft/SKILL.md": f"{destination_root}/SKILL.md",
-        "draft/agents/openai.yaml": (
-            f"{destination_root}/agents/openai.yaml"
-        ),
-        "candidate.json": f"{destination_root}/evidence/candidate.json",
-        "evidence/sources.json": (
-            f"{destination_root}/evidence/sources.json"
-        ),
-        "evals/cases.json": f"{destination_root}/evals/cases.json",
-    }
     suite = read_json(safe_target(candidate_root, "evals/cases.json"))
-    evaluation_artifact = suite.get("evaluation_artifact", {}).get("path")
-    if isinstance(evaluation_artifact, str):
-        source_to_destination[evaluation_artifact] = (
-            f"{destination_root}/{evaluation_artifact}"
-        )
     candidate = read_json(safe_target(candidate_root, "candidate.json"))
     quality_path = candidate["evaluation"]["quality_path"]
-    source_to_destination[quality_path] = (
-        f"{destination_root}/{quality_path}"
-    )
     quality = read_json(safe_target(candidate_root, quality_path))
-    for result in quality.get("cases", []):
-        artifact_path = result.get("artifact", {}).get("path")
-        if isinstance(artifact_path, str):
-            source_to_destination[artifact_path] = (
-                f"{destination_root}/{artifact_path}"
-            )
-    for guide in pack["guides"]:
-        guide_id = guide["guide_id"]
-        source_to_destination[
-            f"draft/references/{guide_id}.md"
-        ] = f"{destination_root}/references/{guide_id}.md"
+    source_to_published = expertise_publication_file_map(
+        candidate,
+        pack,
+        suite,
+        quality,
+    )
 
     contents: dict[str, str] = {}
     source_digests: dict[str, str] = {}
-    for source, destination in sorted(source_to_destination.items()):
+    for source, published_path in sorted(source_to_published.items()):
+        destination = f"{destination_root}/{published_path}"
+        if source == "candidate-origin":
+            origin_relative_path = (
+                ".maestro/state/candidate-origins/expertise/"
+                f"{candidate['candidate_id']}.json"
+            )
+            content = _read_text_file(repo, origin_relative_path)
+            source_digests[source] = sha256_text(content)
+            contents[destination] = content
+            continue
         content = _read_text_file(candidate_root, source)
         source_digests[source] = sha256_text(content)
         contents[destination] = content
@@ -1484,33 +1980,23 @@ def _candidate_publication_contents(
 
 
 def _candidate_contribution_files(
+    repo: Path,
     candidate_root: Path,
     pack: dict[str, Any],
 ) -> list[dict[str, str]]:
-    relative_paths = {
-        "candidate.json",
-        f"draft/{PROJECT_PACK_FILENAME}",
-        "draft/SKILL.md",
-        "draft/agents/openai.yaml",
-        "evidence/sources.json",
-        "evals/cases.json",
-    }
     suite = read_json(safe_target(candidate_root, "evals/cases.json"))
-    evaluation_artifact = suite.get("evaluation_artifact", {}).get("path")
-    if isinstance(evaluation_artifact, str):
-        relative_paths.add(evaluation_artifact)
     candidate = read_json(safe_target(candidate_root, "candidate.json"))
     quality_path = candidate["evaluation"]["quality_path"]
-    relative_paths.add(quality_path)
     quality = read_json(safe_target(candidate_root, quality_path))
-    for result in quality.get("cases", []):
-        artifact_path = result.get("artifact", {}).get("path")
-        if isinstance(artifact_path, str):
-            relative_paths.add(artifact_path)
-    for guide in pack["guides"]:
-        relative_paths.add(
-            f"draft/references/{guide['guide_id']}.md"
+    relative_paths = set(
+        expertise_publication_file_map(
+            candidate,
+            pack,
+            suite,
+            quality,
         )
+    )
+    relative_paths.discard("candidate-origin")
 
     files: list[dict[str, str]] = []
     for relative_path in sorted(relative_paths):
@@ -1522,6 +2008,20 @@ def _candidate_contribution_files(
                 "content": content,
             }
         )
+    if candidate.get("schema_version") == "maestro_expertise_candidate_v2":
+        origin_relative_path = (
+            ".maestro/state/candidate-origins/expertise/"
+            f"{candidate['candidate_id']}.json"
+        )
+        origin_content = _read_text_file(repo, origin_relative_path)
+        files.append(
+            {
+                "path": "provenance/candidate-origin.json",
+                "sha256": sha256_text(origin_content),
+                "content": origin_content,
+            }
+        )
+    files.sort(key=lambda item: item["path"])
     return files
 
 
@@ -1540,6 +2040,24 @@ def _validate_contribution_quality(
     try:
         suite = json.loads(file_contents["evals/cases.json"])
         quality = json.loads(file_contents[quality_path])
+        quality_version = quality.get("schema_version")
+        quality_v2 = (
+            quality_version == "maestro_expertise_quality_eval_v2"
+        )
+        task_gap = (
+            isinstance(candidate.get("generation"), dict)
+            and candidate["generation"].get("mode") == "task-gap"
+        )
+        if task_gap and not quality_v2:
+            return [
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_QUALITY_V2_REQUIRED",
+                    "message": (
+                        "Task-gap candidates cannot downgrade their "
+                        "Host-observed quality evaluation."
+                    ),
+                }
+            ]
         expected_by_case = {
             case["case_id"]: case
             for case in suite["cases"]
@@ -1550,12 +2068,26 @@ def _validate_contribution_quality(
         quality_cases = quality["cases"]
         if (
             quality_path != "evals/quality.json"
-            or quality.get("schema_version")
-            != "maestro_expertise_quality_eval_v1"
+            or quality_version
+            not in {
+                "maestro_expertise_quality_eval_v1",
+                "maestro_expertise_quality_eval_v2",
+            }
+            or set(quality)
+            != (
+                QUALITY_EVALUATION_V2_FIELDS
+                if quality_v2
+                else QUALITY_EVALUATION_FIELDS
+            )
             or quality.get("expertise_pack_id")
             != candidate.get("expertise_pack_id")
             or not isinstance(evaluator, dict)
-            or set(evaluator) != QUALITY_EVALUATOR_FIELDS
+            or set(evaluator)
+            != (
+                QUALITY_EVALUATOR_V2_FIELDS
+                if quality_v2
+                else QUALITY_EVALUATOR_FIELDS
+            )
             or evaluator.get("kind") not in {"fresh-context", "human"}
             or not isinstance(evaluator.get("authoring_run_ref"), str)
             or not evaluator["authoring_run_ref"].strip()
@@ -1568,6 +2100,29 @@ def _validate_contribution_quality(
             or len(expected_by_case) != len(suite["cases"])
         ):
             raise ValueError("quality evaluation identity is invalid")
+        if quality_v2:
+            subject = quality.get("subject")
+            if (
+                not isinstance(subject, dict)
+                or set(subject) != QUALITY_SUBJECT_FIELDS
+                or not isinstance(subject.get("candidate_digest"), str)
+                or re.fullmatch(
+                    r"[a-f0-9]{64}",
+                    subject["candidate_digest"],
+                )
+                is None
+                or subject.get("cases_sha256")
+                != file_digests.get("evals/cases.json")
+                or not isinstance(evaluator.get("observation_id"), str)
+                or re.fullmatch(
+                    r"[a-f0-9]{32}",
+                    evaluator["observation_id"],
+                )
+                is None
+            ):
+                raise ValueError(
+                    "quality v2 subject or observation identity is invalid"
+                )
     except (
         KeyError,
         TypeError,
@@ -1689,6 +2244,163 @@ def _validate_contribution_quality(
                 "message": (
                     "Embedded quality evaluation does not cover every "
                     "frozen case."
+                ),
+            }
+        )
+    return issues
+
+
+def _validate_contribution_v2_lineage(
+    candidate: dict[str, Any],
+    file_contents: dict[str, str],
+    file_digests: dict[str, str],
+) -> list[dict[str, str]]:
+    if candidate.get("schema_version") != "maestro_expertise_candidate_v2":
+        return []
+    issues: list[dict[str, str]] = []
+    required = {
+        "evidence/decision-map.json",
+        "provenance/candidate-origin.json",
+    }
+    generation = candidate.get("generation")
+    task_gap = (
+        isinstance(generation, dict)
+        and generation.get("mode") == "task-gap"
+    )
+    adaptation = candidate.get("adaptation")
+    references: dict[str, dict[str, Any]] = {}
+    if task_gap:
+        if not isinstance(adaptation, dict):
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_LINEAGE_INVALID",
+                    "message": "Task-gap contribution has no adaptation lineage.",
+                }
+            )
+        else:
+            for field in (
+                "coverage_ref",
+                "plan_ref",
+                "source_route_ref",
+                "source_admission_ref",
+                "authoring_research_ref",
+            ):
+                reference = adaptation.get(field)
+                if isinstance(reference, dict):
+                    references[field] = reference
+                    path = reference.get("path")
+                    if isinstance(path, str):
+                        required.add(path)
+    missing = sorted(required - set(file_contents))
+    if missing:
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_LINEAGE_INCOMPLETE",
+                "message": (
+                    "Contribution is missing candidate lineage: "
+                    + ", ".join(missing)
+                ),
+            }
+        )
+        return issues
+    for field, reference in references.items():
+        path = reference.get("path")
+        if (
+            set(reference) != {"path", "sha256"}
+            or not isinstance(path, str)
+            or file_digests.get(path) != reference.get("sha256")
+        ):
+            issues.append(
+                {
+                    "code": "EXPERTISE_CONTRIBUTION_LINEAGE_DIGEST_INVALID",
+                    "message": (
+                        f"Candidate lineage reference is not exact: {field}."
+                    ),
+                }
+            )
+    task_gap_binding: dict[str, Any] | None = None
+    try:
+        decision_map = json.loads(
+            file_contents["evidence/decision-map.json"]
+        )
+        origin = json.loads(
+            file_contents["provenance/candidate-origin.json"]
+        )
+        if (
+            not isinstance(decision_map, dict)
+            or decision_map.get("candidate_id")
+            != candidate.get("candidate_id")
+        ):
+            raise ValueError("decision map candidate identity differs")
+        if task_gap and references:
+            coverage = json.loads(
+                file_contents[references["coverage_ref"]["path"]]
+            )
+            plan = json.loads(
+                file_contents[references["plan_ref"]["path"]]
+            )
+            source_route = json.loads(
+                file_contents[references["source_route_ref"]["path"]]
+            )
+            source_admission = json.loads(
+                file_contents[
+                    references["source_admission_ref"]["path"]
+                ]
+            )
+            if (
+                plan.get("coverage_id") != coverage.get("coverage_id")
+                or plan.get("goal_digest") != coverage.get("goal_digest")
+                or plan.get("source_route_plan_id")
+                != source_route.get("plan_id")
+                or plan.get("source_route_digest")
+                != source_route.get("source_route_digest")
+                or plan.get("source_admission_id")
+                != source_admission.get("admission_id")
+                or source_admission.get("coverage_id")
+                != coverage.get("coverage_id")
+                or source_admission.get("plan_id")
+                != source_route.get("plan_id")
+                or plan.get("signal_fingerprint")
+                != generation.get("signal_fingerprint")
+            ):
+                raise ValueError("task-gap lineage identities differ")
+            task_gap_binding = {
+                "goal_digest": coverage.get("goal_digest"),
+                "plan_id": plan.get("plan_id"),
+                "source_admission_id": source_admission.get(
+                    "admission_id"
+                ),
+            }
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        issues.append(
+            {
+                "code": "EXPERTISE_CONTRIBUTION_LINEAGE_INVALID",
+                "message": f"Embedded candidate lineage is invalid: {exc}",
+            }
+        )
+        return issues
+    issues.extend(
+        validate_candidate_origin_payload(
+            candidate=candidate,
+            task_gap_binding=task_gap_binding,
+            namespace="expertise",
+            value=origin,
+        )
+    )
+    if task_gap:
+        issues.append(
+            {
+                "code": (
+                    "EXPERTISE_CONTRIBUTION_TASK_GAP_ATTESTATION_NOT_PORTABLE"
+                ),
+                "message": (
+                    "Task-gap evaluation is Host-observed in the source "
+                    "repository and is not a portable trust attestation."
                 ),
             }
         )
@@ -1821,7 +2533,20 @@ def build_expertise_export_plan(
         repo,
         candidate_id,
     )
-    files = _candidate_contribution_files(candidate_root, pack)
+    generation = candidate.get("generation")
+    if (
+        isinstance(generation, dict)
+        and generation.get("mode") == "task-gap"
+    ):
+        raise MaestroError(
+            "EXPERTISE_EXPORT_PORTABLE_ATTESTATION_UNSUPPORTED",
+            (
+                "Task-gap candidates keep Host-observed evaluation proof in "
+                "their source repository. Publish or review them there until "
+                "a separately trusted portable attestation is available."
+            ),
+        )
+    files = _candidate_contribution_files(repo, candidate_root, pack)
     repository_path = str(repo)
     if any(repository_path in item["content"] for item in files):
         raise MaestroError(
@@ -1926,7 +2651,7 @@ def validate_expertise_contribution(
     file_contents: dict[str, str] = {}
     if (
         not isinstance(files, list)
-        or not 7 <= len(files) <= 32
+        or not 7 <= len(files) <= MAX_CONTRIBUTION_FILES
     ):
         issues.append(
             {
@@ -2043,6 +2768,13 @@ def validate_expertise_contribution(
                 file_digests,
             )
         )
+        issues.extend(
+            _validate_contribution_v2_lineage(
+                candidate,
+                file_contents,
+                file_digests,
+            )
+        )
     promotion = contribution.get("promotion")
     if (
         not isinstance(promotion, dict)
@@ -2128,7 +2860,9 @@ def _candidate_pack_preview(
         guide["guide_id"]: [] for guide in pack["guides"]
     }
     bounded_sources: list[dict[str, Any]] = []
-    for source in source_manifest.get("sources", [])[:20]:
+    for source in source_manifest.get("sources", [])[
+        :MAX_EXPERTISE_SOURCES
+    ]:
         if not isinstance(source, dict):
             continue
         bounded = {
@@ -2300,6 +3034,7 @@ def _candidate_global_request_status(
     except MaestroError:
         contribution = {}
     expected_files = _candidate_contribution_files(
+        repo,
         candidate_root,
         pack,
     )
@@ -2549,7 +3284,7 @@ def _candidate_promotion_source(
     candidate: dict[str, Any],
     pack: dict[str, Any],
 ) -> dict[str, Any]:
-    files = _candidate_contribution_files(candidate_root, pack)
+    files = _candidate_contribution_files(repo, candidate_root, pack)
     if any(str(repo) in item["content"] for item in files):
         raise MaestroError(
             "EXPERTISE_CONTRIBUTION_PRIVATE_PATH",
@@ -3070,14 +3805,9 @@ def _guide_addition_global_payload(
         "src/maestro/resources/expertise-sources/"
         f"{target_pack['expertise_pack_id']}.json"
     )
-    packaged_sources_target = safe_target(repo, packaged_sources_path)
-    if (
-        packaged_sources_target.is_file()
-        and not packaged_sources_target.is_symlink()
-    ):
-        expected_files[packaged_sources_path] = pretty_json(
-            merged_sources
-        )
+    expected_files[packaged_sources_path] = pretty_json(
+        merged_sources
+    )
 
     quality_path = "evals/quality.json"
     if quality_path in file_contents:
@@ -3194,6 +3924,212 @@ def _guide_addition_global_payload(
     }
 
 
+def _pack_revision_global_payload(
+    repo: Path,
+    *,
+    source: dict[str, Any],
+    contribution: dict[str, Any],
+    file_contents: dict[str, str],
+    registry: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Build one complete, versioned replacement of an existing global Pack."""
+
+    try:
+        revised_pack = json.loads(
+            file_contents[f"draft/{PROJECT_PACK_FILENAME}"]
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_BUNDLE_INVALID",
+            f"Pack revision content is invalid: {exc}",
+        ) from exc
+    if not isinstance(revised_pack, dict):
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_BUNDLE_INVALID",
+            "Pack revision content must be an object.",
+        )
+    revised_pack = copy.deepcopy(revised_pack)
+    revised_pack["portability"] = "global"
+    revised_pack["status"] = "pilot"
+    revised_pack.pop("extends", None)
+    pack_id = contribution.get("expertise_pack_id")
+    existing_pack = next(
+        (
+            pack
+            for pack in registry["expertise_packs"]
+            if pack.get("expertise_pack_id") == pack_id
+        ),
+        None,
+    )
+    if existing_pack is None:
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_BASE_MISSING",
+            "Pack revision requires one existing global Pack.",
+        )
+    skill_id = existing_pack["skill_id"]
+    already_applied = revised_pack == existing_pack
+    if (
+        revised_pack.get("expertise_pack_id") != pack_id
+        or revised_pack.get("skill_id") != skill_id
+        or (
+            not already_applied
+            and revised_pack.get("version")
+            != existing_pack["version"] + 1
+        )
+    ):
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_IDENTITY_INVALID",
+            (
+                "Pack revision must preserve Pack and Skill identity and "
+                "increment the current version by exactly one."
+            ),
+        )
+    existing_guide_ids = {
+        guide["guide_id"] for guide in existing_pack["guides"]
+    }
+    revised_guide_ids = {
+        guide["guide_id"] for guide in revised_pack.get("guides", [])
+        if isinstance(guide, dict) and isinstance(guide.get("guide_id"), str)
+    }
+    removed_guide_ids = sorted(existing_guide_ids - revised_guide_ids)
+    if removed_guide_ids:
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_GUIDE_REMOVAL_UNDECLARED",
+            (
+                "Pack revision may not silently remove Guides; use an explicit "
+                "deprecation ChangeSet first: "
+                + ", ".join(removed_guide_ids)
+            ),
+        )
+    routing_removals = undeclared_routing_removals(
+        existing_pack,
+        revised_pack,
+    )
+    if routing_removals:
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_ROUTING_REMOVAL_UNDECLARED",
+            (
+                "Pack revision may not silently remove routing coverage; "
+                "use an explicit deprecation ChangeSet first: "
+                + "; ".join(routing_removals)
+            ),
+        )
+
+    prospective_registry = copy.deepcopy(registry)
+    prospective_registry["expertise_packs"] = [
+        revised_pack
+        if pack.get("expertise_pack_id") == pack_id
+        else pack
+        for pack in prospective_registry["expertise_packs"]
+    ]
+    registry_errors = validate_registry(prospective_registry)
+    if registry_errors:
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_REGISTRY_INVALID",
+            "; ".join(registry_errors),
+        )
+
+    skill_root = f"skills/{skill_id}"
+    expected_files: dict[str, str] = {
+        (
+            "src/maestro/resources/registry/expertise-packs/"
+            f"{pack_id}.json"
+        ): pretty_json(revised_pack),
+    }
+    for source_path, content in sorted(file_contents.items()):
+        destination: str | None = None
+        if source_path == "draft/SKILL.md":
+            destination = f"{skill_root}/SKILL.md"
+        elif source_path.startswith("draft/agents/"):
+            destination = (
+                f"{skill_root}/" + source_path.removeprefix("draft/")
+            )
+        elif source_path.startswith("draft/references/"):
+            destination = (
+                f"{skill_root}/" + source_path.removeprefix("draft/")
+            )
+        elif source_path.startswith(("evidence/", "evals/")):
+            destination = f"{skill_root}/{source_path}"
+        if destination is not None:
+            expected_files[destination] = content
+
+    required_destinations = {
+        f"{skill_root}/SKILL.md",
+        f"{skill_root}/agents/openai.yaml",
+        f"{skill_root}/evidence/sources.json",
+        f"{skill_root}/evals/cases.json",
+        f"{skill_root}/evals/results.json",
+        f"{skill_root}/evals/quality.json",
+        *{
+            f"{skill_root}/references/{guide_id}.md"
+            for guide_id in revised_guide_ids
+        },
+    }
+    if not required_destinations.issubset(expected_files):
+        raise MaestroError(
+            "EXPERTISE_GLOBAL_REVISION_BUNDLE_INCOMPLETE",
+            "Pack revision is missing one or more complete Skill files.",
+        )
+    packaged_sources_path = (
+        "src/maestro/resources/expertise-sources/"
+        f"{pack_id}.json"
+    )
+    expected_files[packaged_sources_path] = pretty_json(
+        json.loads(file_contents["evidence/sources.json"])
+    )
+
+    replaceable_paths = {
+        path
+        for path in expected_files
+        if safe_target(repo, path).is_file()
+    }
+    lock_path = safe_target(repo, ".maestro/lock.json")
+    if lock_path.exists():
+        if lock_path.is_symlink() or not lock_path.is_file():
+            raise MaestroError(
+                "EXPERTISE_GLOBAL_PROMOTION_PROJECT_LOCK_INVALID",
+                "Harness project lock must be a regular file.",
+            )
+        lock = read_json(lock_path)
+        lock_registry = lock.get("registry")
+        current_registry_digest = source_registry_digest(repo)
+        if (
+            not isinstance(lock_registry, dict)
+            or lock_registry.get("sha256") != current_registry_digest
+        ):
+            raise MaestroError(
+                "EXPERTISE_GLOBAL_PROMOTION_PROJECT_LOCK_STALE",
+                "Review and apply a fresh project upgrade before global promotion.",
+            )
+        updated_lock = copy.deepcopy(lock)
+        updated_lock["registry"]["sha256"] = source_registry_digest(
+            repo,
+            registry=prospective_registry,
+        )
+        expected_files[".maestro/lock.json"] = pretty_json(updated_lock)
+        replaceable_paths.add(".maestro/lock.json")
+
+    return {
+        "source_kind": source["source_kind"],
+        "source_ref": source["source_ref"],
+        "source_digest": source["source_digest"],
+        "bundle_path": (
+            source["source_ref"]
+            if source["source_kind"] == "candidate_contribution"
+            else None
+        ),
+        "bundle_digest": contribution["bundle_digest"],
+        "candidate_digest": contribution["candidate_digest"],
+        "expertise_pack_id": pack_id,
+        "skill_id": skill_id,
+        "skill_root": skill_root,
+        "existing_pack": existing_pack,
+        "expected_files": expected_files,
+        "replaceable_paths": sorted(replaceable_paths),
+        "target_mode": "update",
+    }
+
+
 def _global_promotion_payload(
     repo: Path,
     *,
@@ -3218,6 +4154,14 @@ def _global_promotion_payload(
     ).get("kind")
     if component_kind == "guide-addition":
         return _guide_addition_global_payload(
+            repo,
+            source=source,
+            contribution=contribution,
+            file_contents=file_contents,
+            registry=registry,
+        )
+    if component_kind == "pack-revision":
+        return _pack_revision_global_payload(
             repo,
             source=source,
             contribution=contribution,
@@ -3311,6 +4255,12 @@ def _global_promotion_payload(
             destination = f"{skill_root}/{source_path}"
         if destination is not None:
             expected_files[destination] = content
+    expected_files[
+        "src/maestro/resources/expertise-sources/"
+        f"{pack_id}.json"
+    ] = pretty_json(
+        json.loads(file_contents["evidence/sources.json"])
+    )
 
     required_destinations = {
         f"{skill_root}/SKILL.md",
@@ -3630,7 +4580,7 @@ def build_expertise_global_promotion_plan(
                 "EXPERTISE_GLOBAL_PROMOTION_SOURCE_REQUIRED",
                 "Candidate contribution promotion requires a candidate ID.",
             )
-        candidate_root, candidate, pack = _fresh_candidate_pack(
+        candidate_root, candidate, pack = _fresh_candidate_bundle(
             repo,
             candidate_id,
         )
@@ -3786,7 +4736,8 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                     and candidate.get("expertise_pack_id")
                     == pack["expertise_pack_id"]
                     and isinstance(candidate.get("sources"), list)
-                    and len(candidate["sources"]) <= 20
+                    and len(candidate["sources"])
+                    <= MAX_EXPERTISE_SOURCES
                 ):
                     source_manifest = candidate
             except MaestroError:
@@ -3993,11 +4944,7 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                     global_adoption["status"]
                     == "harness_source_applied"
                 )
-                effective_validation_status = (
-                    "PASS"
-                    if source_applied
-                    else validation["status"]
-                )
+                effective_validation_status = validation["status"]
                 effective_runtime_status = runtime_state.get(
                     "runtime_status",
                     "invalid",
@@ -4046,9 +4993,7 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                             effective_validation_status
                         ),
                         "validation_issue_codes": (
-                            []
-                            if source_applied
-                            else [
+                            [
                                 issue["code"]
                                 for issue in validation["issues"]
                             ]
@@ -4056,6 +5001,24 @@ def expertise_inventory(repo_path: str | Path) -> dict[str, Any]:
                         "runtime_status": effective_runtime_status,
                         "immediate_use_allowed": runtime_state.get(
                             "immediate_use_allowed",
+                            False,
+                        )
+                        and disposition is None,
+                        "routing_role": runtime_state.get(
+                            "routing_role",
+                            "management-only",
+                        ),
+                        "routing_reason": runtime_state.get(
+                            "routing_reason",
+                            "candidate-status-unavailable",
+                        ),
+                        "ordinary_route_allowed": runtime_state.get(
+                            "ordinary_route_allowed",
+                            False,
+                        )
+                        and disposition is None,
+                        "corrected_task_gap_allowed": runtime_state.get(
+                            "corrected_task_gap_allowed",
                             False,
                         )
                         and disposition is None,
@@ -4177,6 +5140,7 @@ def _build_expertise_activation_member_plan(
         )
 
     contents, candidate_digest = _candidate_publication_contents(
+        repo,
         candidate_root,
         pack,
         destination_root,
@@ -4321,6 +5285,7 @@ def _build_expertise_update_member_plan(
         )
 
     contents, candidate_digest = _candidate_publication_contents(
+        repo,
         candidate_root,
         pack,
         destination_root,
@@ -4880,6 +5845,37 @@ def build_expertise_change_set_plan(
         change_set_id=change_set_id,
     )
     candidate_ids = context["candidate_ids"]
+    requires_topology_manifest = any(
+        (
+            isinstance(candidate.get("component_change"), dict)
+            and candidate["component_change"].get("kind")
+            in {
+                "pack-merge",
+                "pack-extraction",
+                "pack-split",
+                "guide-move",
+                "guide-copy",
+            }
+        )
+        for _root, candidate in (
+            _read_candidate(repo, candidate_id)
+            for candidate_id in candidate_ids
+        )
+    )
+    if action == "project-approve" and requires_topology_manifest:
+        topology = validate_expertise_change_set_manifest(
+            repo,
+            change_set_id,
+            validate_members=True,
+        )
+        if topology["status"] != "PASS":
+            first = topology["issues"][0]
+            raise MaestroError(first["code"], first["message"])
+    topology_manifest_digest = (
+        expertise_change_set_manifest_digest(repo, change_set_id)
+        if requires_topology_manifest
+        else None
+    )
     replacements = list(replacement_pack_ids or [])
     resolved_approval_ref: str | None = None
     resolved_reason: str | None = None
@@ -5017,6 +6013,7 @@ def build_expertise_change_set_plan(
                 }
                 for plan in member_plans
             ],
+            "topology_manifest_digest": topology_manifest_digest,
             "operations": operations,
             "warnings": [
                 (
@@ -5104,7 +6101,7 @@ def _operation_originals(
     candidate_ids: list[str] | None = None,
     harness_source_only: bool = False,
     label: str,
-) -> dict[Path, bytes | None]:
+) -> dict[Path, _OriginalFileState]:
     if not isinstance(operations, list) or not operations:
         raise MaestroError(
             f"EXPERTISE_{label}_PLAN_INVALID",
@@ -5112,7 +6109,7 @@ def _operation_originals(
             exit_code=3,
         )
 
-    originals: dict[Path, bytes | None] = {}
+    originals: dict[Path, _OriginalFileState] = {}
     seen_paths: set[str] = set()
     allowed_operations = (
         {"create", "replace", "delete"}
@@ -5234,16 +6231,37 @@ def _operation_originals(
                     f"Content hash mismatch: {path}",
                     exit_code=3,
                 )
-        originals[target] = target.read_bytes() if target.exists() else None
+        originals[target] = (
+            _OriginalFileState(
+                content=target.read_bytes(),
+                mode=stat.S_IMODE(target.stat().st_mode),
+            )
+            if target.exists()
+            else _OriginalFileState(content=None, mode=None)
+        )
     return originals
+
+
+def _restore_operation_originals(
+    originals: dict[Path, _OriginalFileState],
+) -> None:
+    for target, original in reversed(list(originals.items())):
+        if original.content is None:
+            if target.exists() and target.is_file():
+                target.unlink()
+            continue
+        atomic_write(target, original.content)
+        if original.mode is not None:
+            target.chmod(original.mode)
 
 
 def _apply_publication_operations(
     repo: Path,
     operations: list[dict[str, Any]],
-    originals: dict[Path, bytes | None],
+    originals: dict[Path, _OriginalFileState],
     *,
     validate_catalog: bool = True,
+    cleanup_candidate_roots: list[Path] | None = None,
 ) -> None:
     created_directories: set[Path] = set()
     for operation in operations:
@@ -5262,13 +6280,9 @@ def _apply_publication_operations(
                 atomic_write(target, operation["content"].encode("utf-8"))
         if validate_catalog:
             load_expertise_catalog(repo)
+        _remove_empty_candidate_roots(cleanup_candidate_roots or [])
     except BaseException:
-        for target, content in reversed(list(originals.items())):
-            if content is None:
-                if target.exists() and target.is_file():
-                    target.unlink()
-            else:
-                atomic_write(target, content)
+        _restore_operation_originals(originals)
         for directory in sorted(
             created_directories,
             key=lambda item: len(item.parts),
@@ -5277,6 +6291,21 @@ def _apply_publication_operations(
             if directory.is_dir() and not any(directory.iterdir()):
                 directory.rmdir()
         raise
+
+
+def _remove_empty_candidate_roots(roots: list[Path]) -> None:
+    """Remove candidate directories while the file transaction can roll back."""
+
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(
+            (path for path in root.rglob("*") if path.is_dir()),
+            key=lambda item: len(item.parts),
+            reverse=True,
+        ):
+            path.rmdir()
+        root.rmdir()
 
 
 def _published_skill_root(plan: dict[str, Any]) -> str:
@@ -5347,16 +6376,15 @@ def apply_expertise_change_set_plan(
         plan["operations"],
         originals,
         validate_catalog=action != "delete",
+        cleanup_candidate_roots=(
+            [
+                _candidate_root(repo, candidate_id)
+                for candidate_id in plan["candidate_ids"]
+            ]
+            if action == "delete"
+            else None
+        ),
     )
-    if action == "delete":
-        for candidate_id in plan["candidate_ids"]:
-            root = _candidate_root(repo, candidate_id)
-            if not root.exists():
-                continue
-            for path in sorted(root.rglob("*"), reverse=True):
-                if path.is_dir():
-                    path.rmdir()
-            root.rmdir()
 
     result_status = {
         "project-approve": "project_approved",
@@ -5415,11 +6443,18 @@ def apply_expertise_activation_plan(
         repo_override=repo_override,
         label="ACTIVATION",
     )
-    fresh = build_expertise_activation_plan(
-        repo,
-        candidate_id=plan["candidate_id"],
-        approval_ref=plan["approval_ref"],
-    )
+    try:
+        fresh = build_expertise_activation_plan(
+            repo,
+            candidate_id=plan["candidate_id"],
+            approval_ref=plan["approval_ref"],
+        )
+    except MaestroError as exc:
+        raise MaestroError(
+            "EXPERTISE_ACTIVATION_PLAN_STALE",
+            "Candidate, project configuration, or destination changed after preview.",
+            exit_code=3,
+        ) from exc
     if fresh != plan:
         raise MaestroError(
             "EXPERTISE_ACTIVATION_PLAN_STALE",
@@ -5470,11 +6505,18 @@ def apply_expertise_update_plan(
         repo_override=repo_override,
         label="UPDATE",
     )
-    fresh = build_expertise_update_plan(
-        repo,
-        candidate_id=plan["candidate_id"],
-        approval_ref=plan["approval_ref"],
-    )
+    try:
+        fresh = build_expertise_update_plan(
+            repo,
+            candidate_id=plan["candidate_id"],
+            approval_ref=plan["approval_ref"],
+        )
+    except MaestroError as exc:
+        raise MaestroError(
+            "EXPERTISE_UPDATE_PLAN_STALE",
+            "Candidate or active project Expertise changed after preview.",
+            exit_code=3,
+        ) from exc
     if fresh != plan:
         raise MaestroError(
             "EXPERTISE_UPDATE_PLAN_STALE",
@@ -5770,13 +6812,10 @@ def apply_expertise_delete_plan(
         plan["operations"],
         originals,
         validate_catalog=False,
+        cleanup_candidate_roots=[
+            _candidate_root(repo, plan["candidate_id"])
+        ],
     )
-    root = _candidate_root(repo, plan["candidate_id"])
-    if root.exists():
-        for path in sorted(root.rglob("*"), reverse=True):
-            if path.is_dir():
-                path.rmdir()
-        root.rmdir()
     return {
         "schema_version": "maestro_expertise_delete_result_v1",
         "status": "deleted",
@@ -5916,12 +6955,7 @@ def apply_expertise_global_promotion_plan(
                 exit_code=3,
             )
     except BaseException:
-        for target, content in reversed(list(originals.items())):
-            if content is None:
-                if target.exists() and target.is_file():
-                    target.unlink()
-            else:
-                atomic_write(target, content)
+        _restore_operation_originals(originals)
         if manifest_before is None:
             manifest_path.unlink(missing_ok=True)
         else:
@@ -5930,8 +6964,9 @@ def apply_expertise_global_promotion_plan(
         skill_directories = sorted(
             {
                 target.parent
-                for target, content in originals.items()
-                if content is None and target.is_relative_to(skill_root)
+                for target, original in originals.items()
+                if original.content is None
+                and target.is_relative_to(skill_root)
             },
             key=lambda path: len(path.parts),
             reverse=True,

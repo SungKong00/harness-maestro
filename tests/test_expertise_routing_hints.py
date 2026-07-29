@@ -107,7 +107,14 @@ class ExpertiseRouteHintTests(unittest.TestCase):
                     )
                 result = validate_route_v2(plan, repo_path=None)
                 self.assertEqual("PASS", result["status"])
-                self.assertEqual("READY", result["execution_status"])
+                self.assertEqual(
+                    (
+                        "RESEARCH_REQUIRED"
+                        if "user-interface" in case["work_kinds"]
+                        else "READY"
+                    ),
+                    result["execution_status"],
+                )
 
     def test_hintless_routes_keep_the_optional_contract_absent(self) -> None:
         plan = route_goal_v2(

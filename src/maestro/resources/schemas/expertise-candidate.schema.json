@@ -22,7 +22,10 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_expertise_candidate_v1"
+      "enum": [
+        "maestro_expertise_candidate_v1",
+        "maestro_expertise_candidate_v2"
+      ]
     },
     "candidate_id": {
       "$ref": "#/$defs/id"
@@ -86,7 +89,7 @@
     "proposed_guides": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 8,
+      "maxItems": 24,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -177,7 +180,8 @@
         "mode": {
           "enum": [
             "automatic",
-            "user-requested"
+            "user-requested",
+            "task-gap"
           ]
         },
         "signal_fingerprint": {
@@ -193,7 +197,10 @@
           "if": {
             "properties": {
               "mode": {
-                "const": "automatic"
+                "enum": [
+                  "automatic",
+                  "task-gap"
+                ]
               }
             }
           },
@@ -212,27 +219,71 @@
               }
             }
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "pack-merge",
-                  "pack-split",
-                  "guide-move",
-                  "guide-copy"
-                ]
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "change_set_id"
-            ]
-          }
         }
       ]
+    },
+    "adaptation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "coverage_ref",
+        "plan_ref",
+        "source_route_ref",
+        "source_admission_ref",
+        "unit_id",
+        "authoring_research_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_task_gap_adaptation_v1"
+        },
+        "coverage_ref": {
+          "$ref": "#/$defs/coverageRef"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/adaptationPlanRef"
+        },
+        "source_route_ref": {
+          "$ref": "#/$defs/sourceRouteRef"
+        },
+        "source_admission_ref": {
+          "$ref": "#/$defs/sourceAdmissionRef"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "authoring_research_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/researchBundleRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_map_path",
+        "discovery_complete",
+        "allocation_complete"
+      ],
+      "properties": {
+        "decision_map_path": {
+          "const": "evidence/decision-map.json"
+        },
+        "discovery_complete": {
+          "const": true
+        },
+        "allocation_complete": {
+          "const": true
+        }
+      }
     },
     "component_change": {
       "type": "object",
@@ -245,7 +296,9 @@
         "kind": {
           "enum": [
             "new-pack",
+            "pack-revision",
             "pack-merge",
+            "pack-extraction",
             "pack-split",
             "guide-addition",
             "guide-revision",
@@ -288,6 +341,13 @@
         "operation_id": {
           "$ref": "#/$defs/id"
         },
+        "operation_role": {
+          "enum": [
+            "source",
+            "target",
+            "result"
+          ]
+        },
         "summary": {
           "type": "string",
           "minLength": 1,
@@ -329,7 +389,10 @@
           "if": {
             "properties": {
               "kind": {
-                "const": "pack-merge"
+                "enum": [
+                  "pack-merge",
+                  "pack-extraction"
+                ]
               }
             }
           },
@@ -425,6 +488,98 @@
       ]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "maestro_expertise_candidate_v2"
+          }
+        },
+        "required": [
+          "schema_version"
+        ]
+      },
+      "then": {
+        "required": [
+          "coverage"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "coverage"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "generation": {
+            "properties": {
+              "mode": {
+                "const": "task-gap"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "generation"
+        ]
+      },
+      "then": {
+        "required": [
+          "adaptation",
+          "component_change"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "maestro_expertise_candidate_v2"
+          },
+          "component_change": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "pack-merge",
+                        "pack-extraction",
+                        "pack-split",
+                        "guide-move",
+                        "guide-copy"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "change_set_id",
+                    "operation_id",
+                    "operation_role"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "adaptation"
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",
@@ -433,6 +588,93 @@
     "safeRelativePath": {
       "type": "string",
       "pattern": "^(?!/)(?!\\.)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "coverageRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/task-coverage.json"
+            }
+          }
+        }
+      ]
+    },
+    "adaptationPlanRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/adaptation-plan.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceRouteRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-route.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceAdmissionRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-admission.json"
+            }
+          }
+        }
+      ]
+    },
+    "researchBundleRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/research-bundle.json"
+            }
+          }
+        }
+      ]
     }
   }
 }

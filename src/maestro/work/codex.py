@@ -161,6 +161,8 @@ class CodexCollaborationTracker:
         root_turn_id: str,
         assignment_id: str | None,
         read_only: bool,
+        may_spawn: bool = True,
+        max_children: int = MAX_COLLAB_WORK,
         source_version: str | None = None,
         schema_digest: str | None = None,
         source_capability: str = "lifecycle_only",
@@ -182,6 +184,22 @@ class CodexCollaborationTracker:
         )
         self.assignment_id = assignment_id
         self.read_only = read_only
+        if (
+            not isinstance(may_spawn, bool)
+            or not isinstance(max_children, int)
+            or isinstance(max_children, bool)
+            or max_children < 0
+            or max_children > MAX_COLLAB_WORK
+            or (not may_spawn and max_children != 0)
+            or (may_spawn and max_children == 0)
+        ):
+            raise MaestroError(
+                "CODEX_WORK_DELEGATION_POLICY_INVALID",
+                "Delegation policy requires may_spawn=false/max_children=0 "
+                "or a bounded positive child allowance.",
+            )
+        self.may_spawn = may_spawn
+        self.max_children = max_children
         self.source_version = source_version
         self.schema_digest = schema_digest
         self.source_capability = source_capability
@@ -213,7 +231,11 @@ class CodexCollaborationTracker:
             "version": self.source_version,
             "schema_digest": self.schema_digest,
             "capability": self.source_capability,
-            "correlation_id": codex_work_id("source", *identity),
+            "correlation_id": codex_work_id(
+                "source",
+                self.root_work_id,
+                *identity,
+            ),
             "event_coverage": event_coverage,
         }
 
@@ -353,6 +375,15 @@ class CodexCollaborationTracker:
         current_work_id: str | None = None
         if tool in {"spawnAgent", "resumeAgent"}:
             is_new_item = item_id not in self._work_by_item
+            if not self.may_spawn or (
+                is_new_item
+                and len(self._delegation_work) >= self.max_children
+            ):
+                raise MaestroError(
+                    "CODEX_WORK_DELEGATION_FORBIDDEN",
+                    "The observed work attempted delegation outside its "
+                    "validated may_spawn/max_children contract.",
+                )
             if is_new_item:
                 required_work = 1 + int(
                     bool(
@@ -403,6 +434,7 @@ class CodexCollaborationTracker:
             current_work_id = self._work_by_item.setdefault(
                 item_id,
                 codex_work_id(
+                    self.root_work_id,
                     sender_thread_id,
                     str(item_id),
                     str(tool),
@@ -455,6 +487,7 @@ class CodexCollaborationTracker:
                         "role": "Codex 위임 실행 담당",
                         "executor_id": codex_work_id(
                             "agent",
+                            self.root_work_id,
                             targets[0] if targets else str(item_id),
                         ),
                         "task_summary": (
@@ -645,6 +678,7 @@ class CodexCollaborationTracker:
             )
         decision_work_id = codex_work_id(
             "decision",
+            self.root_work_id,
             sender_thread_id,
             boundary_item_id,
             outcome,
@@ -675,6 +709,7 @@ class CodexCollaborationTracker:
             "role": "Codex 결과 종합·판단 담당",
             "executor_id": codex_work_id(
                 "orchestrator",
+                self.root_work_id,
                 sender_thread_id,
             ),
             "task_summary": (

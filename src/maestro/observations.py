@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .errors import MaestroError
+from .execution_contracts import normalize_execution_contract
+from .execution_units import (
+    observation_identity,
+    validate_plan_execution_units,
+    validate_stage_execution_receipts,
+    validate_execution_unit,
+    validate_execution_unit_receipt,
+)
 from .expertise_routing import (
     expertise_routing_summary,
     valid_expertise_routing_summary,
+    valid_route_correction_summary,
 )
-from .planning import validate_route_v2
+from .model_feedback import validate_verification_assessment
 from .project import checkout_id
 from .util import (
     atomic_write,
@@ -23,9 +35,26 @@ from .util import (
     sha256_text,
 )
 from .work import (
+    append_execution_event,
     append_work_span,
+    completion_evaluation_for_observation,
+    commit_execution_transition,
+    ensure_execution_ledger,
+    execution_measurements,
     finish_work_span,
+    measurement_from_host,
+    measurement_from_stage,
+    measurement_from_work,
+    managed_completion_policy,
     new_work_span,
+    new_execution_ledger,
+    observation_write_lock,
+    producer_binding,
+    seal_readiness_error,
+    validate_completion_closure,
+    validate_completion_policy,
+    validate_execution_ledger,
+    validate_execution_measurements,
     validate_work_spans,
 )
 
@@ -42,10 +71,13 @@ EXECUTION_FALLBACK_REASONS = {
 MAX_TASK_LABEL_LENGTH = 160
 MAX_PLAN_ASSIGNMENTS = 5
 MAX_INFLIGHT_OBSERVATIONS = 100
-MAX_OBSERVATION_FILE_BYTES = 128_000
+MAX_OBSERVATION_FILE_BYTES = 1_000_000
 MAX_MODEL_REROUTES = 4
 MAX_APP_SERVER_TRACE_BYTES = 4_000_000
 MAX_APP_SERVER_TRACE_MESSAGES = 20_000
+CORRECTED_ROUTE_RECEIPT_VERSION = (
+    "maestro_corrected_route_consumption_v2"
+)
 STAGE_STATUSES = {
     "completed",
     "failed",
@@ -58,6 +90,96 @@ STAGE_EVIDENCE_SOURCES = {
     "current_host",
     "deterministic_command",
 }
+
+
+def _valid_completion_state(value: dict[str, Any]) -> bool:
+    policy = value.get("completion_policy")
+    closure = value.get("completion_closure")
+    ledger = value.get("execution_ledger")
+    if policy is None:
+        return closure is None
+    if not validate_completion_policy(policy):
+        return False
+    if "completed_at" not in value:
+        return closure is None
+    if (
+        isinstance(ledger, dict)
+        and ledger.get("origin") == "legacy_import"
+    ):
+        return closure is None
+    if (
+        not isinstance(closure, dict)
+        or not isinstance(ledger, dict)
+        or not validate_execution_ledger(ledger)
+        or ledger.get("origin") != "native"
+        or not ledger.get("events")
+        or ledger["events"][-1].get("event_type") != "execution_sealed"
+        or ledger["events"][-1].get("payload", {}).get(
+            "completion_closure"
+        )
+        != closure
+        or closure.get("pre_seal_ledger", {}).get("revision")
+        != ledger["revision"] - 1
+    ):
+        return False
+    pre_seal = copy.deepcopy(ledger)
+    pre_seal["events"] = pre_seal["events"][:-1]
+    pre_seal["revision"] -= 1
+    if (
+        sha256_text(canonical_json(pre_seal))
+        != closure.get("pre_seal_ledger", {}).get("digest")
+    ):
+        return False
+    return validate_completion_closure(
+        closure,
+        policy=policy,
+        plan_summary=value.get("plan_summary"),
+        stage_results=value.get("stage_results"),
+        work_spans=value.get("work_spans"),
+        receipt_intent=closure.get("receipt_intent_digest"),
+    )
+
+
+def _execution_producer(
+    source: str,
+    *,
+    correlation_id: str | None = None,
+    complete: bool = False,
+) -> dict[str, Any]:
+    if source == "codex_app_server":
+        return producer_binding(
+            source,
+            capability="full_stream",
+            event_coverage="complete_stream" if complete else "partial_stream",
+            correlation_id=correlation_id,
+        )
+    if source == "host_adapter":
+        return producer_binding(
+            source,
+            capability="lifecycle_only",
+            event_coverage="hook_lifecycle",
+            correlation_id=correlation_id,
+        )
+    if source == "deterministic_command":
+        return producer_binding(
+            source,
+            capability="deterministic",
+            event_coverage="unavailable",
+            correlation_id=correlation_id,
+        )
+    if source == "desktop_request":
+        return producer_binding(
+            source,
+            capability="request_metadata",
+            event_coverage="request_only",
+            correlation_id=correlation_id,
+        )
+    return producer_binding(
+        "current_host",
+        capability="current_host",
+        event_coverage="unavailable",
+        correlation_id=correlation_id,
+    )
 
 
 def _utc_now() -> datetime:
@@ -74,15 +196,11 @@ def _observation_id(
     current_checkout: str,
     run_id: str,
 ) -> str:
-    return sha256_text(
-        canonical_json(
-            {
-                "project_id": project_id,
-                "checkout_id": current_checkout,
-                "run_id": run_id,
-            }
-        )
-    )[:32]
+    return observation_identity(
+        project_id=project_id,
+        checkout_id=current_checkout,
+        run_id=run_id,
+    )
 
 
 def observation_id_for_run(
@@ -294,9 +412,25 @@ def record_execution_fallback(
             "RUN_EXECUTION_FALLBACK_INVALID",
             "Fallback must be recorded before the first current-Host stage.",
         )
+    before = copy.deepcopy(value)
+    recorded_at = _timestamp(_utc_now())
     value["execution_binding"] = binding
-    value["fallback_recorded_at"] = _timestamp(_utc_now())
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+    value["fallback_recorded_at"] = recorded_at
+    commit_execution_transition(
+        target,
+        before=before,
+        after=value,
+        event_type="execution_binding_changed",
+        idempotency_key="execution:binding:explicit_fallback",
+        producer=producer_binding(
+            "maestro_core",
+            capability="lifecycle_only",
+            event_coverage="partial_stream",
+        ),
+        payload={"execution_binding": binding},
+        measurement=None,
+        recorded_at=recorded_at,
+    )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-fallback",
@@ -306,6 +440,113 @@ def record_execution_fallback(
         "observation_id": observation_id,
         "execution_binding": binding,
         "writes_performed": True,
+    }
+
+
+def claim_maestro_owned_codex_execution(
+    repo_path: str | Path,
+    *,
+    observation_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    """Claim a fact-free Desktop intake for Maestro-owned App Server execution."""
+
+    repo = ensure_repo(repo_path)
+    target = safe_target(
+        repo,
+        f".maestro/state/inflight/{observation_id}.json",
+    )
+    value = _read_observation_file(target)
+    if value.get("run_id") != run_id or "completed_at" in value:
+        raise MaestroError(
+            "RUN_EXECUTION_BINDING_INVALID",
+            "Owned execution requires the matching unfinished observation.",
+        )
+    existing = value.get("execution_binding")
+    existing_mode = (
+        existing.get("mode") if isinstance(existing, dict) else None
+    )
+    plan_summary = value.get("plan_summary")
+    if existing_mode == "maestro_owned_codex_app_server":
+        if (
+            not isinstance(plan_summary, dict)
+            or plan_summary.get("execution_receipts_required") is not True
+            or not validate_plan_execution_units(plan_summary)
+        ):
+            raise MaestroError(
+                "RUN_EXECUTION_BINDING_INVALID",
+                "Owned execution must retain its exact receipt-required ExecutionUnit plan.",
+            )
+        return {
+            "schema_version": "maestro_command_result_v1",
+            "command": "observe-claim-owned-codex",
+            "status": "already_owned",
+            "repo_root": str(repo),
+            "run_id": run_id,
+            "observation_id": observation_id,
+            "execution_binding": existing,
+            "writes_performed": False,
+        }
+    if existing_mode == "explicit_fallback":
+        raise MaestroError(
+            "RUN_EXECUTION_BINDING_CONFLICT",
+            "An explicit current-Host fallback cannot later launch an owned Codex App Server Assignment.",
+        )
+    if existing_mode not in {None, "desktop_request"}:
+        raise MaestroError(
+            "RUN_EXECUTION_BINDING_CONFLICT",
+            "Only a fact-free Desktop request may become Maestro-owned execution.",
+        )
+    if (
+        not isinstance(plan_summary, dict)
+        or not validate_plan_execution_units(plan_summary)
+        or value.get("stage_results")
+        or value.get("work_spans")
+        or value.get("completion_closure") is not None
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_BINDING_CONFLICT",
+            "Owned execution must be claimed before the first execution fact on an exact ExecutionUnit plan.",
+        )
+    binding = {
+        "schema_version": EXECUTION_BINDING_VERSION,
+        "mode": "maestro_owned_codex_app_server",
+    }
+    before = copy.deepcopy(value)
+    updated_plan = copy.deepcopy(plan_summary)
+    updated_plan["execution_receipts_required"] = True
+    value["plan_summary"] = updated_plan
+    value["execution_binding"] = binding
+    recorded_at = _timestamp(_utc_now())
+    committed = commit_execution_transition(
+        target,
+        before=before,
+        after=value,
+        event_type="execution_binding_changed",
+        idempotency_key=(
+            "execution:binding:maestro_owned_codex_app_server"
+        ),
+        producer=producer_binding(
+            "maestro_core",
+            capability="lifecycle_only",
+            event_coverage="partial_stream",
+        ),
+        payload={
+            "execution_binding": binding,
+            "execution_receipts_required": True,
+        },
+        measurement=None,
+        recorded_at=recorded_at,
+    )
+    return {
+        "schema_version": "maestro_command_result_v1",
+        "command": "observe-claim-owned-codex",
+        "status": "owned",
+        "repo_root": str(repo),
+        "run_id": run_id,
+        "observation_id": observation_id,
+        "execution_binding": binding,
+        "writes_performed": committed != before,
     }
 
 
@@ -402,6 +643,7 @@ def _valid_host_observation(value: Any) -> bool:
     optional_fields = {
         "requested_reasoning_effort",
         "reasoning_effort_evidence",
+        "duration_ms",
     }
     if (
         not required_fields.issubset(value)
@@ -420,6 +662,7 @@ def _valid_host_observation(value: Any) -> bool:
     model_event_evidence = value.get("model_event_evidence")
     reroutes = value.get("reroutes")
     tokens = value.get("tokens")
+    duration_ms = value.get("duration_ms")
     if not (
         value.get("schema_version") == HOST_OBSERVATION_VERSION
         and _valid_host_observation_identity(value)
@@ -430,12 +673,23 @@ def _valid_host_observation(value: Any) -> bool:
             "unavailable",
             "host_request",
         }
-        and model_event_evidence in {"unavailable", "complete"}
+        and model_event_evidence
+        in {"unavailable", "request_only", "complete"}
         and _valid_token_summary(tokens)
+        and (
+            duration_ms is None
+            or (
+                isinstance(duration_ms, (int, float))
+                and not isinstance(duration_ms, bool)
+                and math.isfinite(duration_ms)
+                and duration_ms >= 0
+            )
+        )
         and (
             requested_model is not None
             or applied_model is not None
             or tokens is not None
+            or duration_ms is not None
         )
         and _parse_timestamp(value.get("observed_at")) is not None
     ):
@@ -450,6 +704,12 @@ def _valid_host_observation(value: Any) -> bool:
         return False
     if model_event_evidence == "unavailable":
         return applied_model is None and reroutes == []
+    if model_event_evidence == "request_only":
+        return (
+            requested_model is not None
+            and applied_model is None
+            and reroutes == []
+        )
     return (
         requested_model is not None
         and applied_model is not None
@@ -484,17 +744,67 @@ def _read_observation_file(path: Path) -> dict[str, Any]:
     return value
 
 
+def _assignment_plan_summary(
+    assignment: dict[str, Any],
+    *,
+    execution_unit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    route = assignment["model_route"]
+    summary = {
+        "assignment_id": assignment["assignment_id"],
+        "kind": assignment["kind"],
+        "executor_id": assignment["executor_id"],
+        "mutation_owner": assignment["mutation_owner"],
+        "read_only": assignment["read_only"],
+        "may_spawn": assignment["may_spawn"],
+        "max_children": assignment["max_children"],
+        "depends_on": list(assignment["depends_on"]),
+        "lens_ids": list(assignment.get("lens_ids", [])),
+        "planned_model": route["selected_model"],
+        "reasoning_effort": route["reasoning_effort"],
+        "expertise_pack_ids": list(
+            assignment.get("expertise_pack_ids", [])
+        ),
+        "decision_guide_ids": list(
+            assignment.get("decision_guide_ids", [])
+        ),
+    }
+    if route.get("schema_version") == "maestro_stage_model_route_v1":
+        summary.update(
+            {
+                "model_route_id": route["model_route_id"],
+                "execution_unit_id": route["execution_unit_id"],
+                "stage_kind": route["stage_kind"],
+                "task_class": route["task_class"],
+                "execution_kind": route["execution_kind"],
+                "quality_profile": route["quality_profile"],
+                "selected_class": route["selected_class"],
+                "quality_floor": copy.deepcopy(route["quality_floor"]),
+                "fallback_route": copy.deepcopy(route["fallback_route"]),
+            }
+        )
+    if execution_unit is not None:
+        summary["execution_unit"] = copy.deepcopy(execution_unit)
+    return summary
+
+
 def _plan_summary(repo: Path, plan_path: str | Path | None) -> dict[str, Any] | None:
     if plan_path is None:
         return None
     path = Path(plan_path).expanduser().resolve()
     plan = read_json(path)
-    validation = validate_route_v2(plan, repo_path=repo)
+    validation = normalize_execution_contract(plan, repo_path=repo)
+    plan = validation.get("route_plan")
     if validation["status"] != "PASS":
         first = validation["issues"][0]
         raise MaestroError(
             "RUN_OBSERVATION_PLAN_INVALID",
             f"{first['code']}: {first['message']}",
+        )
+    if not isinstance(plan, dict):
+        raise MaestroError(
+            "RUN_OBSERVATION_PLAN_INVALID",
+            "The execution contract has no route plan.",
         )
     assignments = plan.get("assignments", [])
     if not isinstance(assignments, list) or len(assignments) > MAX_PLAN_ASSIGNMENTS:
@@ -508,34 +818,39 @@ def _plan_summary(repo: Path, plan_path: str | Path | None) -> dict[str, Any] | 
         if isinstance(expertise, dict)
         else None
     )
+    common_units = {
+        unit["local_unit_id"]: unit
+        for unit in validation.get("execution_units", [])
+        if isinstance(unit, dict)
+        and isinstance(unit.get("local_unit_id"), str)
+    }
     summary = {
         "schema_version": "maestro_plan_summary_v1",
         "plan_id": plan["plan_id"],
+        "execution_contract": {
+            "kind": (
+                "decision-enactment"
+                if validation.get("execution_plan_id") is not None
+                else "direct-route"
+            ),
+            "execution_plan_id": validation.get("execution_plan_id"),
+            "decision_plan_id": validation.get("decision_plan_id"),
+            "decision_bundle_digest": validation.get(
+                "decision_bundle_digest"
+            ),
+        },
         "intent": plan["intent"],
         "department": plan["department"],
         "risk": plan["risk"],
         "depth": plan["depth"],
         "selected_lenses": list(plan["selected_lenses"]),
         "assignments": [
-            {
-                "assignment_id": assignment["assignment_id"],
-                "kind": assignment["kind"],
-                "executor_id": assignment["executor_id"],
-                "mutation_owner": assignment["mutation_owner"],
-                "read_only": assignment["read_only"],
-                "depends_on": list(assignment["depends_on"]),
-                "lens_ids": list(assignment.get("lens_ids", [])),
-                "planned_model": assignment["model_route"]["selected_model"],
-                "reasoning_effort": assignment["model_route"][
-                    "reasoning_effort"
-                ],
-                "expertise_pack_ids": list(
-                    assignment.get("expertise_pack_ids", [])
+            _assignment_plan_summary(
+                assignment,
+                execution_unit=common_units.get(
+                    assignment["assignment_id"]
                 ),
-                "decision_guide_ids": list(
-                    assignment.get("decision_guide_ids", [])
-                ),
-            }
+            )
             for assignment in assignments
         ],
         "research": (
@@ -556,7 +871,156 @@ def _plan_summary(repo: Path, plan_path: str | Path | None) -> dict[str, Any] | 
             "warnings": [],
         }
     )
+    design_assurance = plan.get("design_assurance")
+    if isinstance(design_assurance, dict):
+        summary["design_assurance"] = {
+            "profile_id": design_assurance.get("profile_id"),
+            "mode": design_assurance.get("mode"),
+            "mutation_gate": design_assurance.get("mutation_gate"),
+            "verification_gate": design_assurance.get(
+                "verification_gate"
+            ),
+        }
+    route_hints = (
+        expertise.get("route_hints")
+        if isinstance(expertise, dict)
+        else None
+    )
+    summary["route_correction"] = (
+        {
+            "prior_plan_id": route_hints["prior_plan_id"],
+            "prior_source_route_digest": route_hints[
+                "prior_source_route_digest"
+            ],
+        }
+        if isinstance(route_hints, dict)
+        and route_hints.get("route_attempt") == 2
+        else None
+    )
     return summary
+
+
+def _claim_corrected_route(
+    repo: Path,
+    plan_summary: dict[str, Any] | None,
+    *,
+    observation_id: str,
+) -> tuple[Path, dict[str, Any]] | None:
+    if not isinstance(plan_summary, dict):
+        return None
+    correction = plan_summary.get("route_correction")
+    if not isinstance(correction, dict):
+        return None
+    prior_plan_id = correction.get("prior_plan_id")
+    prior_digest = correction.get("prior_source_route_digest")
+    corrected_plan_id = plan_summary.get("plan_id")
+    if not all(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+        for value in (prior_plan_id, prior_digest, corrected_plan_id)
+    ):
+        raise MaestroError(
+            "EXPERTISE_CORRECTED_ROUTE_RECEIPT_INVALID",
+            "Corrected route lineage cannot be consumed.",
+        )
+    receipt = {
+        "schema_version": CORRECTED_ROUTE_RECEIPT_VERSION,
+        "prior_plan_id": prior_plan_id,
+        "prior_source_route_digest": prior_digest,
+        "corrected_plan_id": corrected_plan_id,
+        "consumer_observation_id": observation_id,
+    }
+    target = safe_target(
+        repo,
+        f".maestro/state/route-corrections/{prior_plan_id}.json",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = pretty_json(receipt).encode("utf-8")
+    try:
+        descriptor = os.open(
+            target,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except FileExistsError:
+        existing = read_json(target)
+        legacy_same_plan = (
+            existing.get("schema_version")
+            == "maestro_corrected_route_consumption_v1"
+            and existing.get("prior_plan_id") == prior_plan_id
+            and existing.get("prior_source_route_digest") == prior_digest
+            and existing.get("corrected_plan_id") == corrected_plan_id
+        )
+        if legacy_same_plan:
+            observation_target = safe_target(
+                repo,
+                f".maestro/state/inflight/{observation_id}.json",
+            )
+            observation = (
+                _read_observation_file(observation_target)
+                if observation_target.is_file()
+                and not observation_target.is_symlink()
+                else {}
+            )
+            observed_plan = observation.get("plan_summary")
+            if (
+                not isinstance(observed_plan, dict)
+                or observed_plan.get("plan_id") != corrected_plan_id
+            ):
+                raise MaestroError(
+                    "EXPERTISE_CORRECTED_ROUTE_ALREADY_CONSUMED",
+                    (
+                        "The first route has a legacy corrected-route "
+                        "receipt without proof that this observation owns it."
+                    ),
+                )
+            atomic_write(target, pretty_json(receipt).encode("utf-8"))
+            return None
+        if existing != receipt:
+            raise MaestroError(
+                "EXPERTISE_CORRECTED_ROUTE_ALREADY_CONSUMED",
+                (
+                    "The first route already has a different corrected "
+                    "execution plan."
+                ),
+            )
+        return None
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return target, receipt
+
+
+def _rollback_corrected_route_claim(
+    claim: tuple[Path, dict[str, Any]] | None,
+    *,
+    observation_target: Path,
+) -> None:
+    if claim is None:
+        return
+    target, receipt = claim
+    if observation_target.is_file() and not observation_target.is_symlink():
+        try:
+            observation = read_json(observation_target)
+        except MaestroError:
+            observation = {}
+        summary = observation.get("plan_summary")
+        if (
+            isinstance(summary, dict)
+            and summary.get("plan_id") == receipt["corrected_plan_id"]
+        ):
+            return
+    try:
+        if read_json(target) == receipt:
+            target.unlink(missing_ok=True)
+    except MaestroError:
+        return
 
 
 def start_run_observation(
@@ -591,6 +1055,13 @@ def start_run_observation(
     target = safe_target(repo, relative_path)
     now = _timestamp(_utc_now())
     plan_summary = _plan_summary(repo, plan_path)
+    if (
+        isinstance(plan_summary, dict)
+        and isinstance(execution_binding, dict)
+        and execution_binding.get("mode")
+        == "maestro_owned_codex_app_server"
+    ):
+        plan_summary["execution_receipts_required"] = True
     value = {
         "schema_version": OBSERVATION_VERSION,
         "observation_id": observation_id,
@@ -603,6 +1074,7 @@ def start_run_observation(
     }
     if plan_summary is not None:
         value["plan_attached_at"] = now
+        value["completion_policy"] = managed_completion_policy()
     if execution_binding is not None:
         if not _valid_execution_binding(execution_binding):
             raise MaestroError(
@@ -610,6 +1082,49 @@ def start_run_observation(
                 "execution binding does not satisfy the managed execution contract.",
             )
         value["execution_binding"] = execution_binding
+    ledger = new_execution_ledger(
+        observation_id=observation_id,
+        run_id=run_id,
+        recorded_at=now,
+        payload={
+            "task_label": label,
+            "started_at": now,
+        },
+    )
+    if plan_summary is not None:
+        ledger, _ = append_execution_event(
+            ledger,
+            event_type="plan_attached",
+            idempotency_key="plan:attached",
+            producer=producer_binding(
+                "maestro_core",
+                capability="lifecycle_only",
+                event_coverage="partial_stream",
+            ),
+            payload={
+                "plan_summary": plan_summary,
+                "completion_policy": value["completion_policy"],
+            },
+            measurement=None,
+            recorded_at=now,
+        )
+    if execution_binding is not None:
+        ledger, _ = append_execution_event(
+            ledger,
+            event_type="execution_binding_changed",
+            idempotency_key=(
+                f"execution:binding:{execution_binding['mode']}"
+            ),
+            producer=producer_binding(
+                "maestro_core",
+                capability="lifecycle_only",
+                event_coverage="partial_stream",
+            ),
+            payload={"execution_binding": execution_binding},
+            measurement=None,
+            recorded_at=now,
+        )
+    value["execution_ledger"] = ledger
     if target.exists() or target.is_symlink():
         existing = _read_observation_file(target)
         runtime_fields = {
@@ -621,6 +1136,8 @@ def start_run_observation(
             "completed_at",
             "duration_ms",
             "fallback_recorded_at",
+            "execution_ledger",
+            "completion_closure",
         }
         comparable = {
             key: item
@@ -647,11 +1164,37 @@ def start_run_observation(
                 if key != "execution_binding"
             }
             if comparable_without_binding == expected_without_binding:
+                before = copy.deepcopy(existing)
                 existing["execution_binding"] = execution_binding
-                atomic_write(
-                    target,
-                    pretty_json(existing).encode("utf-8"),
+                claim = _claim_corrected_route(
+                    repo,
+                    plan_summary,
+                    observation_id=observation_id,
                 )
+                try:
+                    commit_execution_transition(
+                        target,
+                        before=before,
+                        after=existing,
+                        event_type="execution_binding_changed",
+                        idempotency_key=(
+                            f"execution:binding:{execution_binding['mode']}"
+                        ),
+                        producer=producer_binding(
+                            "maestro_core",
+                            capability="lifecycle_only",
+                            event_coverage="partial_stream",
+                        ),
+                        payload={"execution_binding": execution_binding},
+                        measurement=None,
+                        recorded_at=now,
+                    )
+                except Exception:
+                    _rollback_corrected_route_claim(
+                        claim,
+                        observation_target=target,
+                    )
+                    raise
                 return {
                     "schema_version": "maestro_command_result_v1",
                     "command": "observe-start",
@@ -679,6 +1222,11 @@ def start_run_observation(
                 if key != "execution_binding"
             }
             if comparable_without_binding == expected_without_binding:
+                claim = _claim_corrected_route(
+                    repo,
+                    plan_summary,
+                    observation_id=observation_id,
+                )
                 return {
                     "schema_version": "maestro_command_result_v1",
                     "command": "observe-start",
@@ -687,13 +1235,18 @@ def start_run_observation(
                     "run_id": run_id,
                     "observation_id": observation_id,
                     "observation_path": relative_path,
-                    "writes_performed": False,
+                    "writes_performed": claim is not None,
                 }
         if comparable != expected:
             raise MaestroError(
                 "RUN_OBSERVATION_CONFLICT",
                 "The run ID already has a different in-flight observation.",
             )
+        claim = _claim_corrected_route(
+            repo,
+            plan_summary,
+            observation_id=observation_id,
+        )
         return {
             "schema_version": "maestro_command_result_v1",
             "command": "observe-start",
@@ -702,9 +1255,27 @@ def start_run_observation(
             "run_id": run_id,
             "observation_id": observation_id,
             "observation_path": relative_path,
-            "writes_performed": False,
+            "writes_performed": claim is not None,
         }
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+    claim = _claim_corrected_route(
+        repo,
+        plan_summary,
+        observation_id=observation_id,
+    )
+    try:
+        with observation_write_lock(target):
+            if target.exists() or target.is_symlink():
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    "The run observation appeared concurrently.",
+                )
+            atomic_write(target, pretty_json(value).encode("utf-8"))
+    except Exception:
+        _rollback_corrected_route_claim(
+            claim,
+            observation_target=target,
+        )
+        raise
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-start",
@@ -739,6 +1310,12 @@ def attach_run_plan(
         )
     plan_summary = _plan_summary(repo, plan_path)
     assert plan_summary is not None
+    if (
+        isinstance(value.get("execution_binding"), dict)
+        and value["execution_binding"].get("mode")
+        == "maestro_owned_codex_app_server"
+    ):
+        plan_summary["execution_receipts_required"] = True
     existing = value.get("plan_summary")
     if existing is not None:
         if existing != plan_summary:
@@ -746,6 +1323,11 @@ def attach_run_plan(
                 "RUN_OBSERVATION_PLAN_CONFLICT",
                 "The run already contains a different validated plan.",
             )
+        claim = _claim_corrected_route(
+            repo,
+            plan_summary,
+            observation_id=observation_id,
+        )
         return {
             "schema_version": "maestro_command_result_v1",
             "command": "observe-plan",
@@ -754,16 +1336,48 @@ def attach_run_plan(
             "run_id": run_id,
             "observation_id": observation_id,
             "plan_id": plan_summary["plan_id"],
-            "writes_performed": False,
+            "writes_performed": claim is not None,
         }
     if value.get("stage_results"):
         raise MaestroError(
             "RUN_OBSERVATION_PLAN_CONFLICT",
             "A plan cannot be attached after stage evidence exists.",
         )
+    before = copy.deepcopy(value)
+    recorded_at = _timestamp(_utc_now())
     value["plan_summary"] = plan_summary
-    value["plan_attached_at"] = _timestamp(_utc_now())
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+    value["plan_attached_at"] = recorded_at
+    value["completion_policy"] = managed_completion_policy()
+    claim = _claim_corrected_route(
+        repo,
+        plan_summary,
+        observation_id=observation_id,
+    )
+    try:
+        commit_execution_transition(
+            target,
+            before=before,
+            after=value,
+            event_type="plan_attached",
+            idempotency_key="plan:attached",
+            producer=producer_binding(
+                "maestro_core",
+                capability="lifecycle_only",
+                event_coverage="partial_stream",
+            ),
+            payload={
+                "plan_summary": plan_summary,
+                "completion_policy": value["completion_policy"],
+            },
+            measurement=None,
+            recorded_at=recorded_at,
+        )
+    except Exception:
+        _rollback_corrected_route_claim(
+            claim,
+            observation_target=target,
+        )
+        raise
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-plan",
@@ -780,6 +1394,7 @@ def _valid_stage_result(
     value: Any,
     *,
     plan_summary: dict[str, Any],
+    prior_results: dict[str, dict[str, Any]] | None = None,
 ) -> bool:
     required = {
         "assignment_id",
@@ -795,10 +1410,21 @@ def _valid_stage_result(
         "evidence_source",
         "observed_at",
     }
-    if not isinstance(value, dict) or set(value) != required:
+    route_identity_fields = {"model_route_id", "execution_unit_id"}
+    optional_fields = {
+        "verification_assessment",
+        "execution_unit_receipt",
+    }
+    if (
+        not isinstance(value, dict)
+        or not required.issubset(value)
+        or set(value) - required - route_identity_fields - optional_fields
+        or bool(set(value) & route_identity_fields)
+        != route_identity_fields.issubset(value)
+    ):
         return False
-    assignment_ids = {
-        assignment["assignment_id"]
+    assignments = {
+        assignment["assignment_id"]: assignment
         for assignment in plan_summary["assignments"]
     }
     actual_model = value.get("actual_model")
@@ -807,11 +1433,13 @@ def _valid_stage_result(
     duration = value.get("duration_ms")
     evidence_refs = value.get("evidence_refs")
     source = value.get("evidence_source")
+    assignment = assignments.get(value.get("assignment_id"))
     if (
-        value.get("assignment_id") not in assignment_ids
+        assignment is None
         or value.get("status") not in STAGE_STATUSES
         or source not in STAGE_EVIDENCE_SOURCES
-        or value.get("model_evidence") not in {"unavailable", "complete"}
+        or value.get("model_evidence")
+        not in {"unavailable", "request_only", "complete"}
         or not _valid_model(requested_model)
         or not _valid_reasoning_effort(requested_effort)
         or not _valid_model(actual_model)
@@ -847,17 +1475,126 @@ def _valid_stage_result(
         or _parse_timestamp(value.get("observed_at")) is None
     ):
         return False
-    if source == "codex_app_server":
-        return (
-            value["model_evidence"] == "complete"
-            and requested_model is not None
-            and actual_model is not None
-            and duration is not None
-            and _valid_model_reroutes(
-                value["reroutes"],
-                requested_model=requested_model,
-                applied_model=actual_model,
+    planned_route_id = assignment.get("model_route_id")
+    planned_unit_id = assignment.get("execution_unit_id")
+    if planned_route_id is None and planned_unit_id is None:
+        if route_identity_fields & set(value):
+            return False
+    elif (
+        value.get("model_route_id") != planned_route_id
+        or value.get("execution_unit_id") != planned_unit_id
+    ):
+        return False
+    assessment = value.get("verification_assessment")
+    if assessment is not None and not _valid_verification_assessment(
+        assessment,
+        verifier_assignment=assignment,
+        assignments=assignments,
+        evidence_source=source,
+        stage_status=value.get("status"),
+        verifier_stage=value,
+    ):
+        return False
+    execution_unit = assignment.get("execution_unit")
+    execution_unit_receipt = value.get("execution_unit_receipt")
+    receipt_required = (
+        plan_summary.get("execution_receipts_required") is True
+        and isinstance(execution_unit, dict)
+        and execution_unit.get("host_executable") is True
+        and source == "codex_app_server"
+        and value.get("status") == "completed"
+    )
+    if receipt_required and execution_unit_receipt is None:
+        return False
+    if execution_unit_receipt is not None:
+        if not isinstance(execution_unit_receipt, dict):
+            return False
+        assignment_by_id = {
+            item["assignment_id"]: item
+            for item in plan_summary["assignments"]
+        }
+        dependency_ids = assignment.get("depends_on", [])
+        if any(
+            dependency_id not in assignment_by_id
+            for dependency_id in dependency_ids
+        ):
+            return False
+        dependency_assignments = [
+            assignment_by_id[dependency_id]
+            for dependency_id in dependency_ids
+        ]
+        dependency_receipts = [
+            result["execution_unit_receipt"]
+            for dependency_id in assignment.get("depends_on", [])
+            for result in [
+                (prior_results or {}).get(dependency_id, {})
+            ]
+            if isinstance(result.get("execution_unit_receipt"), dict)
+        ]
+        validation = validate_execution_unit_receipt(
+            execution_unit_receipt,
+            unit=execution_unit,
+            dependency_units=[
+                item["execution_unit"]
+                for item in dependency_assignments
+                if isinstance(item.get("execution_unit"), dict)
+            ],
+            dependency_receipts=dependency_receipts,
+        )
+        attempts = execution_unit_receipt.get("attempts", [])
+        last_attempt = attempts[-1] if attempts else {}
+        if (
+            validation["status"] != "PASS"
+            or execution_unit_receipt.get("producer", {}).get("run_id")
+            is None
+            or attempts[0].get("requested_model")
+            != value.get("requested_model")
+            or attempts[0].get("requested_reasoning_effort")
+            != value.get("requested_reasoning_effort")
+            or last_attempt.get("applied_model")
+            != value.get("actual_model")
+            or attempts[0].get("provider_reroutes")
+            != value.get("reroutes")
+            or last_attempt.get("duration_ms") != value.get("duration_ms")
+            or last_attempt.get("tokens") != value.get("tokens")
+            or (
+                "assignment-packet:"
+                + str(
+                    execution_unit_receipt.get(
+                        "output_packet_digest",
+                        "",
+                    )
+                )
             )
+            not in evidence_refs
+        ):
+            return False
+    if source == "codex_app_server":
+        if value["model_evidence"] == "complete":
+            return (
+                requested_model is not None
+                and actual_model is not None
+                and duration is not None
+                and _valid_model_reroutes(
+                    value["reroutes"],
+                    requested_model=requested_model,
+                    applied_model=actual_model,
+                )
+            )
+        if value["model_evidence"] == "request_only":
+            return (
+                requested_model is not None
+                and actual_model is None
+                and duration is not None
+                and value["reroutes"] == []
+            )
+        return (
+            value["status"] != "completed"
+            and requested_model is None
+            and requested_effort is None
+            and actual_model is None
+            and value["reroutes"] == []
+            and value.get("tokens") is None
         )
     return (
         value["model_evidence"] == "unavailable"
@@ -869,10 +1606,39 @@ def _valid_stage_result(
     )
 
 
+def _valid_verification_assessment(
+    value: Any,
+    *,
+    verifier_assignment: dict[str, Any],
+    assignments: dict[str, dict[str, Any]],
+    evidence_source: Any,
+    stage_status: Any,
+    verifier_stage: dict[str, Any],
+) -> bool:
+    return (
+        evidence_source == "codex_app_server"
+        and stage_status == "completed"
+        and verifier_assignment.get("executor_id") == "verifier"
+        and isinstance(value, dict)
+        and value.get("verifier_assignment_id")
+        == verifier_assignment.get("assignment_id")
+        and validate_verification_assessment(
+            value,
+            plan_summary={
+                "assignments": list(assignments.values()),
+            },
+            verifier_stage=verifier_stage,
+        )
+    )
+
+
 def _valid_stage_results_for_observation(
     value: Any,
     *,
     plan_summary: dict[str, Any] | None,
+    run_id: str | None = None,
+    observation_id: str | None = None,
+    work_spans: Any = None,
 ) -> bool:
     if value is None:
         return True
@@ -883,14 +1649,30 @@ def _valid_stage_results_for_observation(
     ):
         return False
     ids: set[str] = set()
+    prior_results: dict[str, dict[str, Any]] = {}
     for item in value:
         if (
-            not _valid_stage_result(item, plan_summary=plan_summary)
+            not _valid_stage_result(
+                item,
+                plan_summary=plan_summary,
+                prior_results=prior_results,
+            )
             or item["assignment_id"] in ids
         ):
             return False
         ids.add(item["assignment_id"])
-    return True
+        prior_results[item["assignment_id"]] = item
+    return (
+        validate_stage_execution_receipts(
+            plan_summary=plan_summary,
+            stage_results=value,
+            run_id=run_id,
+            observation_id=observation_id,
+            work_spans=work_spans,
+            expected_framework_version=__version__,
+        )["status"]
+        == "PASS"
+    )
 
 
 def record_stage_observation(
@@ -905,10 +1687,14 @@ def record_stage_observation(
     requested_model: str | None = None,
     requested_reasoning_effort: str | None = None,
     actual_model: str | None = None,
+    model_route_id: str | None = None,
+    execution_unit_id: str | None = None,
     model_evidence: str = "unavailable",
     reroutes: list[dict[str, str]] | None = None,
     duration_ms: float | None = None,
     tokens: dict[str, int | None] | None = None,
+    verification_assessment: dict[str, Any] | None = None,
+    execution_unit_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append one immutable terminal Assignment result to a run observation."""
 
@@ -995,7 +1781,37 @@ def record_stage_observation(
         "evidence_source": evidence_source,
         "observed_at": _timestamp(_utc_now()),
     }
-    if not _valid_stage_result(result, plan_summary=plan_summary):
+    if verification_assessment is not None:
+        result["verification_assessment"] = copy.deepcopy(
+            verification_assessment
+        )
+    if execution_unit_receipt is not None:
+        result["execution_unit_receipt"] = copy.deepcopy(
+            execution_unit_receipt
+        )
+    planned_route_id = assignment.get("model_route_id")
+    planned_unit_id = assignment.get("execution_unit_id")
+    if planned_route_id is not None or planned_unit_id is not None:
+        if (
+            model_route_id not in {None, planned_route_id}
+            or execution_unit_id not in {None, planned_unit_id}
+        ):
+            raise MaestroError(
+                "RUN_STAGE_MODEL_ROUTE_CONFLICT",
+                "Stage evidence must preserve the exact planned model route identity.",
+            )
+        result["model_route_id"] = planned_route_id
+        result["execution_unit_id"] = planned_unit_id
+    elif model_route_id is not None or execution_unit_id is not None:
+        raise MaestroError(
+            "RUN_STAGE_MODEL_ROUTE_CONFLICT",
+            "Legacy Assignment evidence cannot claim an unplanned model route identity.",
+        )
+    if not _valid_stage_result(
+        result,
+        plan_summary=plan_summary,
+        prior_results=by_id,
+    ):
         raise MaestroError(
             "RUN_STAGE_OBSERVATION_INVALID",
             "Stage evidence does not satisfy its source and measurement contract.",
@@ -1019,6 +1835,22 @@ def record_stage_observation(
             "assignment_id": assignment_id,
             "writes_performed": False,
         }
+    if (
+        validate_stage_execution_receipts(
+            plan_summary=plan_summary,
+            stage_results=[*existing_results, result],
+            run_id=run_id,
+            observation_id=observation_id,
+            work_spans=value.get("work_spans"),
+            expected_framework_version=__version__,
+        )["status"]
+        != "PASS"
+    ):
+        raise MaestroError(
+            "RUN_STAGE_EXECUTION_RECEIPT_INVALID",
+            "Stage execution receipts do not bind the exact plan, evidence, and WorkSpan lineage.",
+        )
+    before = copy.deepcopy(value)
     existing_results.append(result)
     plan_order = {
         item["assignment_id"]: index
@@ -1029,15 +1861,24 @@ def record_stage_observation(
         key=lambda item: plan_order[item["assignment_id"]],
     )
     all_terminal = len(value["stage_results"]) == len(plan_summary["assignments"])
-    if all_terminal:
-        started_at = _parse_timestamp(value.get("started_at"))
-        assert started_at is not None
-        value["completed_at"] = _timestamp(_utc_now())
-        value["duration_ms"] = round(
-            max(0.0, (_utc_now() - started_at).total_seconds() * 1000),
-            3,
-        )
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+    commit_execution_transition(
+        target,
+        before=before,
+        after=value,
+        event_type="assignment_terminal",
+        idempotency_key=f"assignment:{assignment_id}:terminal",
+        producer=_execution_producer(
+            evidence_source,
+            correlation_id=assignment_id,
+            complete=(
+                evidence_source == "codex_app_server"
+                and model_evidence in {"request_only", "complete"}
+            ),
+        ),
+        payload={"stage_result": result},
+        measurement=measurement_from_stage(result),
+        recorded_at=result["observed_at"],
+    )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-stage",
@@ -1046,7 +1887,8 @@ def record_stage_observation(
         "run_id": run_id,
         "observation_id": observation_id,
         "assignment_id": assignment_id,
-        "run_terminal": all_terminal,
+        "run_terminal": False,
+        "assignments_terminal": all_terminal,
         "writes_performed": True,
     }
 
@@ -1057,21 +1899,39 @@ def _work_bindings_match_plan(
 ) -> bool:
     if not validate_work_spans(work_spans):
         return False
-    assignment_ids = (
+    assignments = (
         {
-            assignment["assignment_id"]
+            assignment["assignment_id"]: assignment
             for assignment in plan_summary.get("assignments", [])
             if isinstance(assignment, dict)
             and isinstance(assignment.get("assignment_id"), str)
         }
         if isinstance(plan_summary, dict)
-        else set()
+        else {}
     )
-    return all(
-        span["assignment_id"] is None
-        or span["assignment_id"] in assignment_ids
-        for span in work_spans or []
-    )
+    child_counts: dict[str, int] = {}
+    for span in work_spans or []:
+        assignment_id = span["assignment_id"]
+        if assignment_id is None:
+            continue
+        assignment = assignments.get(assignment_id)
+        if (
+            assignment is None
+            or span.get("read_only") is not assignment.get("read_only")
+        ):
+            return False
+        if span.get("kind") == "delegation":
+            child_counts[assignment_id] = child_counts.get(
+                assignment_id,
+                0,
+            ) + 1
+            if (
+                assignment.get("may_spawn") is not True
+                or child_counts[assignment_id]
+                > assignment.get("max_children", 0)
+            ):
+                return False
+    return True
 
 
 def record_work_start(
@@ -1120,6 +1980,60 @@ def record_work_start(
             "WORK_OBSERVATION_INVALID",
             "Observed work requires the matching unfinished run.",
         )
+    assignment: dict[str, Any] | None = None
+    if assignment_id is not None:
+        plan_summary = value.get("plan_summary")
+        assignment = next(
+            (
+                item
+                for item in (
+                    plan_summary.get("assignments", [])
+                    if isinstance(plan_summary, dict)
+                    else []
+                )
+                if isinstance(item, dict)
+                and item.get("assignment_id") == assignment_id
+            ),
+            None,
+        )
+        if assignment is None:
+            raise MaestroError(
+                "WORK_ASSIGNMENT_BINDING_INVALID",
+                "Observed work references an Assignment outside the attached plan.",
+            )
+        if read_only is not assignment.get("read_only"):
+            raise MaestroError(
+                "WORK_ASSIGNMENT_ACCESS_MISMATCH",
+                "Assignment-bound work must preserve the planned read-only "
+                "or writer access policy.",
+            )
+        execution_binding = value.get("execution_binding")
+        if source == "current_host" and (
+            not isinstance(execution_binding, dict)
+            or execution_binding.get("mode") != "explicit_fallback"
+        ):
+            raise MaestroError(
+                "RUN_EXECUTION_FALLBACK_REQUIRED",
+                "Assignment-bound current-Host work requires an explicit "
+                "fallback before it starts.",
+            )
+        if kind == "delegation":
+            current_children = sum(
+                1
+                for span in value.get("work_spans", [])
+                if isinstance(span, dict)
+                and span.get("assignment_id") == assignment_id
+                and span.get("kind") == "delegation"
+            )
+            if (
+                assignment.get("may_spawn") is not True
+                or current_children >= assignment.get("max_children", 0)
+            ):
+                raise MaestroError(
+                    "WORK_DELEGATION_FORBIDDEN",
+                    "Assignment-bound work attempted delegation outside its "
+                    "planned may_spawn/max_children policy.",
+                )
     event_start = (
         _parse_timestamp(event_started_at)
         if event_started_at is not None
@@ -1172,6 +2086,7 @@ def record_work_start(
         outcome=outcome,
         diagnostics=diagnostics,
     )
+    before = copy.deepcopy(value)
     work_spans, changed = append_work_span(
         value.get("work_spans"),
         span,
@@ -1186,7 +2101,22 @@ def record_work_start(
         )
     if changed:
         value["work_spans"] = work_spans
-        atomic_write(target, pretty_json(value).encode("utf-8"))
+        commit_execution_transition(
+            target,
+            before=before,
+            after=value,
+            event_type="work_started",
+            idempotency_key=f"work:{work_id}:start",
+            producer=_execution_producer(
+                source,
+                correlation_id=span.get("source_binding", {}).get(
+                    "correlation_id"
+                ),
+            ),
+            payload={"work_span": span},
+            measurement=measurement_from_work(span),
+            recorded_at=now,
+        )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-work-start",
@@ -1293,6 +2223,7 @@ def record_work_finish(
             3,
         )
     )
+    before = copy.deepcopy(value)
     work_spans, changed = finish_work_span(
         value.get("work_spans"),
         work_id=work_id,
@@ -1312,7 +2243,34 @@ def record_work_finish(
     )
     if changed:
         value["work_spans"] = work_spans
-        atomic_write(target, pretty_json(value).encode("utf-8"))
+        completed_span = next(
+            span for span in work_spans if span["work_id"] == work_id
+        )
+        binding = completed_span.get("source_binding")
+        complete_stream = (
+            isinstance(binding, dict)
+            and binding.get("event_coverage")
+            in {"complete_stream", "recovered_full"}
+        )
+        commit_execution_transition(
+            target,
+            before=before,
+            after=value,
+            event_type="work_terminal",
+            idempotency_key=f"work:{work_id}:terminal",
+            producer=_execution_producer(
+                completed_span["source"],
+                correlation_id=(
+                    binding.get("correlation_id")
+                    if isinstance(binding, dict)
+                    else None
+                ),
+                complete=complete_stream,
+            ),
+            payload={"work_span": completed_span},
+            measurement=measurement_from_work(completed_span),
+            recorded_at=completed_span["ended_at"],
+        )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-work-finish",
@@ -1453,6 +2411,9 @@ def observation_receipt_fields(
         "duration_ms",
         "execution_binding",
         "fallback_recorded_at",
+        "execution_ledger",
+        "completion_policy",
+        "completion_closure",
     }
     started_at = _parse_timestamp(value.get("started_at"))
     completed_at = _parse_timestamp(value.get("completed_at"))
@@ -1475,9 +2436,25 @@ def observation_receipt_fields(
             value.get("fallback_recorded_at") is not None
             and _parse_timestamp(value.get("fallback_recorded_at")) is None
         )
+        or not _valid_plan_summary_for_observation(
+            value.get("plan_summary")
+        )
+        or (
+            isinstance(value.get("execution_binding"), dict)
+            and value["execution_binding"].get("mode")
+            == "maestro_owned_codex_app_server"
+            and isinstance(value.get("plan_summary"), dict)
+            and value["plan_summary"].get(
+                "execution_receipts_required"
+            )
+            is not True
+        )
         or not _valid_stage_results_for_observation(
             value.get("stage_results"),
             plan_summary=value.get("plan_summary"),
+            run_id=run_id,
+            observation_id=observation_id,
+            work_spans=value.get("work_spans"),
         )
         or not _work_bindings_match_plan(
             value.get("work_spans"),
@@ -1485,6 +2462,11 @@ def observation_receipt_fields(
         )
         or not _valid_host_observation(value.get("host_observation"))
         or not _valid_execution_binding(value.get("execution_binding"))
+        or (
+            value.get("execution_ledger") is not None
+            and not validate_execution_ledger(value.get("execution_ledger"))
+        )
+        or not _valid_completion_state(value)
         or (
             "completed_at" in value
             and (
@@ -1518,6 +2500,14 @@ def observation_receipt_fields(
         "stage_results": list(value.get("stage_results", [])),
         "work_spans": list(value.get("work_spans", [])),
     }
+    ledger = ensure_execution_ledger(value)
+    result["execution_measurements"] = execution_measurements(
+        ledger,
+        duration_ms=round(elapsed, 3),
+    )
+    result["duration_ms"] = result["execution_measurements"]["duration"][
+        "value_ms"
+    ]
     plan_attached_at = _parse_timestamp(value.get("plan_attached_at"))
     result["planning_duration_ms"] = (
         round(
@@ -1534,6 +2524,10 @@ def observation_receipt_fields(
         result["host_observation"] = value["host_observation"]
     if value.get("execution_binding") is not None:
         result["execution_binding"] = value["execution_binding"]
+    if value.get("completion_policy") is not None:
+        result["completion_policy"] = value["completion_policy"]
+    if value.get("completion_closure") is not None:
+        result["completion_closure"] = value["completion_closure"]
     return result
 
 
@@ -1552,8 +2546,26 @@ def record_host_observation(
     reroutes: list[dict[str, str]] | None = None,
     actual_model: str | None = None,
     tokens: dict[str, int | None] | None = None,
+    duration_ms: float | None = None,
+    trusted_event_stream: bool = False,
 ) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
+    if (
+        not trusted_event_stream
+        and (
+            applied_model is not None
+            or actual_model is not None
+            or model_event_evidence == "complete"
+            or bool(reroutes)
+            or tokens is not None
+            or duration_ms is not None
+        )
+    ):
+        raise MaestroError(
+            "HOST_OBSERVATION_TRUST_REQUIRED",
+            "Applied model, reroute, and token claims may be attached only "
+            "by the owned App Server or the validated trace importer.",
+        )
     if (
         not isinstance(observation_id, str)
         or len(observation_id) != 32
@@ -1632,14 +2644,44 @@ def record_host_observation(
         "model_event_evidence": model_event_evidence,
         "reroutes": list(reroutes or []),
         "tokens": tokens,
+        "duration_ms": duration_ms,
         "observed_at": _timestamp(_utc_now()),
     }
     if not _valid_host_observation(host_observation):
         raise MaestroError(
             "HOST_OBSERVATION_INVALID",
             "Applied model telemetry requires a complete Host model event "
-            "stream. Requested-only or token-only telemetry remains unmeasured.",
+            "stream. Requested-only telemetry must keep the applied model "
+            "unknown.",
         )
+    host_identity = {
+        key: item
+        for key, item in host_observation.items()
+        if key != "observed_at"
+    }
+    host_key = (
+        "measurement:"
+        f"{host_observation['source']}:"
+        f"{host_observation['correlation_id']}:"
+        f"{sha256_text(canonical_json(host_identity))[:16]}"
+    )
+    ledger_source = (
+        "desktop_request"
+        if source == "codex-desktop-request-meta"
+        else (
+            "codex_app_server"
+            if source in {"codex-app-server", "codex_app_server"}
+            else "host_adapter"
+        )
+    )
+    producer = _execution_producer(
+        ledger_source,
+        correlation_id=host_observation["correlation_id"],
+        complete=(
+            trusted_event_stream
+            and model_event_evidence == "complete"
+        ),
+    )
     existing = value.get("host_observation")
     if existing is not None:
         comparable = {
@@ -1690,14 +2732,56 @@ def record_host_observation(
                     existing.get("tokens") is None
                     or existing.get("tokens") == host_observation["tokens"]
                 )
+                and (
+                    existing.get("duration_ms") is None
+                    or existing.get("duration_ms")
+                    == host_observation["duration_ms"]
+                )
             )
             if not monotonic_enrichment:
-                raise MaestroError(
-                    "HOST_OBSERVATION_CONFLICT",
-                    "This run already has different Host telemetry.",
+                if (
+                    existing.get("correlation_id")
+                    != host_observation["correlation_id"]
+                    or not trusted_event_stream
+                ):
+                    raise MaestroError(
+                        "HOST_OBSERVATION_CONFLICT",
+                        "This run already has different Host telemetry.",
+                    )
+                commit_execution_transition(
+                    target,
+                    before=copy.deepcopy(value),
+                    after=value,
+                    event_type="measurement_observed",
+                    idempotency_key=host_key,
+                    producer=producer,
+                    payload={"host_observation": host_observation},
+                    measurement=measurement_from_host(host_observation),
+                    recorded_at=host_observation["observed_at"],
                 )
+                return {
+                    "schema_version": "maestro_command_result_v1",
+                    "command": "observe-host",
+                    "status": "co_recorded",
+                    "repo_root": str(repo),
+                    "run_id": run_id,
+                    "observation_id": observation_id,
+                    "telemetry": host_observation,
+                    "writes_performed": True,
+                }
+            before = copy.deepcopy(value)
             value["host_observation"] = host_observation
-            atomic_write(target, pretty_json(value).encode("utf-8"))
+            commit_execution_transition(
+                target,
+                before=before,
+                after=value,
+                event_type="measurement_observed",
+                idempotency_key=host_key,
+                producer=producer,
+                payload={"host_observation": host_observation},
+                measurement=measurement_from_host(host_observation),
+                recorded_at=host_observation["observed_at"],
+            )
             return {
                 "schema_version": "maestro_command_result_v1",
                 "command": "observe-host",
@@ -1717,8 +2801,19 @@ def record_host_observation(
             "observation_id": observation_id,
             "writes_performed": False,
         }
+    before = copy.deepcopy(value)
     value["host_observation"] = host_observation
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+    commit_execution_transition(
+        target,
+        before=before,
+        after=value,
+        event_type="measurement_observed",
+        idempotency_key=host_key,
+        producer=producer,
+        payload={"host_observation": host_observation},
+        measurement=measurement_from_host(host_observation),
+        recorded_at=host_observation["observed_at"],
+    )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "observe-host",
@@ -1992,14 +3087,9 @@ def import_codex_app_server_trace(
         model_event_evidence=evidence,
         reroutes=reroutes if evidence == "complete" else [],
         tokens=tokens,
+        duration_ms=turn_duration,
+        trusted_event_stream=True,
     )
-    if turn_duration is not None:
-        complete_run_observation(
-            repo_path,
-            observation_id=observation_id,
-            run_id=run_id,
-            duration_ms=turn_duration,
-        )
     return {
         **recorded,
         "command": "observe-import-codex",
@@ -2015,6 +3105,7 @@ def complete_run_observation(
     observation_id: str,
     run_id: str,
     duration_ms: float,
+    receipt_intent_digest: str | None = None,
 ) -> None:
     repo = ensure_repo(repo_path)
     if (
@@ -2031,22 +3122,117 @@ def complete_run_observation(
         repo,
         f".maestro/state/inflight/{observation_id}.json",
     )
-    value = _read_observation_file(target)
-    if value.get("run_id") != run_id:
-        raise MaestroError(
-            "RUN_OBSERVATION_INVALID",
-            "The in-flight observation does not match this run.",
+    with observation_write_lock(target):
+        value = _read_observation_file(target)
+        if value.get("run_id") != run_id:
+            raise MaestroError(
+                "RUN_OBSERVATION_INVALID",
+                "The in-flight observation does not match this run.",
+            )
+        if "completed_at" in value:
+            if value.get("duration_ms") != duration_ms:
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    "The observation already has a different frozen duration.",
+                )
+            closure = value.get("completion_closure")
+            if (
+                isinstance(closure, dict)
+                and closure.get("receipt_intent_digest")
+                != receipt_intent_digest
+            ):
+                raise MaestroError(
+                    "RUN_RECEIPT_INTENT_CONFLICT",
+                    "The sealed execution is bound to a different receipt intent.",
+                )
+            if not _valid_completion_state(value):
+                raise MaestroError(
+                    "RUN_OBSERVATION_INVALID",
+                    "The sealed completion closure is invalid.",
+                )
+            return
+        if (
+            not _valid_plan_summary_for_observation(
+                value.get("plan_summary")
+            )
+            or not _valid_stage_results_for_observation(
+                value.get("stage_results"),
+                plan_summary=value.get("plan_summary"),
+                run_id=run_id,
+                observation_id=observation_id,
+                work_spans=value.get("work_spans"),
+            )
+            or not _work_bindings_match_plan(
+                value.get("work_spans"),
+                value.get("plan_summary"),
+            )
+            or (
+                isinstance(value.get("execution_binding"), dict)
+                and value["execution_binding"].get("mode")
+                == "maestro_owned_codex_app_server"
+                and isinstance(value.get("plan_summary"), dict)
+                and value["plan_summary"].get(
+                    "execution_receipts_required"
+                )
+                is not True
+            )
+        ):
+            raise MaestroError(
+                "RUN_OBSERVATION_NOT_SEALABLE",
+                "The execution-unit plan, receipts, or WorkSpan bindings are invalid.",
+            )
+        readiness_error = seal_readiness_error(
+            value,
+            receipt_intent_digest=receipt_intent_digest,
         )
-    if "completed_at" in value:
-        if value.get("duration_ms") != duration_ms:
+        if readiness_error is not None:
+            raise MaestroError(
+                "RUN_OBSERVATION_NOT_SEALABLE",
+                "The execution cannot be sealed while facts are incomplete: "
+                + readiness_error,
+            )
+        completion = completion_evaluation_for_observation(
+            value,
+            receipt_intent_digest=receipt_intent_digest,
+        )
+        completed_at = _timestamp(_utc_now())
+        value["completed_at"] = completed_at
+        value["duration_ms"] = duration_ms
+        payload: dict[str, Any] = {
+            "completed_at": completed_at,
+            "duration_ms": duration_ms,
+        }
+        if completion["status"] == "ready":
+            closure = completion["closure"]
+            assert isinstance(closure, dict)
+            value["completion_closure"] = closure
+            payload["completion_closure"] = closure
+        ledger = ensure_execution_ledger(value)
+        ledger, changed = append_execution_event(
+            ledger,
+            event_type="execution_sealed",
+            idempotency_key="execution:seal",
+            producer=producer_binding(
+                "maestro_core",
+                capability="lifecycle_only",
+                event_coverage="partial_stream",
+            ),
+            payload=payload,
+            measurement=None,
+            recorded_at=completed_at,
+        )
+        if not changed:
             raise MaestroError(
                 "RUN_OBSERVATION_CONFLICT",
-                "The observation already has a different frozen duration.",
+                "The execution seal did not advance the observation revision.",
             )
-        return
-    value["completed_at"] = _timestamp(_utc_now())
-    value["duration_ms"] = duration_ms
-    atomic_write(target, pretty_json(value).encode("utf-8"))
+        value["execution_ledger"] = ledger
+        if not _valid_completion_state(value):
+            raise MaestroError(
+                "RUN_OBSERVATION_INVALID",
+                "The managed completion closure could not be sealed.",
+            )
+        atomic_write(target, pretty_json(value).encode("utf-8"))
 
 
 def inflight_observations(
@@ -2081,6 +3267,8 @@ def inflight_observations(
         run_id = value.get("run_id")
         if (
             value.get("schema_version") != OBSERVATION_VERSION
+            or not isinstance(value.get("observation_id"), str)
+            or not value["observation_id"]
             or value.get("project_id") != current_project
             or value.get("checkout_id") != current_checkout
             or not isinstance(run_id, str)
@@ -2094,18 +3282,46 @@ def inflight_observations(
                 for character in "\r\n\x00"
             )
             or not _valid_plan_summary_for_observation(value.get("plan_summary"))
+            or (
+                isinstance(value.get("execution_binding"), dict)
+                and value["execution_binding"].get("mode")
+                == "maestro_owned_codex_app_server"
+                and isinstance(value.get("plan_summary"), dict)
+                and value["plan_summary"].get(
+                    "execution_receipts_required"
+                )
+                is not True
+            )
             or not _valid_stage_results_for_observation(
                 value.get("stage_results"),
                 plan_summary=value.get("plan_summary"),
+                run_id=run_id,
+                observation_id=value.get("observation_id"),
+                work_spans=value.get("work_spans"),
             )
             or not _work_bindings_match_plan(
                 value.get("work_spans"),
                 value.get("plan_summary"),
             )
+            or not _valid_completion_state(value)
         ):
+            continue
+        try:
+            ledger = ensure_execution_ledger(value)
+        except MaestroError:
             continue
         completed_at = _parse_timestamp(value.get("completed_at"))
         elapsed = max(0.0, (now - started_at).total_seconds() * 1000)
+        measurement_summary = execution_measurements(
+            ledger,
+            duration_ms=(
+                value.get("duration_ms")
+                if completed_at is not None
+                else round(elapsed, 3)
+            ),
+        )
+        if not validate_execution_measurements(measurement_summary):
+            continue
         status_elapsed = max(
             0.0,
             (
@@ -2137,6 +3353,12 @@ def inflight_observations(
             requested_reasoning_effort = host_observation.get(
                 "requested_reasoning_effort",
             )
+        requested_models = measurement_summary["model"]["requested"]
+        requested_efforts = measurement_summary["reasoning_effort"]["requested"]
+        if requested_models:
+            requested_model = requested_models[-1]
+        if requested_efforts:
+            requested_reasoning_effort = requested_efforts[-1]
         results.append(
             {
                 "observation_id": value.get("observation_id"),
@@ -2193,12 +3415,47 @@ def inflight_observations(
                 "requested_reasoning_effort": (
                     requested_reasoning_effort
                 ),
+                "execution_measurements": measurement_summary,
             }
         )
     return sorted(
         results,
         key=lambda item: item["started_at"],
         reverse=True,
+    )
+
+
+def _valid_execution_contract_summary(value: Any) -> bool:
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "kind",
+            "execution_plan_id",
+            "decision_plan_id",
+            "decision_bundle_digest",
+        }
+        or value.get("kind")
+        not in {"direct-route", "decision-enactment"}
+    ):
+        return False
+    bindings = (
+        value.get("execution_plan_id"),
+        value.get("decision_plan_id"),
+        value.get("decision_bundle_digest"),
+    )
+    if value["kind"] == "direct-route":
+        return all(binding is None for binding in bindings)
+    return all(
+        isinstance(binding, str)
+        and len(binding) == 64
+        and all(
+            character in "0123456789abcdef"
+            for character in binding
+        )
+        for binding in bindings
     )
 
 
@@ -2226,6 +3483,34 @@ def _valid_plan_summary_for_observation(value: Any) -> bool:
         "deep",
     }:
         return False
+    if not _valid_execution_contract_summary(
+        value.get("execution_contract")
+    ):
+        return False
+    if value.get("execution_receipts_required") not in {None, True}:
+        return False
+    design_assurance = value.get("design_assurance")
+    if design_assurance is not None and (
+        not isinstance(design_assurance, dict)
+        or set(design_assurance)
+        != {
+            "profile_id",
+            "mode",
+            "mutation_gate",
+            "verification_gate",
+        }
+        or design_assurance.get("profile_id")
+        != "product-design-evidence-v1"
+        or design_assurance.get("mode")
+        not in {"compact", "standard", "system"}
+        or design_assurance.get("mutation_gate")
+        != "design-decision-packet"
+        or design_assurance.get("verification_gate")
+        != "rendered-verification-pass"
+    ):
+        return False
+    if not validate_plan_execution_units(value):
+        return False
     selected_lenses = value.get("selected_lenses")
     if selected_lenses is not None and (
         not isinstance(selected_lenses, list)
@@ -2233,6 +3518,133 @@ def _valid_plan_summary_for_observation(value: Any) -> bool:
         or not all(isinstance(item, str) and item for item in selected_lenses)
     ):
         return False
+    for assignment in value["assignments"]:
+        if not isinstance(assignment, dict):
+            return False
+        typed_route_fields = {
+            "model_route_id",
+            "execution_unit_id",
+            "stage_kind",
+            "execution_kind",
+            "quality_profile",
+            "selected_class",
+            "quality_floor",
+            "fallback_route",
+        }
+        present_typed_fields = typed_route_fields & set(assignment)
+        execution_unit = assignment.get("execution_unit")
+        if (
+            not isinstance(assignment.get("assignment_id"), str)
+            or not isinstance(assignment.get("read_only"), bool)
+            or (
+                execution_unit is not None
+                and (
+                    not validate_execution_unit(execution_unit)
+                    or execution_unit.get("local_unit_id")
+                    != assignment.get("assignment_id")
+                    or execution_unit.get("model_route", {}).get(
+                        "model_route_id"
+                    )
+                    != assignment.get("model_route_id")
+                )
+            )
+            or (
+                present_typed_fields
+                and present_typed_fields != typed_route_fields
+            )
+            or (
+                present_typed_fields
+                and (
+                    not isinstance(assignment.get("model_route_id"), str)
+                    or len(assignment["model_route_id"]) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in assignment["model_route_id"]
+                    )
+                    or not isinstance(
+                        assignment.get("execution_unit_id"),
+                        str,
+                    )
+                    or not assignment["execution_unit_id"]
+                    or not isinstance(assignment.get("stage_kind"), str)
+                    or not assignment["stage_kind"]
+                    or (
+                        assignment.get("task_class") is not None
+                        and (
+                            not isinstance(
+                                assignment.get("task_class"),
+                                str,
+                            )
+                            or not assignment["task_class"]
+                        )
+                    )
+                    or assignment.get("execution_kind")
+                    not in {"model", "deterministic"}
+                    or assignment.get("quality_profile") != "pro-quality"
+                    or not isinstance(
+                        assignment.get("quality_floor"),
+                        dict,
+                    )
+                    or assignment["quality_floor"].get("failure_action")
+                    != "reject-or-reroute"
+                    or not isinstance(
+                        assignment["quality_floor"].get(
+                            "acceptable_routes"
+                        ),
+                        list,
+                    )
+                    or (
+                        assignment["execution_kind"] == "model"
+                        and (
+                            not isinstance(
+                                assignment.get("selected_class"),
+                                str,
+                            )
+                            or not isinstance(
+                                assignment.get("planned_model"),
+                                str,
+                            )
+                            or not isinstance(
+                                assignment.get("reasoning_effort"),
+                                str,
+                            )
+                        )
+                    )
+                    or (
+                        assignment["execution_kind"] == "deterministic"
+                        and (
+                            assignment.get("selected_class") is not None
+                            or assignment.get("planned_model") is not None
+                            or assignment.get("reasoning_effort") is not None
+                            or assignment.get("fallback_route") is not None
+                        )
+                    )
+                )
+            )
+            or (
+                ("may_spawn" in assignment)
+                != ("max_children" in assignment)
+            )
+            or (
+                "may_spawn" in assignment
+                and (
+                    not isinstance(assignment.get("may_spawn"), bool)
+                    or not isinstance(assignment.get("max_children"), int)
+                    or isinstance(assignment.get("max_children"), bool)
+                    or assignment["max_children"] < 0
+                    or assignment["max_children"] > 63
+                    or (
+                        assignment["may_spawn"] is False
+                        and assignment["max_children"] != 0
+                    )
+                    or (
+                        assignment["may_spawn"] is True
+                        and assignment["max_children"] < 1
+                    )
+                )
+            )
+        ):
+            return False
     selected_pack_ids = list(
         dict.fromkeys(
             pack_id
@@ -2242,7 +3654,17 @@ def _valid_plan_summary_for_observation(value: Any) -> bool:
             if isinstance(pack_id, str)
         )
     )
-    return valid_expertise_routing_summary(
-        value.get("expertise_routing"),
+    routing = value.get("expertise_routing")
+    if not valid_expertise_routing_summary(
+        routing,
         selected_pack_ids=selected_pack_ids,
+    ):
+        return False
+    return valid_route_correction_summary(
+        value.get("route_correction"),
+        route_attempt=(
+            routing.get("route_attempt")
+            if isinstance(routing, dict)
+            else 1
+        ),
     )

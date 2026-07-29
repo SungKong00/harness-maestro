@@ -9,6 +9,7 @@ from typing import Any
 from .decisions import repository_revision
 from .documents import frontmatter_fields, frontmatter_list
 from .errors import MaestroError
+from .evaluation_attestation import observed_read_only_evaluation
 from .util import (
     atomic_write,
     canonical_json,
@@ -23,10 +24,10 @@ from .util import (
 CONVENTION_DRAFT_PLAN_VERSION = "maestro_convention_draft_plan_v1"
 CONVENTION_LIFECYCLE_PLAN_VERSION = "maestro_convention_lifecycle_plan_v1"
 CONVENTION_HELD_OUT_EVALUATION_VERSION = (
-    "maestro_convention_held_out_evaluation_v1"
+    "maestro_convention_held_out_evaluation_v2"
 )
 CONVENTION_EVALUATION_REQUEST_VERSION = (
-    "maestro_convention_evaluation_request_v1"
+    "maestro_convention_evaluation_request_v2"
 )
 CONVENTION_INDEX_BEGIN = "<!-- MAESTRO:CONVENTIONS:BEGIN -->"
 CONVENTION_INDEX_END = "<!-- MAESTRO:CONVENTIONS:END -->"
@@ -635,7 +636,7 @@ def validate_held_out_evaluation(
     if set(value) != expected_fields:
         raise MaestroError(
             "CONVENTION_HELD_OUT_EVALUATION_INVALID",
-            "Held-out evaluation fields do not match the v1 contract.",
+            "Held-out evaluation fields do not match the v2 contract.",
         )
     if (
         value.get("schema_version")
@@ -686,7 +687,7 @@ def validate_held_out_evaluation(
         if not isinstance(item, dict) or set(item) != case_fields:
             raise MaestroError(
                 "CONVENTION_HELD_OUT_EVALUATION_INVALID",
-                "Every held-out case must use the closed v1 case contract.",
+                "Every held-out case must use the closed case contract.",
             )
         case_id = item.get("case_id")
         category = item.get("category")
@@ -732,10 +733,20 @@ def validate_held_out_evaluation(
             "command",
             "exit_code",
             "executed_at",
+            "kind",
+            "observation_id",
+            "authoring_run_ref",
+            "evaluation_run_ref",
         }
         or not _bounded_line(verifier.get("command"))
         or verifier.get("exit_code") != 0
         or not _valid_evaluation_timestamp(verifier.get("executed_at"))
+        or verifier.get("kind") not in {"fresh-context", "human"}
+        or not _bounded_line(verifier.get("observation_id"))
+        or not _bounded_line(verifier.get("authoring_run_ref"))
+        or not _bounded_line(verifier.get("evaluation_run_ref"))
+        or verifier.get("authoring_run_ref")
+        == verifier.get("evaluation_run_ref")
     ):
         raise MaestroError(
             "CONVENTION_HELD_OUT_EVALUATION_INVALID",
@@ -757,6 +768,28 @@ def validate_held_out_evaluation(
         raise MaestroError(
             "CONVENTION_HELD_OUT_EVALUATION_INVALID",
             "Held-out conditions must state the tool and explicitly record model and budget or null.",
+        )
+    artifact_digest = file_sha256(artifact)
+    if (
+        artifact_digest is None
+        or not observed_read_only_evaluation(
+            repo,
+            observation_id=verifier["observation_id"],
+            evaluation_run_id=verifier["evaluation_run_ref"],
+            authoring_run_id=verifier["authoring_run_ref"],
+            subject_evidence_refs={
+                f"convention-candidate:{candidate_sha256}",
+            },
+            result_evidence_ref=(
+                f"convention-evaluation:{artifact_digest}"
+            ),
+            evaluator_kind=verifier["kind"],
+        )
+    ):
+        raise MaestroError(
+            "CONVENTION_HELD_OUT_ATTESTATION_INVALID",
+            "Held-out activation requires a separate completed read-only "
+            "evaluation bound to the exact Convention and result artifact.",
         )
     return {
         "case_count": len(cases),
@@ -887,6 +920,15 @@ def _held_out_evaluation_request(
         ),
         "required_categories": sorted(HELD_OUT_CATEGORIES),
         "suite_digest_rule": "sha256(canonical_json(cases))",
+        "receipt_contract": {
+            "authoring_evidence_ref": (
+                f"convention-candidate:{candidate_sha256}"
+            ),
+            "evaluation_result_ref": (
+                "convention-evaluation:<artifact-sha256>"
+            ),
+            "separate_read_only_evaluation_required": True,
+        },
         "writes_performed": False,
     }
 

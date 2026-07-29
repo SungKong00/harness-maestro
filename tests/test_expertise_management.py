@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from tests.support import application_work_span
+
 from maestro.expertise_changes import expertise_change_sets
 from maestro.expertise_usage import expertise_usage_evidence
-from tests.support import application_work_span
 
 
 class ExpertiseUsageEvidenceTests(unittest.TestCase):

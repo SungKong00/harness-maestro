@@ -1,0 +1,958 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/model-feedback.schema.json",
+  "title": "Harness Maestro Model Feedback Contracts",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/verificationAssessment"
+    },
+    {
+      "$ref": "#/$defs/modelFeedbackReport"
+    },
+    {
+      "$ref": "#/$defs/modelPolicyOverlay"
+    },
+    {
+      "$ref": "#/$defs/modelPolicyOwnerDecision"
+    },
+    {
+      "$ref": "#/$defs/modelPolicyHeldOutEvaluation"
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "boundedEvidenceRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "reasoningEffort": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "feedbackSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quality_profile",
+        "stage_kind",
+        "task_class",
+        "selected_class",
+        "selected_model",
+        "reasoning_effort",
+        "risk"
+      ],
+      "properties": {
+        "quality_profile": {
+          "const": "pro-quality"
+        },
+        "stage_kind": {
+          "$ref": "#/$defs/line"
+        },
+        "task_class": {
+          "$ref": "#/$defs/line"
+        },
+        "selected_class": {
+          "enum": [
+            "economy",
+            "balanced",
+            "frontier"
+          ]
+        },
+        "selected_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reasoning_effort": {
+          "$ref": "#/$defs/reasoningEffort"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        }
+      }
+    },
+    "wilsonInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "confidence_level",
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "method": {
+          "const": "wilson"
+        },
+        "confidence_level": {
+          "const": 0.95
+        },
+        "lower": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "upper": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "metricCore": {
+      "type": "object",
+      "required": [
+        "sample_count",
+        "failure_count",
+        "failure_rate",
+        "interval"
+      ],
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "interval": {
+          "$ref": "#/$defs/wilsonInterval"
+        }
+      }
+    },
+    "feedbackMetric": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metricCore"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "appliedFeedbackMetric": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metricCore"
+        },
+        {
+          "type": "object",
+          "required": [
+            "actual_models"
+          ],
+          "properties": {
+            "actual_models": {
+              "type": "object",
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "attributedFeedbackMetric": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metricCore"
+        },
+        {
+          "type": "object",
+          "required": [
+            "excluded_count",
+            "exclusion_reasons"
+          ],
+          "properties": {
+            "excluded_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exclusion_reasons": {
+              "type": "object",
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "policyAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "checkout_id",
+        "registry_digest",
+        "framework_version",
+        "policy_digest"
+      ],
+      "properties": {
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "checkout_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{12}$"
+        },
+        "registry_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "framework_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "activePolicyAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "checkout_id",
+        "registry_digest",
+        "framework_version",
+        "policy_digest"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "checkout_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{12}$"
+        },
+        "registry_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "framework_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "feedbackPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidence_level",
+        "minimum_eligible_samples",
+        "minimum_failures",
+        "max_acceptable_failure_rate",
+        "max_escalation_steps",
+        "automatic_downgrade_allowed"
+      ],
+      "properties": {
+        "confidence_level": {
+          "const": 0.95
+        },
+        "minimum_eligible_samples": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "minimum_failures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_acceptable_failure_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "max_escalation_steps": {
+          "const": 1
+        },
+        "automatic_downgrade_allowed": {
+          "const": false
+        }
+      }
+    },
+    "evaluationGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_eligible_samples",
+        "minimum_failures",
+        "max_acceptable_failure_rate",
+        "state"
+      ],
+      "properties": {
+        "minimum_eligible_samples": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "minimum_failures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_acceptable_failure_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "state": {
+          "enum": [
+            "eligible",
+            "ineligible"
+          ]
+        }
+      }
+    },
+    "feedbackTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_class",
+        "selected_model",
+        "reasoning_effort"
+      ],
+      "properties": {
+        "selected_class": {
+          "enum": [
+            "balanced",
+            "frontier"
+          ]
+        },
+        "selected_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reasoning_effort": {
+          "const": "high"
+        }
+      }
+    },
+    "feedbackAdvice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "target",
+        "requires_new_typed_route",
+        "reason_code"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "collect_more_evidence",
+            "keep_route",
+            "quality_escalation",
+            "needs_decision"
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/feedbackTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requires_new_typed_route": {
+          "type": "boolean"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    },
+    "feedbackEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_count",
+        "run_ids_digest",
+        "interpretation"
+      ],
+      "properties": {
+        "run_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_ids_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "interpretation": {
+          "const": "observational-only"
+        }
+      }
+    },
+    "feedbackGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "subject",
+        "route_recommendation_failure",
+        "applied_model_failure",
+        "model_attributed_failure",
+        "evaluation_gate",
+        "advice",
+        "evidence"
+      ],
+      "properties": {
+        "group_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "subject": {
+          "$ref": "#/$defs/feedbackSubject"
+        },
+        "route_recommendation_failure": {
+          "$ref": "#/$defs/feedbackMetric"
+        },
+        "applied_model_failure": {
+          "$ref": "#/$defs/appliedFeedbackMetric"
+        },
+        "model_attributed_failure": {
+          "$ref": "#/$defs/attributedFeedbackMetric"
+        },
+        "evaluation_gate": {
+          "$ref": "#/$defs/evaluationGate"
+        },
+        "advice": {
+          "$ref": "#/$defs/feedbackAdvice"
+        },
+        "evidence": {
+          "$ref": "#/$defs/feedbackEvidence"
+        }
+      }
+    },
+    "verificationAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "assessment_id",
+        "packet_digest",
+        "verifier_assignment_id",
+        "target_assignment_id",
+        "target_execution_unit_id",
+        "target_model_route_id",
+        "verdict",
+        "failure_cause",
+        "failure_categories",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_verification_assessment_v1"
+        },
+        "assessment_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "packet_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "verifier_assignment_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "target_assignment_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "target_execution_unit_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "target_model_route_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "verdict": {
+          "enum": [
+            "passed",
+            "failed",
+            "inconclusive"
+          ]
+        },
+        "failure_cause": {
+          "enum": [
+            "none",
+            "implementation",
+            "specification",
+            "environment",
+            "tooling",
+            "unknown"
+          ]
+        },
+        "failure_categories": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "correctness",
+              "integration",
+              "security",
+              "regression",
+              "performance",
+              "contract",
+              "test-infrastructure",
+              "specification",
+              "unknown"
+            ]
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure_cause": {
+                "const": "none"
+              },
+              "failure_categories": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure_cause": {
+                "enum": [
+                  "implementation",
+                  "specification",
+                  "environment",
+                  "tooling"
+                ]
+              },
+              "failure_categories": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "inconclusive"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure_cause": {
+                "enum": [
+                  "specification",
+                  "environment",
+                  "tooling",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "modelFeedbackReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "report_id",
+        "source",
+        "authority",
+        "policy",
+        "groups",
+        "causal_interpretation",
+        "automatic_policy_mutation_allowed",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_model_feedback_report_v1"
+        },
+        "report_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "coverage",
+            "evidence_window",
+            "scan_complete",
+            "events_received",
+            "run_count",
+            "run_ids_digest",
+            "excluded_event_count",
+            "exclusion_reasons"
+          ],
+          "properties": {
+            "scope": {
+              "const": "mutation-owner-only"
+            },
+            "coverage": {
+              "const": "latest-current-definition-runs"
+            },
+            "evidence_window": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "events_received": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "run_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "run_ids_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "excluded_event_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exclusion_reasons": {
+              "type": "object",
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "authority": {
+          "$ref": "#/$defs/policyAuthority"
+        },
+        "policy": {
+          "$ref": "#/$defs/feedbackPolicy"
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/feedbackGroup"
+          }
+        },
+        "causal_interpretation": {
+          "const": "observational-only"
+        },
+        "automatic_policy_mutation_allowed": {
+          "const": false
+        },
+        "writes_performed": {
+          "const": false
+        }
+      }
+    },
+    "modelPolicyOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "overlay_id",
+        "report_id",
+        "group_id",
+        "authority",
+        "scope",
+        "target",
+        "acceptance",
+        "max_escalation_steps",
+        "automatic_downgrade_allowed",
+        "status",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_model_policy_overlay_v1"
+        },
+        "overlay_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "report_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "group_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority": {
+          "$ref": "#/$defs/activePolicyAuthority"
+        },
+        "scope": {
+          "$ref": "#/$defs/feedbackSubject"
+        },
+        "target": {
+          "$ref": "#/$defs/feedbackTarget"
+        },
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "approval_ref",
+            "approval_digest"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "owner_decision",
+                "held_out_evaluation"
+              ]
+            },
+            "approval_ref": {
+              "$ref": "#/$defs/boundedEvidenceRef"
+            },
+            "approval_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "max_escalation_steps": {
+          "const": 1
+        },
+        "automatic_downgrade_allowed": {
+          "const": false
+        },
+        "status": {
+          "const": "accepted"
+        },
+        "writes_performed": {
+          "const": false
+        }
+      }
+    },
+    "modelPolicyOwnerDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "report_ref",
+        "report_digest",
+        "report_id",
+        "group_id",
+        "authority",
+        "scope",
+        "target",
+        "decision",
+        "rationale",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_model_policy_owner_decision_v1"
+        },
+        "report_ref": {
+          "type": "string",
+          "minLength": 23,
+          "maxLength": 500,
+          "pattern": "^model_feedback_report:[^\\r\\n\\u0000]+$"
+        },
+        "report_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "report_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "group_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority": {
+          "$ref": "#/$defs/activePolicyAuthority"
+        },
+        "scope": {
+          "$ref": "#/$defs/feedbackSubject"
+        },
+        "target": {
+          "$ref": "#/$defs/feedbackTarget"
+        },
+        "decision": {
+          "const": "accept"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/boundedEvidenceRef"
+          }
+        }
+      }
+    },
+    "modelPolicyHeldOutEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "report_ref",
+        "report_digest",
+        "report_id",
+        "group_id",
+        "authority",
+        "scope",
+        "target",
+        "held_out",
+        "verdict",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_model_policy_held_out_evaluation_v1"
+        },
+        "report_ref": {
+          "type": "string",
+          "minLength": 23,
+          "maxLength": 500,
+          "pattern": "^model_feedback_report:[^\\r\\n\\u0000]+$"
+        },
+        "report_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "report_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "group_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority": {
+          "$ref": "#/$defs/activePolicyAuthority"
+        },
+        "scope": {
+          "$ref": "#/$defs/feedbackSubject"
+        },
+        "target": {
+          "$ref": "#/$defs/feedbackTarget"
+        },
+        "held_out": {
+          "const": true
+        },
+        "verdict": {
+          "const": "accept"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 60,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/boundedEvidenceRef"
+          }
+        }
+      }
+    }
+  }
+}

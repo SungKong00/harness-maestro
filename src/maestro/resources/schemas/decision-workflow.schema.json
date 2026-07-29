@@ -193,6 +193,9 @@
         },
         "research_requirement": {
           "$ref": "#/$defs/researchRequirement"
+        },
+        "route_hints": {
+          "type": "object"
         }
       }
     },
@@ -429,7 +432,7 @@
           ]
         },
         "model_route": {
-          "type": "object"
+          "$ref": "route-v2.schema.json#/$defs/compatibleModelRoute"
         },
         "may_spawn": {
           "const": false
@@ -501,6 +504,30 @@
         },
         "expertise": {
           "$ref": "#/$defs/expertiseSelection"
+        },
+        "coverage_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "coverage_id",
+            "goal_digest",
+            "required_for_mutation"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "maestro_task_coverage_binding_v1"
+            },
+            "coverage_id": {
+              "$ref": "#/$defs/digest"
+            },
+            "goal_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "required_for_mutation": {
+              "const": true
+            }
+          }
         },
         "specialist_contracts": {
           "type": "array",
@@ -784,6 +811,7 @@
         "execution_plan_id",
         "decision_plan_id",
         "decision_bundle_digest",
+        "decision_evidence",
         "execution_authorization",
         "route_plan",
         "writes_performed"
@@ -801,11 +829,69 @@
         "decision_bundle_digest": {
           "$ref": "#/$defs/digest"
         },
+        "decision_evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decision_plan",
+            "decision_bundle",
+            "specialist_packets"
+          ],
+          "properties": {
+            "decision_plan": {
+              "$ref": "#/$defs/decisionPlan"
+            },
+            "decision_bundle": {
+              "$ref": "#/$defs/decisionBundle"
+            },
+            "specialist_packets": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/specialistFindingPacket"
+              }
+            }
+          }
+        },
         "execution_authorization": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decision_bundle_digest",
+            "authorization_source",
+            "allowed_side_effects",
+            "allowed_paths",
+            "prohibited_changes",
+            "status"
+          ],
+          "properties": {
+            "decision_bundle_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "authorization_source": {
+              "enum": [
+                "explicit_user",
+                "prior_explicit_request"
+              ]
+            },
+            "allowed_side_effects": {
+              "const": [
+                "repository_write"
+              ]
+            },
+            "allowed_paths": {
+              "$ref": "#/$defs/stringList"
+            },
+            "prohibited_changes": {
+              "$ref": "#/$defs/stringList"
+            },
+            "status": {
+              "const": "authorized"
+            }
+          }
         },
         "route_plan": {
-          "type": "object"
+          "$ref": "route-v2.schema.json"
         },
         "writes_performed": {
           "const": false

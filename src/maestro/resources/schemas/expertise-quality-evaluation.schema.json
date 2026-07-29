@@ -13,7 +13,10 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "maestro_expertise_quality_eval_v1"
+      "enum": [
+        "maestro_expertise_quality_eval_v1",
+        "maestro_expertise_quality_eval_v2"
+      ]
     },
     "expertise_pack_id": {
       "$ref": "#/$defs/id"
@@ -42,6 +45,26 @@
         },
         "evaluation_run_ref": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "observation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_digest",
+        "cases_sha256"
+      ],
+      "properties": {
+        "candidate_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "cases_sha256": {
+          "$ref": "#/$defs/digest"
         }
       }
     },
@@ -143,6 +166,48 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "maestro_expertise_quality_eval_v2"
+          }
+        },
+        "required": [
+          "schema_version"
+        ]
+      },
+      "then": {
+        "required": [
+          "subject"
+        ],
+        "properties": {
+          "evaluator": {
+            "required": [
+              "observation_id"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "evaluator": {
+            "not": {
+              "required": [
+                "observation_id"
+              ]
+            }
+          }
+        },
+        "not": {
+          "required": [
+            "subject"
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",

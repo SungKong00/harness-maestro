@@ -1,0 +1,207 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "interactive-web-motion",
+  "verified_on": "2026-07-27",
+  "sources": [
+    {
+      "source_id": "w3c-scroll-driven-animations",
+      "tier": 1,
+      "authority": "W3C CSS Working Group Scroll-driven Animations specification",
+      "url": "https://www.w3.org/TR/scroll-animations-1/",
+      "supports": [
+        "Distinction between scroll-triggered and scroll-driven animation",
+        "Scroll and view progress timelines and asynchronous sampling intent"
+      ],
+      "used_by": [
+        "scroll-linked-storytelling",
+        "motion-performance-and-verification"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "mdn-scroll-timelines",
+      "tier": 1,
+      "authority": "MDN scroll-driven animation timeline guidance",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Scroll-driven_animations/Timelines",
+      "supports": [
+        "Native scroll and view timeline mechanics and reduced-motion consideration"
+      ],
+      "used_by": [
+        "scroll-linked-storytelling",
+        "motion-performance-and-verification"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "mdn-intersection-observer",
+      "tier": 1,
+      "authority": "MDN Intersection Observer API reference",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API",
+      "supports": [
+        "Asynchronous visibility observation across viewport or ancestor roots"
+      ],
+      "used_by": [
+        "scroll-triggered-reveal"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "mdn-reduced-motion",
+      "tier": 1,
+      "authority": "MDN prefers-reduced-motion reference",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/%40media/prefers-reduced-motion",
+      "supports": [
+        "Detection of user preference to minimize non-essential motion"
+      ],
+      "used_by": [
+        "motion-accessibility-and-control",
+        "motion-system-and-choreography",
+        "scroll-triggered-reveal",
+        "scroll-linked-storytelling"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "wcag-animation-interactions",
+      "tier": 1,
+      "authority": "W3C WAI WCAG 2.2 animation-from-interactions guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions",
+      "supports": [
+        "Disablement of non-essential motion caused by interaction and vestibular risk examples"
+      ],
+      "used_by": [
+        "motion-accessibility-and-control",
+        "scroll-linked-storytelling"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "wcag-pause-stop-hide",
+      "tier": 1,
+      "authority": "W3C WAI WCAG 2.2 pause-stop-hide guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide",
+      "supports": [
+        "Controls for applicable automatic moving, blinking, scrolling, and updating content"
+      ],
+      "used_by": [
+        "motion-accessibility-and-control"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "wcag-three-flashes",
+      "tier": 1,
+      "authority": "W3C WAI WCAG 2.2 three-flashes guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold",
+      "supports": [
+        "General and red flash frequency and area thresholds"
+      ],
+      "used_by": [
+        "motion-accessibility-and-control"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "wcag-dragging-movements",
+      "tier": 1,
+      "authority": "W3C WAI WCAG 2.2 dragging-movements guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html",
+      "supports": [
+        "Single-pointer non-drag alternative for drag-operated functionality"
+      ],
+      "used_by": [
+        "interaction-feedback-and-state",
+        "motion-accessibility-and-control"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "webdev-animation-performance",
+      "tier": 1,
+      "authority": "web.dev high-performance CSS animation guidance",
+      "url": "https://web.dev/articles/animations-guide",
+      "supports": [
+        "Transform and opacity defaults, rendering-pipeline risk, and performance-tool verification"
+      ],
+      "used_by": [
+        "motion-performance-and-verification",
+        "scroll-triggered-reveal",
+        "scroll-linked-storytelling"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "carbon-motion-overview",
+      "tier": 1,
+      "authority": "IBM Carbon Design System motion guidance",
+      "url": "https://carbondesignsystem.com/elements/motion/overview/",
+      "supports": [
+        "Purposeful productive and expressive motion",
+        "Duration and easing systems, evaluation, adaptive motion, and static alternatives"
+      ],
+      "used_by": [
+        "motion-intent-and-ux-impact",
+        "motion-system-and-choreography",
+        "interaction-feedback-and-state",
+        "motion-accessibility-and-control"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "carbon-motion-choreography",
+      "tier": 1,
+      "authority": "IBM Carbon Design System motion choreography guidance",
+      "url": "https://carbondesignsystem.com/elements/motion/choreography/",
+      "supports": [
+        "Coordinated hierarchy-aware motion behavior"
+      ],
+      "used_by": [
+        "motion-system-and-choreography"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "apple-motion",
+      "tier": 1,
+      "authority": "Apple Human Interface Guidelines motion guidance",
+      "url": "https://developer.apple.com/design/human-interface-guidelines/motion",
+      "supports": [
+        "Purposeful, optional, consistent motion and input-sensitive feedback"
+      ],
+      "used_by": [
+        "motion-intent-and-ux-impact",
+        "motion-accessibility-and-control",
+        "interaction-feedback-and-state"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "apple-feedback",
+      "tier": 1,
+      "authority": "Apple Human Interface Guidelines feedback guidance",
+      "url": "https://developer.apple.com/design/human-interface-guidelines/feedback",
+      "supports": [
+        "Feedback that communicates status, result, warning, and recovery in proportion to significance"
+      ],
+      "used_by": [
+        "motion-intent-and-ux-impact",
+        "interaction-feedback-and-state"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "gsap-scrolltrigger",
+      "tier": 1,
+      "authority": "GSAP ScrollTrigger official documentation",
+      "url": "https://gsap.com/docs/v3/Plugins/ScrollTrigger/",
+      "supports": [
+        "ScrollTrigger start and end, scrub, pin, snap, markers, batching, responsive setup, refresh, and lifecycle APIs"
+      ],
+      "used_by": [
+        "scroll-linked-storytelling",
+        "motion-performance-and-verification"
+      ],
+      "freshness": "volatile"
+    }
+  ]
+}

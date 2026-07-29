@@ -26,9 +26,16 @@ from .assignment_contracts import (
     project_assignment_input,
     validate_assignment_packet,
 )
+from .authorization import resolve_authorized_write_roots
 from .errors import MaestroError
+from .execution_contracts import normalize_execution_contract
+from .execution_units import (
+    build_execution_attempt,
+    build_execution_unit_receipt,
+)
 from .observations import (
     MAX_MODEL_REROUTES,
+    claim_maestro_owned_codex_execution,
     complete_run_observation,
     observation_receipt_fields,
     record_host_observation,
@@ -37,19 +44,21 @@ from .observations import (
     record_work_start,
     start_run_observation,
 )
-from .planning import validate_route_v2
 from .util import (
     canonical_json,
     ensure_repo,
+    file_sha256,
     read_json,
     safe_target,
     sha256_text,
 )
 from .work.codex import (
+    MAX_COLLAB_WORK,
     CodexCollaborationTracker,
     codex_event_timestamp,
     codex_work_id,
 )
+from .work.completion import terminal_assignment_work_heads
 
 HOST_RUN_VERSION = "maestro_codex_host_run_v1"
 MAX_PROMPT_BYTES = 256_000
@@ -63,6 +72,11 @@ MAX_TIMEOUT_SECONDS = 7_200.0
 DEFAULT_TIMEOUT_SECONDS = 1_800.0
 POST_COMPLETION_TOKEN_WAIT_SECONDS = 1.0
 PROCESS_EXIT_GRACE_SECONDS = 1.0
+TURN_INTERRUPT_GRACE_SECONDS = 5.0
+SCOPED_SHUTDOWN_GRACE_SECONDS = 15.0
+MAX_BACKGROUND_TERMINALS = 1_000
+BACKGROUND_TERMINAL_PAGE_SIZE = 100
+MAX_BACKGROUND_TERMINAL_CLEANUP_ROUNDS = 8
 _SANDBOXES = {"read-only", "workspace-write"}
 _TERMINAL_STATUSES = {"completed", "interrupted", "failed"}
 _RELEVANT_NOTIFICATIONS = {
@@ -261,6 +275,10 @@ def _validated_assignment_result(
             if packet["verdict"] in {"BLOCK", "INSUFFICIENT_EVIDENCE"}
             else "completed"
         )
+    elif packet["schema_version"] == "maestro_verification_verdict_v1":
+        # The verifier turn completed successfully even when it found a
+        # target failure. The bounded verdict is preserved separately.
+        stage_status = "completed"
     else:
         stage_status = {
             "completed": "completed",
@@ -294,6 +312,116 @@ def _bounded_option(
     return value.strip()
 
 
+def _validate_managed_model_reroutes(
+    model_contract: dict[str, Any] | None,
+    *,
+    requested_model: str,
+    provider_reported_model: str | None,
+    reroutes: Sequence[dict[str, Any]],
+) -> str | None:
+    """Return the applied model after enforcing a managed route transition."""
+
+    reported_model = _bounded_option(
+        provider_reported_model,
+        field="provider-reported-model",
+        maximum=128,
+    )
+    if len(reroutes) > MAX_MODEL_REROUTES:
+        raise MaestroError(
+            "CODEX_HOST_PROTOCOL_LIMIT",
+            "The turn emitted more model reroutes than the observation contract allows.",
+        )
+    expected_model = requested_model
+    for reroute in reroutes:
+        from_model = _bounded_option(
+            reroute.get("from_model"),
+            field="reroute-from-model",
+            maximum=128,
+        )
+        to_model = _bounded_option(
+            reroute.get("to_model"),
+            field="reroute-to-model",
+            maximum=128,
+        )
+        reason = _bounded_option(
+            reroute.get("reason"),
+            field="reroute-reason",
+            maximum=240,
+        )
+        if (
+            from_model is None
+            or to_model is None
+            or reason is None
+            or from_model != expected_model
+        ):
+            raise MaestroError(
+                "CODEX_HOST_MODEL_REROUTE_INVALID",
+                "Model reroutes must form one bounded chain from the exact requested model.",
+            )
+        expected_model = to_model
+
+    if not reroutes:
+        if (
+            model_contract is not None
+            and model_contract.get("enforcement") == "typed-quality-floor"
+            and reported_model is not None
+            and reported_model != requested_model
+        ):
+            raise MaestroError(
+                "CODEX_HOST_QUALITY_FLOOR_VIOLATION",
+                "The provider reported an untyped model transition outside the validated route.",
+            )
+        return reported_model
+    if (
+        model_contract is None
+        or model_contract.get("enforcement") != "typed-quality-floor"
+    ):
+        return expected_model
+    normalized_reason = str(reroutes[0].get("reason", "")).casefold()
+    if normalized_reason in {
+        "quality-escalation",
+        "quality_escalation",
+        "quality-gate-miss",
+        "quality_gate_miss",
+    }:
+        raise MaestroError(
+            "CODEX_HOST_MODEL_TRANSITION_KIND_CONFLICT",
+            (
+                "A runtime availability fallback cannot carry a quality "
+                "escalation reason; quality escalation requires a new typed route."
+            ),
+        )
+    fallback = model_contract.get("fallback_route")
+    allowed = (
+        len(reroutes) == 1
+        and isinstance(fallback, dict)
+        and fallback.get("trigger") == "selected-model-unavailable"
+        and reroutes[0].get("from_model")
+        == model_contract.get("selected_model")
+        and reroutes[0].get("to_model")
+        == fallback.get("selected_model")
+    )
+    if not allowed:
+        raise MaestroError(
+            "CODEX_HOST_QUALITY_FLOOR_VIOLATION",
+            (
+                "The Host rerouted outside the typed fallback route. "
+                "Unlisted downgrades and implicit escalation fail closed."
+            ),
+        )
+    acceptable = model_contract["quality_floor"]["acceptable_routes"]
+    fallback_pair = {
+        "selected_class": fallback["selected_class"],
+        "reasoning_effort": fallback["reasoning_effort"],
+    }
+    if fallback_pair not in acceptable:
+        raise MaestroError(
+            "CODEX_HOST_QUALITY_FLOOR_VIOLATION",
+            "The typed fallback route is below the validated quality floor.",
+        )
+    return expected_model
+
+
 def _host_contract(
     repo: Path,
     *,
@@ -305,9 +433,16 @@ def _host_contract(
     dependency_packet_paths: Sequence[str | Path],
     dependency_projection_paths: Sequence[str | Path],
     research_evidence_path: str | Path | None,
+    coverage_path: str | Path | None,
+    coverage_admission_path: str | Path | None,
+    coverage_projection_path: str | Path | None,
+    expertise_work_plan_path: str | Path | None,
+    expertise_closure_path: str | Path | None,
+    expertise_research_evidence_paths: Sequence[str | Path] = (),
     sandbox: str | None,
     model: str | None,
     reasoning_effort: str | None,
+    design_decision_path: str | Path | None = None,
 ) -> dict[str, Any]:
     requested_sandbox = _bounded_option(
         sandbox,
@@ -342,22 +477,33 @@ def _host_contract(
 
     assignment: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
+    projection_plan: dict[str, Any] | None = None
     projection: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
     research_bundle: dict[str, Any] | None = None
     dependency_packet_digests: dict[str, str] = {}
     plan_id: str | None = None
+    execution_plan_id: str | None = None
+    decision_bundle_digest: str | None = None
+    model_execution_units: list[dict[str, Any]] = []
+    execution_units: list[dict[str, Any]] = []
     if research_evidence_path is not None:
         research_bundle = read_json(
             Path(research_evidence_path).expanduser().resolve()
         )
+    expertise_research_bundles = [
+        read_json(Path(path).expanduser().resolve())
+        for path in expertise_research_evidence_paths
+    ]
     if plan_path is not None:
-        plan = read_json(Path(plan_path).expanduser().resolve())
-        validation = validate_route_v2(
-            plan,
+        loaded_plan = read_json(Path(plan_path).expanduser().resolve())
+        validation = normalize_execution_contract(
+            loaded_plan,
             repo_path=repo,
             research_bundle=research_bundle,
         )
+        plan = validation.get("route_plan")
+        projection_plan = loaded_plan
         if validation["status"] != "PASS":
             first = validation["issues"][0]
             raise MaestroError(
@@ -367,9 +513,25 @@ def _host_contract(
         if validation["execution_status"] != "READY":
             raise MaestroError(
                 "CODEX_HOST_PLAN_NOT_READY",
-                "The validated plan still requires bound research evidence "
-                "and cannot start Host execution.",
+                (
+                    "The validated plan is not executable yet "
+                    f"({validation['execution_status']}); refresh legacy "
+                    "routes or bind the required evidence first."
+                ),
             )
+        if not isinstance(plan, dict):
+            raise MaestroError(
+                "CODEX_HOST_PLAN_INVALID",
+                "The validated execution contract has no route plan.",
+            )
+        execution_plan_id = validation.get("execution_plan_id")
+        decision_bundle_digest = validation.get(
+            "decision_bundle_digest"
+        )
+        model_execution_units = list(
+            validation.get("model_execution_units", [])
+        )
+        execution_units = list(validation.get("execution_units", []))
         plan_id = plan["plan_id"]
         if assignment_id is not None:
             assignment = next(
@@ -395,6 +557,13 @@ def _host_contract(
                 bool(dependency_packet_paths),
                 bool(dependency_projection_paths),
                 research_evidence_path is not None,
+                coverage_path is not None,
+                coverage_admission_path is not None,
+                coverage_projection_path is not None,
+                expertise_work_plan_path is not None,
+                expertise_closure_path is not None,
+                design_decision_path is not None,
+                bool(expertise_research_evidence_paths),
             )
         ):
             raise MaestroError(
@@ -409,6 +578,7 @@ def _host_contract(
         effective_sandbox = requested_sandbox
         effective_model = requested_model
         effective_effort = requested_effort
+        model_execution_contract = None
     else:
         if projection_path is None or baseline_path is None:
             raise MaestroError(
@@ -416,6 +586,7 @@ def _host_contract(
                 "An Assignment requires its exact --projection and authoritative --baseline.",
             )
         assert plan is not None
+        assert projection_plan is not None
         baseline = read_json(Path(baseline_path).expanduser().resolve())
         dependency_packets = [
             read_json(Path(path).expanduser().resolve())
@@ -427,13 +598,64 @@ def _host_contract(
         ]
         reconstructed = project_assignment_input(
             repo,
-            plan,
+            projection_plan,
             assignment_id,
             baseline,
             document_paths=document_paths,
             dependency_packets=dependency_packets,
             dependency_projections=dependency_projections,
             research_bundle=research_bundle,
+            coverage=(
+                read_json(Path(coverage_path).expanduser().resolve())
+                if coverage_path is not None
+                else None
+            ),
+            coverage_admission=(
+                read_json(
+                    Path(coverage_admission_path)
+                    .expanduser()
+                    .resolve()
+                )
+                if coverage_admission_path is not None
+                else None
+            ),
+            coverage_projection=(
+                read_json(
+                    Path(coverage_projection_path)
+                    .expanduser()
+                    .resolve()
+                )
+                if coverage_projection_path is not None
+                else None
+            ),
+            expertise_work_plan=(
+                read_json(
+                    Path(expertise_work_plan_path)
+                    .expanduser()
+                    .resolve()
+                )
+                if expertise_work_plan_path is not None
+                else None
+            ),
+            expertise_closure=(
+                read_json(
+                    Path(expertise_closure_path)
+                    .expanduser()
+                    .resolve()
+                )
+                if expertise_closure_path is not None
+                else None
+            ),
+            design_decision_packet=(
+                read_json(
+                    Path(design_decision_path)
+                    .expanduser()
+                    .resolve()
+                )
+                if design_decision_path is not None
+                else None
+            ),
+            expertise_research_bundles=expertise_research_bundles,
         )
         if (
             reconstructed.get("status") != "PASS"
@@ -483,11 +705,26 @@ def _host_contract(
             raise MaestroError(
                 "CODEX_HOST_SANDBOX_CONFLICT",
                 "sandbox conflicts with the validated Assignment side-effect contract.",
-            )
+        )
         effective_sandbox = assignment_sandbox
-        route = assignment["model_route"]
-        planned_model = route.get("selected_model")
-        planned_effort = route.get("reasoning_effort")
+        model_execution_contract = next(
+            (
+                item
+                for item in model_execution_units
+                if item.get("assignment_id") == assignment_id
+            ),
+            None,
+        )
+        if model_execution_contract is None:
+            raise MaestroError(
+                "CODEX_HOST_MODEL_ROUTE_UNSUPPORTED",
+                (
+                    "This Assignment is deterministic or lacks an enforceable "
+                    "model execution contract; the owned model Host cannot run it."
+                ),
+            )
+        planned_model = model_execution_contract["selected_model"]
+        planned_effort = model_execution_contract["reasoning_effort"]
         if (
             requested_model is not None
             and planned_model is not None
@@ -510,15 +747,39 @@ def _host_contract(
         effective_effort = requested_effort or planned_effort
 
     sandbox_policy: dict[str, Any]
+    scoped_write_roots = False
     if effective_sandbox == "read-only":
+        runtime_workspace_roots = [str(repo)]
         sandbox_policy = {
             "type": "readOnly",
             "networkAccess": False,
         }
     else:
+        writable_roots = [str(repo)]
+        authorization = (
+            projection.get("execution_authorization")
+            if isinstance(projection, dict)
+            else None
+        )
+        if isinstance(authorization, dict):
+            try:
+                writable_roots = [
+                    str(path)
+                    for path in resolve_authorized_write_roots(
+                        repo,
+                        authorization["allowed_paths"],
+                    )
+                ]
+            except MaestroError as exc:
+                raise MaestroError(
+                    "CODEX_HOST_AUTHORIZED_ROOT_INVALID",
+                    exc.message,
+                ) from exc
+            scoped_write_roots = True
+        runtime_workspace_roots = list(writable_roots)
         sandbox_policy = {
             "type": "workspaceWrite",
-            "writableRoots": [str(repo)],
+            "writableRoots": writable_roots,
             "networkAccess": False,
             "excludeSlashTmp": True,
             "excludeTmpdirEnvVar": True,
@@ -526,10 +787,31 @@ def _host_contract(
     return {
         "assignment_id": assignment_id,
         "plan_id": plan_id,
+        "execution_plan_id": execution_plan_id,
+        "decision_bundle_digest": decision_bundle_digest,
         "sandbox": effective_sandbox,
         "sandbox_policy": sandbox_policy,
+        "runtime_workspace_roots": runtime_workspace_roots,
+        "scoped_write_roots": scoped_write_roots,
         "model": effective_model,
         "reasoning_effort": effective_effort,
+        "model_execution_contract": model_execution_contract,
+        "execution_units": execution_units,
+        "execution_unit": (
+            model_execution_contract.get("execution_unit")
+            if isinstance(model_execution_contract, dict)
+            else None
+        ),
+        "model_route_id": (
+            model_execution_contract.get("model_route_id")
+            if isinstance(model_execution_contract, dict)
+            else None
+        ),
+        "execution_unit_id": (
+            model_execution_contract.get("execution_unit_id")
+            if isinstance(model_execution_contract, dict)
+            else None
+        ),
         "assignment": assignment,
         "plan": plan,
         "projection": projection,
@@ -563,6 +845,39 @@ def _stderr_reader(stream: TextIO, sink: list[str]) -> None:
         return
 
 
+def _process_group_exists(process_group_id: int) -> bool:
+    if os.name != "posix":
+        return False
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
+def _wait_for_process_group_exit(
+    process_group_id: int,
+    *,
+    timeout: float,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while _process_group_exists(process_group_id):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
+def _scoped_process_quiescence_supported() -> bool:
+    return (
+        os.name == "posix"
+        and hasattr(os, "killpg")
+        and hasattr(os, "getpgid")
+    )
+
+
 class _AppServer:
     def __init__(
         self,
@@ -589,6 +904,11 @@ class _AppServer:
                 "CODEX_HOST_START_FAILED",
                 "Unable to start codex app-server.",
             ) from exc
+        self.process_group_id = (
+            self.process.pid
+            if os.name == "posix"
+            else None
+        )
         if (
             self.process.stdin is None
             or self.process.stdout is None
@@ -778,55 +1098,67 @@ class _AppServer:
             if value.get("method") in _RELEVANT_NOTIFICATIONS:
                 self.notifications.append(value)
 
-    def close(self) -> None:
+    def close(self) -> bool:
         process = getattr(self, "process", None)
         if process is None:
-            return
+            return True
         if process.stdin is not None:
             try:
                 process.stdin.close()
             except OSError:
                 pass
-        try:
-            process.wait(timeout=PROCESS_EXIT_GRACE_SECONDS)
-        except (subprocess.TimeoutExpired, OSError):
-            pass
-        if os.name == "posix":
+        process_group_id = getattr(self, "process_group_id", None)
+        group_terminated = True
+        if os.name == "posix" and isinstance(process_group_id, int):
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(process_group_id, signal.SIGTERM)
             except (ProcessLookupError, PermissionError, OSError):
                 pass
-        elif process.poll() is None:
-            try:
-                process.terminate()
-            except OSError:
-                pass
-        if process.poll() is None:
+            if _process_group_exists(process_group_id):
+                try:
+                    os.killpg(process_group_id, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
             try:
                 process.wait(timeout=PROCESS_EXIT_GRACE_SECONDS)
             except (subprocess.TimeoutExpired, OSError):
                 pass
-        if os.name == "posix":
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-        elif process.poll() is None:
-            try:
-                process.kill()
-            except OSError:
-                pass
-        if process.poll() is None:
-            try:
-                process.wait(timeout=PROCESS_EXIT_GRACE_SECONDS)
-            except (subprocess.TimeoutExpired, OSError):
-                pass
+            group_terminated = _wait_for_process_group_exit(
+                process_group_id,
+                timeout=PROCESS_EXIT_GRACE_SECONDS,
+            )
+        else:
+            if process.poll() is None:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=PROCESS_EXIT_GRACE_SECONDS)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=PROCESS_EXIT_GRACE_SECONDS)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
         for stream in (process.stdout, process.stderr):
             if stream is not None:
                 try:
                     stream.close()
                 except OSError:
                     pass
+        terminated = process.poll() is not None and group_terminated
+        if terminated:
+            self.process = None
+            self.process_group_id = None
+        return terminated
 
 
 def _token_summary(value: Any) -> dict[str, int] | None:
@@ -1111,11 +1443,6 @@ def _enrich_child_finish_action(
         ),
         "source_binding": {
             **binding,
-            "correlation_id": codex_work_id(
-                "source",
-                runtime["thread_id"],
-                runtime["turn_id"],
-            ),
             "event_coverage": "complete_stream",
         },
         "model_observation": {
@@ -1372,6 +1699,156 @@ def _record_codex_work_action(
     )
 
 
+def _record_dependency_handoff(
+    repo: Path,
+    *,
+    observation: dict[str, Any],
+    run_id: str,
+    downstream_assignment_id: str,
+    dependency_assignment_ids: list[str],
+    dependency_packet_digests: dict[str, str],
+) -> str:
+    """Record validated dependency consumption without claiming model work."""
+
+    heads_by_assignment = terminal_assignment_work_heads(
+        observation.get("work_spans"),
+        dependency_assignment_ids,
+    )
+    missing = [
+        assignment_id
+        for assignment_id in dependency_assignment_ids
+        if not heads_by_assignment.get(assignment_id)
+    ]
+    if missing:
+        raise MaestroError(
+            "CODEX_HOST_DEPENDENCY_WORK_MISSING",
+            "A dependent Assignment requires terminal v2 work for every "
+            "direct dependency: " + ", ".join(missing),
+        )
+    joined_work_ids = list(
+        dict.fromkeys(
+            work_id
+            for assignment_id in dependency_assignment_ids
+            for work_id in heads_by_assignment[assignment_id]
+        )
+    )
+    if len(joined_work_ids) > 16:
+        raise MaestroError(
+            "CODEX_HOST_DEPENDENCY_WORK_LIMIT",
+            "Direct dependency terminal work exceeds the bounded handoff relation limit.",
+        )
+    packet_digests = [
+        dependency_packet_digests[assignment_id]
+        for assignment_id in dependency_assignment_ids
+    ]
+    evidence_refs = [
+        f"assignment-packet:{digest}" for digest in packet_digests
+    ]
+    handoff_work_id = codex_work_id(
+        "assignment-handoff",
+        run_id,
+        downstream_assignment_id,
+        *dependency_assignment_ids,
+        *packet_digests,
+        *joined_work_ids,
+    )
+    expected_outcome = {
+        "finding_summary": None,
+        "conclusion": (
+            "Direct dependency terminal work와 Packet digest가 "
+            "parent stage evidence에 일치합니다."
+        ),
+        "decision": (
+            f"{downstream_assignment_id} Assignment launch 조건이 "
+            "충족되었습니다."
+        ),
+        "next_action": "continue",
+        "consumed_work_ids": joined_work_ids,
+        "handoff": {
+            "purpose": (
+                f"검증된 dependency 결과를 {downstream_assignment_id} "
+                "Assignment에 전달합니다."
+            ),
+            "completion_criteria": (
+                "Downstream root work가 이 handoff에 명시적으로 의존합니다."
+            ),
+        },
+        "artifacts": [],
+        "verification": None,
+    }
+    recorded = next(
+        (
+            span
+            for span in observation.get("work_spans", [])
+            if isinstance(span, dict)
+            and span.get("work_id") == handoff_work_id
+        ),
+        None,
+    )
+    if recorded is not None:
+        if not (
+            recorded.get("schema_version") == "maestro_work_span_v2"
+            and recorded.get("assignment_id") is None
+            and recorded.get("kind") == "synthesis"
+            and recorded.get("joins_work_ids") == joined_work_ids
+            and recorded.get("outcome") == expected_outcome
+        ):
+            raise MaestroError(
+                "CODEX_HOST_DEPENDENCY_HANDOFF_CONFLICT",
+                "The deterministic dependency handoff already contains different facts.",
+            )
+        if recorded.get("status") == "running":
+            record_work_finish(
+                repo,
+                observation_id=observation["observation_id"],
+                run_id=run_id,
+                work_id=handoff_work_id,
+                status="completed",
+                result_summary=(
+                    "Dependency Packet 검증과 downstream launch 결정을 기록했습니다."
+                ),
+                evidence_refs=evidence_refs,
+            )
+            return handoff_work_id
+        if recorded.get("status") != "completed":
+            raise MaestroError(
+                "CODEX_HOST_DEPENDENCY_HANDOFF_CONFLICT",
+                "The deterministic dependency handoff has a non-recoverable terminal state.",
+            )
+        return handoff_work_id
+
+    record_work_start(
+        repo,
+        observation_id=observation["observation_id"],
+        run_id=run_id,
+        work_id=handoff_work_id,
+        assignment_id=None,
+        kind="synthesis",
+        role="Maestro dependency handoff",
+        executor_id="maestro-codex-host",
+        task_summary=(
+            f"Direct dependency Packet {len(packet_digests)}건을 검증하고 "
+            f"{downstream_assignment_id} launch 결정을 기록합니다."
+        ),
+        read_only=True,
+        source="current_host",
+        joins_work_ids=joined_work_ids,
+        outcome=expected_outcome,
+    )
+    record_work_finish(
+        repo,
+        observation_id=observation["observation_id"],
+        run_id=run_id,
+        work_id=handoff_work_id,
+        status="completed",
+        result_summary=(
+            "Dependency Packet 검증과 downstream launch 결정을 기록했습니다."
+        ),
+        evidence_refs=evidence_refs,
+    )
+    return handoff_work_id
+
+
 def _command(command: Sequence[str] | None) -> list[str]:
     if command is not None:
         if not command or not all(
@@ -1392,6 +1869,554 @@ def _command(command: Sequence[str] | None) -> list[str]:
     return [executable, "app-server", "--stdio"]
 
 
+def _repository_change_snapshot(repo: Path) -> dict[str, Any]:
+    """Fingerprint HEAD plus Git-visible working changes for a scope audit."""
+
+    repo = repo.resolve()
+    head_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "rev-parse",
+            "--verify",
+            "HEAD^{commit}",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=20,
+    )
+    head = head_result.stdout.decode("ascii").strip()
+    if (
+        len(head) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in head)
+    ):
+        raise MaestroError(
+            "CODEX_HOST_SCOPE_AUDIT_INVALID",
+            "Unable to bind scoped execution to a valid repository HEAD.",
+        )
+    commands = (
+        ["git", "-C", str(repo), "diff", "--name-only", "-z", "HEAD", "--"],
+        [
+            "git",
+            "-C",
+            str(repo),
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+    )
+    paths: set[str] = set()
+    for command in commands:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            timeout=20,
+        )
+        paths.update(
+            value.decode("utf-8", errors="surrogateescape")
+            for value in completed.stdout.split(b"\0")
+            if value
+        )
+    snapshot: dict[str, str] = {}
+    for relative_path in sorted(paths):
+        if (
+            relative_path == ".maestro/state"
+            or relative_path.startswith(".maestro/state/")
+        ):
+            continue
+        target = repo / relative_path
+        if target.is_symlink():
+            snapshot[relative_path] = "symlink:" + os.readlink(target)
+        elif target.is_file():
+            snapshot[relative_path] = "file:" + file_sha256(target)
+        elif target.exists():
+            snapshot[relative_path] = "other"
+        else:
+            snapshot[relative_path] = "missing"
+    return {
+        "head": head,
+        "paths": snapshot,
+    }
+
+
+def _repository_effect_snapshot(repo: Path) -> dict[str, Any]:
+    """Fingerprint effects even in a newly initialized repository.
+
+    Scoped Decision execution still uses the stricter HEAD-bound audit above.
+    This fallback exists only so a receipt can attest writes in an unborn
+    temporary or freshly initialized worktree.
+    """
+
+    try:
+        return _repository_change_snapshot(repo)
+    except subprocess.CalledProcessError:
+        snapshot: dict[str, str] = {}
+        for root, directory_names, file_names in os.walk(repo):
+            root_path = Path(root)
+            directory_names[:] = [
+                name
+                for name in directory_names
+                if not (
+                    root_path == repo and name == ".git"
+                )
+                and not (
+                    root_path == repo / ".maestro"
+                    and name == "state"
+                )
+            ]
+            for name in file_names:
+                target = root_path / name
+                relative_path = target.relative_to(repo).as_posix()
+                if target.is_symlink():
+                    snapshot[relative_path] = (
+                        "symlink:" + os.readlink(target)
+                    )
+                elif target.is_file():
+                    snapshot[relative_path] = (
+                        "file:" + file_sha256(target)
+                    )
+        return {
+            "head": None,
+            "paths": snapshot,
+        }
+
+
+def _repository_snapshot_changed(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> bool:
+    """Return whether a bounded turn changed Git-visible repository state."""
+
+    return (
+        before.get("head") != after.get("head")
+        or before.get("paths") != after.get("paths")
+    )
+
+
+def _assert_scoped_repository_changes(
+    repo: Path,
+    *,
+    before: dict[str, Any],
+    allowed_roots: Sequence[str],
+) -> None:
+    """Fail if a scoped turn leaves a material Git-visible sibling change."""
+
+    repo = repo.resolve()
+    after = _repository_change_snapshot(repo)
+    if before.get("head") != after["head"]:
+        raise MaestroError(
+            "CODEX_HOST_SCOPE_VIOLATION",
+            (
+                "Scoped Decision execution changed repository HEAD; "
+                "git commits and reference updates are outside repository_write."
+            ),
+        )
+    before_paths = before.get("paths")
+    if not isinstance(before_paths, dict):
+        raise MaestroError(
+            "CODEX_HOST_SCOPE_AUDIT_INVALID",
+            "The pre-execution scope snapshot is invalid.",
+        )
+    after_paths = after["paths"]
+    changed = sorted(
+        path
+        for path in set(before_paths) | set(after_paths)
+        if before_paths.get(path) != after_paths.get(path)
+    )
+    allowed_relative = [
+        Path(root).resolve().relative_to(repo)
+        for root in allowed_roots
+    ]
+    unauthorized = [
+        path
+        for path in changed
+        if not any(
+            Path(path) == root or root in Path(path).parents
+            for root in allowed_relative
+        )
+    ]
+    if unauthorized:
+        raise MaestroError(
+            "CODEX_HOST_SCOPE_VIOLATION",
+            (
+                "Scoped Decision execution changed paths outside allowed_paths: "
+                + ", ".join(unauthorized)
+            ),
+        )
+
+
+def _terminate_and_audit_scoped_server(
+    server: "_AppServer",
+    repo: Path,
+    *,
+    before: dict[str, Any],
+    allowed_roots: Sequence[str],
+    thread_ids: Sequence[str] = (),
+    active_turn: tuple[str, str] | None = None,
+) -> None:
+    """Quiesce scoped work, terminate its Host, then inspect repository state."""
+
+    server.deadline = max(
+        server.deadline,
+        time.monotonic() + SCOPED_SHUTDOWN_GRACE_SECONDS,
+    )
+    quiescence_error: MaestroError | None = None
+    if active_turn is not None:
+        try:
+            _interrupt_active_turn(
+                server,
+                thread_id=active_turn[0],
+                turn_id=active_turn[1],
+            )
+        except MaestroError as exc:
+            quiescence_error = exc
+    if quiescence_error is None:
+        seen_thread_ids: set[str] = set()
+        for thread_id in thread_ids:
+            if thread_id in seen_thread_ids:
+                continue
+            seen_thread_ids.add(thread_id)
+            try:
+                _quiesce_background_terminals(server, thread_id)
+            except MaestroError as exc:
+                if quiescence_error is None:
+                    quiescence_error = exc
+    server_terminated = server.close()
+    if quiescence_error is not None:
+        raise MaestroError(
+            "CODEX_HOST_BACKGROUND_TERMINALS_UNQUIESCED",
+            (
+                "Codex background terminals could not be confirmed stopped, "
+                "so post-run write scope cannot be verified."
+            ),
+        ) from quiescence_error
+    if not server_terminated:
+        raise MaestroError(
+            "CODEX_HOST_TERMINATION_FAILED",
+            (
+                "The scoped Codex App Server did not terminate, so post-run "
+                "write scope cannot be verified."
+            ),
+        )
+    _assert_scoped_repository_changes(
+        repo,
+        before=before,
+        allowed_roots=allowed_roots,
+    )
+
+
+def _interrupt_active_turn(
+    server: "_AppServer",
+    *,
+    thread_id: str,
+    turn_id: str,
+) -> None:
+    """Interrupt one active turn and wait for its matching terminal event."""
+
+    if any(
+        not isinstance(value, str) or not value.strip()
+        for value in (thread_id, turn_id)
+    ):
+        raise MaestroError(
+            "CODEX_HOST_PROTOCOL_INVALID",
+            "Scoped turn interruption requires usable thread and turn IDs.",
+        )
+
+    def is_terminal(value: Any) -> bool:
+        if not isinstance(value, dict):
+            return False
+        params = value.get("params")
+        turn = params.get("turn") if isinstance(params, dict) else None
+        return (
+            value.get("method") == "turn/completed"
+            and params.get("threadId") == thread_id
+            and isinstance(turn, dict)
+            and turn.get("id") == turn_id
+            and turn.get("status") in _TERMINAL_STATUSES
+        )
+
+    server.send(
+        {
+            "jsonrpc": "2.0",
+            "id": 9_000,
+            "method": "turn/interrupt",
+            "params": {
+                "threadId": thread_id,
+                "turnId": turn_id,
+            },
+        }
+    )
+    server.response(9_000)
+    if any(is_terminal(value) for value in server.notifications):
+        return
+    interrupt_deadline = min(
+        server.deadline,
+        time.monotonic() + TURN_INTERRUPT_GRACE_SECONDS,
+    )
+    while time.monotonic() < interrupt_deadline:
+        value = server.next_message(
+            idle_limit=max(
+                0.001,
+                interrupt_deadline - time.monotonic(),
+            ),
+            idle_ok=True,
+        )
+        if value is None:
+            break
+        if is_terminal(value):
+            return
+    raise MaestroError(
+        "CODEX_HOST_TURN_UNQUIESCED",
+        "Codex did not confirm a terminal turn after interruption.",
+    )
+
+
+def _quiesce_background_terminals(
+    server: "_AppServer",
+    thread_id: str,
+) -> int:
+    """Terminate every tracked terminal and prove the thread has none left."""
+
+    if not isinstance(thread_id, str) or not thread_id.strip():
+        raise MaestroError(
+            "CODEX_HOST_PROTOCOL_INVALID",
+            "Background-terminal cleanup requires a usable thread ID.",
+        )
+    request_id = 10_000
+
+    def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        nonlocal request_id
+        current_id = request_id
+        request_id += 1
+        server.send(
+            {
+                "jsonrpc": "2.0",
+                "id": current_id,
+                "method": method,
+                "params": params,
+            }
+        )
+        return server.response(current_id)
+
+    def list_terminals() -> list[dict[str, Any]]:
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        seen_processes: set[str] = set()
+        terminals: list[dict[str, Any]] = []
+        while True:
+            params: dict[str, Any] = {
+                "threadId": thread_id,
+                "limit": BACKGROUND_TERMINAL_PAGE_SIZE,
+            }
+            if cursor is not None:
+                params["cursor"] = cursor
+            result = request(
+                "thread/backgroundTerminals/list",
+                params,
+            )
+            data = result.get("data")
+            if not isinstance(data, list):
+                raise MaestroError(
+                    "CODEX_HOST_PROTOCOL_INVALID",
+                    "backgroundTerminals/list did not return a data array.",
+                )
+            for terminal in data:
+                process_id = (
+                    terminal.get("processId")
+                    if isinstance(terminal, dict)
+                    else None
+                )
+                if (
+                    not isinstance(process_id, str)
+                    or not process_id.strip()
+                    or process_id in seen_processes
+                ):
+                    raise MaestroError(
+                        "CODEX_HOST_PROTOCOL_INVALID",
+                        (
+                            "backgroundTerminals/list returned an invalid or "
+                            "duplicate processId."
+                        ),
+                    )
+                seen_processes.add(process_id)
+                terminals.append(terminal)
+                if len(terminals) > MAX_BACKGROUND_TERMINALS:
+                    raise MaestroError(
+                        "CODEX_HOST_PROTOCOL_LIMIT",
+                        (
+                            "backgroundTerminals/list exceeded the scoped "
+                            "cleanup safety limit."
+                        ),
+                    )
+            next_cursor = result.get("nextCursor")
+            if next_cursor is None:
+                return terminals
+            if (
+                not isinstance(next_cursor, str)
+                or not next_cursor
+                or next_cursor in seen_cursors
+            ):
+                raise MaestroError(
+                    "CODEX_HOST_PROTOCOL_INVALID",
+                    (
+                        "backgroundTerminals/list returned an invalid or "
+                        "repeated pagination cursor."
+                    ),
+                )
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
+    observed_processes: set[str] = set()
+    for _ in range(MAX_BACKGROUND_TERMINAL_CLEANUP_ROUNDS):
+        terminals = list_terminals()
+        if not terminals:
+            return len(observed_processes)
+        for terminal in terminals:
+            process_id = terminal["processId"]
+            observed_processes.add(process_id)
+            result = request(
+                "thread/backgroundTerminals/terminate",
+                {
+                    "threadId": thread_id,
+                    "processId": process_id,
+                },
+            )
+            if not isinstance(result.get("terminated"), bool):
+                raise MaestroError(
+                    "CODEX_HOST_PROTOCOL_INVALID",
+                    (
+                        "backgroundTerminals/terminate did not return a "
+                        "boolean terminated result."
+                    ),
+                )
+    if list_terminals():
+        raise MaestroError(
+            "CODEX_HOST_BACKGROUND_TERMINAL_ACTIVE",
+            (
+                "Codex still reports a background terminal after bounded "
+                "cleanup attempts."
+            ),
+        )
+    return len(observed_processes)
+
+
+def _scoped_thread_ids(state: dict[str, Any]) -> list[str]:
+    """Return every root or delegated Codex thread observed by this turn."""
+
+    candidates = [state.get("thread_id")]
+    child_runtime = state.get("child_work_runtime")
+    if isinstance(child_runtime, dict):
+        candidates.extend(
+            runtime.get("thread_id")
+            for runtime in child_runtime.values()
+            if isinstance(runtime, dict)
+        )
+    thread_ids: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        if (
+            isinstance(value, str)
+            and value.strip()
+            and value not in seen
+        ):
+            seen.add(value)
+            thread_ids.append(value)
+    return thread_ids
+
+
+def _active_scoped_turn(
+    state: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Return the owned turn only while no terminal event was observed."""
+
+    if state.get("completion") is not None:
+        return None
+    thread_id = state.get("thread_id")
+    turn_id = state.get("turn_id")
+    if (
+        isinstance(thread_id, str)
+        and thread_id.strip()
+        and isinstance(turn_id, str)
+        and turn_id.strip()
+    ):
+        return thread_id, turn_id
+    return None
+
+
+def _shutdown_and_audit_scoped_host(
+    server: "_AppServer",
+    repo: Path,
+    *,
+    state: dict[str, Any],
+    before: dict[str, Any],
+    allowed_roots: Sequence[str],
+) -> None:
+    """Interpret owned turn state before delegating bounded shutdown."""
+
+    if (
+        state.get("turn_start_requested") is True
+        and state.get("turn_id") is None
+        and state.get("completion") is None
+    ):
+        server.deadline = max(
+            server.deadline,
+            time.monotonic() + SCOPED_SHUTDOWN_GRACE_SECONDS,
+        )
+        if not server.close():
+            raise MaestroError(
+                "CODEX_HOST_TERMINATION_FAILED",
+                (
+                    "The scoped Codex App Server did not terminate after an "
+                    "unconfirmed turn/start."
+                ),
+            )
+        raise MaestroError(
+            "CODEX_HOST_BACKGROUND_TERMINALS_UNQUIESCED",
+            (
+                "turn/start was sent but no turn ID was confirmed, so active "
+                "work cannot be interrupted and post-run scope cannot be "
+                "verified."
+            ),
+        )
+    _terminate_and_audit_scoped_server(
+        server,
+        repo,
+        before=before,
+        allowed_roots=allowed_roots,
+        thread_ids=_scoped_thread_ids(state),
+        active_turn=_active_scoped_turn(state),
+    )
+
+
+def _same_runtime_workspace_roots(
+    reported: Any,
+    expected: Sequence[str],
+) -> bool:
+    """Compare the App Server's effective roots with the authorized roots."""
+
+    if (
+        not isinstance(reported, list)
+        or not all(
+            isinstance(value, str)
+            and value
+            and Path(value).is_absolute()
+            for value in reported
+        )
+        or len(reported) != len(set(reported))
+    ):
+        return False
+    return {
+        str(Path(value).resolve())
+        for value in reported
+    } == {
+        str(Path(value).resolve())
+        for value in expected
+    }
+
+
 @lru_cache(maxsize=4)
 def _codex_runtime_binding(executable: str) -> dict[str, Any]:
     """Bind the installed Codex version and generated stable schema surface."""
@@ -1401,6 +2426,10 @@ def _codex_runtime_binding(executable: str) -> dict[str, Any]:
             "version": None,
             "schema_digest": None,
             "capability": "lifecycle_only",
+            "experimental_api": False,
+            "runtime_workspace_roots": False,
+            "background_terminal_control": False,
+            "turn_interrupt": False,
         }
     try:
         version_result = subprocess.run(
@@ -1419,6 +2448,7 @@ def _codex_runtime_binding(executable: str) -> dict[str, Any]:
                     executable,
                     "app-server",
                     "generate-json-schema",
+                    "--experimental",
                     "--out",
                     temporary,
                 ],
@@ -1435,17 +2465,97 @@ def _codex_runtime_binding(executable: str) -> dict[str, Any]:
             )
             if not files:
                 raise ValueError("schema bundle is empty")
-            schema_manifest = [
-                {
-                    "path": path.relative_to(root).as_posix(),
-                    "sha256": sha256_text(path.read_text(encoding="utf-8")),
+            schema_manifest: list[dict[str, str]] = []
+            schema_texts: dict[str, str] = {}
+            for path in files:
+                schema_text = path.read_text(encoding="utf-8")
+                relative_path = path.relative_to(root).as_posix()
+                schema_texts[relative_path] = schema_text
+                schema_manifest.append(
+                    {
+                        "path": relative_path,
+                        "sha256": sha256_text(schema_text),
+                    }
+                )
+            experimental_api = '"experimentalApi"' in schema_texts.get(
+                "v1/InitializeParams.json",
+                "",
+            )
+            runtime_workspace_roots = all(
+                '"runtimeWorkspaceRoots"' in schema_texts.get(path, "")
+                for path in (
+                    "v2/ThreadStartParams.json",
+                    "v2/ThreadStartResponse.json",
+                    "v2/TurnStartParams.json",
+                )
+            )
+            client_requests = schema_texts.get("ClientRequest.json", "")
+            background_terminal_schema_files = {
+                "v2/ThreadBackgroundTerminalsListParams.json",
+                "v2/ThreadBackgroundTerminalsListResponse.json",
+                "v2/ThreadBackgroundTerminalsTerminateParams.json",
+                "v2/ThreadBackgroundTerminalsTerminateResponse.json",
+            }
+            background_terminal_control = (
+                background_terminal_schema_files <= schema_texts.keys()
+                and all(
+                    f'"thread/backgroundTerminals/{method}"'
+                    in client_requests
+                    for method in ("list", "terminate")
+                )
+                and all(
+                    field
+                    in schema_texts.get(
+                        "v2/ThreadBackgroundTerminalsListParams.json",
+                        "",
+                    )
+                    for field in ('"threadId"', '"cursor"', '"limit"')
+                )
+                and all(
+                    field
+                    in schema_texts.get(
+                        "v2/ThreadBackgroundTerminalsListResponse.json",
+                        "",
+                    )
+                    for field in ('"data"', '"processId"', '"nextCursor"')
+                )
+                and all(
+                    field
+                    in schema_texts.get(
+                        "v2/ThreadBackgroundTerminalsTerminateParams.json",
+                        "",
+                    )
+                    for field in ('"threadId"', '"processId"')
+                )
+                and '"terminated"' in schema_texts.get(
+                    "v2/ThreadBackgroundTerminalsTerminateResponse.json",
+                    "",
+                )
+            )
+            turn_interrupt = (
+                '"turn/interrupt"' in client_requests
+                and {
+                    "v2/TurnInterruptParams.json",
+                    "v2/TurnInterruptResponse.json",
                 }
-                for path in files
-            ]
+                <= schema_texts.keys()
+                and all(
+                    field
+                    in schema_texts.get(
+                        "v2/TurnInterruptParams.json",
+                        "",
+                    )
+                    for field in ('"threadId"', '"turnId"')
+                )
+            )
         return {
             "version": version,
             "schema_digest": sha256_text(canonical_json(schema_manifest)),
             "capability": "full_stream",
+            "experimental_api": experimental_api,
+            "runtime_workspace_roots": runtime_workspace_roots,
+            "background_terminal_control": background_terminal_control,
+            "turn_interrupt": turn_interrupt,
         }
     except (
         OSError,
@@ -1457,7 +2567,21 @@ def _codex_runtime_binding(executable: str) -> dict[str, Any]:
             "version": None,
             "schema_digest": None,
             "capability": "lifecycle_only",
+            "experimental_api": False,
+            "runtime_workspace_roots": False,
+            "background_terminal_control": False,
+            "turn_interrupt": False,
         }
+
+
+def _supports_scoped_enactment(runtime_binding: dict[str, Any]) -> bool:
+    return (
+        _scoped_process_quiescence_supported()
+        and runtime_binding.get("experimental_api") is True
+        and runtime_binding.get("runtime_workspace_roots") is True
+        and runtime_binding.get("background_terminal_control") is True
+        and runtime_binding.get("turn_interrupt") is True
+    )
 
 
 def _run_codex_host_locked(
@@ -1474,6 +2598,13 @@ def _run_codex_host_locked(
     dependency_packet_paths: Sequence[str | Path] = (),
     dependency_projection_paths: Sequence[str | Path] = (),
     research_evidence_path: str | Path | None = None,
+    coverage_path: str | Path | None = None,
+    coverage_admission_path: str | Path | None = None,
+    coverage_projection_path: str | Path | None = None,
+    expertise_work_plan_path: str | Path | None = None,
+    expertise_closure_path: str | Path | None = None,
+    design_decision_path: str | Path | None = None,
+    expertise_research_evidence_paths: Sequence[str | Path] = (),
     observation_id: str | None = None,
     sandbox: str | None = None,
     model: str | None = None,
@@ -1504,6 +2635,13 @@ def _run_codex_host_locked(
         dependency_packet_paths=dependency_packet_paths,
         dependency_projection_paths=dependency_projection_paths,
         research_evidence_path=research_evidence_path,
+        coverage_path=coverage_path,
+        coverage_admission_path=coverage_admission_path,
+        coverage_projection_path=coverage_projection_path,
+        expertise_work_plan_path=expertise_work_plan_path,
+        expertise_closure_path=expertise_closure_path,
+        design_decision_path=design_decision_path,
+        expertise_research_evidence_paths=expertise_research_evidence_paths,
         sandbox=sandbox,
         model=model,
         reasoning_effort=reasoning_effort,
@@ -1527,8 +2665,47 @@ def _run_codex_host_locked(
                 "Standalone Host execution requires --prompt-file.",
             )
         prompt = _bounded_text_file(prompt_file)
+    host_command = _command(command)
+    runtime_binding = _codex_runtime_binding(host_command[0])
+    if (
+        contract["scoped_write_roots"]
+        and not _supports_scoped_enactment(runtime_binding)
+    ):
+        raise MaestroError(
+            "CODEX_HOST_SCOPED_SANDBOX_UNAVAILABLE",
+            (
+                "This Host cannot prove both exact Decision write roots and "
+                "terminal background-work and App Server quiescence, so "
+                "scoped enactment fails closed."
+            ),
+        )
+    send_runtime_workspace_roots = (
+        runtime_binding.get("runtime_workspace_roots") is True
+        or Path(host_command[0]).name != "codex"
+    )
+    scope_snapshot = (
+        _repository_change_snapshot(repo)
+        if contract["scoped_write_roots"]
+        else None
+    )
+    effect_snapshot = (
+        scope_snapshot
+        if scope_snapshot is not None
+        else (
+            _repository_effect_snapshot(repo)
+            if contract["assignment_id"] is not None
+            else None
+        )
+    )
+    dependency_results: dict[str, dict[str, Any]] = {}
+    execution_receipts_required = False
     observation: dict[str, Any] | None
     if observation_id is not None:
+        claim_maestro_owned_codex_execution(
+            repo,
+            observation_id=observation_id,
+            run_id=run_id,
+        )
         observed = observation_receipt_fields(
             repo,
             observation_id=observation_id,
@@ -1544,11 +2721,34 @@ def _run_codex_host_locked(
                 "CODEX_HOST_RUN_CONFLICT",
                 "The parent observation must contain the same plan and Assignment.",
             )
+        observed_execution = observed_plan.get("execution_contract")
+        if (
+            contract["execution_plan_id"] is not None
+            and (
+                not isinstance(observed_execution, dict)
+                or observed_execution.get("kind")
+                != "decision-enactment"
+                or observed_execution.get("execution_plan_id")
+                != contract["execution_plan_id"]
+                or observed_execution.get("decision_bundle_digest")
+                != contract["decision_bundle_digest"]
+            )
+        ):
+            raise MaestroError(
+                "CODEX_HOST_RUN_EXECUTION_CONFLICT",
+                (
+                    "The parent observation must bind the exact enacted "
+                    "Decision execution wrapper, not only its nested route."
+                ),
+            )
         dependency_results = {
             item.get("assignment_id"): item
             for item in observed.get("stage_results", [])
             if isinstance(item, dict)
         }
+        execution_receipts_required = (
+            observed_plan.get("execution_receipts_required") is True
+        )
         if contract["assignment_id"] in dependency_results:
             raise MaestroError(
                 "CODEX_HOST_ASSIGNMENT_ALREADY_TERMINAL",
@@ -1592,6 +2792,22 @@ def _run_codex_host_locked(
             "observation_id": observation_id,
             "status": "already_started",
         }
+        dependency_handoff_work_id = (
+            _record_dependency_handoff(
+                repo,
+                observation=observed,
+                run_id=run_id,
+                downstream_assignment_id=contract["assignment_id"],
+                dependency_assignment_ids=list(
+                    contract["assignment"]["depends_on"]
+                ),
+                dependency_packet_digests=contract[
+                    "dependency_packet_digests"
+                ],
+            )
+            if contract["assignment"]["depends_on"]
+            else None
+        )
     else:
         if (
             contract["assignment"] is not None
@@ -1617,13 +2833,14 @@ def _run_codex_host_locked(
                 "run-id already belongs to an existing observation; pass its "
                 "observation ID only when starting a different pending Assignment.",
             )
+        execution_receipts_required = contract["assignment_id"] is not None
+        dependency_handoff_work_id = None
     deadline = time.monotonic() + float(timeout_seconds)
-    host_command = _command(command)
-    runtime_binding = _codex_runtime_binding(host_command[0])
-    server = _AppServer(host_command, cwd=repo, deadline=deadline)
+    server: _AppServer | None = None
     state = {
         "thread_id": None,
         "turn_id": None,
+        "turn_start_requested": False,
         "completion": None,
         "reroutes": [],
         "tokens": None,
@@ -1643,8 +2860,18 @@ def _run_codex_host_locked(
         "child_work_runtime": {},
         "child_thread_totals": {},
         "pending_child_finishes": {},
+        "scope_shutdown_attempted": False,
+        "scope_audit_complete": False,
     }
     try:
+        server = _AppServer(host_command, cwd=repo, deadline=deadline)
+        initialize_capabilities: dict[str, Any] = {
+            "optOutNotificationMethods": (
+                _HIGH_VOLUME_NOTIFICATION_OPT_OUTS
+            )
+        }
+        if runtime_binding.get("experimental_api") is True:
+            initialize_capabilities["experimentalApi"] = True
         server.send(
             {
                 "jsonrpc": "2.0",
@@ -1656,11 +2883,7 @@ def _run_codex_host_locked(
                         "title": "Harness Maestro",
                         "version": __version__,
                     },
-                    "capabilities": {
-                        "optOutNotificationMethods": (
-                            _HIGH_VOLUME_NOTIFICATION_OPT_OUTS
-                        )
-                    },
+                    "capabilities": initialize_capabilities,
                 },
             }
         )
@@ -1674,6 +2897,10 @@ def _run_codex_host_locked(
             "ephemeral": True,
             "serviceName": "harness-maestro",
         }
+        if send_runtime_workspace_roots:
+            thread_params["runtimeWorkspaceRoots"] = contract[
+                "runtime_workspace_roots"
+            ]
         if contract["model"] is not None:
             thread_params["model"] = contract["model"]
         server.send(
@@ -1696,7 +2923,26 @@ def _run_codex_host_locked(
                 "thread/start did not return a usable thread ID.",
             )
         state["thread_id"] = thread["id"]
-        requested_model = contract["model"] or thread_result.get("model")
+        if (
+            contract["scoped_write_roots"]
+            and not _same_runtime_workspace_roots(
+                thread_result.get("runtimeWorkspaceRoots"),
+                contract["runtime_workspace_roots"],
+            )
+        ):
+            raise MaestroError(
+                "CODEX_HOST_SCOPED_SANDBOX_MISMATCH",
+                (
+                    "thread/start did not confirm the exact Decision "
+                    "runtimeWorkspaceRoots."
+                ),
+            )
+        provider_reported_model = _bounded_option(
+            thread_result.get("model"),
+            field="provider-reported-model",
+            maximum=128,
+        )
+        requested_model = contract["model"] or provider_reported_model
         requested_effort = (
             contract["reasoning_effort"]
             or thread_result.get("reasoningEffort")
@@ -1724,12 +2970,17 @@ def _run_codex_host_locked(
             "approvalPolicy": "never",
             "sandboxPolicy": contract["sandbox_policy"],
         }
+        if send_runtime_workspace_roots:
+            turn_params["runtimeWorkspaceRoots"] = contract[
+                "runtime_workspace_roots"
+            ]
         if contract["output_schema"] is not None:
             turn_params["outputSchema"] = contract["output_schema"]
         if contract["model"] is not None:
             turn_params["model"] = contract["model"]
         if contract["reasoning_effort"] is not None:
             turn_params["effort"] = contract["reasoning_effort"]
+        state["turn_start_requested"] = True
         server.send(
             {
                 "jsonrpc": "2.0",
@@ -1752,6 +3003,7 @@ def _run_codex_host_locked(
         state["turn_id"] = turn["id"]
         root_work_id = codex_work_id(
             run_id,
+            contract["assignment_id"] or "standalone",
             state["thread_id"],
             state["turn_id"],
             "orchestration",
@@ -1778,6 +3030,11 @@ def _run_codex_host_locked(
             task_summary=task_label,
             read_only=contract["sandbox"] == "read-only",
             source="codex_app_server",
+            depends_on_work_ids=(
+                [dependency_handoff_work_id]
+                if dependency_handoff_work_id is not None
+                else []
+            ),
             requested_model=requested_model,
             requested_reasoning_effort=requested_effort,
             model_evidence="host_request",
@@ -1788,6 +3045,7 @@ def _run_codex_host_locked(
                 "capability": runtime_binding["capability"],
                 "correlation_id": codex_work_id(
                     "source",
+                    root_work_id,
                     state["thread_id"],
                     state["turn_id"],
                 ),
@@ -1802,6 +3060,16 @@ def _run_codex_host_locked(
             root_turn_id=state["turn_id"],
             assignment_id=contract["assignment_id"],
             read_only=contract["sandbox"] == "read-only",
+            may_spawn=(
+                contract["assignment"]["may_spawn"]
+                if contract["assignment"] is not None
+                else True
+            ),
+            max_children=(
+                contract["assignment"]["max_children"]
+                if contract["assignment"] is not None
+                else MAX_COLLAB_WORK
+            ),
             source_version=runtime_binding["version"],
             schema_digest=runtime_binding["schema_digest"],
             source_capability=runtime_binding["capability"],
@@ -1811,6 +3079,20 @@ def _run_codex_host_locked(
                 action["action"] == "start"
                 and action["kind"] == "delegation"
             ):
+                assignment = contract["assignment"]
+                if (
+                    assignment is not None
+                    and (
+                        not assignment["may_spawn"]
+                        or len(state["delegated_work_ids"])
+                        >= assignment["max_children"]
+                    )
+                ):
+                    raise MaestroError(
+                        "CODEX_HOST_DELEGATION_FORBIDDEN",
+                        "The observed Assignment attempted delegation outside "
+                        "its validated may_spawn/max_children contract.",
+                    )
                 state["delegated_work_ids"].add(action["work_id"])
                 state["child_work_starts"][action["work_id"]] = action
             if (
@@ -1897,6 +3179,7 @@ def _run_codex_host_locked(
                         "capability": runtime_binding["capability"],
                         "correlation_id": codex_work_id(
                             "source",
+                            root_work_id,
                             str(state["thread_id"]),
                             str(state["turn_id"]),
                         ),
@@ -2048,10 +3331,16 @@ def _run_codex_host_locked(
             if isinstance(value.get("method"), str):
                 _process_notification(value, state)
 
-        applied_model = (
-            state["reroutes"][-1]["to_model"]
-            if state["reroutes"]
-            else requested_model
+        applied_model = _validate_managed_model_reroutes(
+            contract["model_execution_contract"],
+            requested_model=requested_model,
+            provider_reported_model=provider_reported_model,
+            reroutes=state["reroutes"],
+        )
+        model_evidence = (
+            "complete"
+            if applied_model is not None
+            else "request_only"
         )
         completion = state["completion"]
         assert isinstance(completion, dict)
@@ -2102,6 +3391,24 @@ def _run_codex_host_locked(
                 "CODEX_HOST_WORK_INCOMPLETE",
                 "The parent turn ended before every observed delegated agent reached an explicit terminal state.",
             )
+        if scope_snapshot is not None:
+            state["scope_shutdown_attempted"] = True
+            _shutdown_and_audit_scoped_host(
+                server,
+                repo,
+                state=state,
+                before=scope_snapshot,
+                allowed_roots=contract["runtime_workspace_roots"],
+            )
+            state["scope_audit_complete"] = True
+        effect_changed = (
+            _repository_snapshot_changed(
+                effect_snapshot,
+                _repository_effect_snapshot(repo),
+            )
+            if effect_snapshot is not None
+            else False
+        )
         telemetry = {
             "schema_version": "maestro_host_observation_v2",
             "source": "codex-app-server",
@@ -2113,21 +3420,36 @@ def _run_codex_host_locked(
                 "host_request" if requested_effort is not None else "unavailable"
             ),
             "applied_model": applied_model,
-            "model_event_evidence": "complete",
-            "reroutes": state["reroutes"],
+            "model_event_evidence": model_evidence,
+            "reroutes": (
+                state["reroutes"]
+                if applied_model is not None
+                else []
+            ),
             "tokens": state["tokens"],
         }
         stage_record = None
         packet_validation = None
         packet_digest = None
+        verification_assessment = None
+        execution_unit_receipt = None
         packet_error: MaestroError | None = None
         result_status = completion["status"]
         if contract["assignment_id"] is not None:
+            projection_digest = contract["projection"].get(
+                "projection_digest"
+            )
+            if not isinstance(projection_digest, str):
+                raise MaestroError(
+                    "CODEX_HOST_PROJECTION_DIGEST_INVALID",
+                    "The reconstructed Assignment input has no content-addressed projection digest.",
+                )
             evidence_refs = [
                 (
                     "codex-app-server:"
                     f"{state['thread_id']}:{state['turn_id']}"
-                )
+                ),
+                f"assignment-input:{projection_digest}",
             ]
             if completion["status"] == "completed":
                 assert isinstance(contract["plan"], dict)
@@ -2152,7 +3474,124 @@ def _run_codex_host_locked(
                 else:
                     packet_digest = packet_validation["packet_digest"]
                     assert isinstance(packet_digest, str)
+                    verification_assessment = packet_validation.get(
+                        "verification_assessment"
+                    )
                     evidence_refs.append(f"assignment-packet:{packet_digest}")
+            if result_status == "completed":
+                execution_unit = contract["execution_unit"]
+                if not isinstance(execution_unit, dict):
+                    raise MaestroError(
+                        "CODEX_HOST_EXECUTION_UNIT_INVALID",
+                        "The validated Assignment did not retain its exact common ExecutionUnit.",
+                    )
+                unit_by_local_id = {
+                    unit.get("local_unit_id"): unit
+                    for unit in contract["execution_units"]
+                    if isinstance(unit, dict)
+                }
+                dependency_units = [
+                    unit_by_local_id[dependency_id]
+                    for dependency_id in contract["assignment"].get(
+                        "depends_on",
+                        [],
+                    )
+                    if dependency_id in unit_by_local_id
+                ]
+                dependency_receipts = [
+                    dependency_results[dependency_id][
+                        "execution_unit_receipt"
+                    ]
+                    for dependency_id in contract["assignment"].get(
+                        "depends_on",
+                        [],
+                    )
+                    if isinstance(
+                        dependency_results.get(dependency_id, {}).get(
+                            "execution_unit_receipt"
+                        ),
+                        dict,
+                    )
+                ]
+                required_dependency_receipts = sum(
+                    1
+                    for unit in dependency_units
+                    if unit.get("host_executable") is True
+                )
+                can_issue_receipt = (
+                    len(dependency_receipts)
+                    == required_dependency_receipts
+                )
+                if execution_receipts_required and not can_issue_receipt:
+                    raise MaestroError(
+                        "CODEX_HOST_DEPENDENCY_RECEIPT_REQUIRED",
+                        "The owned Codex stage cannot close without every exact Host dependency receipt.",
+                    )
+                if execution_receipts_required and can_issue_receipt:
+                    attempt = build_execution_attempt(
+                        attempt=1,
+                        followup_of_attempt=None,
+                        route_kind="primary",
+                        requested_class=execution_unit[
+                            "model_route"
+                        ]["selected_class"],
+                        requested_model=requested_model,
+                        requested_reasoning_effort=requested_effort,
+                        applied_model=applied_model,
+                        applied_reasoning_effort=None,
+                        reasoning_effort_evidence="requested-only",
+                        status="completed",
+                        transition_trigger=None,
+                        provider_reroutes=state["reroutes"],
+                        thread_id=state["thread_id"],
+                        turn_id=state["turn_id"],
+                        duration_ms=duration,
+                        tokens=state["tokens"],
+                        writes_observed=effect_changed,
+                    )
+                    execution_unit_receipt = (
+                        build_execution_unit_receipt(
+                            unit=execution_unit,
+                            input_digest=projection_digest,
+                            dependency_units=dependency_units,
+                            dependency_receipts=dependency_receipts,
+                            attempts=[attempt],
+                            output_packet_digest=packet_digest,
+                            verification_assessment_id=(
+                                verification_assessment.get(
+                                    "assessment_id"
+                                )
+                                if isinstance(
+                                    verification_assessment,
+                                    dict,
+                                )
+                                else None
+                            ),
+                            terminal_work_id=root_work_id,
+                            terminal_status="completed",
+                            effect_state=(
+                                "verified-writes"
+                                if effect_changed
+                                else "no-writes"
+                            ),
+                            producer={
+                                "interface": "codex_app_server",
+                                "framework_version": __version__,
+                                "runtime_schema_digest": runtime_binding[
+                                    "schema_digest"
+                                ],
+                                "run_id": run_id,
+                                "observation_id": observation[
+                                    "observation_id"
+                                ],
+                            },
+                        )
+                    )
+            if (
+                result_status != "completed"
+                and contract["assignment"]["mutation_owner"]
+            ):
+                evidence_refs.append("effect-state:unknown")
             stage_record = record_stage_observation(
                 repo,
                 observation_id=observation["observation_id"],
@@ -2164,10 +3603,18 @@ def _run_codex_host_locked(
                 requested_model=requested_model,
                 requested_reasoning_effort=requested_effort,
                 actual_model=applied_model,
-                model_evidence="complete",
+                model_route_id=contract["model_route_id"],
+                execution_unit_id=contract["execution_unit_id"],
+                model_evidence=model_evidence,
                 reroutes=state["reroutes"],
                 duration_ms=duration,
                 tokens=state["tokens"],
+                verification_assessment=(
+                    verification_assessment
+                    if isinstance(verification_assessment, dict)
+                    else None
+                ),
+                execution_unit_receipt=execution_unit_receipt,
             )
             if packet_error is not None:
                 raise packet_error
@@ -2182,9 +3629,14 @@ def _run_codex_host_locked(
                 requested_model=requested_model,
                 requested_reasoning_effort=requested_effort,
                 applied_model=applied_model,
-                model_event_evidence="complete",
-                reroutes=state["reroutes"],
+                model_event_evidence=model_evidence,
+                reroutes=(
+                    state["reroutes"]
+                    if applied_model is not None
+                    else []
+                ),
                 tokens=state["tokens"],
+                trusted_event_stream=True,
             )
             telemetry = recorded["telemetry"]
             complete_run_observation(
@@ -2218,6 +3670,8 @@ def _run_codex_host_locked(
             "requested_model": requested_model,
             "requested_reasoning_effort": requested_effort,
             "applied_model": applied_model,
+            "model_route_id": contract["model_route_id"],
+            "execution_unit_id": contract["execution_unit_id"],
             "reroutes": state["reroutes"],
             "tokens": state["tokens"],
             "token_measurement": (
@@ -2231,6 +3685,7 @@ def _run_codex_host_locked(
             "stage_record": stage_record,
             "packet_digest": packet_digest,
             "packet_validation": packet_validation,
+            "execution_unit_receipt": execution_unit_receipt,
             "output_schema_applied": (
                 contract["output_schema"] is not None
             ),
@@ -2245,7 +3700,32 @@ def _run_codex_host_locked(
             },
             "writes_performed": True,
         }
-    except MaestroError as exc:
+    except Exception as exc:
+        if (
+            server is not None
+            and scope_snapshot is not None
+            and not state["scope_shutdown_attempted"]
+        ):
+            state["scope_shutdown_attempted"] = True
+            try:
+                _shutdown_and_audit_scoped_host(
+                    server,
+                    repo,
+                    state=state,
+                    before=scope_snapshot,
+                    allowed_roots=contract["runtime_workspace_roots"],
+                )
+            except MaestroError as scope_exc:
+                exc = scope_exc
+            else:
+                state["scope_audit_complete"] = True
+        elif server is not None:
+            server.close()
+        error_code = (
+            exc.code
+            if isinstance(exc, MaestroError)
+            else type(exc).__name__
+        )
         root_work_id = state.get("root_work_id")
         if (
             isinstance(root_work_id, str)
@@ -2259,14 +3739,50 @@ def _run_codex_host_locked(
                     work_id=root_work_id,
                     status="failed",
                     result_summary="Codex Host 실행이 완료 전에 실패했습니다.",
-                    evidence_refs=[f"codex-host-error:{exc.code}"],
+                    evidence_refs=[f"codex-host-error:{error_code}"],
                 )
                 state["root_work_terminal"] = True
             except MaestroError:
                 pass
-        raise
+        if contract["assignment_id"] is not None:
+            try:
+                observed = observation_receipt_fields(
+                    repo,
+                    observation_id=observation["observation_id"],
+                    run_id=run_id,
+                )
+                terminal_ids = {
+                    item.get("assignment_id")
+                    for item in observed.get("stage_results", [])
+                    if isinstance(item, dict)
+                }
+                if contract["assignment_id"] not in terminal_ids:
+                    failure_evidence = [
+                        f"codex-host-error:{error_code}"[:240]
+                    ]
+                    if contract["assignment"]["mutation_owner"]:
+                        failure_evidence.append("effect-state:unknown")
+                    record_stage_observation(
+                        repo,
+                        observation_id=observation["observation_id"],
+                        run_id=run_id,
+                        assignment_id=contract["assignment_id"],
+                        status="failed",
+                        evidence_source="codex_app_server",
+                        evidence_refs=failure_evidence,
+                        model_route_id=contract["model_route_id"],
+                        execution_unit_id=contract["execution_unit_id"],
+                    )
+            except MaestroError as terminal_exc:
+                raise MaestroError(
+                    "CODEX_HOST_TERMINAL_EVIDENCE_FAILED",
+                    "Codex Host failed and could not freeze a terminal "
+                    f"Assignment result: {terminal_exc.code}.",
+                ) from exc
+        raise exc
     finally:
-        server.close()
+        if server is not None:
+            server.close()
 
 
 def run_codex_host(
@@ -2283,6 +3799,13 @@ def run_codex_host(
     dependency_packet_paths: Sequence[str | Path] = (),
     dependency_projection_paths: Sequence[str | Path] = (),
     research_evidence_path: str | Path | None = None,
+    coverage_path: str | Path | None = None,
+    coverage_admission_path: str | Path | None = None,
+    coverage_projection_path: str | Path | None = None,
+    expertise_work_plan_path: str | Path | None = None,
+    expertise_closure_path: str | Path | None = None,
+    design_decision_path: str | Path | None = None,
+    expertise_research_evidence_paths: Sequence[str | Path] = (),
     observation_id: str | None = None,
     sandbox: str | None = None,
     model: str | None = None,
@@ -2311,6 +3834,13 @@ def run_codex_host(
             dependency_packet_paths=dependency_packet_paths,
             dependency_projection_paths=dependency_projection_paths,
             research_evidence_path=research_evidence_path,
+            coverage_path=coverage_path,
+            coverage_admission_path=coverage_admission_path,
+            coverage_projection_path=coverage_projection_path,
+            expertise_work_plan_path=expertise_work_plan_path,
+            expertise_closure_path=expertise_closure_path,
+            design_decision_path=design_decision_path,
+            expertise_research_evidence_paths=expertise_research_evidence_paths,
             observation_id=observation_id,
             sandbox=sandbox,
             model=model,

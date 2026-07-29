@@ -14,6 +14,7 @@ MAX_WORK_KINDS = 2
 MAX_AFFECTED_PATHS = 32
 MAX_AFFECTED_PATH_LENGTH = 240
 MAX_ROUTE_ATTEMPT = 2
+DESIGN_ASSURANCE_MODES = {"compact", "standard", "system"}
 HIGH_RISK_LEVELS = {"high", "critical"}
 PLAN_DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 CONFLICT_WARNING_CODES = {
@@ -26,6 +27,18 @@ ROUTING_SELECTION_SOURCES = {
     "work_kind",
     "explicit_pack",
     "none",
+}
+CANDIDATE_ROUTING_ROLES = {
+    "ordinary-route",
+    "corrected-task-gap",
+    "management-only",
+}
+COMPLEX_CANDIDATE_CHANGE_KINDS = {
+    "pack-merge",
+    "pack-extraction",
+    "pack-split",
+    "guide-move",
+    "guide-copy",
 }
 
 WORK_KIND_TO_PACK_ID = {
@@ -50,12 +63,42 @@ POLICY_DIGEST = sha256_text(
             "max_affected_path_length": MAX_AFFECTED_PATH_LENGTH,
             "max_route_attempt": MAX_ROUTE_ATTEMPT,
             "path_policy": "audit-only",
+            "user_interface_assurance_default": "standard",
             "normal_conflict_policy": "warn-and-use-first-structured-signal",
             "high_risk_conflict_policy": "stop-before-assignments",
             "reroute_lineage": "one-correction-bound-to-prior-plan",
         }
     )
 )
+
+
+def candidate_routing_policy(
+    *,
+    generation_mode: str | None,
+    change_kind: str | None,
+    grouped: bool = False,
+) -> dict[str, Any]:
+    """Classify candidate use without conflating validation and authority."""
+
+    if grouped or change_kind in COMPLEX_CANDIDATE_CHANGE_KINDS:
+        role = "management-only"
+        reason = (
+            "atomic-change-set"
+            if grouped
+            else "complex-topology-change"
+        )
+    elif generation_mode == "task-gap":
+        role = "corrected-task-gap"
+        reason = "exact-producing-route-only"
+    else:
+        role = "ordinary-route"
+        reason = "validated-project-candidate"
+    return {
+        "routing_role": role,
+        "routing_reason": reason,
+        "ordinary_route_allowed": role == "ordinary-route",
+        "corrected_task_gap_allowed": role == "corrected-task-gap",
+    }
 
 
 def expertise_routing_summary(selection: Any) -> dict[str, Any]:
@@ -162,6 +205,31 @@ def valid_expertise_routing_summary(
     return True
 
 
+def valid_route_correction_summary(
+    value: Any,
+    *,
+    route_attempt: int,
+) -> bool:
+    """Validate the first-route lineage retained in observed plan summaries."""
+
+    if route_attempt == 1:
+        return value is None
+    return (
+        route_attempt == 2
+        and isinstance(value, dict)
+        and set(value)
+        == {"prior_plan_id", "prior_source_route_digest"}
+        and all(
+            isinstance(value.get(field), str)
+            and PLAN_DIGEST_PATTERN.fullmatch(value[field]) is not None
+            for field in (
+                "prior_plan_id",
+                "prior_source_route_digest",
+            )
+        )
+    )
+
+
 def _unique_strings(
     values: Iterable[str] | None,
     *,
@@ -215,6 +283,7 @@ def normalize_route_hints(
     route_attempt: int = 1,
     prior_plan_id: str | None = None,
     prior_source_route_digest: str | None = None,
+    design_assurance_mode: str | None = None,
 ) -> dict[str, Any]:
     """Validate and canonicalize Host-confirmed expertise routing signals."""
 
@@ -292,7 +361,24 @@ def normalize_route_hints(
             "The single corrected route must bind the prior plan and source-route digests.",
         )
 
-    return {
+    if design_assurance_mode is None and "user-interface" in kinds:
+        design_assurance_mode = "standard"
+    if (
+        design_assurance_mode is not None
+        and (
+            design_assurance_mode not in DESIGN_ASSURANCE_MODES
+            or "user-interface" not in kinds
+        )
+    ):
+        raise MaestroError(
+            "DESIGN_ASSURANCE_MODE_INVALID",
+            (
+                "design_assurance_mode must be compact, standard, or system "
+                "and is valid only with work_kind=user-interface."
+            ),
+        )
+
+    normalized = {
         "schema_version": ROUTE_HINT_SCHEMA_VERSION,
         "policy_id": POLICY_ID,
         "policy_digest": POLICY_DIGEST,
@@ -304,6 +390,9 @@ def normalize_route_hints(
         "prior_plan_id": prior_plan_id,
         "prior_source_route_digest": prior_source_route_digest,
     }
+    if design_assurance_mode is not None:
+        normalized["design_assurance_mode"] = design_assurance_mode
+    return normalized
 
 
 def require_route_hints(value: Any) -> dict[str, Any]:
@@ -326,7 +415,11 @@ def require_route_hints(value: Any) -> dict[str, Any]:
         "prior_plan_id",
         "prior_source_route_digest",
     }
-    if set(value) != expected_fields:
+    optional_fields = {"design_assurance_mode"}
+    if (
+        not expected_fields.issubset(value)
+        or set(value) - expected_fields - optional_fields
+    ):
         raise MaestroError(
             "EXPERTISE_ROUTE_HINTS_INVALID",
             "Expertise route hints contain missing or unsupported fields.",
@@ -338,6 +431,7 @@ def require_route_hints(value: Any) -> dict[str, Any]:
         route_attempt=value.get("route_attempt"),
         prior_plan_id=value.get("prior_plan_id"),
         prior_source_route_digest=value.get("prior_source_route_digest"),
+        design_assurance_mode=value.get("design_assurance_mode"),
     )
     if value != canonical:
         raise MaestroError(
@@ -434,6 +528,18 @@ def resolve_structured_pack(
         if work_kind_targets
         else None
     )
+    if (
+        "user-interface" in hints["work_kinds"]
+        and selected_pack_id != "product-design"
+    ):
+        raise MaestroError(
+            "DESIGN_ASSURANCE_ROUTE_CONFLICT",
+            (
+                "A structured user-interface mutation cannot route around "
+                "Product Design assurance. Split the work or make "
+                "user-interface the owning structured work kind."
+            ),
+        )
     return (
         selected_pack_id,
         warnings,
@@ -448,6 +554,9 @@ def resolve_structured_pack(
             "prior_source_route_digest": hints[
                 "prior_source_route_digest"
             ],
+            "design_assurance_mode": hints.get(
+                "design_assurance_mode"
+            ),
         },
     )
 
@@ -501,6 +610,16 @@ def require_reroute_lineage(
         raise MaestroError(
             "EXPERTISE_ROUTE_LINEAGE_MISMATCH",
             "Corrected route hints do not bind the supplied prior plan.",
+        )
+    if current_plan.get("source_route_digest") != prior_plan.get(
+        "source_route_digest"
+    ):
+        raise MaestroError(
+            "EXPERTISE_REROUTE_STAGE_CHANGED",
+            (
+                "A corrected expertise route must preserve the exact Lens, "
+                "Department, model, and source-route decision."
+            ),
         )
     stable_fields = ("goal", "risk", "intent", "department")
     changed_fields = [

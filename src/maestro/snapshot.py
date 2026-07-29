@@ -7,13 +7,20 @@ from typing import Any
 
 from .expertise_lifecycle import expertise_inventory
 from .expertise_projection import project_expertise_operations
+from .expertise_recomposition import recomposition_nominations
 from .governance import (
     expertise_management_signals,
     govern_report,
     recent_run_events,
 )
 from .history import history_inventory, run_display_labels
+from .model_feedback import (
+    DEFAULT_EVIDENCE_WINDOW,
+    build_model_feedback_report,
+    current_model_policy_authority,
+)
 from .observations import inflight_observations
+from .request_records import project_request_records
 from .snapshot_runs import (
     _measurement_coverage,
     _run_card,
@@ -59,6 +66,11 @@ def _stale_registry_governance(error: MaestroError) -> dict[str, Any]:
         "expertise_pack_usage": {},
         "decision_guide_usage": {},
         "expertise_research_modes": {},
+        "model_feedback_window": DEFAULT_EVIDENCE_WINDOW,
+        "model_feedback": build_model_feedback_report(
+            [],
+            evidence_window=DEFAULT_EVIDENCE_WINDOW,
+        ),
         "retention": {
             "format": "daily-jsonl",
             "raw_messages_stored": False,
@@ -183,6 +195,10 @@ def snapshot_report(
         ),
     )
     if not status["initialized"]:
+        empty_feedback = build_model_feedback_report(
+            [],
+            evidence_window=DEFAULT_EVIDENCE_WINDOW,
+        )
         return {
             "schema_version": SNAPSHOT_VERSION,
             "generated_at": _utc_timestamp(),
@@ -193,6 +209,7 @@ def snapshot_report(
                 "readiness": status["readiness"]["state"],
                 "doctor": status["doctor"]["status"],
                 "runs": 0,
+                "requests": 0,
                 "inflight": 0,
                 "execution_active": 0,
                 "receipt_pending": 0,
@@ -203,11 +220,21 @@ def snapshot_report(
             "attention": status["next_actions"],
             "measurement_coverage": _measurement_coverage([]),
             "runs": [],
+            "request_records": [],
             "history_bundles": [],
+            "history_projection": {
+                "display_runs": 0,
+                "governance_eligible_runs": 0,
+                "historical_definition_runs": 0,
+                "historical_definition_records": 0,
+                "invalid_records": 0,
+                "scan_truncated": False,
+            },
             "inflight": [],
             "expertise": {
                 "packs": [],
                 "candidates": [],
+                "recomposition_nominations": [],
                 "component_health": {
                     "schema_version": "maestro_expertise_component_health_v1",
                     "review_use_interval": 5,
@@ -217,7 +244,13 @@ def snapshot_report(
                     "automatic_mutation_allowed": False,
                 },
             },
-            "governance": status["governance"],
+            "governance": {
+                **status["governance"],
+                "window": governance_window,
+                "model_feedback_window": DEFAULT_EVIDENCE_WINDOW,
+                "model_feedback_authority": empty_feedback["authority"],
+                "model_feedback": empty_feedback,
+            },
             "doctor": status["doctor"],
             "status": status,
             "automation": {
@@ -235,6 +268,8 @@ def snapshot_report(
         }
 
     history = recent_run_events(repo, window=window)
+    display_events = history.get("display_runs", history["runs"])
+    run_evidence = history.get("run_evidence", {})
     labels = run_display_labels(repo)
     history_state = history_inventory(repo)
     bundled_event_ids = set(history_state["bundled_event_ids"])
@@ -253,14 +288,20 @@ def snapshot_report(
         ]
         history_bundles.append(rendered)
     runs = [
-        _run_card(event, labels)
-        for event in history["runs"]
+        _run_card(
+            event,
+            labels,
+            history_evidence=run_evidence.get(event["event_id"]),
+            model_feedback_report=governance.get("model_feedback"),
+        )
+        for event in display_events
         if event["event_id"] not in bundled_event_ids
     ]
+    request_records = project_request_records(runs)
     completed_run_ids = set(
         history.get(
             "recorded_run_ids",
-            [event["run_id"] for event in history["runs"]],
+            [event["run_id"] for event in display_events],
         )
     )
     inflight = inflight_observations(
@@ -284,6 +325,26 @@ def snapshot_report(
     }
     verification = verification_inventory(repo)
     expertise_signals = expertise_management_signals(history["runs"])
+    existing_automatic_fingerprints = {
+        candidate["generation"]["signal_fingerprint"]
+        for candidate in expertise.get("candidates", [])
+        if isinstance(candidate, dict)
+        and candidate.get("disposition") is None
+        and isinstance(candidate.get("generation"), dict)
+        and candidate["generation"].get("mode") == "automatic"
+        and isinstance(
+            candidate["generation"].get("signal_fingerprint"),
+            str,
+        )
+    }
+    expertise_signals = [
+        signal
+        for signal in expertise_signals
+        if signal["fingerprint"] not in existing_automatic_fingerprints
+    ]
+    expertise["recomposition_nominations"] = recomposition_nominations(
+        expertise_signals
+    )
 
     attention: list[dict[str, Any]] = [
         item
@@ -380,6 +441,7 @@ def snapshot_report(
             "readiness": status["readiness"]["state"],
             "doctor": doctor["status"],
             "runs": len(runs),
+            "requests": len(request_records),
             "inflight": len(inflight),
             "execution_active": observation_counts["in_progress"],
             "execution_stale": observation_counts["stale"],
@@ -395,16 +457,52 @@ def snapshot_report(
             "corrections": sum(run["correction_count"] for run in runs),
         },
         "attention": attention,
-        "measurement_coverage": _measurement_coverage(runs),
+        "measurement_coverage": _measurement_coverage(request_records),
         "runs": runs,
+        "request_records": request_records,
         "history_bundles": history_bundles,
+        "history_projection": {
+            "display_runs": len(display_events),
+            "governance_eligible_runs": len(history["runs"]),
+            "historical_definition_runs": sum(
+                evidence.get("definition_status") == "historical"
+                for evidence in run_evidence.values()
+            ),
+            "historical_definition_records": history.get(
+                "historical_definition_records",
+                0,
+            ),
+            "invalid_records": history.get("invalid_records", 0),
+            "scan_truncated": history.get("scan_truncated", False),
+        },
         "inflight": inflight,
         "expertise": expertise,
         "governance": {
             "window": governance_window,
+            "model_feedback_window": governance.get(
+                "model_feedback_window",
+                DEFAULT_EVIDENCE_WINDOW,
+            ),
+            "model_feedback_authority": (
+                current_model_policy_authority(repo)
+            ),
+            "model_feedback": governance["model_feedback"],
             "evidence_status": governance["evidence_status"],
             "error": governance.get("error"),
+            "events_considered": governance.get(
+                "events_considered",
+                0,
+            ),
             "runs_considered": governance["runs_considered"],
+            "invalid_records": governance.get("invalid_records", 0),
+            "excluded_definition_records": governance.get(
+                "excluded_definition_records",
+                0,
+            ),
+            "included_compatible_records": governance.get(
+                "included_compatible_records",
+                0,
+            ),
             "scan_truncated": governance["scan_truncated"],
             "candidates_for_review": governance["candidates_for_review"],
             "token_summary": governance["token_summary"],

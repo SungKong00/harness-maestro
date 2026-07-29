@@ -11,15 +11,26 @@ from .assignment_contracts import (
     project_assignment_input,
     validate_assignment_packet,
 )
-from .component_candidates import validate_component_candidate
+from .component_candidates import (
+    component_evaluation_subject,
+    validate_component_candidate,
+)
+from .candidate_origin import build_expertise_candidate_origin
+from .coverage_admission import build_task_coverage_admission
+from .coverage_projection import (
+    build_coverage_projection,
+    validate_coverage_projection,
+)
 from .codex_host import (
     DEFAULT_TIMEOUT_SECONDS,
     run_codex_host,
 )
 from .decisions import (
+    EXECUTION_PLAN_VERSION,
     build_decision_plan,
     build_execution_plan,
     validate_decision_plan,
+    validate_execution_plan,
     validate_specialist_packet,
 )
 from .conventions import (
@@ -33,7 +44,16 @@ from .doctor import doctor_report
 from .dashboard import serve_dashboard
 from .documents import select_documents
 from .errors import MaestroError
+from .design_assurance import (
+    build_design_decision_packet,
+    validate_design_decision_packet,
+)
+from .model_feedback import build_model_policy_overlay
 from .expertise import select_expertise
+from .expertise_adaptation import (
+    build_expertise_adaptation_plan,
+    validate_expertise_adaptation_plan,
+)
 from .expertise_routing import (
     WORK_KIND_TO_PACK_ID,
     normalize_route_hints,
@@ -59,6 +79,7 @@ from .expertise_lifecycle import (
     build_expertise_rejection_plan,
     build_expertise_restore_plan,
     build_expertise_update_plan,
+    expertise_evaluation_subject,
     expertise_inventory,
     validate_expertise_contribution,
     validate_expertise_candidate,
@@ -66,6 +87,13 @@ from .expertise_lifecycle import (
 from .expertise_reconcile import (
     apply_expertise_reconcile_plan,
     build_expertise_reconcile_plan,
+)
+from .expertise_topology import validate_expertise_change_set_manifest
+from .expertise_work import (
+    build_expertise_work_closure,
+    build_expertise_work_plan,
+    validate_expertise_work_closure,
+    validate_expertise_work_plan,
 )
 from .expertise_promotion import (
     apply_expertise_promotion_decision_plan,
@@ -98,6 +126,7 @@ from .research import (
 from .planning import route_goal_v2, validate_route_v2
 from .registry import route_goal
 from .status import status_report
+from .task_coverage import build_task_coverage, validate_task_coverage
 from .snapshot import snapshot_report
 from .surface_classification import classify_surface_file
 from .util import read_json
@@ -180,6 +209,63 @@ def _research_evidence_digest(
             "The supplied digest does not match the validated ResearchBundle.",
         )
     return artifact
+
+
+def _load_route_hint_inputs(
+    *,
+    repo_path: str,
+    work_kinds: Sequence[str],
+    affected_paths: Sequence[str],
+    explicit_pack_id: str | None,
+    prior_route_plan_path: str | None,
+    design_assurance_mode: str | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Resolve the shared structured Expertise inputs for route and decide."""
+
+    prior_route_plan = (
+        read_json(
+            Path(prior_route_plan_path).expanduser().resolve()
+        )
+        if prior_route_plan_path
+        else None
+    )
+    if prior_route_plan is not None:
+        prior_validation = validate_route_v2(
+            prior_route_plan,
+            repo_path=repo_path,
+        )
+        if prior_validation["status"] != "PASS":
+            first = prior_validation["issues"][0]
+            raise MaestroError(first["code"], first["message"])
+    has_route_hints = bool(
+        work_kinds
+        or affected_paths
+        or explicit_pack_id
+        or prior_route_plan is not None
+        or design_assurance_mode
+    )
+    if not has_route_hints:
+        return None, prior_route_plan
+    return (
+        normalize_route_hints(
+            work_kinds=work_kinds,
+            affected_paths=affected_paths,
+            explicit_pack_id=explicit_pack_id,
+            route_attempt=2 if prior_route_plan is not None else 1,
+            prior_plan_id=(
+                prior_route_plan.get("plan_id")
+                if prior_route_plan is not None
+                else None
+            ),
+            prior_source_route_digest=(
+                prior_route_plan.get("source_route_digest")
+                if prior_route_plan is not None
+                else None
+            ),
+            design_assurance_mode=design_assurance_mode,
+        ),
+        prior_route_plan,
+    )
 
 
 def _emit(value: dict[str, Any], as_json: bool) -> None:
@@ -382,6 +468,92 @@ def parser() -> argparse.ArgumentParser:
     )
     expertise_list.add_argument("--repo", default=".")
     expertise_list.add_argument("--json", action="store_true")
+    expertise_plan_work = expertise_commands.add_parser(
+        "plan-work",
+        help="Validate complete read-only multi-Pack batching after Coverage discovery",
+    )
+    expertise_plan_work.add_argument("--repo", default=".")
+    expertise_plan_work.add_argument("--goal", required=True)
+    expertise_plan_work.add_argument("--coverage", required=True)
+    expertise_plan_work.add_argument("--plan", required=True)
+    expertise_plan_work.add_argument("--draft", required=True)
+    expertise_plan_work.add_argument("--research-evidence")
+    expertise_plan_work.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
+        help="Completed ResearchBundle for one Coverage Pack; repeat per required Pack.",
+    )
+    expertise_plan_work.add_argument("--json", action="store_true")
+    expertise_validate_work = expertise_commands.add_parser(
+        "validate-work",
+        help="Revalidate a multi-Pack work plan against current Pack digests",
+    )
+    expertise_validate_work.add_argument("--repo", default=".")
+    expertise_validate_work.add_argument("--goal", required=True)
+    expertise_validate_work.add_argument("--coverage", required=True)
+    expertise_validate_work.add_argument("--plan", required=True)
+    expertise_validate_work.add_argument("--work-plan", required=True)
+    expertise_validate_work.add_argument("--research-evidence")
+    expertise_validate_work.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
+        help="Completed ResearchBundle for one Coverage Pack; repeat per required Pack.",
+    )
+    expertise_validate_work.add_argument("--json", action="store_true")
+    expertise_close_work = expertise_commands.add_parser(
+        "close-work",
+        help="Close every expected read-only Expertise batch before the writer",
+    )
+    expertise_close_work.add_argument("--work-plan", required=True)
+    expertise_close_work.add_argument(
+        "--packet",
+        action="append",
+        default=[],
+        required=True,
+    )
+    expertise_close_work.add_argument("--json", action="store_true")
+    expertise_validate_closure = expertise_commands.add_parser(
+        "validate-closure",
+        help="Validate an Expertise closure without granting writer authority",
+    )
+    expertise_validate_closure.add_argument("--work-plan", required=True)
+    expertise_validate_closure.add_argument("--closure", required=True)
+    expertise_validate_closure.add_argument("--json", action="store_true")
+    expertise_plan_adaptation = expertise_commands.add_parser(
+        "plan-adaptation",
+        help=(
+            "Allocate every Task Coverage item before parallel candidate work"
+        ),
+    )
+    expertise_plan_adaptation.add_argument("--repo", default=".")
+    expertise_plan_adaptation.add_argument("--goal", required=True)
+    expertise_plan_adaptation.add_argument("--coverage", required=True)
+    expertise_plan_adaptation.add_argument("--source-route", required=True)
+    expertise_plan_adaptation.add_argument(
+        "--source-admission",
+        required=True,
+    )
+    expertise_plan_adaptation.add_argument("--draft", required=True)
+    expertise_plan_adaptation.add_argument("--json", action="store_true")
+    expertise_validate_adaptation = expertise_commands.add_parser(
+        "validate-adaptation",
+        help="Validate one complete read-only Expertise adaptation plan",
+    )
+    expertise_validate_adaptation.add_argument("--repo", default=".")
+    expertise_validate_adaptation.add_argument("--goal", required=True)
+    expertise_validate_adaptation.add_argument("--coverage", required=True)
+    expertise_validate_adaptation.add_argument(
+        "--source-route",
+        required=True,
+    )
+    expertise_validate_adaptation.add_argument(
+        "--source-admission",
+        required=True,
+    )
+    expertise_validate_adaptation.add_argument("--plan", required=True)
+    expertise_validate_adaptation.add_argument("--json", action="store_true")
     expertise_validate = expertise_commands.add_parser(
         "validate-candidate",
         help="Validate one complete candidate bundle without writing files",
@@ -389,6 +561,37 @@ def parser() -> argparse.ArgumentParser:
     expertise_validate.add_argument("--repo", default=".")
     expertise_validate.add_argument("--candidate", required=True)
     expertise_validate.add_argument("--json", action="store_true")
+    expertise_evaluation = expertise_commands.add_parser(
+        "evaluation-subject",
+        help="Freeze candidate and case digests for a separate evaluator",
+    )
+    expertise_evaluation.add_argument("--repo", default=".")
+    expertise_evaluation.add_argument("--candidate", required=True)
+    expertise_evaluation.add_argument("--json", action="store_true")
+    expertise_origin = expertise_commands.add_parser(
+        "origin-record",
+        help="Build an external provenance receipt for one candidate ID",
+    )
+    expertise_origin.add_argument(
+        "--namespace",
+        choices=["expertise", "components"],
+        required=True,
+    )
+    expertise_origin.add_argument("--candidate", required=True)
+    expertise_origin.add_argument("--subject-ref", required=True)
+    expertise_origin.add_argument(
+        "--mode",
+        choices=["task-gap", "user-requested", "automatic"],
+        required=True,
+    )
+    expertise_origin.add_argument("--signal-fingerprint")
+    expertise_origin.add_argument("--goal-digest")
+    expertise_origin.add_argument("--adaptation-plan-id")
+    expertise_origin.add_argument("--source-admission-id")
+    expertise_origin.add_argument("--unit-id")
+    expertise_origin.add_argument("--change-set-id")
+    expertise_origin.add_argument("--authorization-ref")
+    expertise_origin.add_argument("--json", action="store_true")
     expertise_activate = expertise_commands.add_parser(
         "activate",
         help="Preview or apply candidate publication as a tracked project pilot",
@@ -475,6 +678,13 @@ def parser() -> argparse.ArgumentParser:
     )
     expertise_change_set.add_argument("--apply-plan")
     expertise_change_set.add_argument("--json", action="store_true")
+    expertise_validate_change_set = expertise_commands.add_parser(
+        "validate-change-set",
+        help="Validate explicit membership and semantic topology",
+    )
+    expertise_validate_change_set.add_argument("--repo", default=".")
+    expertise_validate_change_set.add_argument("--id", required=True)
+    expertise_validate_change_set.add_argument("--json", action="store_true")
     expertise_promotion_decision = expertise_commands.add_parser(
         "promotion-decision",
         help="Decline or reconsider the global promotion of one candidate",
@@ -545,6 +755,99 @@ def parser() -> argparse.ArgumentParser:
     component_validate.add_argument("--repo", default=".")
     component_validate.add_argument("--candidate", required=True)
     component_validate.add_argument("--json", action="store_true")
+    component_evaluation = component_commands.add_parser(
+        "evaluation-subject",
+        help="Freeze component definition and cases for a separate evaluator",
+    )
+    component_evaluation.add_argument("--repo", default=".")
+    component_evaluation.add_argument("--candidate", required=True)
+    component_evaluation.add_argument("--json", action="store_true")
+
+    coverage = commands.add_parser(
+        "coverage",
+        help="Bind a declared task inventory before bounded routing",
+    )
+    coverage.add_argument("--repo", default=".")
+    coverage.add_argument("--goal", required=True)
+    coverage.add_argument(
+        "--draft",
+        required=True,
+        help="Host-declared discovery and allocation inventory JSON",
+    )
+    coverage.add_argument("--json", action="store_true")
+
+    validate_coverage = commands.add_parser(
+        "validate-coverage",
+        help="Validate Task Coverage without granting execution authority",
+    )
+    validate_coverage.add_argument("--repo", default=".")
+    validate_coverage.add_argument("--goal", required=True)
+    validate_coverage.add_argument("--coverage", required=True)
+    validate_coverage.add_argument("--json", action="store_true")
+    project_coverage = commands.add_parser(
+        "project-coverage",
+        help="Bind project facts, owner decisions, and exact checks as typed Coverage evidence",
+    )
+    project_coverage.add_argument("--repo", default=".")
+    project_coverage.add_argument("--goal", required=True)
+    project_coverage.add_argument("--coverage", required=True)
+    project_coverage.add_argument("--plan", required=True)
+    project_coverage.add_argument("--draft", required=True)
+    project_coverage.add_argument("--research-evidence")
+    project_coverage.add_argument("--json", action="store_true")
+    validate_coverage_projection_parser = commands.add_parser(
+        "validate-coverage-projection",
+        help="Revalidate typed Coverage evidence against current state",
+    )
+    validate_coverage_projection_parser.add_argument("--repo", default=".")
+    validate_coverage_projection_parser.add_argument("--goal", required=True)
+    validate_coverage_projection_parser.add_argument(
+        "--coverage",
+        required=True,
+    )
+    validate_coverage_projection_parser.add_argument("--plan", required=True)
+    validate_coverage_projection_parser.add_argument(
+        "--projection",
+        required=True,
+    )
+    validate_coverage_projection_parser.add_argument(
+        "--research-evidence"
+    )
+    validate_coverage_projection_parser.add_argument(
+        "--json",
+        action="store_true",
+    )
+    admit_coverage = commands.add_parser(
+        "admit-coverage",
+        help=(
+            "Compare every Task Coverage allocation with a concrete route"
+        ),
+    )
+    admit_coverage.add_argument("--repo", default=".")
+    admit_coverage.add_argument("--goal", required=True)
+    admit_coverage.add_argument("--coverage", required=True)
+    admit_coverage.add_argument("--plan", required=True)
+    admit_coverage.add_argument(
+        "--projected-item",
+        action="append",
+        default=[],
+        help="Legacy diagnostic only; bare item IDs no longer satisfy Coverage.",
+    )
+    admit_coverage.add_argument(
+        "--candidate",
+        action="append",
+        default=[],
+    )
+    admit_coverage.add_argument("--research-evidence")
+    admit_coverage.add_argument("--coverage-projection")
+    admit_coverage.add_argument("--expertise-work-plan")
+    admit_coverage.add_argument("--expertise-closure")
+    admit_coverage.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
+    )
+    admit_coverage.add_argument("--json", action="store_true")
 
     route = commands.add_parser("route", help="Create a deterministic Lens and Executor plan")
     route.add_argument(
@@ -610,10 +913,31 @@ def parser() -> argparse.ArgumentParser:
         help="One eligible Expertise Pack explicitly selected by the user.",
     )
     route.add_argument(
+        "--design-assurance-mode",
+        choices=["compact", "standard", "system"],
+        help=(
+            "Product Design assurance depth for work_kind=user-interface. "
+            "Defaults to standard; compact is only for proven existing-system reuse."
+        ),
+    )
+    route.add_argument(
         "--prior-route-plan",
         help=(
             "Exact initial route v2 plan when producing the stage's one "
             "corrected route. Attach only the final plan to an observation."
+        ),
+    )
+    route.add_argument(
+        "--coverage",
+        help="Complete Task Coverage artifact to bind as a required mutation gate.",
+    )
+    route.add_argument(
+        "--model-policy-overlay",
+        action="append",
+        default=[],
+        help=(
+            "Explicitly accepted project-local model feedback overlay; "
+            "repeat for independent route subjects"
         ),
     )
     route.add_argument("--json", action="store_true")
@@ -680,6 +1004,23 @@ def parser() -> argparse.ArgumentParser:
             "expertise research gate"
         ),
     )
+    assignment_project.add_argument("--coverage")
+    assignment_project.add_argument("--coverage-admission")
+    assignment_project.add_argument("--coverage-projection")
+    assignment_project.add_argument("--expertise-work-plan")
+    assignment_project.add_argument("--expertise-closure")
+    assignment_project.add_argument(
+        "--design-decision",
+        help=(
+            "Validated Product Design decision Packet required before an "
+            "assured UI mutation Assignment"
+        ),
+    )
+    assignment_project.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
+    )
     assignment_project.add_argument("--json", action="store_true")
 
     validate_packet = commands.add_parser(
@@ -712,6 +1053,33 @@ def parser() -> argparse.ArgumentParser:
     validate_research.add_argument("--artifact", required=True)
     validate_research.add_argument("--json", action="store_true")
 
+    design_assurance = commands.add_parser(
+        "design-assurance",
+        help="Build or validate the pre-mutation Product Design decision gate",
+    )
+    design_assurance_commands = design_assurance.add_subparsers(
+        dest="design_assurance_command",
+        required=True,
+    )
+    design_assurance_build = design_assurance_commands.add_parser(
+        "build",
+        help="Bind a complete design decision draft to one exact route plan",
+    )
+    design_assurance_build.add_argument("--repo", default=".")
+    design_assurance_build.add_argument("--plan", required=True)
+    design_assurance_build.add_argument("--draft", required=True)
+    design_assurance_build.add_argument("--research-evidence")
+    design_assurance_build.add_argument("--json", action="store_true")
+    design_assurance_validate = design_assurance_commands.add_parser(
+        "validate",
+        help="Revalidate a Product Design decision Packet before mutation",
+    )
+    design_assurance_validate.add_argument("--repo", default=".")
+    design_assurance_validate.add_argument("--plan", required=True)
+    design_assurance_validate.add_argument("--packet", required=True)
+    design_assurance_validate.add_argument("--research-evidence")
+    design_assurance_validate.add_argument("--json", action="store_true")
+
     decide = commands.add_parser(
         "decide",
         help="Create a read-only specialist decision plan before implementation",
@@ -730,6 +1098,14 @@ def parser() -> argparse.ArgumentParser:
     )
     decide.add_argument("--host", default="codex")
     decide.add_argument(
+        "--design-assurance-mode",
+        choices=["compact", "standard", "system"],
+        help=(
+            "Product Design assurance depth for work_kind=user-interface; "
+            "defaults to standard."
+        ),
+    )
+    decide.add_argument(
         "--research-evidence",
         help=(
             "Path to a validated synthesized ResearchBundle satisfying a "
@@ -742,6 +1118,31 @@ def parser() -> argparse.ArgumentParser:
             "Optional expected SHA-256 digest; valid only together with "
             "--research-evidence"
         ),
+    )
+    decide.add_argument(
+        "--work-kind",
+        action="append",
+        default=[],
+        choices=sorted(WORK_KIND_TO_PACK_ID),
+        help="Host-confirmed work kind; preserved through decision enactment.",
+    )
+    decide.add_argument(
+        "--affected-path",
+        action="append",
+        default=[],
+        help="Repository-relative path recorded in the Expertise route hints.",
+    )
+    decide.add_argument(
+        "--explicit-pack",
+        help="One eligible Expertise Pack explicitly selected by the user.",
+    )
+    decide.add_argument(
+        "--prior-route-plan",
+        help="Exact initial route v2 plan when deciding after one task-gap correction.",
+    )
+    decide.add_argument(
+        "--coverage",
+        help="Complete Task Coverage artifact to preserve through decision enactment.",
     )
     decide.add_argument("--json", action="store_true")
 
@@ -776,6 +1177,23 @@ def parser() -> argparse.ArgumentParser:
     enact.add_argument(
         "--research-evidence",
         help="Exact completed ResearchBundle when the decision gate is satisfied.",
+    )
+    enact.add_argument(
+        "--prior-route-plan",
+        help="Exact initial route v2 plan bound by corrected decision route hints.",
+    )
+    enact.add_argument(
+        "--coverage",
+        help="Exact Task Coverage artifact bound by the decision plan.",
+    )
+    enact.add_argument(
+        "--model-policy-overlay",
+        action="append",
+        default=[],
+        help=(
+            "Explicitly accepted model feedback overlay applied only while "
+            "creating the new enactment Route"
+        ),
     )
     enact.add_argument("--json", action="store_true")
 
@@ -1024,6 +1442,26 @@ def parser() -> argparse.ArgumentParser:
             "application_observed",
         ],
     )
+    observe_work_finish.add_argument(
+        "--consumes",
+        action="append",
+        default=[],
+        help="Work ID explicitly consumed by this synthesis result",
+    )
+    observe_work_finish.add_argument("--conclusion")
+    observe_work_finish.add_argument("--decision")
+    observe_work_finish.add_argument(
+        "--next-action",
+        choices=[
+            "continue",
+            "revise",
+            "redelegate",
+            "verify",
+            "finish",
+            "blocked",
+            "user_decision",
+        ],
+    )
     observe_work_finish.add_argument("--json", action="store_true")
     observe_host = observe_commands.add_parser(
         "host",
@@ -1052,11 +1490,12 @@ def parser() -> argparse.ArgumentParser:
     applied_model.add_argument("--actual-model", help=argparse.SUPPRESS)
     observe_host.add_argument(
         "--model-event-evidence",
-        choices=["unavailable", "complete"],
+        choices=["unavailable", "request_only", "complete"],
         default="unavailable",
         help=(
-            "Use complete only when the Host observed turn completion and the "
-            "full model/reroute event stream."
+            "Use request_only when the Host request is known but the applied "
+            "model is not; use complete only when the Host observed turn "
+            "completion and the full model/reroute event stream."
         ),
     )
     observe_host.add_argument(
@@ -1168,6 +1607,20 @@ def parser() -> argparse.ArgumentParser:
     host_codex.add_argument(
         "--research-evidence",
         help="Exact completed ResearchBundle bound to a satisfied research gate",
+    )
+    host_codex.add_argument("--coverage")
+    host_codex.add_argument("--coverage-admission")
+    host_codex.add_argument("--coverage-projection")
+    host_codex.add_argument("--expertise-work-plan")
+    host_codex.add_argument("--expertise-closure")
+    host_codex.add_argument(
+        "--design-decision",
+        help="Exact Product Design decision Packet used to reconstruct an assured writer projection",
+    )
+    host_codex.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
     )
     host_codex.add_argument(
         "--observation",
@@ -1334,6 +1787,23 @@ def parser() -> argparse.ArgumentParser:
     )
     classify.add_argument("--input", required=True)
     classify.add_argument("--json", action="store_true")
+    accept_model_feedback = govern_commands.add_parser(
+        "accept-model-feedback",
+        help=(
+            "Create one non-mutating project-local overlay from an eligible "
+            "model feedback group"
+        ),
+    )
+    accept_model_feedback.add_argument("--repo", default=".")
+    accept_model_feedback.add_argument("--report", required=True)
+    accept_model_feedback.add_argument("--group", required=True)
+    accept_model_feedback.add_argument(
+        "--basis",
+        choices=["owner_decision", "held_out_evaluation"],
+        required=True,
+    )
+    accept_model_feedback.add_argument("--approval-ref", required=True)
+    accept_model_feedback.add_argument("--json", action="store_true")
     return root
 
 
@@ -1453,10 +1923,141 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "plan-adaptation"
+        ):
+            result = build_expertise_adaptation_plan(
+                args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                source_route=read_json(
+                    Path(args.source_route).expanduser().resolve()
+                ),
+                source_admission=read_json(
+                    Path(args.source_admission).expanduser().resolve()
+                ),
+                draft=read_json(
+                    Path(args.draft).expanduser().resolve()
+                ),
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "validate-adaptation"
+        ):
+            result = validate_expertise_adaptation_plan(
+                read_json(Path(args.plan).expanduser().resolve()),
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                source_route=read_json(
+                    Path(args.source_route).expanduser().resolve()
+                ),
+                source_admission=read_json(
+                    Path(args.source_admission).expanduser().resolve()
+                ),
+                goal=args.goal,
+                repo_path=args.repo,
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "expertise" and args.expertise_command == "list":
             result = expertise_inventory(args.repo)
             _emit(result, args.json)
             return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "plan-work"
+        ):
+            result = build_expertise_work_plan(
+                args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                plan=read_json(Path(args.plan).expanduser().resolve()),
+                draft=read_json(Path(args.draft).expanduser().resolve()),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+                expertise_research_bundles=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.expertise_research_evidence
+                ],
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "validate-work"
+        ):
+            result = validate_expertise_work_plan(
+                read_json(
+                    Path(args.work_plan).expanduser().resolve()
+                ),
+                repo_path=args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                plan=read_json(Path(args.plan).expanduser().resolve()),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+                expertise_research_bundles=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.expertise_research_evidence
+                ],
+            )
+            _emit(result, args.json)
+            if result["status"] != "PASS":
+                return 2
+            return 0 if result.get("execution_status") == "READY" else 4
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "close-work"
+        ):
+            result = build_expertise_work_closure(
+                read_json(
+                    Path(args.work_plan).expanduser().resolve()
+                ),
+                [
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.packet
+                ],
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "READY" else 4
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "validate-closure"
+        ):
+            result = validate_expertise_work_closure(
+                read_json(Path(args.closure).expanduser().resolve()),
+                work_plan=read_json(
+                    Path(args.work_plan).expanduser().resolve()
+                ),
+            )
+            _emit(result, args.json)
+            if result["status"] != "PASS":
+                return 2
+            return 0 if result["execution_status"] == "READY" else 4
         if (
             args.command == "expertise"
             and args.expertise_command == "validate-candidate"
@@ -1467,6 +2068,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "origin-record"
+        ):
+            result = build_expertise_candidate_origin(
+                namespace=args.namespace,
+                candidate_id=args.candidate,
+                subject_ref=args.subject_ref,
+                mode=args.mode,
+                signal_fingerprint=args.signal_fingerprint,
+                goal_digest=args.goal_digest,
+                adaptation_plan_id=args.adaptation_plan_id,
+                source_admission_id=args.source_admission_id,
+                unit_id=args.unit_id,
+                change_set_id=args.change_set_id,
+                authorization_ref=args.authorization_ref,
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "expertise"
+            and args.expertise_command == "evaluation-subject"
+        ):
+            result = expertise_evaluation_subject(
+                args.repo,
+                args.candidate,
+            )
+            _emit(result, args.json)
+            return 0
         if args.command == "expertise" and args.expertise_command == "activate":
             if args.apply_plan:
                 result = apply_expertise_activation_plan(
@@ -1642,6 +2272,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if (
             args.command == "expertise"
+            and args.expertise_command == "validate-change-set"
+        ):
+            result = validate_expertise_change_set_manifest(
+                args.repo,
+                args.id,
+                validate_members=True,
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
+        if (
+            args.command == "expertise"
             and args.expertise_command == "promotion-decision"
         ):
             if args.apply_plan:
@@ -1744,50 +2385,148 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
-        if args.command == "route":
-            prior_route_plan = (
-                read_json(
-                    Path(args.prior_route_plan).expanduser().resolve()
-                )
-                if args.prior_route_plan
-                else None
+        if (
+            args.command == "component"
+            and args.component_command == "evaluation-subject"
+        ):
+            result = component_evaluation_subject(
+                args.repo,
+                args.candidate,
             )
-            if prior_route_plan is not None:
-                prior_validation = validate_route_v2(
-                    prior_route_plan,
-                    repo_path=args.repo,
+            _emit(result, args.json)
+            return 0
+        if args.command == "coverage":
+            draft = read_json(Path(args.draft).expanduser().resolve())
+            result = build_task_coverage(args.repo, args.goal, draft)
+            _emit(result, args.json)
+            return (
+                0
+                if (
+                    result["discovery_status"] == "complete"
+                    and result["allocation_status"] == "complete"
                 )
-                if prior_validation["status"] != "PASS":
-                    first_issue = prior_validation["issues"][0]
-                    raise MaestroError(
-                        first_issue["code"],
-                        first_issue["message"],
+                else 4
+            )
+        if args.command == "validate-coverage":
+            coverage_artifact = read_json(
+                Path(args.coverage).expanduser().resolve()
+            )
+            result = validate_task_coverage(
+                coverage_artifact,
+                goal=args.goal,
+                repo_path=args.repo,
+            )
+            _emit(result, args.json)
+            if result["status"] != "PASS":
+                return 2
+            return 0 if result["coverage_status"] == "COMPLETE" else 4
+        if args.command == "project-coverage":
+            result = build_coverage_projection(
+                args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                plan=read_json(Path(args.plan).expanduser().resolve()),
+                draft=read_json(Path(args.draft).expanduser().resolve()),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
                     )
-            has_route_hints = bool(
-                args.work_kind
-                or args.affected_path
-                or args.explicit_pack
-                or prior_route_plan is not None
+                    if args.research_evidence
+                    else None
+                ),
             )
-            route_hints = (
-                normalize_route_hints(
-                    work_kinds=args.work_kind,
-                    affected_paths=args.affected_path,
-                    explicit_pack_id=args.explicit_pack,
-                    route_attempt=2 if prior_route_plan is not None else 1,
-                    prior_plan_id=(
-                        prior_route_plan.get("plan_id")
-                        if prior_route_plan is not None
-                        else None
-                    ),
-                    prior_source_route_digest=(
-                        prior_route_plan.get("source_route_digest")
-                        if prior_route_plan is not None
-                        else None
-                    ),
-                )
-                if has_route_hints
-                else None
+            _emit(result, args.json)
+            return 0
+        if args.command == "validate-coverage-projection":
+            result = validate_coverage_projection(
+                read_json(
+                    Path(args.projection).expanduser().resolve()
+                ),
+                repo_path=args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                plan=read_json(Path(args.plan).expanduser().resolve()),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
+        if args.command == "admit-coverage":
+            result = build_task_coverage_admission(
+                args.repo,
+                goal=args.goal,
+                coverage=read_json(
+                    Path(args.coverage).expanduser().resolve()
+                ),
+                plan=read_json(Path(args.plan).expanduser().resolve()),
+                projected_item_ids=args.projected_item,
+                candidate_ids=args.candidate,
+                coverage_projection=(
+                    read_json(
+                        Path(args.coverage_projection)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.coverage_projection
+                    else None
+                ),
+                expertise_work_plan=(
+                    read_json(
+                        Path(args.expertise_work_plan)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_work_plan
+                    else None
+                ),
+                expertise_closure=(
+                    read_json(
+                        Path(args.expertise_closure)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_closure
+                    else None
+                ),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+                expertise_research_bundles=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.expertise_research_evidence
+                ],
+            )
+            _emit(result, args.json)
+            if result["status"] == "INVALID":
+                return 2
+            return 0 if result["status"] == "READY" else 4
+        if args.command == "route":
+            route_hints, prior_route_plan = _load_route_hint_inputs(
+                repo_path=args.repo,
+                work_kinds=args.work_kind,
+                affected_paths=args.affected_path,
+                explicit_pack_id=args.explicit_pack,
+                prior_route_plan_path=args.prior_route_plan,
+                design_assurance_mode=args.design_assurance_mode,
             )
             if route_hints is not None and args.route_version != "v2":
                 raise MaestroError(
@@ -1815,12 +2554,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                     repo_path=args.repo,
                     route_hints=route_hints,
                     prior_route_plan=prior_route_plan,
+                    coverage=(
+                        read_json(
+                            Path(args.coverage)
+                            .expanduser()
+                            .resolve()
+                        )
+                        if args.coverage
+                        else None
+                    ),
+                    model_policy_overlays=[
+                        read_json(Path(path).expanduser().resolve())
+                        for path in args.model_policy_overlay
+                    ],
                 )
             else:
-                if research_evidence is not None:
+                if (
+                    research_evidence is not None
+                    or args.coverage
+                    or args.model_policy_overlay
+                    or args.design_assurance_mode
+                ):
                     raise MaestroError(
                         "ROUTE_VERSION_REQUIRED",
-                        "--research-evidence is supported only by route v2.",
+                        "Research evidence and Coverage binding are supported only by route v2.",
                     )
                 result = route_goal(
                     args.goal,
@@ -1841,10 +2598,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.research_evidence
                 else None
             )
-            result = validate_route_v2(
-                read_json(Path(args.plan).expanduser().resolve()),
-                repo_path=args.repo,
-                research_bundle=research_bundle,
+            plan_value = read_json(
+                Path(args.plan).expanduser().resolve()
+            )
+            result = (
+                validate_execution_plan(
+                    plan_value,
+                    repo_path=args.repo,
+                    research_bundle=research_bundle,
+                )
+                if (
+                    isinstance(plan_value, dict)
+                    and plan_value.get("schema_version")
+                    == EXECUTION_PLAN_VERSION
+                )
+                else validate_route_v2(
+                    plan_value,
+                    repo_path=args.repo,
+                    research_bundle=research_bundle,
+                )
             )
             _emit(result, args.json)
             if result["status"] != "PASS":
@@ -1875,6 +2647,60 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.research_evidence
                     else None
                 ),
+                coverage=(
+                    read_json(Path(args.coverage).expanduser().resolve())
+                    if args.coverage
+                    else None
+                ),
+                coverage_admission=(
+                    read_json(
+                        Path(args.coverage_admission)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.coverage_admission
+                    else None
+                ),
+                coverage_projection=(
+                    read_json(
+                        Path(args.coverage_projection)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.coverage_projection
+                    else None
+                ),
+                expertise_work_plan=(
+                    read_json(
+                        Path(args.expertise_work_plan)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_work_plan
+                    else None
+                ),
+                expertise_closure=(
+                    read_json(
+                        Path(args.expertise_closure)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_closure
+                    else None
+                ),
+                design_decision_packet=(
+                    read_json(
+                        Path(args.design_decision)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.design_decision
+                    else None
+                ),
+                expertise_research_bundles=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.expertise_research_evidence
+                ],
             )
             _emit(result, args.json)
             if result["status"] == "FAIL":
@@ -1910,13 +2736,62 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit(result, args.json)
             return 0 if result["status"] == "PASS" else 2
+        if (
+            args.command == "design-assurance"
+            and args.design_assurance_command == "build"
+        ):
+            result = build_design_decision_packet(
+                args.repo,
+                read_json(Path(args.plan).expanduser().resolve()),
+                read_json(Path(args.draft).expanduser().resolve()),
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+            )
+            _emit(result, args.json)
+            return 0
+        if (
+            args.command == "design-assurance"
+            and args.design_assurance_command == "validate"
+        ):
+            result = validate_design_decision_packet(
+                read_json(Path(args.packet).expanduser().resolve()),
+                read_json(Path(args.plan).expanduser().resolve()),
+                repo_path=args.repo,
+                research_bundle=(
+                    read_json(
+                        Path(args.research_evidence)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.research_evidence
+                    else None
+                ),
+            )
+            _emit(result, args.json)
+            return 0 if result["status"] == "PASS" else 2
         if args.command == "decide":
+            route_hints, prior_route_plan = _load_route_hint_inputs(
+                repo_path=args.repo,
+                work_kinds=args.work_kind,
+                affected_paths=args.affected_path,
+                explicit_pack_id=args.explicit_pack,
+                prior_route_plan_path=args.prior_route_plan,
+                design_assurance_mode=args.design_assurance_mode,
+            )
             research_evidence = _research_evidence_digest(
                 args.research_evidence,
                 args.research_evidence_digest,
                 repo_path=args.repo,
                 goal=args.goal,
                 intent=args.intent,
+                route_hints=route_hints,
             )
             result = build_decision_plan(
                 args.repo,
@@ -1925,6 +2800,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 host_id=args.host,
                 intent=args.intent,
                 research_evidence=research_evidence,
+                route_hints=route_hints,
+                prior_route_plan=prior_route_plan,
+                coverage=(
+                    read_json(
+                        Path(args.coverage).expanduser().resolve()
+                    )
+                    if args.coverage
+                    else None
+                ),
             )
             _emit(result, args.json)
             gate = result["expertise"]["research_requirement"]["gate"]
@@ -1963,6 +2847,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 authorization_source=args.authorization_source,
                 host_id=args.host,
                 research_evidence=research_evidence,
+                prior_route_plan=(
+                    read_json(
+                        Path(args.prior_route_plan)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.prior_route_plan
+                    else None
+                ),
+                coverage=(
+                    read_json(
+                        Path(args.coverage).expanduser().resolve()
+                    )
+                    if args.coverage
+                    else None
+                ),
+                model_policy_overlays=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.model_policy_overlay
+                ],
             )
             _emit(result, args.json)
             return 0
@@ -2077,6 +2981,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result, args.json)
             return 0
         if args.command == "observe" and args.observe_command == "work-finish":
+            outcome = (
+                {
+                    "finding_summary": None,
+                    "conclusion": args.conclusion,
+                    "decision": args.decision,
+                    "next_action": args.next_action,
+                    "consumed_work_ids": args.consumes,
+                    "handoff": None,
+                    "artifacts": [],
+                    "verification": None,
+                }
+                if (
+                    args.consumes
+                    or args.conclusion is not None
+                    or args.decision is not None
+                    or args.next_action is not None
+                )
+                else None
+            )
             result = record_work_finish(
                 args.repo,
                 observation_id=args.observation,
@@ -2086,6 +3009,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result_summary=args.summary,
                 evidence_refs=args.evidence,
                 expertise_evidence=args.expertise_evidence,
+                outcome=outcome,
             )
             _emit(result, args.json)
             return 0
@@ -2148,6 +3072,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dependency_packet_paths=args.dependency_packet,
                 dependency_projection_paths=args.dependency_projection,
                 research_evidence_path=args.research_evidence,
+                coverage_path=args.coverage,
+                coverage_admission_path=args.coverage_admission,
+                coverage_projection_path=args.coverage_projection,
+                expertise_work_plan_path=args.expertise_work_plan,
+                expertise_closure_path=args.expertise_closure,
+                design_decision_path=args.design_decision,
+                expertise_research_evidence_paths=(
+                    args.expertise_research_evidence
+                ),
                 observation_id=args.observation,
                 sandbox=args.sandbox,
                 model=args.model,
@@ -2234,6 +3167,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = classify_surface_file(args.input)
             _emit(result, args.json)
             return 0 if result["status"] == "classified" else 2
+        if (
+            args.command == "govern"
+            and args.govern_command == "accept-model-feedback"
+        ):
+            result = build_model_policy_overlay(
+                read_json(Path(args.report).expanduser().resolve()),
+                group_id=args.group,
+                basis=args.basis,
+                approval_ref=args.approval_ref,
+                repo_path=args.repo,
+            )
+            _emit(result, args.json)
+            return 0
     except MaestroError as exc:
         error = {
             "schema_version": "maestro_error_v1",
