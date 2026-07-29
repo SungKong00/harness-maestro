@@ -11,10 +11,10 @@
   },
   "kind": "lock",
   "managed": {
-    "sha256": "5f5cc0a24e6875a91a309d4f65580c3157ea4cbb059151835594eb34e69d78a3"
+    "sha256": "fdc604277cfeb6204b9c3a3c1eb34982ea9929a919bf44246d90a5586bbf06bd"
   },
   "registry": {
-    "sha256": "bfc8a3eec2a2f95a3d2b233db320dc473e7179e7a6f4d34b834ba556421f6905",
+    "sha256": "0091b249b07d99d5b57d491715ded179acbf377743b35062725fd26f232194b7",
     "version": 1
   },
   "schema_version": "maestro_lock_v1"
