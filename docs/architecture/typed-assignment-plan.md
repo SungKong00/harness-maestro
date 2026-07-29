@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Route v1 호환 Typed Assignment Plan, 실행 전 의미 검증과 관측·HTML·재개 기능의 도입 경계.
 scope: [src/maestro/planning.py, src/maestro/cli.py, route-v2, validation, inspector]
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -20,7 +20,7 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 `maestro_route_v1`을 호환 입력으로 유지하면서, Host가 실행 전에 확인할 수 있는
 작고 고정된 Assignment DAG로 정규화한다.
 
-이번 범위에서 채택하는 것은 다음 일곱 가지다.
+이번 범위에서 채택하는 것은 다음 여덟 가지다.
 
 1. 기존 route를 최대 5개의 typed Assignment로 정규화한다.
 2. Assignment마다 Executor, Lens, 의존 관계, 입출력 Packet, side effect와 model
@@ -32,8 +32,11 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
    `AssignmentInput`으로 투영한다.
 7. 일반 reviewer의 FindingPacket과 나머지 Assignment의 terminal result를
    plan·Assignment에 결합해 downstream 전달 전에 검증한다.
+8. 넓은 작업의 Coverage, typed project evidence, multi-Pack work closure와 final
+   admission을 별도 sidecar로 검증하고 mutation Assignment에 그대로 재투영한다.
 
-실제 agent 생성, 실행 순서 제어, retry, checkpoint, resume와 per-call trace는
+실제 agent 생성, 실행 순서 제어, Expertise batch scheduling, retry, checkpoint,
+resume와 per-call trace는
 현재 구현 범위가 아니다. 실행 뒤 compact metadata를 읽는 HTML 운영 뷰어는 별도
 구조로 구현했으며 scheduler나 replay 기능을 갖지 않는다.
 
@@ -41,11 +44,14 @@ Harness Maestro는 scheduler나 장기 실행 runtime이 아니다. 기존
 
 ```text
 사용자 요청
+  → 넓은 작업이면 Task Coverage 작성·검증
   → route v1이 문서·Lens·Executor를 선택
   → route v2가 고정 Assignment Plan으로 정규화
+  → Coverage를 사용하면 typed project evidence와 multi-Pack work를 검증
+  → final Coverage admission READY
   → pre-execution validator가 참조·연결·권한·상한 검사
   → Main이 실제 artifact에서 작은 Engineering Baseline 작성
-  → CLI가 Assignment별 허용 입력만 투영
+  → CLI가 Assignment별 허용 입력과 exact Coverage sidecar를 투영
   → Codex 같은 Host가 그 투영으로 Assignment를 실행
   → CLI가 반환 Packet을 plan·Assignment에 결합해 검증
   → 명령과 artifact로 검증
@@ -78,7 +84,14 @@ ResearchBundle을 다시 주지 않으면 구조는 PASS지만 실행 상태는
 ```bash
 maestro assignment project --repo . \
   --plan route-v2.json --assignment review-contract \
-  --baseline baseline.json --json \
+  --baseline baseline.json \
+  [--coverage coverage.json \
+   --coverage-admission admission.json \
+   --coverage-projection coverage-projection.json \
+   --expertise-work-plan work-plan.json \
+   --expertise-closure closure.json \
+   --expertise-research-evidence pack-bundle.json]... \
+  --json \
   > assignment-input.json
 
 maestro validate-packet --repo . \
@@ -104,6 +117,12 @@ maestro host codex --repo . --run-id <run-id> --task-label "<label>" \
   [--dependency-packet <packet.json> \
    --dependency-projection <source-assignment-input.json>] \
   [--research-evidence research-bundle.json] \
+  [--coverage coverage.json \
+   --coverage-admission admission.json \
+   --coverage-projection coverage-projection.json \
+   --expertise-work-plan work-plan.json \
+   --expertise-closure closure.json \
+   --expertise-research-evidence pack-bundle.json]... \
   --observation <parent-observation-id> --json
 ```
 
@@ -119,11 +138,25 @@ Schema를 prompt와 App Server `turn/start.outputSchema`에 동일하게 전달�
 FindingPacket의 inspected·evidence reference·coverage artifact는 projection
 allowlist에, `suggested_lens`는 선택되지 않은 Registry Lens 또는 `null`에 추가로
 결합한다.
-provider가 지원하지 않는 길이·pattern 제약은 output schema에서 제외하되 완료 뒤
-권위 validator가 원래의 닫힌 wire 계약 전체를 다시 검사한다.
+provider가 지원하지 않는 길이·pattern·배열 cardinality 제약은 output schema에서
+제외하되 설명에는 runtime 규칙을 남기고, 완료 뒤 권위 validator가 원래의 닫힌
+wire 계약 전체를 다시 검사한다. 예를 들어 `VerificationVerdict`는 passed일 때
+failure category가 비어야 하고 failed일 때 하나 이상이어야 한다. provider subset이
+이를 통과시켜도 runtime validator는 완료를 기록하지 않는다.
 같은 pending Assignment의 검사와 실행 사이 경쟁은 64개 bounded shard의
 interprocess lease로 막는다. lease는 turn 전체에 유지되고 process 종료 시
 운영체제가 자동 해제하므로 stale timestamp를 신뢰해 writer를 재개하지 않는다.
+
+Coverage-bound multi-Pack 작업은 Task Coverage, final admission, typed Coverage
+projection, Expertise work plan, Expertise closure와 각 open Pack의 exact
+ResearchBundle을 전달한다. Assignment projection과 Host는 같은 파일들로 입력을
+다시 만든다. mutation owner는 admission이 `READY`가 아니거나 하나라도
+누락·변조·stale이면 시작하지 않는다. 과거 호환용 bare projected item ID나 AI가
+다시 쓴 요약문은 이 sidecar를 대신하지 않는다.
+AI는 무엇을 판단해야 하는지, 어떤 Guide가 충분한지, batch 책임과 적용 결론을
+정한다. 이 contract layer는 그 의미 판단을 대신하지 않고 identity·digest·
+exactly-once·dependency·packet·closure·admission만 검증한다. work plan과 closure는
+제출된 선언의 구조를 검증할 뿐 실제 batch 실행·순서·Guide load 증거는 아니다.
 
 ## 작은 Surface Map과 Engineering Baseline
 
@@ -157,6 +190,10 @@ handoff에서만 정형 projection을 사용한다.
 - 선택한 문서·artifact의 path, digest, logical reference
 - 자동 문서 선택 digest와 선택된 Convention의 path·digest·선택 이유
 - 직접 dependency의 **검증된** compact Packet
+- Coverage를 쓴 경우 exact Coverage·final admission과, 해당되는 typed project
+  evidence·Expertise closure
+- Product Design assurance가 활성화된 writer와 verifier의 exact requirement,
+  Design Decision Packet, decision·scenario identity와 writer render result
 - fresh context와 금지 context에 대한 Host 요청
 
 FindingPacket v2는 `plan_id`, `assignment_id`, 전체 `lens_ids`와 finding별
@@ -195,6 +232,8 @@ v2는 v1의 선택 결과, Lens card, binding, handoff, model route와 deliberat
 | `source_route_version`·`source_route_digest` | 보존된 v1 projection과의 무결성 결합 |
 | `registry_digest` | 어떤 Lens·Executor 정의를 사용했는지 고정 |
 | `task_contract` | 목적, 허용 side effect, 종료·중단 조건과 상한 |
+| `coverage_binding` | broad task의 exact Coverage ID·goal digest와 mutation gate |
+| `design_assurance` | UI 작업의 compact/standard/system 범위, 14개 표면, pre-write decision gate와 rendered verification gate |
 | `assignments` | Host가 수행할 review·research·implementation·verification 작업 |
 | `entry_assignments` | 선행 작업 없이 시작할 수 있는 작업 |
 | `terminal_assignments` | 완료돼야 전체 계획을 끝낼 수 있는 작업 |
@@ -243,6 +282,12 @@ Validator는 LLM 판단이 아니라 정적으로 증명할 수 있는 사실만
 - repository writer 최대 한 명
 - Lens, Assignment, 반박, model escalation 상한
 - Assignment 내부 spawn 금지
+- Coverage binding, typed projection, Expertise work plan·closure와 final
+  admission의 exact digest 및 `READY` mutation gate
+- 구조화된 `user-interface` Product Design route의 assurance requirement,
+  compact eligibility와 research 일치, pre-write Decision Packet, material
+  decision·scenario exact closure, viewport와 일치하는 완전 디코드 PNG
+  digest와 verifier pass
 - Engineering Baseline의 bounded surface, 실제 path와 owner/evidence 결합
 - AssignmentInput이 선택된 Lens·Guide·직접 dependency만 포함하는지
 - FindingPacket v2의 plan·Assignment·다중 Lens 결합과 evidence/gap 한도

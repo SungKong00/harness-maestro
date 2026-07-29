@@ -26,6 +26,13 @@ Give each case observable criteria and forbidden behavior. Compare the baseline,
 persona-only prompt, candidate, and candidate plus research only when the gate
 requires it.
 
+Freeze cases only after the Decision Map is complete. Select cases by
+materiality and failure boundary rather than by filling a fixed count. The
+three-to-five shape is the ordinary minimum; add bounded cases when additional
+blocking areas would otherwise have no observable coverage. If the evaluation
+limit is reached, split the candidate or return incomplete instead of dropping
+an area.
+
 ## Pass conditions
 
 Pass only when the candidate:
@@ -63,6 +70,22 @@ distinct bounded references. For every frozen case:
 Do not store prompts, messages, copied pages, transcripts, or hidden reasoning
 in evaluation artifacts. Structural validation proves coverage and integrity,
 not that an evaluator's domain judgment is infallible.
+
+For a `task-gap` candidate, independence is enforced rather than declared:
+
+1. run `maestro expertise evaluation-subject` after the candidate and frozen
+   cases are ready;
+2. give only that frozen subject and the required task context to a separate
+   read-only evaluation stage;
+3. record the stage through Maestro observation state and complete every
+   Assignment in that evaluation observation;
+4. write `maestro_expertise_quality_eval_v2` with the exact candidate digest,
+   cases digest, evaluation run reference, and observation ID;
+5. rerun candidate validation.
+
+Changing the candidate or cases invalidates the subject. Merely renaming the
+authoring run, copying the author's verdict, or defining cases without
+executing them fails closed.
 
 ## In-use review
 

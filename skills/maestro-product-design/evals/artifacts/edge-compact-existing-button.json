@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-compact-existing-button",
+  "baseline_observation": "Product Design v6 allows a generic compact loop but does not define closed eligibility, a one-decision packet, exact token lineage, or a mechanical pre-write and render gate.",
+  "candidate_observation": "Product Design v7 limits compact mode to one evidenced stable-reuse decision: every eligibility claim resolves through current content-addressed project-system evidence, the canonical full token and component refs are explicitly declared in their digest-bound source artifacts and resolve through the bounded inventory, lineage cannot introduce owner, derived, or new values, and one fully decoded PNG must match the declared viewport for the real consuming page. Successful assurance also rejects current-Host fallback attestation and requires owned writer and verifier execution evidence. It still avoids unnecessary external research.",
+  "evidence_refs": [
+    "runtime-test:assured-completion-fallback-rejected",
+    "candidate:design-system-and-components:compact",
+    "candidate:design-system-and-components:required-evidence",
+    "runtime:COMPACT_ELIGIBILITY_FIELDS",
+    "runtime:system-context-inventory",
+    "runtime:content-addressed-basis",
+    "runtime:compact-lineage-policy",
+    "runtime:decoded-png-viewport-check"
+  ]
+}

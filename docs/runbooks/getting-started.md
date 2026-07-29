@@ -165,8 +165,10 @@ maestro route --repo /path/to/project --goal "결제 webhook 재시도 변경" \
 `docs`의 `required_documents`가 기본 읽기 목록이며 `documents`는 같은 목록의
 호환 별칭이다. `optional_documents`에는 관련된 research evidence나 active plan의
 metadata만 들어간다. 현재 작업이 해당 근거 경계를 명시적으로 열었거나 필수 근거가
-부족할 때만 하나씩 연다. `insufficient`이면 누락된 core 문서나 필수 문서 예산을
-먼저 확인한다. Lens 수를 임의로 늘리는 것은 해결책이 아니다.
+부족할 때만 하나씩 연다. `insufficient`이면 누락·draft core 문서, exact target,
+scan truncation 또는 budget에서 빠진 active Convention을 먼저 확인한다. 일반
+우선순위 문서가 budget에서 빠진 사실만으로는 insufficient가 아니다. Lens 수를
+임의로 늘리는 것은 해결책이 아니다.
 
 직접 CLI를 호출하는 기존 자동화의 기본 route 출력은 호환성을 위해 v1이다.
 `maestro` Skill은 실제 작업에서 Assignment 순서와 한 명 writer 경계를 적용하려고
@@ -616,9 +618,11 @@ source license를 확인한 뒤 Harness 저장소의 Skill·Registry·평가에 
 `maestro upgrade`를 적용한 이후에만 새 bundled Pack을 보게 된다. 실행 중 자동
 다운로드나 자동 활성화는 없다.
 
-후보가 Harness Maestro 소스 checkout 자체에 있고 검증된 `global` 새 Pack 또는
-pinned Guide 추가이면, 별도 export 없이 대시보드의 `기본 Pack으로 올리기` 또는
-아래 두 단계 명령으로 Registry·Skill·release manifest에 로컬 반영할 수 있다.
+후보가 Harness Maestro 소스 checkout 자체에 있고 검증된 `global` 새 Pack,
+pinned Guide 추가, 또는 기존 Guide ID와 routing 문자열을 보존한 완전한
+next-version `pack-revision`이면, 별도 export 없이 대시보드의
+`기본 Pack으로 올리기` 또는 아래 두 단계 명령으로 Registry·Skill·release
+manifest에 로컬 반영할 수 있다.
 적용 전 미리보기의 경로와 경고를 검토한다.
 
 ```bash
@@ -633,8 +637,8 @@ rm -- "$maestro_global_plan"
 ```
 
 이 단계는 로컬 소스까지만 바꾸며 stage·commit·push·PR·태그·릴리스를 하지 않는다.
-외부 프로젝트에서 만든 bundle, `profile` 후보와 기존 Guide 수정·폐기 같은 복합
-변경은 아직 일반 PR로 옮겨 검토해야 한다.
+외부 프로젝트에서 만든 bundle, `profile` 후보, Guide 제거·폐기·이동이나 불완전한
+부분 수정은 아직 일반 PR 또는 명시적 topology lifecycle로 옮겨 검토해야 한다.
 
 새 프로젝트 Convention 초안이 필요하면 LLM이 임의로 활성 문서를 바로 쓰게 하지
 말고 preview/apply 경계를 사용한다.

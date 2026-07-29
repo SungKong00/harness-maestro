@@ -85,6 +85,7 @@ sensitivity: internal
 - [ADR-0008: CLI·Registry·Skill의 콘텐츠 기반 릴리스 결합](decisions/0008-content-addressed-release.md)
 - [ADR-0009: 내부 리서치와 평가된 전문성 경계](decisions/0009-internal-research-and-expertise-boundary.md)
 - [ADR-0010: 프로젝트 로컬 Expertise 활성화](decisions/0010-project-local-expertise-activation.md)
+- [ADR-0011: 근거 기반 Product Design assurance](decisions/0011-evidence-backed-product-design-assurance.md)
 
 ## 역사 자료
 

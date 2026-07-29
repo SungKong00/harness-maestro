@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "non-trigger-backend-workflow-graph",
+  "baseline_observation": "Backend graph vocabulary overlaps with visual workflow terms but belongs to scheduling, concurrency, retry, and idempotency decisions.",
+  "candidate_observation": "The corrected operational trigger requires a user-facing run dependency or execution-provenance interface; the backend near-miss remains on Software Engineering.",
+  "evidence_refs": ["route-replay:7a69129237363c6b28de618cb7542006385547eeaf8ca10b2663cd3f36888640", "observed-pack:software-engineering", "candidate:operational-workflow-interface:use-when", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

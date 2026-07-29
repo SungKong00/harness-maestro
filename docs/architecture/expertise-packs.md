@@ -25,14 +25,29 @@ sensitivity: internal
 
 ```text
 사용자 요청
-  → 기존 문서·Lens·Executor route
-  → 맞는 Expertise Pack 최대 1개 선택
-  → 필요한 Decision Guide 최대 4개 선택
-  ├─ 일반 기준으로 충분: reuse → 바로 Assignment 실행
-  └─ 최신 사례·새 분야 필요: research gate
-       → 내부 research Skill의 독립 source lane
-       → 검증된 ResearchBundle 파일로 같은 목표 재-route
-       → gate가 READY일 때만 Assignment 실행
+  → 넓고 누락 위험이 크면 필요한 판단·제약·검증을 먼저 모두 발견
+  → 발견이 끝난 뒤 프로젝트 사실·Guide·Lens·조사·owner 결정·검증에 배분
+  → Coverage 검증 → Coverage를 묶은 첫 route
+  → 프로젝트 사실·owner 결정·검증 근거를 typed projection으로 연결·검증
+  ├─ 모두 덮음
+  │    ├─ 한 route에 들어감: 일반 기준 reuse 또는 필요한 실행용 research
+  │    └─ 기존 Guide가 여러 Pack/Guide 상한을 넘음
+  │         → AI가 전체 Guide pair를 Pack별 read-only 묶음으로 배분
+  │         → 코드가 누락·중복·digest·의존성을 검증
+  │         → 의존성 없는 묶음만 병렬 검토
+  │         → 모든 packet closure 검증
+  └─ 중요한 전문가 판단이 비어 있음
+       → 모든 빈 영역을 adaptation unit으로 만든 뒤 의존성·병렬 그룹 계산
+       → 기존 Guide 수정/추가, 새 Pack, Pack 병합·분할, Guide 이동·복사,
+          Lens 등 가장 작은 책임 단위로 분류
+       → 필요한 unit만 깊은 authoring research
+       → 격리 후보 작성 → 고정된 사례를 별도 평가자가 평가
+       ├─ Pack/Guide 후보: 검증 통과 시 첫 route에 묶어 같은 작업에서 1회 재-route
+       └─ Lens/Registry 후보: 같은 작업에는 쓰지 않고 검토 후보로만 보관
+       → Task Coverage와 최종 route를 다시 대조
+  → 최종 Coverage admission READY
+  → Coverage·projection·work plan·closure·admission을 Assignment/Host에 그대로 전달
+  → 별도로 승인된 한 writer가 작업
   → 실제 결과 검증
   → 선택한 팩·가이드·조사 모드만 RunReceipt에 기록
   → 반복된 재사용 공백만 project-local candidate 검토
@@ -43,9 +58,243 @@ sensitivity: internal
   → 범용성이 검증된 후보만 기여 Bundle로 추출해 Harness 릴리스 검토
 ```
 
+핵심은 “Pack을 하나 고른 다음 거기에 맞춰 필요한 기준을 줄이는 것”이 아니라,
+“필요한 기준을 먼저 모두 찾고, 그 뒤 현재 한 번의 실행 route가 처리할 수 있는
+단위로 나누는 것”이다. 한 route의 Pack 1개·Guide 4개 제한은 컨텍스트 투영
+상한이다. 전체 작업의 판단영역 발견 상한이나 후보 개수 목표가 아니다.
+
+AI는 필요한 판단영역, 기존 Guide의 의미적 충분성, 묶음 책임과 실제 권고를
+판단한다. 코드는 current digest, 정확히 한 번의 pair 배분, 의존성, packet,
+closure와 final admission을 검증한다. 자동 scheduler나 retry engine은 없으며
+`parallel_groups`는 AI/Host가 명시적으로 실행할 지시일 뿐 실행 증거가 아니다.
+
 ## 현재 구현 범위
 
-### 1. Registry와 선택
+### 1. Task Coverage 그림자 계약
+
+`maestro_task_coverage_v1`은 작업마다 Guide 수를 먼저 맞추는 대신 다음 순서를
+명시한다.
+
+1. Host가 필요한 outcome·decision·constraint·prohibition·verification·learning을
+   먼저 선언한다.
+2. 각 항목에 누락 시 실패, 중요도, 필요한 근거 유형과 의존성을 기록한다.
+3. 항목 발견이 끝난 뒤에만 project fact·Expertise Guide·Lens·research·owner
+   decision·runtime verification·checker·Convention 또는 명시적 보류/범위 밖으로
+   배분한다.
+4. 모든 근거 유형이 맞는 lane에 배분됐는지 검증한 뒤 기존 route를 실행한다.
+
+```sh
+maestro coverage --repo . --goal "<goal>" --draft <draft.json> --json > <coverage.json>
+maestro validate-coverage --repo . --goal "<goal>" --coverage <coverage.json> --json
+```
+
+이 계약은 Route v2와 분리된 content-addressed sidecar다. goal, Registry digest와
+Git 작업 상태에 묶이고 항상 `mode=shadow`, `writes_performed=false`다. validator
+응답은 항상 `execution_authority=NONE`을 반환한다. 기존 Route v2 객체·plan digest·
+Pack top-1·Guide 4개·Lens 3개·Assignment 5개 상한을 변경하지 않는다.
+
+`COMPLETE`는 **Host가 선언한 inventory 안에서** 발견·배분이 닫혔다는 뜻이다.
+원 요청의 모든 의미를 Host가 실제로 찾아냈다는 증명은 아니다. `INCOMPLETE`는
+구조상 유효하지만 CLI exit code 4로 실행 전 중단 신호를 준다. 64개 운반 상한을
+초과하면 항목을 자르지 않고 실패하며, 작업을 명시적으로 좁히거나 나눈 뒤
+다시 선언해야 한다. Task Coverage 자체는 여전히 권한 없는 inventory다. 실제
+route 보존 여부는 뒤의 `admit-coverage`가 별도로 판정한다.
+
+각 allocation은 repository·catalog·Executor의 실제 target으로 resolve돼야 한다.
+blocking 항목은 보류나 범위 밖만으로 닫을 수 없으며, resolution은 실제 근거
+사용을 증명하지 않으므로 이후 Assignment evidence가 별도로 필요하다.
+
+작고 방향이 확정된 작업에는 이 sidecar를 만들지 않는다. 여러 독립 판단영역,
+근거 종류 또는 “빠짐없이” 요구가 있어 현재 top-1/Guide 상한 전에 전체 필요 범위를
+보존해야 할 때 사용한다.
+
+#### 작업 중 드러난 전문가 공백
+
+Coverage를 묶은 첫 route에는 project evidence를 typed projection으로 연결하고
+진단용 첫 `admit-coverage`를 실행한다. `PROJECTION_REQUIRED`는 먼저 근거를
+보완한다. `GAPS`가 기존 eligible Guide의 route capacity가 아니라 실제 부재·
+부적격·stale·의미 부족이면
+`maestro_expertise_adaptation_plan_v1`을 만든다.
+
+```sh
+maestro expertise plan-adaptation \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --source-route <first-route.json> \
+  --source-admission <first-admission.json> \
+  --draft <adaptation-draft.json> --json > <adaptation.json>
+```
+
+adaptation draft는 항목 수를 먼저 제한하지 않는다. Coverage의 모든 항목을 정확히
+한 unit이 소유해야 하고, unit 사이의 의존성은 Coverage 의존성과 일치해야 한다.
+그 후에만 위상 순서로 `parallel_groups`를 만든다. 같은 그룹은 동시에 준비할 수
+있다는 뜻이다. 서로 다른 ready unit의 독립 source 조사는 병렬로 실행할 수 있고,
+이미 동결된 서로 다른 후보의 read-only 평가도 병렬로 실행할 수 있다. 그러나 한
+unit 안에서는 `research → candidate 작성 → subject 동결 → 평가` 순서를 넘을 수
+없다. 후보 파일 작성과 실제 프로젝트 구현은 여전히 한 writer만 수행한다.
+
+각 unit은 `none`, checker/schema/test, Convention, Decision Guide, Expertise Pack,
+Lens, standalone Skill, Executor/Agent, Department, Adapter, Research Lane,
+Specialist Contract, Packet contract 중 정확히 하나의 책임 표면으로 분류한다.
+Guide와 Pack unit만 같은 작업에서 사용 가능성을 가질 수 있다. Lens를 포함한
+Registry component unit은 검증된 후보가 되어도 활성 Registry를 바꾸지 않고,
+생성한 작업에는 적용하지 않는다.
+
+외부 판단 근거가 필요한 unit은 기존 레퍼런스 조사처럼 질문을 모두 발견한 뒤
+official/primary, repository/example, field/failure source lane으로 나눈다. 최대 세
+initial lane은 병렬 실행 상한이지 질문이나 출처 개수 목표가 아니다. 조사 결과는
+정확한 goal에 묶인 `discover` ResearchBundle v2가 되어 후보에 복사된다.
+후보 작성용 research와 실제 화면 사례를 최신화하는 실행용
+`contextualize`/`refresh` research는 별도 계약이다.
+
+복합 개편이 아닌 task-gap Pack/Guide 후보는 다음을 모두 만족할 때만 같은 작업의
+두 번째 route에서 쓸 수 있다.
+
+1. Coverage, adaptation, 첫 admission, 첫 route, unit, signal과 ResearchBundle
+   lineage가 일치한다.
+2. frozen candidate/case digest를 다른 fresh-context 또는 human evaluator가
+   Host-observed read-only stage에서 평가한다.
+3. `validate-candidate`가 PASS다.
+4. 두 번째 route가 `--prior-route-plan`으로 첫 route를 직접 가리키고 후보 Pack을
+   선택한다.
+5. 외부 origin receipt가 Pack 주체, v2 schema floor, unit과 ChangeSet을 정확히
+   가리킨다.
+
+Pack 통합·선택 Guide 추출·분할과 Guide 이동·복사는 후보 작성과
+`validate-change-set` 검증까지
+완료할 수 있지만 `same_task_eligible=false`다. 한 작업의 단일 Pack route에
+일부 member만 끼워 넣지 않고, 이후 전체 ChangeSet 승인에서 함께 적용한다.
+
+후보 Pack의 실행용 research가 열리면 first route에 묶인 attempt 2 preview로
+조사한 뒤 같은 lineage의 최종 attempt 2만 실행한다. preview는 gate 요청서이지
+실행 route가 아니며 attempt 3이나 sibling corrected plan은 허용하지 않는다.
+첫 실행 observation이 lineage를 소비하고, 같은 observation의 동일 plan 재시도만
+idempotent하다.
+
+route가 task-gap 교정이나 실행용 research로 바뀌면 아래 projection과 Expertise
+work plan·closure도 final route에 맞춰 다시 만든다. 각 sidecar는 `plan_id`에
+묶이므로 first-route artifact를 corrected route에 재사용할 수 없다.
+
+final route 뒤 project fact·owner decision·runtime verification·checker·Convention·
+명시적 보류와 범위 밖 배분을 typed evidence로 투영하고 현재 상태에 맞는지 다시
+검증한다.
+
+```sh
+maestro project-coverage \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --plan <final-route.json> \
+  --draft <projection-draft.json> --json > <coverage-projection.json>
+
+maestro validate-coverage-projection \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --plan <final-route.json> \
+  --projection <coverage-projection.json> --json
+```
+
+repository fact와 Convention은 실제 파일 digest에, owner 결정은 기존
+`owner_decision:<repository-relative-file>`의 digest에, checker와 runtime
+verification은 그 route의 verifier에 묶인다. 과거 호환용 `--projected-item`은
+진단 정보일 뿐 Coverage를 만족시키거나 권한을 만들지 않는다.
+
+그 뒤 `admit-coverage`가 최종 route와 모든 typed sidecar를 allocation에 다시
+대조한다.
+
+```sh
+maestro admit-coverage \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --plan <final-route.json> \
+  --coverage-projection <coverage-projection.json> \
+  --candidate <candidate-id> \
+  --expertise-work-plan <work-plan.json> \
+  --expertise-closure <closure.json> --json > <admission.json>
+```
+
+candidate와 Expertise work 두 인자는 해당 경로에서만 붙인다. 일반 단일 route,
+adaptation, multi-Pack 경로는 모두 `READY`에서만 구현으로 진행한다.
+`PROJECTION_REQUIRED`는 기존 project fact나 owner
+결정을 Host가 아직 구체 근거에 연결하지 않았다는 뜻이고, `GAPS`는 Guide, Lens,
+research 또는 verification이 실제 route에 없다는 뜻이다. 이 판정도
+`execution_authority=NONE`이며, 기존 writer 권한을 늘리지 않는다.
+
+여러 Pack이 필요한 작업은 typed work plan과 READY closure가 모든 canonical
+`(coverage item, Pack, Guide)` pair를 만족시킨다. 누락·중복·stale digest·미완료
+묶음·미해결 충돌이 하나라도 있으면 admission은 READY가 되지 않는다. 실제 Guide
+부재나 기준 부족만 위 adaptation 경로로 보낸다.
+
+### 2. 기존 여러 Pack의 typed 작업 배분
+
+이 단계는 기존 Guide를 적용하는 일과 새 Expertise를 만드는 일을 섞지 않는다.
+
+1. `expertise-check`에서 `not-needed`, `single-route`, `multi-pack`,
+   `true-expertise-gap`, `research-gate`를 명시한다.
+2. AI가 모든 Coverage item과 필요한 Guide pair를 먼저 발견하고, 의미가 응집된
+   책임·의존성으로 batch draft를 만든다.
+3. `maestro expertise plan-work`가 현재 catalog에서 canonical
+   Pack·Guide·definition/Skill digest·resource path를 계산하고 모든 pair가 정확히
+   한 번 배분됐는지 검사한다.
+4. 한 batch는 Pack 하나·Guide 최대 4개다. 이는 batch projection 상한이지 전체
+   판단영역·pair·batch 수 상한이 아니다.
+5. `validate-work`를 통과한 `parallel_groups` 중 의존성이 준비된 read-only
+   batch만 AI/Host가 명시적으로 실행한다. batch는 `may_spawn=false`다. 모델
+   경로는 전체 요청 하나를 복사하지 않고 그 batch의 책임, Coverage 요약·누락
+   영향과 정확한 Pack/Guide 내용으로 계산한다.
+6. AI는 각 batch에서 적용한 기준, 권고, 직접 근거, 충돌과 미해결을 closed
+   `maestro_expertise_work_packet_v1`로 반환한다.
+7. `close-work`와 `validate-closure`가 모든 expected packet과 pair, status,
+   conflict를 검사한다. 전부 completed이고 충돌·미해결이 없을 때만 closure가
+   `READY`다.
+8. 최종 `admit-coverage`가 typed projection·work plan·closure를 route와 함께
+   검증한다. 여기서 다시 `READY`여야 writer를 열 수 있다.
+
+```sh
+maestro expertise plan-work \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --plan <route.json> \
+  [--expertise-research-evidence <pack-bundle.json>]... \
+  --draft <work-draft.json> --json > <work-plan.json>
+
+maestro expertise validate-work \
+  --repo . --goal "<goal>" \
+  --coverage <coverage.json> \
+  --plan <route.json> \
+  [--expertise-research-evidence <pack-bundle.json>]... \
+  --work-plan <work-plan.json> --json
+
+maestro expertise close-work \
+  --work-plan <work-plan.json> \
+  --packet <batch-1.json> --packet <batch-2.json> \
+  --json > <closure.json>
+
+maestro expertise validate-closure \
+  --work-plan <work-plan.json> \
+  --closure <closure.json> --json
+```
+
+AI는 전문적 의미와 권고를 판단하고, 코드는 digest·exactly-once·dependency·
+closure·admission을 검증한다. Expertise work packet은 전용 closure 계약이며
+Host의 실제 실행·순서·Guide load 증명이 아니다.
+
+Coverage-bound multi-Pack Assignment는 다음 다섯 sidecar와 필요한 Pack별
+ResearchBundle을
+`maestro assignment project`와 `maestro host codex`에 똑같이 전달한다.
+
+- Task Coverage
+- final Coverage admission
+- typed Coverage projection
+- Expertise work plan
+- Expertise closure
+
+Host는 AssignmentInput을 다시 만들고 identity가 다르면 시작하지 않는다.
+`model_route`가 없는 legacy batch는 이력으로 읽을 수 있지만 새 closure나 writer
+admission을 만들 수 없다. 자동 batch scheduler·wait·cancel·retry는 구현하지
+않았다. AI/Host가 실제 batch를
+실행하고 별도 terminal stage 근거를 남겨야 한다.
+
+### 3. Registry와 선택
 
 `ExpertisePackCard`는 다음을 가진다.
 
@@ -72,8 +321,13 @@ Pack 순으로 보고, 그 안에서는
 동점이면 `EXPERTISE_SELECTION_AMBIGUOUS`를 남긴다. 이 최소 신호는 landing page처럼
 시각 디자인과 마케팅 문구가 겹치는 요청을 분리하기 위한 것이며, 모든 Pack 쌍의
 negative trigger ontology를 미리 만들지는 않는다.
+Guide는 단순 ID나 freshness 순서가 아니라 일치한 선언 trigger 수를 먼저 비교하고,
+그 다음 freshness와 안정 ID로 정렬한다. 이 점수는 trigger들의 의미적 독립성을
+증명하지 않는다. 현재 route·receipt 공개 계약은 최대 네 Guide이므로 이는 Pack
+생성의 판단영역 발견 상한이 아니라 실행 projection 상한이며, 넓은 작업은 앞의
+Task Coverage와 실제 route 결과를 다시 비교한다.
 
-### 2. Research gate
+### 4. Research gate
 
 | mode | 쓰는 경우 | 실행 gate |
 |---|---|---|
@@ -87,6 +341,10 @@ implementation·review의 open gate는 기존 최대 5개 Assignment DAG 밖의 
 follow-up으로 수행한다. 일반 `reference`, `latest`, `benchmark`, `research` 신호는
 이미 domain-specific Pack이 선택된 뒤 mode만 정하며, 그 단어만으로 Pack을 선택하지
 않는다.
+
+multi-Pack work는 canonical inventory의 Pack마다 gate를 따로 계산한다. 각 open
+Pack에는 exact Guide set·goal·mode·definition digest에 묶인 completed bundle이
+하나씩 필요하며, top route Pack의 satisfied bundle로 다른 Pack gate를 닫지 않는다.
 
 `maestro_research_packet_v2`와 합성 `maestro_research_bundle_v2`는 질문·결정·target
 context, exact source plan과 query, lane admission rationale, source role·version·실제
@@ -115,7 +373,7 @@ project evidence와 함께 보고해야 완료된다. digest는 artifact 동일�
 조사는 Researcher Executor의 research-capable balanced route를 유지하고, 명시한
 high-impact 또는 material-conflict lane만 정상 model routing으로 승격한다.
 
-### 3. 파일럿 Expertise Pack
+### 5. 파일럿 Expertise Pack
 
 `product-design`은 디자인 스타일 preset이 아니라 다음 Decision Guide를 제공한다.
 
@@ -125,6 +383,7 @@ high-impact 또는 material-conflict lane만 정상 model routing으로 승격�
 - `interaction-responsive-accessibility`
 - `reference-selection`
 - `information-architecture-and-user-flow`
+- `operational-workflow-interface`
 
 라우터는 이 중 기본과 직접 관련된 가이드만 최대 네 개 반환한다. 일반 dashboard
 layout은 research 없이 기준을 재사용하고, 명시적인 UI/디자인 리서치·레퍼런스/사례
@@ -148,7 +407,7 @@ regression·release와 defect evidence를 제공한다.
 experiment artifact, QA는 실제 test·build evidence와 독립 Verifier 없이 active나
 task completion으로 간주하지 않는다.
 
-#### Product Design 근거 보강 후보
+#### Product Design 근거 보강 Pack v6
 
 2026-07-29의
 [Product Design 실무 근거 연구](../research/product-design-practice-foundations.md)는
@@ -163,18 +422,19 @@ task completion으로 간주하지 않는다.
 - 직접 표준, 제품 사례, 프로젝트 파생 규칙과 warning의 authority label
 - 다른 디자인 시스템의 token·surface와 marketing screenshot을 옮기지 않는 경계
 
-`.maestro/state/candidates/expertise/product-design-evidence-refresh`는 이 구조를
-시험하는 project-local `candidate`다. 좁은 evidence-refresh 또는 run-oriented
-operations signal에서만 라우팅될 수 있으며 일반 Product Design 요청의 번들 Pack을
-대체하지 않는다. fresh-context normal·edge·non-trigger·overlap case 9개를
-통과했지만 현재 frozen artifact는 실제 brief·prototype·한국어 render·보조기술
-관찰·held-out workflow가 아니라 route와 expected reasoning을 검증한다. 따라서
-이는 다음 core Pack revision이나 게시된 project pilot을 뜻하지 않는다. 겹치는
-operational-workflow 후보를 정리하고 실제 rendered/task evidence와 owner 결정 또는
-승인된 held-out 평가를 갖추기 전에는 core registry·전역 Skill·bundled source
-manifest를 수정하지 않는다.
+이 연구는 `product-design` v6에 반영됐다. Pack은 기존의 일반 Product Design,
+타이포그래피, 정보 구조와 레퍼런스 trigger를 보존하면서 근거 기반 작업 절차와
+운영 워크플로 Guide를 추가한다. 출처 31개, Guide 7개, 판단영역 7개와
+fresh-context normal·edge·non-trigger·overlap case 9개를 함께 게시한다.
+`evidence/decision-map.json`은 각 판단영역이 어떤 Guide·checker·Convention 또는
+범위 밖 결정에 배분됐는지 보존한다.
 
-### 4. Candidate와 기록
+frozen artifact는 route와 expected reasoning을 검증하며, 실제 brief·prototype,
+한국어 render, 보조기술 관찰이나 held-out workflow 자체를 대신하지 않는다. 실제
+화면 작업의 완료 판정은 여전히 작업 위험에 맞는 rendered/task verification과
+독립 Verifier 증거를 요구한다.
+
+### 6. Candidate와 기록
 
 RunReceipt에는 다음 선택 정보와 bounded 실행 증거를 optional로 기록한다.
 
@@ -188,23 +448,63 @@ RunReceipt에는 다음 선택 정보와 bounded 실행 증거를 optional로 �
 대화 전문, guide 본문, screenshot, web page와 research 원문은 JSONL에 복사하지 않는다.
 `maestro govern report`는 팩 사용과 research mode만 집계한다.
 
-Guide 추가·수정·폐기·이동·복사, Pack 통합·분할, trigger 조정, source 갱신과
+반복 co-selection·handoff·중복·coverage gap은 곧바로 후보나 활성 변경이 아니라
+`recomposition_nominations`로 snapshot에 투영한다. nomination은 정확한
+fingerprint·Pack/Guide subject·bounded evidence ref를 가지지만
+`execution_authority=NONE`, `automatic_change_allowed=false`,
+`writes_performed=false`다. AI는 여기서 같은 판단 생명주기인지 우연히 함께 쓰인
+것인지 먼저 판별하고, 모든 영향 영역을 발견한 뒤 reuse·refresh·revision·new Pack·
+merge·extraction·split·move·copy 또는 `unsupported-topology`를 고른다. 주제나 사용 횟수만으로
+후보를 만들거나 active Pack을 바꾸지 않는다.
+
+Guide 추가·수정·폐기·이동·복사, Pack 전체 개정·통합·선택 Guide 추출·분할,
+trigger 조정, source 갱신과
 평가 확장도 같은 후보 공간을 사용한다. `candidate.json.component_change`가 변경
 종류와 대상 Guide를 표시한다. 여러 후보가 하나의 재배치라면 같은
 `change_set_id`와 서로 다른 `operation_id`로 묶고 일부 후보만 따로 승인하지 않는다.
-Pack 통합·분할과 Guide 이동·복사는 단일 후보여도 `change_set_id`를 요구한다.
+Pack 통합·선택 Guide 추출·분할과 Guide 이동·복사는 단일 후보여도
+`change_set_id`를 요구한다.
 원자 ChangeSet은 개별 후보 lifecycle API를 차단하고 `project-approve`, `archive`,
 `restore`, `delete`를 하나의 digest-bound transaction으로 처리한다. member 하나가
 유효하지 않으면 사용할 수 있는 나머지 member도 `change_set_paused`로 라우팅에서
 제외한다.
+복합 변경은 생성 mode와 무관하게 여기에
+`maestro_expertise_change_set_manifest_v1`을 추가한다. manifest는 현재 source Pack
+digest, 모든 candidate member와 역할, Coverage·adaptation lineage, Guide별 이동
+관계와 rollback을 고정한다. validator는 merge 결과가 source Guide의 충돌 없는
+합집합인지, extraction 결과가 두 개 이상 source Pack 각각에서 선택한 충돌 없는
+Guide를 정확히 복사하고 source를 유지하는지, split에서 모든 Guide가 정확히 한 번
+보존되는지, move가 source 제거와
+동일 내용 target 추가를 함께 수행하는지, copy가 source를 유지한 채 동일 내용을
+추가하는지 검사한다. 이름만 merge/extraction/split로 붙인 여러 후보는 통과하지
+않는다.
+런타임은 manifest member 목록을 우선하며, legacy 묶음에서 후보 하나라도 읽을 수
+없으면 소속을 안전하게 복구할 수 없으므로 남은 묶음 후보도 모두 일시 중지한다.
 게시 단위는 언제나 완전한 Pack 다음 버전이다. Guide 파일만 active Skill에 직접
 복사하거나 지우지 않는다. 그래야 Pack manifest, source coverage, routing trigger와
 frozen evaluation이 하나의 digest와 rollback 단위를 유지한다.
+`pack-revision`은 기존 global Pack과 Skill ID를 보존하고 version을 정확히 하나
+올린 완전한 snapshot에만 쓴다. Guide 제거는 별도 deprecation ChangeSet 없이
+묵시적으로 허용하지 않는다. Pack·dominance·Guide trigger, 기본 Guide,
+contextualize·refresh research trigger도 같은 방식으로 묵시적 제거를 거부한다.
+새 기준을 추가하면서 기존 일반 요청이나 research gate를 조용히 잃는 회귀를
+승격 전에 막기 위해서다.
 
-후보 생성 출처는 `candidate.json.generation.mode`의 `user-requested` 또는
-`automatic`으로 명시한다. 자동 후보는 원인이 된 반복·critical 관리 신호
-fingerprint도 보존한다. 둘은 같은 후보 공간과 validator를 사용하지만 뷰어에서
-출처를 구분해 보여 준다.
+후보 생성 출처는 `candidate.json.generation.mode`의 `user-requested`,
+`automatic`, `task-gap`으로 명시한다. 자동 후보는 원인이 된 반복·critical 관리
+신호 fingerprint를, task-gap 후보는 Coverage·adaptation unit·첫 route와
+authoring research lineage를 보존한다. 세 경로는 같은 후보 공간을 쓰지만 서로의
+입력 계약을 대신하지 않는다.
+
+새 후보는 `maestro_expertise_candidate_v2`를 사용한다. Builder는 Guide 수를 먼저
+정하지 않고 `maestro_expertise_decision_map_v1`에 필요한 판단영역, 누락 실패,
+`project-fact`·`external-current`·`external-stable`·`owner-preference`·
+`runtime-verification` 근거 유형을 먼저 기록한다. 그 다음에만 각 영역을 새 Guide,
+기존 Guide, checker, Convention 또는 명시적 범위 밖으로 배분한다. 선언한 모든
+영역에 disposition이 있고 모든 새 Guide가 적어도 한 영역을 소유해야 v2 후보가
+통과한다. 파일의 유한 상한은 운반 안전 경계이며, 상한에 닿으면 누락한 채 통과하지
+않고 후보를 나누거나 `candidate_incomplete`로 끝낸다. v1은 과거 후보를 읽기 위한
+호환 경계로만 남긴다.
 
 `$maestro-expertise-builder`는 admission gate가 통과할 때만 다음 project-local
 candidate를 만든다. 먼저 `$maestro-govern`의 통합 surface 분류가
@@ -224,12 +524,26 @@ handoff가 확인되면 `pack-merge` 통합 후보도 별도로 고려한다. �
 ├── draft/SKILL.md
 ├── draft/references/
 ├── draft/agents/openai.yaml
+├── evidence/task-coverage.json       # task-gap
+├── evidence/adaptation-plan.json     # task-gap
+├── evidence/source-route.json        # task-gap
+├── evidence/source-admission.json    # task-gap
+├── evidence/research-bundle.json     # 필요한 task-gap
+├── evidence/decision-map.json
 ├── evidence/sources.json
 ├── evals/cases.json
 ├── evals/results.json
 ├── evals/quality.json
 └── evals/artifacts/<case-id>.json
 ```
+
+v2 후보의 생성 출처는 후보 디렉터리 밖의
+`.maestro/state/candidate-origins/{expertise|components}/<candidate-id>.json`
+에 둔다. 이 receipt는 후보 namespace와 schema floor, Pack 또는 Registry
+component 주체, task-gap unit, ChangeSet을 함께 묶는다. 후보 파일 안의
+`generation.mode`만 바꾸거나 Pack receipt를 Lens 후보로 복사해서는 통과하지
+않는다. task-gap 평가 증명은 source Host 관찰에 묶여 있으므로, 별도의 신뢰 가능한
+portable attestation이 생기기 전까지 standalone contribution export는 fail-closed다.
 
 이 위치는 Git과 정상 문서 선택에서 제외된다. 생성은 게시가 아니다.
 각 candidate는 `review_after`를 가진다. 이는 **자동 삭제일이 아니라 후보 상태로
@@ -243,9 +557,18 @@ Git에 추적되지 않은 후보가 잊힌 채 계속 자동 선택되는 것�
 `delete-candidate`만 허용한다. 활성 project publication과 묶음 ChangeSet 의존성이
 없어야 하며 ID·digest·제거 시각·대체 Pack을 담은 작은 tombstone은 남긴다.
 
-`validate-candidate`를 통과한 후보는 같은 프로젝트에서 즉시 라우팅된다. 단, 같은
-Pack의 가장 높은 version이 하나일 때만 가능하고 검증 실패·만료·동일 최고 version
-충돌·활성 Pack 이하 version은 제외한다. 후보는 mutation 권한을 만들지 않는다.
+`validate-candidate` 통과는 내용 계약의 검증이지 라우팅 권한이 아니다. 런타임은
+후보를 `ordinary-route`, `corrected-task-gap`, `management-only`로 별도 분류한다.
+비복합 일반 후보만 같은 Pack의 가장 높은 version이 하나이고 만료·충돌·활성
+version 회귀가 없을 때 ordinary 후보 선택에 들어간다. task-gap 후보가 **생성된
+바로 그 작업**에서 쓰이려면 v2 quality evaluation, 첫 route에 묶인 단 한 번의
+corrected route와 `READY` Coverage admission이 추가로 필요하다.
+merge·extraction·split·Guide move/copy 또는 multi-member ChangeSet은 모두
+검증을 통과해도
+`management-only`이며 일반 작업과 producing route 양쪽에서 제외된다. 전체
+ChangeSet을 owner가 승인해 project Pack으로 게시한 뒤에야 새 active authority가
+다음 작업에 적용된다. Lens 등 Registry component 후보는 같은 작업에 절대
+투영하지 않는다. 후보는 mutation 권한을 만들지 않는다.
 기존 읽기 Assignment는 advisory-only이고, 이미 쓰기가 승인된 Executor만 Guide를
 기존 작업 범위 안에서 구현한다. RunReceipt는 후보의 definition digest를 기록하므로
 뷰어가 후보별 선택·배정·불러옴·반영·검증 횟수를 분리해 보여 줄 수 있다.
@@ -386,7 +709,10 @@ allowlist에서 빠져도 `.agents/skills/`의 Skill은 Host가 발견할 수 �
    portable 후보를 별도 검토본 생성 단계 없이 content-addressed snapshot으로
    다시 계산해 Registry, bundled Skill과 release manifest에 반영한다. standalone
    새 Pack은 새 공통 Pack이 되고, pinned base의 `guide-addition`은 기존 Pack의
-   다음 version으로 병합한다. 같은 후보의 프로젝트 확정본이 활성 상태라면
+   다음 version으로 병합한다. 기존 Pack의 완전한 `pack-revision`은 Guide ID와
+   routing 문자열을 보존하고 정확히 version을 하나 올린 snapshot, detached 평가,
+   owner 승인을 모두 만족할 때 같은 원자적 경로로 교체한다. 같은 후보의 프로젝트
+   확정본이 활성 상태라면
    allowlist에서만 제거하고 파일은 rollback 근거로 보존한다.
 4. 변경 내용을 검토해 별도로 commit·push·PR·릴리스한다. 3번은 이 원격 작업을
    수행하거나 완료 상태를 추적하지 않는다.
@@ -449,15 +775,26 @@ product-design 파일럿은 우선 결정론적으로 다음을 고정한다.
 
 각 팩은 `maestro_expertise_eval_v2`의 normal·edge·non-trigger·overlap case,
 관찰 가능한 판정 기준과 금지 행동을 갖는다. `evals/results.json`은 모든 case의
-route 관찰 결과와 verdict를 보존하고 `cases.json`이 그 digest를 고정한다. 새
-project candidate는 여기에 더해 `maestro_expertise_quality_eval_v1` receipt와
-case별 compact artifact를 통과해야 한다. Candidate validator는 구조, 독립 run
-reference, exact criterion coverage와 digest를 검사하지만 모델 출력의 실제
-전문성이나 출처의 진실성을 자동 판정한다고 주장하지 않는다. bundled 세 팩은
-여전히 pilot이며 실제 domain artifact 평가가 active 승격 전에 필요하다. 특히 landing page의
+route 관찰 결과와 verdict를 보존하고 `cases.json`이 그 digest를 고정한다.
+새 Expertise candidate는 모두 `maestro_expertise_candidate_v2`와
+`maestro_expertise_quality_eval_v2`를 사용한다. authoring observation과 분리된
+fresh-context 또는 human evaluator가 frozen subject·case를 Host-observed
+read-only stage에서 실제 실행하고, receipt가 두 observation과 exact result digest를
+가리켜야 한다. legacy v1 candidate는 과거 기록을 읽는 용도이며 새 검증·라우팅·
+승격에는 사용할 수 없다.
+
+Candidate validator는 구조, 독립 run reference, exact criterion coverage와
+digest를 검사하지만 모델 출력의 실제 전문성이나 출처의 진실성을 자동 판정한다고
+주장하지 않는다. bundled 세 팩은 여전히 pilot이며 실제 domain artifact 평가가
+active 승격 전에 필요하다. 특히 landing page의
 시각 위계는 product-design, positioning과 copy는 marketing이 우선되어야 하며,
 단순 unit test 실행은 software-qa 팩을 불필요하게 열지 않아야 한다. 실제 품질
 A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로 사용한다.
+
+따라서 같은 작성자가 PASS JSON을 채우거나, case 정의만 만들거나, 평가 뒤
+candidate를 바꾸면 실패한다. Lens 등 Registry component의 task-gap v2도
+definition·case digest와 실제 `evals/results.json`을 같은 방식으로 검증하지만
+same-task 사용은 허용하지 않는다.
 
 ## 벤치마킹과 차용 범위
 
@@ -483,6 +820,19 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 
 | 단계 | 상태 | 조건 |
 |---|---|---|
+| Task Coverage sidecar·validator·CLI | 현재 구현 | Host 선언 inventory의 discovery/allocation closure, no execution authority |
+| Coverage-first adaptation plan | 현재 구현 | 모든 item을 unit에 배분한 뒤 의존성·parallel group 계산; no execution authority |
+| Coverage와 route admission | 현재 구현 | Guide·Lens·research·verification·Host projection·task-gap candidate를 concrete route와 대조 |
+| 같은 작업 Pack/Guide 보완 | 현재 구현 | v2 lineage·deep discover research·독립 평가·corrected route 1회 |
+| task-gap Lens/Registry 후보 | 현재 구현 | 실제 frozen result 검증; same-task route와 active Registry는 변경하지 않음 |
+| semantic Expertise ChangeSet | 현재 구현 | merge·extraction·split·Guide move/copy의 source/member/Guide topology와 rollback 검증 |
+| 재구성 nomination | 현재 구현 | 반복 신호를 read-only 검토 대상으로 투영; 후보·승인·라우팅 권한 없음 |
+| 후보 routing role 분리 | 현재 구현 | ordinary, exact corrected task-gap, management-only를 validation과 별도 판정 |
+| 여러 Pack의 선택 Guide를 새 Pack으로 extraction | 현재 구현 | 2~4개 source가 각각 기여한 exact Guide subset을 새 Pack으로 복사; source 유지·원자 승인·management-only |
+| 여러 Guide의 다대일 semantic consolidation | 후속 | `contributes-to` lineage와 새 target Guide 평가가 있는 versioned manifest 필요 |
+| 여러 기존 Pack의 typed 작업 배분 | 현재 구현 | AI가 전체 pair 책임을 배분하고 plan/work packet/closure validator가 exactly-once·digest·dependency·conflict를 검사 |
+| Coverage typed project evidence와 final admission | 현재 구현 | file·owner authority·planned check와 다섯 sidecar·Pack별 research를 Assignment/Host에 재투영 |
+| 작업 batch runtime 자동 스케줄링·retry | 미구현 | Host가 validated parallel group을 실행하며 CLI는 launch·wait·cancel·retry를 소유하지 않음 |
 | Registry pack, route gate, validator | 현재 구현 | 전체 unit·wheel·strict Doctor |
 | product-design·marketing·software-qa 파일럿 | 현재 구현 | frozen route cases; active 전 실제 artifact evaluation |
 | 내부 ResearchPacket·ResearchBundle v2 validator | 현재 구현 | framing·query·source/claim semantics·follow-up new evidence·route binding·Assignment usage tests |
@@ -494,14 +844,15 @@ A/B는 서로 다른 task와 독립 평가가 쌓인 뒤 active 승격 근거로
 | 격리 candidate 자동 작성 | 현재 구현 | 반복 3회 또는 critical 신호, fingerprint 중복 방지, mutation 작업당 최대 1건 |
 | 사용 횟수 무관 기본 Pack 반영 | 현재 구현 | Harness checkout의 검증된 portable 후보를 직접 preview/apply |
 | 사용 5회 기반 사용자 확인 | 현재 구현 | 서로 다른 Run의 변경요소 선택 5회에 Codex가 owner에게 요청 생성 여부 질문; 문제 신호는 경고 |
-| Harness 공통 소스 반영 | 현재 구현 | standalone 새 Pack 또는 pinned Guide 추가 + owner 승인 + preview/apply |
+| Harness 공통 소스 반영 | 현재 구현 | standalone 새 Pack, pinned Guide 추가 또는 완전한 다음 버전 Pack revision + owner/held-out 승인 + preview/apply |
 | 무승인·원격 전역 승격 자동화 | 제외 | 횟수는 질문 시점만 정하고 owner 승인, commit·PR·릴리스 경계를 유지 |
 
 ## 범위 제한
 
-- pack 최대 1개, guide 최대 4개
+- 한 번의 route projection은 pack 최대 1개, guide 최대 4개지만, Task Coverage와
+  typed Expertise 작업 배분, adaptation discovery는 이 수에 맞춰 항목을 버리지 않음
 - 기존 Assignment 최대 5개 유지
-- 신규 database, embedding, vector search, scheduler 없음
+- 신규 database, embedding, vector search, runtime scheduler 없음
 - guide별 agent, 상주 디자인·마케팅·QA 부서, 전역 자동 설치 없음
 - raw research와 transcript의 정상 context 재주입 없음
 - custom Agent는 다른 tool·permission·sandbox·model·approval 경계가 실제로

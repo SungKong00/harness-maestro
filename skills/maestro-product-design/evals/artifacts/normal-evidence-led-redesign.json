@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-evidence-led-redesign",
+  "baseline_observation": "The existing Pack can request a brief, hierarchy, and Korean typography, but it does not consistently label authority boundaries or require a brief-to-rendered-test evidence chain.",
+  "candidate_observation": "The candidate frames evidence versus assumptions, produces a ranked scan and action sequence, defines semantic Korean roles, and requires representative rendered verification without importing foreign token values.",
+  "evidence_refs": ["research:claim-evidence-chain", "research:claim-korean-type", "candidate:design-brief", "candidate:typography-korean", "route-replay:d50e5af426840472e0e06f003531f2a777ed700dbce131b51ca66cb178b50160", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

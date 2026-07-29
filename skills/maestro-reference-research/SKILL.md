@@ -26,6 +26,14 @@ Accept:
   route already has them;
 - current project artifacts and source constraints.
 
+For Expertise adaptation, also accept the exact Task Coverage ID, adaptation
+plan ID and unit ID. This is **authoring research**: it discovers and supports
+reusable judgment criteria for a candidate. It is different from
+`contextualize` or `refresh` research used by the eventual task execution.
+Use `depth=deep` for this task-gap authoring path. Deep controls evidence
+coverage and counterevidence; it does not require three lanes when one lane can
+answer the complete bounded question inventory.
+
 Return one validated `maestro_research_bundle_v2` artifact, its canonical
 digest, and its path to Maestro. The artifact must preserve the exact source
 plan, queries used, inspected sources, claim matrix, adopted and rejected
@@ -41,26 +49,59 @@ artifact.
 
 1. Frame the question: record the question, decision needed, target context,
    time sensitivity, depth, and required handoff.
-2. Plan source lanes: read `references/lane-planning.md` and
+2. Discover the complete bounded question inventory before assigning lanes.
+   List every decision-changing subquestion, contrary case, applicability
+   check, and freshness risk. Do not choose a lane count and then omit questions
+   to fit it.
+3. Plan source lanes: read `references/lane-planning.md` and
    `references/search-query-patterns.md`. Put the exact bounded queries and
-   stop conditions in the v2 `source_plan`.
-3. Start narrow: use one high-value lane by default, usually official material
+   stop conditions in the v2 `source_plan`. The three-lane cap is a parallel
+   scheduling boundary, not a question or evidence cap: group compatible
+   questions into a lane, or explicitly split the research unit if lossless
+   synthesis cannot fit.
+4. Start narrow: use one high-value lane by default, usually official material
    for supported behavior or repository evidence for project facts.
-4. Expand conditionally: add a lane only when its evidence is independent, can
+5. Expand conditionally: add a lane only when its evidence is independent, can
    change or downgrade the recommendation, and is better collected separately.
    Use at most three initial read-only lanes.
-5. Build packets: record what was actually opened or inspected. Classify every
+6. Build packets: record what was actually opened or inspected. Classify every
    source and claim using `references/source-tiers-and-claims.md`.
-6. Resolve conflicts: use `references/conflict-resolution.md`. Preserve
+7. Resolve conflicts: use `references/conflict-resolution.md`. Preserve
    material disagreement; never use majority vote as proof.
-7. Adopt carefully: apply `references/adoption-rubric.md`. Distinguish reusable
+8. Adopt carefully: apply `references/adoption-rubric.md`. Distinguish reusable
    rules, checklist items, warnings, optional patterns, rejected claims, and
    open questions.
-8. Synthesize and validate: read `references/packet-and-synthesis.md`, emit one
+9. Synthesize and validate: read `references/packet-and-synthesis.md`, emit one
    bound bundle, run the semantic validator, and return it to Maestro.
 
 When the selected Guide is `reference-selection`, also read
 `references/visual-reference-research.md`.
+
+## External packet projection
+
+When Maestro invoked a user-named `$reference-research-team`, that Skill
+returns `research_packet_v4`, not a Maestro ResearchBundle. The Maestro Host is
+the projection owner:
+
+1. validate the v4 packet with its own semantic validator;
+2. keep its exact question, decision, target context, checked date, deep depth,
+   opened sources, queries, claim statuses, source tiers, conflicting evidence,
+   applicability, project fit, limitations, adoption, rejected claims, and
+   open questions;
+3. separate Tier 0 project or owner facts into digest-bound Maestro artifacts
+   and Task Coverage/Decision Map references; never present user input as an
+   external source;
+4. construct one or more `maestro_research_packet_v2` records using the actual
+   source lanes and a `maestro_research_bundle_v2` source plan;
+5. map claim adoption explicitly (`rule`, `checklist`, `warning`,
+   `optional-pattern`, `reject`, `open-question`) without upgrading authority,
+   confidence, freshness, or verification status;
+6. validate the resulting packets and bundle with `maestro validate-research`.
+
+This is a lossless, reviewed projection, not a blind schema conversion. If a
+required v2 field lacks inspected evidence, mark the bundle insufficient or
+run a bounded follow-up; do not invent the field. Only the validated Maestro
+bundle enters candidate lineage.
 
 ## Lane and context policy
 
@@ -102,6 +143,13 @@ The Host projects the validated v2 context into the Assignment. A completed
 writer cites the bound ResearchBundle and reports one evidence-backed
 disposition for every adopted claim. This proves use without putting raw pages
 or transcripts in the Assignment.
+
+For a `task-gap` candidate, copy the exact validated discover bundle into the
+candidate lineage and compile its adopted claims into the Decision Map and
+Guides. This authoring bundle may satisfy the coverage item's need to build the
+candidate, but it does not close a separate execution route whose selected
+Pack asks for current contextualization or source refresh; that gate requires
+its own exact route-bound bundle.
 
 ## Required output
 

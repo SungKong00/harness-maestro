@@ -6,7 +6,7 @@ status: active
 authority: repository
 owner: harness-maestro
 topic: observed-work-graph
-scope: [src/maestro/work/**, src/maestro/observations.py, src/maestro/governance.py, src/maestro/snapshot_runs.py, src/maestro/resources/viewer/**]
+scope: [src/maestro/work/**, src/maestro/codex_host.py]
 summary: 계획 Assignment와 실제 오케스트레이터·위임 작업·보고·합류·후속 시도를 분리해 관찰하고 작업 중심 GUI로 투영하는 계약.
 last_verified: 2026-07-29
 supersedes: []
@@ -45,12 +45,54 @@ Assignment는 최대 다섯 개, 한 명 writer, 하나의 terminal stage result
 | --- | --- | --- |
 | `work/contracts.py` | allowlist, 크기 제한, 상태·증거 검증 | 파일 저장, UI 문구 |
 | `work/lifecycle.py` | 시작·종료의 idempotency와 관계 무결성 | 현재 시각 계산, CLI |
+| `work/ledger.py` | 의미 이벤트 순서·revision·producer·측정 슬롯·seal과 파일 잠금 | UI용 재해석, 누락값 추정 |
 | `work/codex.py` | App Server collaboration item을 redacted work action으로 변환 | Observation 저장, prompt·message 보존 |
 | `work/graph.py` | 계획 그래프와 실제 그래프의 typed edge 구성 | 실행 순서·동시성 추정 |
 | `work/projection.py` | GUI가 읽는 카드·rank·근거 수준과 별도 display edge 구성 | raw relation 삭제, DOM 생성, 번역 재계산 |
 | `observations.py` | 프로젝트 관찰 파일의 안전한 읽기·쓰기 | 그래프 의미 계산 |
 | `governance.py` | terminal span의 RunReceipt·event 전달과 검증 | 실행 이벤트 생성 |
 | viewer | 정렬, 선택, 카드 인라인 상세과 한글 표현 | 모델·시간·성공 여부 재계산 |
+
+### 단일 실행 원장
+
+Observation의 `maestro_execution_ledger_v1`이 실행 중 사실의 단일 쓰기 경로다.
+stage, work, Host 측정과 최종 seal은 각각 호환 필드를 직접 저장하지 않고 먼저
+immutable semantic event를 추가한다. 호환 필드는 같은 잠금과 atomic replace 안에서
+함께 갱신한다.
+
+- event는 `sequence`, deterministic `event_id`, `idempotency_key`, producer binding과
+  선택적 measurement를 가진다.
+- observation별 interprocess lock과 전체 이전 상태 비교로 stale writer를 거부한다.
+- 같은 semantic key의 같은 값은 재시도할 수 있지만 다른 값은 conflict다.
+- `assignment_terminal`은 Assignment 증거만 닫는다. 실행 전체를 닫지 않는다.
+- `execution_sealed`만 실행을 닫으며 running work와 미완료 Assignment가 있으면
+  fail-closed한다.
+- seal 뒤에는 늦은 work, stage, measurement를 받지 않는다.
+- 최종 RunReceipt append도 run별 잠금 안에서 idempotency 검사와 write를 직렬화한다.
+
+기존 Observation은 읽을 때 `legacy_import` event로 투영한다. 과거 JSONL이나 in-flight
+파일을 일괄 재작성하지 않으며, 다음 정상 mutation부터 native ledger가 저장된다.
+Event와 RunReceipt는 원장 자체 대신 bounded `execution_measurements` projection을
+공개한다.
+
+### 관리형 완료 증명
+
+새 plan 관찰은 content-addressed `maestro_completion_policy_v1`을 고정한다. seal은
+모든 비-skipped Assignment의 terminal v2 work, 각 current upstream terminal work
+head에서 downstream Assignment work로 이어지는 계획 dependency path, 그리고 이전
+모든 leaf를 정확히 join·consume한 단 하나의 unbound completed synthesis를 요구한다.
+upstream Assignment에 parallel terminal head가 여러 개면 일부 head의 존재 경로만으로
+충분하지 않다. 모든 head가 downstream 재위임 전에 handoff나 명시적 dependency로
+수렴해야 하며 closure는 head마다 결정론적 path 하나를 별도로 보존한다. 최종
+synthesis는 비어 있지 않은
+conclusion·decision과 `next_action=finish`를 직접 기록해야 하며 이 책임은
+finalizer가 대신 만들지 않는다. stage terminal만으로는 Run을 완료하지 않는다.
+
+seal은 pre-seal ledger digest와 timestamp·측정 projection·완료 증명을 제외한
+결정론적 receipt intent digest를 `maestro_completion_closure_v1`에 묶는다. policy와
+closure는 Event/RunReceipt에 함께 저장되어 history validator가 plan·stage·work와
+다시 대조할 수 있다. policy가 없는 legacy import는 이 새 증명을 소급 요구하지
+않고 기존 plan-only 경계를 유지한다.
 
 ## 저장 계약
 
@@ -77,6 +119,38 @@ Event와 RunReceipt가 공개하는 `$defs.workSpan`은 같은 구조다. JSON S
 추가로 relation DAG, reroute의 마지막 모델, consumed work와 join의 부분집합 같은
 다중 필드 의미 불변식을 검증한다. 따라서 Schema 통과만으로 전체 runtime 수용을
 보장하지 않으며 최종 입력은 항상 runtime validator를 거친다.
+
+모든 측정 event에는 model, reasoning effort, tokens, duration 네 슬롯이 항상 있다.
+값이 있으면 `missing_reason=null`이고 coverage·scope·attribution이 그 값의 직접성에
+맞아야 한다. 값이 없으면 슬롯을 생략하지 않고 typed non-empty
+`missing_reason`, unavailable attribution과 unavailable/request-only 의미를 함께
+기록한다. 요청 모델과 요청 추론 강도는 실제값을 만들지 않고 `request_only`,
+App Server의 완전한 event stream에서 직접 확인한 모델·token만 `complete`다.
+Desktop 요청 metadata가 token을 제공하지 않으면 `0`이나 계획값으로 채우지 않고
+`request_metadata_only`로 남긴다. 현재 공식 event에는 적용된 reasoning effort를
+확정할 신호가 없으므로 requested와 applied를 분리하고 applied를 비워 둔다.
+
+## ExecutionUnit과 Host 영수증
+
+Route, Decision, Expertise의 서로 다른 계획 단위는 공통
+`maestro_execution_unit_v1` projection으로 비교할 수 있다. 그러나 현재 Host 실행
+권위는 검증된 Route Assignment에만 있다. Decision과 Expertise projection은
+`UPGRADE_REQUIRED`, 모델이 필요 없는 결정론적 command는 `NOT_APPLICABLE`이며
+Host 모델 영수증을 만들 수 없다.
+
+완료된 owned Codex model stage는 `maestro_execution_unit_receipt_v1`을 남긴다.
+영수증은 정확한 Unit·model route·입력 digest, 선행 Host receipt, 최대 두 번의
+bounded attempt, 출력 Packet, terminal root WorkSpan, effect state와
+`codex_app_server` producer를 content address로 묶는다. 요청 모델·적용 모델·
+provider reroute·token·시간은 같은 attempt와 stage result에서 일치해야 한다.
+완료된 mutation owner는 effect를 `unknown`으로 닫을 수 없고 read-only Unit은
+`no-writes`만 허용한다.
+
+Observation과 Governance는 같은 semantic validator를 사용한다. Finalizer는
+observation lock 안에서 seal 직전에 receipt bundle과 producer/run/observation,
+dependency order, output evidence와 root WorkSpan binding을 다시 검증한다. 따라서
+JSON Schema는 shape를 공개하지만 digest 재계산, TOCTOU 방지와 다중 artifact
+lineage의 최종 권위는 runtime validator에 있다.
 
 ## 신뢰 경계
 
@@ -137,8 +211,9 @@ observe work-start
   → 실제 독립 실행
   → observe work-finish
   → terminal result summary와 evidence append
-  → 모든 Assignment stage terminal
-  → finalize
+  → 모든 Assignment stage terminal (실행은 계속 열림)
+  → running work 없음 확인
+  → finalizer가 execution seal
   → RunReceipt/event
   → snapshot의 work detail v2
   → 실제 작업 카드 또는 plan-only fallback
@@ -191,3 +266,10 @@ child를 `joins_work_ids`로 연결하며, 새 위임은 synthesis를 `parent_wo
    complete 모델·token·Host 시간 증거를 동반하는 반례를 거부한다.
 8. raw edge 수와 종류를 보존하며 display edge는 인접 rank만 연결하고, 부분 N:M을
    shared trunk로 합치지 않으며 geometry를 숨길 때 dependency text를 제공한다.
+9. model·reasoning effort·tokens·duration 슬롯은 값 또는 명시적 누락 사유를
+   항상 가지고 Event·RunReceipt·snapshot이 같은 원장 revision을 가리킨다.
+10. Assignment terminal 뒤 도착한 work는 seal 전까지 기록되고, stale writer와
+    서로 다른 중복 terminal fact는 거부된다.
+11. 관리형 완료는 Assignment work head에서 계획 dependency를 증명하고 최종 unbound
+    synthesis가 모든 이전 leaf를 정확히 join·consume한 뒤에만 policy/closure를
+    durable receipt에 기록한다.

@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-operational-workflow",
+  "baseline_observation": "Product Design v6 already has strong operational workflow criteria.",
+  "candidate_observation": "Product Design v7 preserves raw typed relations, conditional display projection, dependency waves, contextual provenance-safe detail, dense fork and join verification, natural scrolling, and a linear accessible alternative without broadening generic backend triggers.",
+  "evidence_refs": [
+    "candidate:operational-workflow-interface:use-when",
+    "candidate:operational-workflow-interface:checks-1-10",
+    "candidate:operational-workflow-interface:required-evidence",
+    "candidate:operational-workflow-interface:verification",
+    "research:argo-dag",
+    "research:codex-app-server",
+    "runtime-test:non-design-projection-unextended",
+    "route-result:normal-operational-workflow"
+  ]
+}

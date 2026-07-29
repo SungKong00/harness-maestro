@@ -1,7 +1,6 @@
 interface:
   display_name: "Maestro Product Design"
-  short_description: "Apply routed product design criteria"
-  default_prompt: "Use $maestro-product-design with only the Decision Guides selected by the Maestro route."
+  short_description: "Apply evidence-backed design-system decisions"
+  default_prompt: "Use $maestro-product-design with only the Decision Guides selected by the validated Maestro route, and obey any Product Design assurance gate before writing."
 policy:
   allow_implicit_invocation: false
-

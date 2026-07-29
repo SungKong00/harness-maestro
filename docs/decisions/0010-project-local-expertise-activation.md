@@ -75,15 +75,19 @@ Harness Maestro 소스 checkout에서는 별도의 사용자용 검토본 단계
 preview/apply의 입력으로 직접 사용한다. standalone 새 Pack은 새 공통 Pack으로
 복사하며 프로젝트용 Skill ID를 `maestro-<pack-id>`로 정규화한다. pinned bundled
 base를 확장하는 `guide-addition`은 Guide·reference·source·frozen evaluation을
-기존 Pack의 다음 version으로 병합한다. 프로젝트 확정 경로는 활성 Pack의
+기존 Pack의 다음 version으로 병합한다. 기존 bundled Pack의 완전한 다음-version
+snapshot인 `pack-revision`도 기존 Guide ID와 routing 문자열을 보존하고 detached
+평가와 owner 승인을 통과하면 같은 content-addressed 승격 경로를 사용한다.
+프로젝트 확정 경로는 활성 Pack의
 `activation.json`에 고정된 게시 파일 digest를 직접 사용한다.
 
 이 plan은 승격 원본 digest와 대상 파일의 이전 digest를 결합하고 Registry Pack,
 bundled Skill, release manifest와 초기화된 Harness checkout의 Registry lock을
 원자적으로 반영한다. Registry와 manifest는 해당 source checkout Registry를 같은
 권위로 검증하며, 실패 시 같은 plan의 쓰기를 되돌린다. lock이 현재 Registry와 이미
-다르면 별도 upgrade 검토를 요구하고 승격을 시작하지 않는다. 기존 Pack 갱신,
-extension, profile 후보와 외부 프로젝트 contribution은 이 경로에 포함하지 않는다.
+다르면 별도 upgrade 검토를 요구하고 승격을 시작하지 않는다. 부분적 기존 Pack
+갱신, extension, profile 후보와 외부 프로젝트 contribution은 이 경로에 포함하지
+않는다. 완전한 `pack-revision` snapshot은 위 조건으로만 예외적으로 포함한다.
 같은 checkout에서 전역 후보의 프로젝트 게시본이 이미 allowlist에 있으면 파일과
 allowlist는 rollback 근거로 보존하되, activation과 candidate snapshot이 동일한 전역
 계보를 증명하고 프로젝트 version이 bundled version보다 새롭지 않을 때만 bundled

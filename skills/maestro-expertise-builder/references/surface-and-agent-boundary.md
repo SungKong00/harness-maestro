@@ -25,6 +25,12 @@ Pack has an independent refresh cadence, owner, or output. A merge creates a
 new Pack identity; it is not a Guide addition and it never retires the source
 Packs in the producing run.
 
+Choose `pack-extraction` instead of merge when only selected Guides from two to
+four Packs share the new boundary. Require every source to contribute, preserve
+the selected Guides exactly, and keep every source Pack active. If the Guide
+content itself must be combined or rewritten, stop: that is semantic Guide
+consolidation and needs a separate lineage and evaluation contract.
+
 Everything else is a handoff. In particular, a cross-task rejection boundary is
 a Lens candidate, execution authority is an Executor candidate, and
 project-specific policy is a Convention. Return `not admitted as expertise`

@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Lens, Executor, Expertise Pack, Decision Guide, Skill, Adapter와 Convention을 증거 기반으로 개선하는 생명주기.
 scope: [skills, src/maestro/resources/registry, docs/conventions, .maestro/state]
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -102,6 +102,13 @@ run, 최신 evidence와 command artifact를 각각 최대 세 개만 노출한�
 `decision-guide` 또는 `expertise-pack`이면 `resolution=author_candidate` 한 건으로
 즉시 후보 authoring을 열 수 있다. 모호한 공백은 여전히 독립 실행 세 번을 요구한다.
 
+이 `automatic` 경로와 현재 작업의 Task Coverage에서 시작한 `task-gap` 경로는
+다르다. task-gap은 필요한 공백을 모두 발견한 뒤 adaptation unit 전체를
+exactly-once로 배분하고, unit별 deep `discover` research → candidate 작성 →
+frozen subject → detached evaluation을 따른다. 한 작업에 여러 unit이나 하나의
+원자 ChangeSet이 있을 수 있지만 writer 권한은 늘어나지 않는다. CLI는 unit이나
+평가 lane을 자동 schedule·retry하지 않는다.
+
 일반 완료는 `run_summary`로 기록한다. 반복 개선 근거로 사용할
 `review_finding`, `verification_failure`, `correction`은 안정적인 fingerprint,
 severity, evidence, command artifact를 함께 기록해야 한다. 동일 `run_id`와 동일
@@ -156,8 +163,15 @@ criterion·forbidden behavior disposition과 compact artifact digest를 통과�
 이는 구조, 분리와 provenance를 검사하는 gate이며 출처의 진실성이나 evaluator의
 domain 판단을 자동 승인하지 않는다.
 
+새 후보는 `maestro_expertise_candidate_v2`와
+`maestro_expertise_quality_eval_v2`를 사용한다. candidate subject와 cases를 먼저
+동결한 뒤, 작성 observation과 다른 fresh-context 또는 human evaluator가
+Host-observed read-only stage에서 실제 결과를 만들고 exact digest를 묶어야 한다.
+같은 작성자가 PASS 파일을 만들거나 평가 뒤 후보가 바뀌면 실패한다. legacy v1
+candidate는 역사 조회용이며 새 검증·라우팅·게시에는 사용할 수 없다.
+
 Pack 하위 요소도 별도 live 디렉터리를 직접 수정하지 않는다. Guide 추가·수정·폐기·
-이동·복사, Pack 통합·분할, trigger 조정, source refresh와 evaluation 확장은
+이동·복사, Pack 통합·선택 Guide 추출·분할, trigger 조정, source refresh와 evaluation 확장은
 `component_change`로 의도를
 표시한 완전한 다음 Pack 후보가 된다. 이 방식은 하위 요소별 효용을 관찰하면서도
 manifest·source·평가·rollback의 배포 단위를 하나로 유지한다.
@@ -166,15 +180,19 @@ manifest·source·평가·rollback의 배포 단위를 하나로 유지한다.
 `operation_id`로 묶는다. source·target Pack, 기준 digest와 모든 operation을 함께
 검토하며 일부 승인·보관·영구 제거를 금지한다. 기준 Pack이 바뀌거나 후보 하나가
 invalid·conflict·expired가 되면 전체 ChangeSet을 pause한다.
-Pack 통합·분할과 Guide 이동·복사는 한 후보뿐이어도 `change_set_id`가 필수다.
+Pack 통합·선택 Guide 추출·분할과 Guide 이동·복사는 한 후보뿐이어도
+`change_set_id`가 필수다.
 원자 변경은 개별 candidate 명령이 아니라 `maestro expertise change-set`의
 `project-approve/archive/restore/delete` preview/apply만 사용한다. plan은 모든
 member plan digest와 파일의 이전 digest를 고정하며 하나의 쓰기나 최종 catalog
 검증이 실패하면 전체 파일을 preview 이전 상태로 복원한다.
 
-후보는 `generation.mode`로 `user-requested`와 `automatic`을 구분한다. 자동 후보는
-반드시 원인이 된 관리 신호의 fingerprint를 보존하며 같은 fingerprint로 중복
-작성하지 않는다. 기존 두 개 이상 Pack의 공통 trigger·source·평가 수명주기가
+후보는 `generation.mode`로 `user-requested`, `automatic`, `task-gap`을 구분한다.
+자동 후보는 반드시 원인이 된 관리 신호의 fingerprint를 보존한다. 같은 live
+fingerprint의 자동 후보가 둘 이상이면 둘 다 유효하지 않으며 새 관리 신호도 같은
+후보를 반복 작성하지 않는다. task-gap 후보는 exact Coverage·adaptation unit·첫
+route/admission·필요한 authoring ResearchBundle과 외부 origin receipt를 보존한다.
+기존 두 개 이상 Pack의 공통 trigger·source·평가 수명주기가
 실제로 같고 top-1 선택 손실이나 반복 handoff가 증거로 남은 경우에는
 `component_change.kind=pack-merge`와 `source_pack_ids`로 통합 후보를 만들 수 있다.
 단순한 주제 중복은 Guide 추가나 기존 Pack 확장으로 처리한다. 통합 후보도 기존
@@ -186,6 +204,11 @@ owner 결정 또는 accepted held-out evaluation을 받은 후보는
 allowlist는 게시된 Pack을 관리하고 candidate와 게시 시점 snapshot은 보존한다.
 후보 사용과 게시는 별개다. 후보는 읽기 Assignment에서 advisory-only이고, 이미
 mutation owner인 Executor만 기존 경계 안에서 적용한다.
+검증된 비복합 task-gap Pack/Guide만 생성한 작업의 corrected route에 한 번 재사용할
+수 있다. Pack merge·extraction·split과 Guide move·copy는 atomic ChangeSet으로
+검증하되 `same_task_eligible=false`이며 이후 묶음 승인에서만 게시한다.
+`pack-extraction`은 두 개 이상 source Pack에서 선택한 Guide의 ID와 본문을 그대로
+복사해 하나의 새 Pack을 만들며 source Pack은 수정하거나 자동 비활성화하지 않는다.
 다음 revision도 새 candidate와 held-out/owner 근거를 요구하며
 `maestro expertise update`로 같은 ID의 version을 정확히 하나 올린다. 사용 중지는
 `maestro expertise deactivate`로 allowlist만 제거하고 파일을 보존한다. 기존 범용
@@ -234,6 +257,10 @@ Registry·bundled Skill·release manifest에 로컬 반영할 수 있다. apply 
 stage·commit·push·PR·태그·릴리스를 하지 않는다. 그 밖의 contribution은
 maintainer의 일반 저장소 diff로 검토한다. 어느 경로든 릴리스가 완료된 뒤에만
 다른 프로젝트가 새 설치 버전으로 받아들인다.
+
+과거에 동일 source가 global Registry에 반영됐다는 사실은 현재 candidate validation
+`PASS`가 아니다. 적용 이력과 현재 검증 상태를 별도 축으로 유지하며, invalid·expired·
+conflict 후보를 `source_applied`만으로 다시 사용 가능하게 만들지 않는다.
 
 portability는 가장 좁게 정한다. 한 저장소의 도메인 규칙은 `project`, 같은 stack,
 platform, locale 또는 제품군에서 재사용하면 `profile`, 프로젝트와 무관하고 넓은

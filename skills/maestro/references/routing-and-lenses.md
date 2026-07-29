@@ -20,6 +20,30 @@ failures. Every bundled Lens declares `non_exhaustive: true`; evidence outside
 its concern is reported as a bounded coverage gap rather than silently ignored
 or decided on behalf of another Lens.
 
+## Coverage before bounded routing
+
+For a broad or completeness-sensitive task, do not make route capacity define
+the problem. First discover and validate the complete Task Coverage inventory,
+then bind that Coverage when calling `route` or `decide`.
+
+After routing, the managed order is:
+
+```text
+project-coverage → validate-coverage-projection
+→ expertise plan-work → validate-work, when multi-Pack work is needed
+→ read-only batch packets → close-work → validate-closure
+→ admit-coverage READY
+→ Assignment projection and Host execution
+```
+
+The AI decides semantic coverage, Guide sufficiency, batch responsibilities,
+and how criteria apply. The deterministic layer checks content identities,
+digests, exactly-once pair assignment, dependencies, packet closure, and final
+admission. A bare Coverage item ID, route selection, or prose summary is not
+evidence. Each represented Pack also satisfies its own research policy; one
+Pack's bundle cannot close another Pack's gate. A valid closure is a structural
+handoff, not proof that the planned batch actually ran.
+
 ## Engineering Baseline and input projection
 
 Before a managed Assignment crosses into another context, Main describes only
@@ -89,14 +113,21 @@ handoff, and top-level model route, then adds a bounded Assignment DAG.
 - Each Assignment declares Registry-backed input and output Packet IDs and its
   own model route.
 - Managed plan generation has no semantic-validation bypass.
-- The optional `expertise` extension selects at most one pack and four guides.
-  Non-verification Assignments bind only those IDs.
+- The optional `expertise` extension selects at most one Pack and four Guides
+  for that route projection. This is not a limit on Task Coverage discovery or
+  total relevant Expertise. Multi-Pack work is divided only after complete
+  discovery, into read-only batches of one Pack and at most four Guides.
+  Non-verification Assignments bind only the route-selected IDs; a
+  Coverage-bound writer receives additional validated Expertise through the
+  exact work-plan and closure sidecars.
 - `research_requirement.gate=open` is a preflight stop condition. Research is
   performed outside the fixed five-Assignment DAG, then the same goal is
   rerouted with the evidence digest. This keeps research conditional without
   weakening Deep review isolation or increasing the Assignment cap.
 - A plan is not an actual trace. Only Host-provided results may describe calls,
   tokens, duration, retries, or outcomes.
+- The CLI validates plans and closures; it does not schedule, wait for, cancel,
+  or retry reviewer or Expertise batches.
 
 ## Specialist admission
 
@@ -108,3 +139,14 @@ disjoint `owns` and `out_of_scope`, no side effects, fresh context, no spawn,
 and a closed Finding Packet. Out-of-scope content is an escalation question,
 not an extra conclusion. Only repeated evaluation showing a distinct tool,
 permission, or ownership boundary justifies a permanent component.
+
+Every selected Guide must belong to at least one Specialist Contract. When a
+Pack has no evaluated domain-specific split, use one bounded
+`expertise-domain-review` contract for its selected Guides rather than dropping
+them or inventing a permanent role.
+
+This fallback covers the Pack selected by the DecisionPlan. If blocking or
+important Coverage needs an omitted Pack/Guide, current staged planning stops
+before Specialist execution with `DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED`.
+Use the ordinary multi-Pack route for a settled direction; do not decide first
+and attach omitted findings afterward.

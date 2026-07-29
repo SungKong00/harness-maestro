@@ -35,7 +35,12 @@ Read `references/candidate-format.md`. Create one bundle only:
 ├── classification.json
 ├── draft/component.json
 ├── evidence/manifest.json
-└── evals/cases.json
+├── evidence/task-coverage.json       # task-gap v2 only
+├── evidence/adaptation-plan.json     # task-gap v2 only
+├── evidence/source-route.json        # task-gap v2 only
+├── evidence/source-admission.json    # task-gap v2 only
+├── evals/cases.json
+└── evals/results.json                # task-gap v2 only
 ```
 
 Keep the exact classifier input as `signals.json` and output as
@@ -58,6 +63,20 @@ Apply the kind-specific admission gate:
   boundary without a new execution identity.
 - Packet contract: repeated typed handoff failure and proof that existing
   Packets are insufficient.
+
+For a unit discovered by an Expertise adaptation plan, create
+`maestro_registry_component_candidate_v2` with `generation.mode=task-gap`.
+Bind the exact signal fingerprint and unit ID plus copied Task Coverage,
+adaptation plan, and source route. The unit's surface must match the reproduced
+classification. This candidate can be reviewed after the task, but it is never
+eligible to alter the producing task's route or active Registry.
+
+Freeze the definition and case digests with
+`maestro component evaluation-subject`. A distinct fresh-context or human
+evaluator must execute every case in a Host-observed read-only stage.
+`evals/results.json` binds the exact definition and cases, records observed
+outcomes and evidence, proves every forbidden behavior was absent, and passes
+every case. Case definitions without result evidence do not pass v2.
 
 ## Validate and hand off
 
@@ -82,4 +101,5 @@ rollback, validation result, and blockers to `$maestro-govern`.
 - Never infer a new Agent from expertise, persona, or Guide count.
 - Never infer a new Lens from task frequency alone.
 - Never claim frozen cases were executed when only their definitions exist.
+- Never use a task-gap Registry candidate in the same task that authored it.
 - Keep `active_registry_unchanged=true`; rollback is candidate disposal.

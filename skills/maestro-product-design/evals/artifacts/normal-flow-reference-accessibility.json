@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-flow-reference-accessibility",
+  "baseline_observation": "The existing Pack contains strong flow concepts but reference-selection has no bound manifest source and interaction guidance does not bind disclosure and in-context test evidence.",
+  "candidate_observation": "The candidate preserves observed versus unverified reference states, maps task and recovery, and requires disclosure semantics, meaningful focus, reflow, and local pattern validation.",
+  "evidence_refs": ["research:claim-reference-method", "research:claim-disclosure", "candidate:reference-selection", "candidate:interaction-responsive-accessibility", "route-replay:db8b950ef060b8ecea2628f2bda658bee4856adf0c381178039417a99636c1db", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

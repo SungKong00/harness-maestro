@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-korean-typography",
+  "baseline_observation": "Product Design v6 requires semantic roles and mixed-script rendering, but does not explicitly rank reading order, require a complete content corpus, or bind every new type value to metrics and token lineage.",
+  "candidate_observation": "Product Design v7 classifies product jobs and reading order first, defines the full Hangul and mixed-script corpus, derives semantic type tokens from metrics and rendered content, and rejects imported universal scales.",
+  "evidence_refs": [
+    "baseline:typography-korean",
+    "candidate:typography-korean:checks-1-10",
+    "candidate:typography-korean:required-evidence",
+    "candidate:visual-hierarchy-layout:checks-1-10",
+    "research:claim-typography-role-first",
+    "research:claim-korean-mixed-script-matrix",
+    "research:reject-universal-type-scale",
+    "route-result:edge-korean-typography"
+  ]
+}

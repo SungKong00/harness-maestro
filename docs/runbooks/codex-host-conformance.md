@@ -46,6 +46,10 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
   `maestro_execution_plan_v1` 전까지 파일 diff가 없다.
 - Host가 reviewer write tool 호출을 실제로 거부하고 거부 artifact를 남긴다.
 - DecisionBundle 뒤 checkout이나 Registry를 바꾸면 기존 승인 재사용이 거부된다.
+- staged DecisionPlan이 route 밖의 blocking·important Pack 판단을 요구하면
+  Specialist보다 먼저 중단하고, omitted 판단으로 DecisionBundle을 만들지 않는다.
+- `authorization_source`를 넣기 전에 현재 사용자 요청이 exact goal·risk·bundle·
+  allowed path를 실제로 승인했는지 Host가 확인한다. label 자체는 승인 증거가 아니다.
 - reviewer는 파일을 수정하지 않고 artifact reference가 있는 짧은 packet만 반환한다.
 - 구현자는 현재 파일을 다시 읽고 한 명만 쓰며, verifier는 실제 command 결과를 본다.
 - 같은 실행에서 발견한 규칙은 `candidate`까지만 간다.
@@ -56,16 +60,37 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
   observation에 계획을 결합한다.
 - Desktop 요청 접수의 `desktop_request`를 실행 fallback으로 취급하지 않는다.
   App Server로 처리할 수 없는 Assignment만 별도 `observe fallback` 뒤
-  `current_host` 단계로 기록하며, 전환 전 current-Host 기록은 거부한다.
+  `current_host` 단계로 기록하며, 전환 전 current-Host 기록은 거부한다. 반대로
+  explicit fallback을 기록한 같은 Run을 뒤늦게 Maestro-owned App Server 실행으로
+  다시 claim하는 혼합 소유권도 거부한다.
 - 각 Assignment 종료 직후 terminal 단계 결과를 한 건 남긴다. 실패한 선행 단계
   때문에 실행하지 않은 하위 단계도 `skipped`와 원인 근거로 닫는다.
 - 계획된 모든 Assignment가 terminal이 되기 전에는 최종화를 거부하고, 이후 관측된
   계획·단계에서 compact RunReceipt를 정확히 하나만 생성한다.
 - `maestro host codex`로 시작한 Assignment는 plan의 side-effect 계약에서 sandbox를
-  파생한다. reviewer·verifier는 `readOnly`, mutation owner만 저장소 루트 하나를
-  writable root로 가진 `workspaceWrite`이고 두 경우 모두 network는 꺼져 있어야 한다.
+  파생한다. reviewer·verifier는 `readOnly`, mutation owner만 `workspaceWrite`이고
+  두 경우 모두 network는 꺼져 있어야 한다. 일반 route writer는 저장소 root를,
+  Decision enactment writer는 exact `allowed_paths`만 `writableRoots`와
+  `runtimeWorkspaceRoots`에 가진다. experimental API opt-in과 `thread/start` 응답도
+  같은 root set인지 확인한다. Decision writer에게 sibling 파일 쓰기를 시켜 sandbox가
+  거부하고 diff가 남지 않는지 확인한다. exact runtime root를 지원하지 않는 Codex
+  버전은 실행 전에 fail-closed여야 하며, 실행 후 changed-path audit도 범위 밖
+  Git-visible 변경과 HEAD 변경을 거부해야 한다. audit은 App Server와 그 process
+  group이 종료된 뒤에만 통과할 수 있다. active turn 오류 경로에서는 먼저
+  `turn/interrupt`의 terminal event를 확인하고, root 및 관측된 child thread마다
+  `thread/backgroundTerminals/list` → 개별 `terminate` → empty `list`를 확인한다.
+  실행 timeout이 이미 끝났더라도 별도의 bounded shutdown grace에서 이 정리를
+  시도해야 한다. background-terminal API나 process-group quiescence를 증명할 수
+  없는 Host에서는 scoped Decision 실행이 시작 전에 중단돼야 한다. 이 검사는
+  Host-managed App Server와 Codex-tracked terminal group의 종료 증명이며, terminal
+  내부에서 자체 daemonize한 임의 descendant의 완전한 열거 증명으로 기록하면 안
+  된다. 그 경계는 exact runtime root sandbox가 담당한다.
 - 여러 Assignment가 같은 plan을 실행할 때 `host codex --observation`이 하나의 부모
   observation에 결과를 추가하며 Assignment마다 별도 Run으로 분열되지 않아야 한다.
+- 같은 App Server fixture가 Assignment마다 동일한 thread/turn ID를 반환해도
+  Assignment-scoped WorkSpan ID가 충돌하지 않아야 한다. verifier receipt는 output
+  Packet digest와 derived VerificationAssessment ID를 모두 포함하고, cause/category
+  재해시 변조를 거부해야 한다.
 - Assignment Host가 authoritative baseline·문서·dependency·ResearchBundle에서
   projection을 재구성하고 자유 prompt나 변조된 projection을 거부하는지 확인한다.
 - 같은 pending Assignment 두 개를 동시에 시작했을 때 full-turn lease로 하나만

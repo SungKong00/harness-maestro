@@ -177,15 +177,60 @@ Host가 직접 소유한 Codex App Server turn은 sandbox와 같은 run·Assignm
 ## Executor 모델 라우팅
 
 Lens는 모델을 선택하지 않는다. Executor가 허용 model class와 reasoning 상한을
-가지고, Maestro가 작업 성격·위험·불확실성·검증 가능성으로 가장 낮은 충분한 class를
-고른다.
+가지고, Maestro가 **요청 전체가 아니라 실행 단계별로** 작업 성격·위험·불확실성·
+검증 가능성을 판단한다. 현재 프로젝트의 `pro-quality` 기본 정책은 다음과 같다.
 
-- `economy` / `gpt-5.6-luna`: 검색, metadata, 분류, 형식 변환과 기계적 변경
-- `balanced` / `gpt-5.6-terra`: 일반 구현, 분석, review와 research synthesis
-- `frontier` / `gpt-5.6-sol`: 인증·권한·데이터·transaction·migration·비가역 판단
+- `economy` / `gpt-5.6-luna` / `high`: 좁고 경계가 분명한 분류·기계적 변경.
+  모델을 쓸 수 없을 때만 명시된 `Terra/medium` 운영 fallback을 쓴다.
+- `balanced` / `gpt-5.6-terra` / `high`: 일반 구현, 의미 검토, research와 의미
+  검증.
+- `frontier` / `gpt-5.6-sol` / `high`: 명시적인 고난도 구현·의미 판단,
+  high·critical 위험, 인증·권한·데이터·transaction·migration, 중대한 충돌,
+  명시적 architecture 판단과 synthesis.
 
 test, lint, build와 schema check의 성공 여부는 모델이 아니라 실제 command 결과로
-판정한다. 자동 승격은 새 실패·증거·충돌이 있는 한 lane에 한 번만 허용하고, 같은
-입력을 반복하거나 모든 lane을 함께 승격하지 않는다. `max`와 `ultra`는 자동
-선택하지 않으며 frontier 모델을 사용할 수 없는 고위험 판단은 `NEEDS_DECISION`으로
-닫는다.
+판정한다. 각 모델 단계는 `model_route_id`, `execution_unit_id`, `stage_kind`,
+권고 model·reasoning과 허용 가능한 quality floor를 가진다. Host 요청은 이 floor
+아래로 내려갈 수 없고, provider가 보고한 적용 모델은 권고·요청과 별도로 기록한다.
+
+자동 품질 승격은 새 실패·증거·충돌이 있는 한 lane에 한 번만 허용하고, 같은 입력을
+반복하거나 모든 lane을 함께 승격하지 않는다. 품질 승격과 모델 unavailable에 따른
+운영 fallback은 별도 원인으로 기록한다. `max`와 `ultra`는 자동 선택하지 않으며
+frontier 모델을 사용할 수 없는 고위험 판단은 `NEEDS_DECISION`으로 닫는다.
+
+이 stage matrix는 현재 선택한 품질 프로필이며 보편적인 성능 서열 주장이 아니다.
+대표 단계 평가에서 정확성·완결성 향상이 확인되는지와 token·latency 비용을 함께
+관찰해 유지하거나 조정한다.
+
+### 검증 결과를 이용한 느슨한 정책 피드백
+
+모델 정책 피드백은 Router 내부의 학습 상태가 아니다. Governance가 최근 200개
+현재-definition Run 중 **유일한 model mutation owner**만 읽어, 다음 일곱 축이 모두
+같은 실행을 한 그룹으로 집계한다.
+
+`quality_profile + stage_kind + task_class + selected_class +
+selected_model + reasoning_effort + risk`
+
+호환 가능한 과거 Run은 일반 이력에는 남지만 피드백 표본에는 들어가지 않는다.
+표본은 현재 project·checkout·Registry·framework와 정확히 일치하고 retained event
+file 전체를 읽은 `scan_complete=true` 창에서만 정책 후보가 될 수 있다.
+
+보고서는 세 값을 섞지 않는다.
+
+1. Route가 그 모델을 권고한 Run의 검증 실패율
+2. 실제 적용 모델이 완전히 관측된 Run의 검증 실패율
+3. 동일 권고 모델이 reroute 없이 적용되고, 실행 영수증·완료 증명·Verifier
+   Assessment가 모두 일치하며 실패 원인이 `implementation`인 Run의 실패율
+
+정책 후보는 세 번째 값만 사용한다. 표본 20개 이상, 구현 귀속 실패 3개 이상이며
+Wilson 95% 구간의 하한이 10%를 넘을 때에만 한 품질 class 상향을 제안한다. 이는
+관찰 통계이지 인과 추정이나 검증기의 ground-truth 탐지율이 아니다.
+
+보고서 작성은 Route를 바꾸지 않는다. 자동 하향은 없고, 상향도 정확한 report,
+group, project, checkout, Registry, framework, policy digest를 승인한
+`owner_decision` 또는 별도 `held_out_evaluation` artifact가 있어야 새 typed
+overlay가 된다. 승인 artifact는 원본 feedback report의 repository-relative ref와
+file digest도 가지며, 적용 시 report ID·group·scope·target을 다시 검증한다. Router는
+operational event state를 탐색하지 않고 호출자가 명시적으로 전달한 현재-authority
+overlay만 적용한다. 한 overlay는 economy→balanced 또는 balanced→frontier 한
+단계만 올릴 수 있다.

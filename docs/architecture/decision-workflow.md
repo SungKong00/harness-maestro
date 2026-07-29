@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 구현 전 전문 판단이 필요한 요청을 read-only DecisionPlan, 역할 제한 packet, DecisionBundle과 digest-bound enactment로 처리하는 계약.
 scope: [src/maestro/decisions.py, src/maestro/planning.py, src/maestro/registry.py, skills/maestro, decision-workflow]
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 supersedes: []
 sensitivity: internal
 ---
@@ -26,10 +26,24 @@ sensitivity: internal
 
 ```text
 요청 분류
+├─ 넓고 누락 위험이 큼
+│    → Task Coverage inventory·배분 → 검증 → Coverage를 묶은 첫 route
+│    → typed project evidence 투영·검증
+│    ├─ coverage gap 없음 → 아래 실행/판단 경로
+│    └─ 재사용 가능한 전문가 판단 공백
+│         → complete adaptation plan
+│         → deep discover research·후보 작성·detached 평가
+│         → Pack/Guide만 corrected route 1회
+│         → coverage admission READY 확인
 ├─ 판단만 / no code changes
 │    → read-only route 또는 decide → 결과 반환 → 종료
 ├─ 방향이 이미 정해진 작은 변경
 │    → 기존 route v2 → writer 1명 → verifier
+├─ 방향은 정해졌지만 기존 Guide가 여러 Pack/route 상한을 넘음
+│    → expertise-check → typed Pack별 work plan 검증
+│    → dependency-ready read-only 묶음만 병렬
+│    → packet closure·final admission 검증
+│    → 기존 route v2 writer 1명 → verifier
 └─ 판단 후 구현
      → maestro decide
      → 독립 Specialist packet
@@ -52,6 +66,33 @@ visual과 UX는 서로의 최초 결론을 보지 않는다. technical-feasibili
 현재 platform·repository·검증 경계에서 가능한지만 판단한다. 어느 역할도 코드를
 작성하지 않는다.
 
+### Expertise 작업 배분과 DecisionPlan의 경계
+
+여러 기존 Pack이 필요하다는 이유만으로 모든 작업을 `maestro decide`에 넣지 않는다.
+Expertise 작업 배분은 이미 존재하는 Guide 기준을 여러 read-only pass에 적용하고
+typed closure로 한 writer에게 합치는 계약이다. 반면 DecisionPlan은 방향 선택, 전문 역할
+사이의 material trade-off, 기술 타당성 판단을 구현 전에 고정해야 할 때 사용한다.
+
+두 경로 모두 최초 요구사항을 Pack 상한에 맞춰 줄이지 않고, 검토 pass는 쓰지 않으며,
+최종 mutation owner는 한 명이라는 invariant를 공유한다. AI는 필요한 판단과 batch
+책임, Guide 적용 결과를 판단한다. 코드는 canonical pair·digest·exactly-once·
+dependency·packet·closure·admission을 검증한다. Expertise Work Packet은 전용
+closure 계약이며 `SpecialistFindingPacket`이나 `DecisionBundle`은 아니다.
+Coverage-bound writer에는 Coverage, final admission, typed projection, work plan,
+closure 다섯 sidecar와 필요한 Pack별 ResearchBundle을 그대로 전달한다.
+
+CLI는 이 계약을 검증하지만 batch를 자동 시작·대기·취소·재시도하지 않는다.
+`parallel_groups`는 실행 지시이지 실행 기록이 아니다. AI/Host가 준비된 그룹을
+명시적으로 실행하고 terminal stage 근거를 남겨야 하며, 모든 Coverage pair가
+READY가 아니면 writer를 열지 않는다.
+
+현재 staged DecisionPlan은 blocking·important Coverage에 선택 route 밖의 Pack/Guide가
+필요하면 Specialist 실행 전에 `DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED`로
+중단한다. 즉 omitted Pack 판단 없이 방향을 먼저 정한 뒤 나중에 붙이는 흐름은
+허용하지 않는다. 방향이 이미 정해졌다면 위의 일반 multi-Pack 경로를 사용한다.
+향후 staged 결정까지 지원하려면 Expertise closure를 Specialist보다 먼저 만들고
+DecisionBundle이 그 sidecar를 직접 결합하는 별도 계약이 필요하다.
+
 ## 구현 계약
 
 ### RequestContract
@@ -71,13 +112,18 @@ visual과 UX는 서로의 최초 결론을 보지 않는다. technical-feasibili
 수정 금지로 오인되지 않는다. 이 두 축은 route v2의
 `task_contract`와 Assignment projection까지 함께 전달된다.
 
+`authorization_source`는 현재 Host가 사용자 요청을 확인했다는 운영자 attestation이지
+신뢰 가능한 승인 영수증은 아니다. 따라서 Host는 exact goal·risk·DecisionBundle·
+allowed path를 현재 요청과 직접 대조한 뒤에만 값을 넣고, 모호하면 중단한다. 문자열
+하나만 존재한다는 사실을 사용자 승인 증명으로 보고하면 안 된다.
+
 부정 표현이 인접 mutation keyword보다 우선한다. `auto`로 확신할 수 없으면 review다.
 staged 요청을 일반 route로 보내면 `DECISION_WORKFLOW_REQUIRED`를 반환한다.
 
 이 분리는 [MCP tool annotation](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)이
 `readOnly`, `destructive`, `idempotent`, `open-world` 위험을 한 값으로 합치지
 않는 방식과 같은 원칙을 따른다. 다만 annotation 자체를 권한 증명으로 신뢰하지
-않고 Maestro의 결정론적 계약과 Host sandbox로 강제한다.
+않고 Maestro의 계약 검사와 실제 Host sandbox 경계로 별도 확인한다.
 
 ### SpecialistContract와 packet
 
@@ -89,6 +135,8 @@ Host가 증명하지 못하면 attestation은 `unavailable`이다.
 `SpecialistFindingPacket`은 소유 concern, claim 종류, 짧은 statement, evidence
 reference와 confidence만 허용한다. 다른 역할의 문제는
 `target_specialism + question + evidence_refs` escalation으로 보낸다.
+한 packet은 finding 최대 5개, escalation 최대 3개다. schema와 실행 validator가
+같은 상한을 강제하며 초과 내용을 조용히 자르지 않는다.
 
 product-design·marketing·software-qa는 검증된 전용 Specialist 분할을 사용한다.
 그 밖의 새 Pack은 선택된 Guide만 소유하는 read-only
@@ -116,6 +164,24 @@ risk는 원래 요청이 구현을 명시했을 때 `prior_explicit_request`를 
 high·critical은 `explicit_user`가 필요하다. 승인 결과는 DecisionBundle digest,
 allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는다.
 
+`allowed_paths`는 존재하는 repository-relative 실제 디렉터리만 허용한다. Codex
+Host는 experimental schema에서 지원을 확인하고 API를 opt-in한 뒤 exact
+`runtimeWorkspaceRoots`로 그 디렉터리만 연다. `thread/start`가 같은 root set을
+반환하지 않거나 이를 증명할 수 없는 runtime이면 실행을 거부한다. 실행 뒤에는 Git에
+보이는 변경 경로가 허용 디렉터리 밖으로 나갔는지도 검사한다. 검사 전에는 활성 turn을
+interrupt해 terminal event를 확인하고, 관측한 각 thread의 background terminal을
+개별 terminate한 뒤 다시 빈 목록인지 확인하며, 마지막으로 App Server process
+group을 종료한다. 종료·정리 확인은 원래 실행 timeout과 분리된 짧고 제한된 grace를
+사용한다. repository HEAD 변화는 모두 거부한다. 이 사후 검사는
+방어층이지 sandbox 대체물이 아니며 ignored 파일까지 포괄하는 증명도 아니다.
+또한 Host가 관리하는 App Server group과 Codex가 추적한 terminal group의 종료를
+확인할 뿐, terminal 내부에서 다시 daemonize한 임의 descendant까지 열거했다는
+증명은 아니다. 따라서 exact runtime root sandbox가 여전히 1차 경계다.
+background-terminal 제어 API나 process-group 종료를 증명할 수 없는 Host도 scoped
+enactment를 fail-closed한다.
+`prohibited_changes`의 의미 준수는 packet·검증 단계에서 확인해야 하며 파일 sandbox가
+그 문장의 의미까지 자동 판정하지 않는다.
+
 ## 컨텍스트·운영 비용 제한
 
 - `decide`는 선택된 경우에만 실행한다. 모든 작업의 기본 경로가 아니다.
@@ -124,8 +190,12 @@ allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는
   Executor를 fresh role context로 사용한다.
 - 선택된 Pack에 전용 분할이 없으면 Guide-bounded 전문 검토자 한 명과
   technical-feasibility를 사용한다. Pack이 없을 때만 선택 Lens 최대 두 개로
-  역할을 구성한다.
+  역할을 구성한다. Registry가 세 Lens를 선택해 현재 다섯 Assignment 안에 보존할
+  수 없으면 `DECISION_COVERAGE_CAPACITY_EXCEEDED`로 중단하며 세 번째 Lens를
+  조용히 제거하지 않는다.
 - 새 database, scheduler, checkpoint, graph framework dependency가 없다.
+- 다중 Pack의 `expertise-check`와 typed 작업 배분은 DecisionPlan의
+  Assignment·Specialist 상한을 늘리지 않는다.
 - 전체 대화나 guide 본문을 DecisionBundle에 복사하지 않는다.
 - semantic LLM judge는 기본 validation에 추가하지 않는다. frozen high-risk
   evaluation에서 typed 검사가 놓치는 오염이 반복될 때만 Pilot한다.
@@ -137,13 +207,20 @@ allowed path와 금지 변경에 묶이며 CLI 자체는 파일을 쓰지 않는
 - 한·영 no-write 부정 표현이 구현보다 우선함
 - unknown auto가 read-only review로 감
 - staged 요청이 direct route를 열지 못함
+- staged 결정이 omitted multi-Pack 판단을 건너뛰지 못하고 preflight에서 중단함
 - visual이 기술 타당성을, UX가 코드 지시를, technical이 typography를 소유하지 못함
 - decision reviewer가 write capability를 요청하지 못함
 - 새 Pack의 Guide 경로·digest가 범용 Specialist 계약에 결합됨
+- Pack 없는 세-Lens 판단이 일부 Lens를 버리지 않고 typed capacity failure가 됨
+- Specialist finding 5개·escalation 3개 상한이 schema와 runtime에서 같음
 - 변조된 Guide 경로나 누락된 Guide load가 plan validation에서 거부됨
 - research open, blocker, feasibility fail, stale checkout, packet digest mismatch가
   enactment를 막음
 - 유효한 bundle만 기존 한 명 writer route로 연결됨
+- 유효하지 않은·`.`·부재·파일·symlink allowed path와 exact scope를 지원하지 않는
+  Codex runtime이 writer를 열지 못함
+- 다중 Pack 작업 계약이 route-capacity와 true expertise gap을 구분하고, 모든
+  blocking·important pair의 READY closure 전 writer를 열지 않음
 
 unit test는 계약을 증명하지만 실제 Host가 read-only tools와 fresh context를
 강제했다는 증거는 아니다. 릴리스 후보에서는

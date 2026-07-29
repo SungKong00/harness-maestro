@@ -1,12 +1,14 @@
 ---
 name: maestro-product-design
-description: Use when a Maestro route selects the product-design Expertise Pack for web or app product UI work, especially when screen purpose, Korean typography, visual hierarchy, layout, interaction states, responsive behavior, accessibility, or current design references require explicit professional criteria rather than generic aesthetic prompting.
+description: Use only when a validated Maestro route selects Product Design criteria for an evidence-backed UI change, including a single element, page, flow, design system, Korean typography, hierarchy, components, interaction, accessibility, references, information architecture, or run-oriented developer operations view.
 ---
 
-# Maestro Product Design
+# Product Design
 
-Apply selected design criteria as a compact professional rubric. This Skill is
-an Expertise Pack, not a separate permanent agent and not a visual style preset.
+Apply only the selected Guide criteria. This Pack is not a style preset, a
+separate designer agent, or a replacement for domain and user research. It
+turns material design choices into a conservative, reviewable sequence so that
+model taste cannot silently stand in for product evidence.
 
 <!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->
 This Pack never grants repository or external write authority. In a read-only
@@ -18,21 +20,24 @@ The Pack does not expand those boundaries or authorize another writer.
 
 ## Inputs
 
-Require:
+Require the product outcome, target roles and situations, representative tasks
+and states, current object and content inventory, platform and locale, known
+constraints, available research, current design system, and rendered or
+prototype evidence. Mark unsupported assumptions as unknown.
 
-- the product goal, users, primary action, content, platform, and constraints;
-- the current screen or implementation when one exists;
-- `expertise.selected_guide_ids` from a validated Maestro route v2;
-- project design conventions and tokens when the repository defines them.
-
-If essential product content is absent, identify the smallest blocking question.
-Do not invent business claims to make the composition look complete.
+For a route with `design_assurance`, also require the exact assurance
+requirement, selected Pack digest, bound ResearchBundle where required, and a
+validated Product Design Decision Packet. An implementation Assignment must not
+call a write tool before that packet is present, valid, bound to the current
+plan, and free of unresolved decisions.
 
 ## Guide loading
 
-Load only the route-selected guides:
+Load only references selected by the validated route:
 
 - `design-brief` → `references/design-brief.md`
+- `design-system-and-components` →
+  `references/design-system-and-components.md`
 - `typography-korean` → `references/typography-korean.md`
 - `visual-hierarchy-layout` → `references/visual-hierarchy-layout.md`
 - `interaction-responsive-accessibility` →
@@ -40,79 +45,142 @@ Load only the route-selected guides:
 - `reference-selection` → `references/reference-selection.md`
 - `information-architecture-and-user-flow` →
   `references/information-architecture-and-user-flow.md`
+- `operational-workflow-interface` →
+  `references/operational-workflow-interface.md`
 
-Do not open every reference by default. The route selects at most four.
+Do not open all Guides for an ordinary task. The assurance requirement's fixed
+surface scan still covers omission risk; selected Guides provide detailed
+criteria only for the material surfaces.
 
 ## Research gate
 
 Read `expertise.research_requirement`.
 
-- `not-required`: use the selected guides and project evidence; do not repeat
-  general design research.
-- `open`: stop implementation. Run the host-approved reference research
-  workflow through `$maestro-reference-research` for the exact screen pattern,
-  save a validated bound v2 ResearchBundle without dropping source-plan or
-  claim semantics, and reroute with its artifact path.
-- `satisfied`: use the artifact as contextual evidence, not as permission to
-  copy a reference.
+- `not-required`: allowed for an assured design mutation only in `compact`
+  mode after every compact eligibility condition is evidenced; use selected
+  Guides and current project evidence.
+- `open`: stop implementation and run the host-approved reference research
+  workflow for the exact product question.
+- `satisfied`: use the bound ResearchBundle as contextual evidence, never as
+  permission to copy a surface.
 - `in-plan`: the current read-only research Assignment produces the evidence.
 
-Never mark an open gate satisfied with a URL list, fabricated digest, search
-snippet, or the same model's unsupported preference.
+`standard` and `system` assurance require an exact satisfied ResearchBundle.
+Research must open for a new or forked primitive or variant, changed meaning or
+action hierarchy, new token family or visual language, external pattern
+transfer, page redesign, or unresolved Korean typography or accessibility.
+Spend more research and reasoning budget when uncertainty is material; do not
+lower the gate merely because implementation would be quick.
 
-When `reference-selection` is selected, the research evidence must include
-exact-screen shipped-product examples for the target task, one adjacent example,
-and one counterexample. Record screenshot or observed-state evidence for each;
-mark missing state or responsive evidence `unverified`. State which decisions
-transfer and which do not. Foundation, token, and standards documents may
-constrain the work but never substitute for a shipped-screen reference.
+When `reference-selection` is selected, require exact-task shipped states, an
+adjacent example, a counterexample, and applicable standards. Record URL,
+access date, observed state, unverified gaps, transferable decisions, and
+non-transferable context.
 
-## Advisory sequence
+## Authority labels
 
-1. Translate the brief into a ranked content and action hierarchy.
-2. Read only the selected Decision Guides.
-3. Inspect current artifacts and project tokens before proposing a new system.
-4. Make explicit choices for typography, scale, spacing, emphasis, states, and
-   responsive behavior that are relevant to the task.
-5. In a read-only Assignment, return evidence-backed recommendations inside the
-   assigned Specialist contract. In the mutation-owner Assignment, apply the
-   same criteria only within its authorized implementation boundary. Send
-   technical, UX, or other out-of-scope questions through typed escalations
-   instead of deciding them.
-6. Evaluate an existing rendered result at representative widths and interaction
-   states when one is supplied. Do not create code or claim an unrendered
-   proposal was visually verified.
-7. Return evidence and remaining uncertainty; do not claim “professional” from
-   visual polish alone.
+Keep every adopted check in one of four lanes:
+
+- **rule** — a directly applicable standard or project authority;
+- **checklist** — a supported product-design practice requiring current
+  product evidence;
+- **optional pattern** — a plausible approach to compare, not a default;
+- **warning** — a recurring failure or invalid transfer to avoid.
+
+Never convert one design system's token values or a shipped product screenshot
+into a universal rule.
+
+## Mandatory assured workflow
+
+When the route contains `design_assurance`, use this sequence in order:
+
+1. Classify the request as `compact`, `standard`, or `system`. If any compact
+   eligibility fact is missing, choose `standard`.
+2. Frame the user, task, state, consequence, content, and action priority.
+3. Audit the project's current tokens, components, conventions, consumers, and
+   lifecycle before proposing values or shapes.
+4. Complete required research and bind the exact ResearchBundle. Separate
+   applicable standards, project facts, transferable reference decisions,
+   counterexamples, and rejected transfers.
+5. Scan all fourteen design surfaces from
+   `design-system-and-components`; mark each covered or not applicable with
+   evidence.
+6. Build and validate the Design Decision Packet. Give every material decision
+   a semantic role, authority, basis, value or token lineage, affected states,
+   and rendered scenarios. This is per decision family, not per CSS line.
+7. Only then may the single owning writer implement. Reuse stable components
+   and semantic tokens before extending them. No silent raw values.
+8. Render every declared scenario in the actual consuming page or an equivalent
+   state fixture. Return exact file/artifact mappings for every decision.
+9. A read-only verifier checks the bound renders, behavior, accessibility,
+   localization, responsive states, visual changes, and task/design contract.
+   Completion requires all declared scenarios to pass.
+
+The Pack's prose never substitutes for the typed assurance gate. Current-Host
+fallback may investigate or stop, but it cannot attest a successful assured
+writer or verifier; completion requires owned-Host packet receipts.
+
+## Proportional scope
+
+- `compact` keeps the packet small: unchanged semantics, a stable existing
+  component and token lineage, affected states, one bounded decision, and a
+  real local render. It does not waive verification.
+- `standard` is the default for a new element, section, page, or material
+  redesign: system audit, contextual research, alternatives where uncertain,
+  material decision records, and representative rendered states.
+- `system` is for a new visual language or reusable foundation: foundations,
+  semantic roles, component taxonomy and lifecycle, provenance, representative
+  fixtures, held-out evaluation, and bounded adoption.
+
+When structure requires microinteraction choreography, scroll-linked progress,
+pinning, parallax, reduced-motion mechanics, browser support, or runtime
+performance, define the interaction job here and hand the mechanism to
+`interactive-web-motion`.
+
+Avoid overengineering by creating only tokens, variants, components, and
+documentation demanded by current material decisions. Do not create one Guide,
+token layer, or component abstraction per CSS property.
 
 ## Completion contract
 
 Return:
 
 ```text
-brief:
 selected_guides:
-priority_model:
-decisions:
-recommended_changes:
-rendered_checks:
-accessibility_and_state_checks:
-reference_artifact:
-remaining_uncertainty:
+assurance_mode:
+authority_labels:
+problem_and_task:
+system_inventory_and_reuse:
+evidence_and_assumptions:
+surface_scan:
+required_artifacts:
+material_decisions_and_value_lineage:
+alternatives_considered:
+implementation_mapping:
+verification_observations:
+unresolved_risks:
 verdict:
 ```
 
 ## Guardrails
 
-- Do not choose a font that lacks the required Korean glyph coverage.
-- Do not encode hierarchy with size alone or color alone.
-- Do not treat a desktop hero screenshot as proof of responsive behavior.
-- Do not hide missing states behind a static mock.
-- Do not copy a reference's brand expression or layout without testing its
-  product role and content constraints.
-- Do not promote one task-specific observation into this Skill. Send reusable
-  candidates through the expertise candidate lifecycle.
-- Do not independently emit code, file edits, tool calls, or implementation
-  commands from a read-only Assignment. A mutation-owner Executor may implement
-  selected Guide criteria only when the validated Maestro plan already grants
-  that authority.
+- Do not report an unrendered screen or unobserved interaction as verified.
+- Do not choose a component's type, size, spacing, color, shape, state, or
+  placement from “appropriate,” “modern,” or model taste without a recorded
+  semantic and value lineage.
+- Do not use `compact` for a new primitive, variant, token family, visual
+  language, changed meaning/action hierarchy, external transfer, or unresolved
+  localization/accessibility question.
+- Do not require a citation for every CSS declaration; require evidence for
+  material decisions and explicit raw exceptions, then inherit through tokens
+  and component contracts.
+- Do not substitute accessibility automation for keyboard, focus, reflow, and
+  representative task checks.
+- Do not copy a reference's brand surface without a transferable product
+  decision and local validation.
+- Do not prescribe a complete research study when a low-risk correction has no
+  material product uncertainty and all compact eligibility is proven.
+- Do not load `operational-workflow-interface` from generic design, page,
+  layout, card, workflow, or backend terms alone; require a run-oriented
+  dependency or execution-provenance signal selected by the route.
+- Do not expand a read-only Assignment or the selected Guide set.

@@ -22,6 +22,42 @@ read-only lane only when its evidence is independent, decision-changing, and
 better collected separately. Use at most three initial lanes and one material
 conflict follow-up with new evidence.
 
+## Task-gap authoring
+
+A `true-expertise-gap` uses `discover` at `deep` depth. Do not start by choosing
+how many Guides or Pack candidates to produce.
+
+1. Discover every decision question and failure boundary named by Task
+   Coverage.
+2. Divide independent evidence into official or primary material,
+   implementation repositories or examples, and field or failure evidence.
+   Parallelism is for independent lanes, not a source-count target. Each
+   initial lane must contribute at least one source not reused by another
+   initial lane; a shared canonical source is allowed when every lane also has
+   distinct evidence.
+3. Preserve contrary evidence and transfer limits, then synthesize one exact
+   `discover` ResearchBundle v2.
+4. Let the surface classifier choose the smallest change: create or revise a
+   Guide, create a Pack, or prepare an explicit merge, selected-Guide
+   extraction, split, move, or copy ChangeSet.
+5. Write the isolated candidate only after research, freeze its exact subject
+   and cases, and have a different fresh-context or human evaluator execute a
+   Host-observed read-only evaluation.
+6. A validated non-complex Pack or Guide candidate may correct the producing
+   task route once. Merge, extraction, split, move, copy, and
+   Registry-component candidates remain later-review changes and cannot alter
+   the producing task.
+
+The AI judges which questions matter, source applicability, claim adoption,
+professional trade-offs, and semantic candidate boundaries. Deterministic
+validation checks source identity, query and lane references, exact artifact
+digests, route binding, candidate lineage, and detached evaluation receipts.
+Neither source count nor a valid digest proves a claim true.
+
+There is no automatic lane scheduler, retry loop, or candidate repair daemon.
+The Host launches dependency-ready read-only work and performs only the bounded
+repairs allowed by the owning Builder workflow.
+
 ## Evidence contract
 
 Use the Research Skill's source-tier, query, claim, conflict, and adoption
@@ -66,6 +102,14 @@ maestro route --repo . --route-version v2 --goal "<goal>" \
 Only v2 `status: completed` evidence with a matching binding may close the
 gate. A raw digest, lane packet, legacy v1 artifact, insufficient bundle, or
 unrelated bundle is rejected.
+
+For Coverage-bound multi-Pack work, evaluate the policy of every canonical
+Pack, not only the top route Pack. Pass one repeatable
+`--expertise-research-evidence <bundle.json>` to `plan-work`,
+`validate-work`, final admission, Assignment projection, and Host execution
+for each Pack whose `contextualize` or `refresh` gate is open. Each bundle must
+bind that Pack's exact Guide set, mode, goal, and definition digest; bundles
+are not interchangeable across Packs.
 
 Revalidate a satisfied plan with the same artifact:
 

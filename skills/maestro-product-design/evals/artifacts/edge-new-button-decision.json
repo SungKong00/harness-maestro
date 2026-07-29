@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-new-button-decision",
+  "baseline_observation": "Product Design v6 lacks button routing and a formula connecting action semantics, content metrics, target constraints, token lineage, lifecycle, and consuming-page verification.",
+  "candidate_observation": "Product Design v7 classifies action, consequence, reversibility, and permission first, derives dimensions from project control roles and real labels, distinguishes WCAG AA 24px from AAA 44px, and forbids stable promotion from one render.",
+  "evidence_refs": [
+    "candidate:maestro-pack:button-triggers",
+    "candidate:design-system-and-components:actions-and-buttons",
+    "candidate:interaction-responsive-accessibility:checks-3-10",
+    "candidate:typography-korean:checks-1-10",
+    "research:claim-action-semantics-before-style",
+    "research:reject-universal-button-height",
+    "research:claim-component-lifecycle",
+    "route-result:edge-new-button-decision"
+  ]
+}

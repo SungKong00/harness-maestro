@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-generic-product-design",
+  "baseline_observation": "A narrow evidence-only trigger boundary can omit the bundled Product Design Pack for ordinary interface work.",
+  "candidate_observation": "The versioned Pack preserves stable Product Design routing for the generic settings-screen request while reserving contextual research for explicit current-reference signals.",
+  "evidence_refs": ["route-replay:generic-product-design-v5", "observed-pack:product-design", "observed-mode:reuse", "observed-guides:design-brief,interaction-responsive-accessibility,visual-hierarchy-layout"]
+}

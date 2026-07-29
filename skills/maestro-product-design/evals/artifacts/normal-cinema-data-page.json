@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-cinema-data-page",
+  "baseline_observation": "Product Design v6 can choose cards, tables, and list-detail from task structure but has no shared component anatomy, token lineage, or full page-state contract.",
+  "candidate_observation": "Product Design v7 chooses representation and visualization encoding from browse, compare, inspect, and decision tasks, defines shared anatomy and state contracts, and binds dense, empty, loading, partial-failure, narrow, and localized renders.",
+  "evidence_refs": [
+    "baseline:information-architecture-and-user-flow:check-6",
+    "candidate:design-system-and-components:cards-and-data",
+    "candidate:design-system-and-components:component-contract",
+    "candidate:information-architecture-and-user-flow:check-6",
+    "candidate:design-system-and-components:verification",
+    "research:claim-state-matrix",
+    "research:reject-visual-snapshot-quality",
+    "route-result:normal-cinema-data-page"
+  ]
+}

@@ -2,120 +2,96 @@
 
 ## Purpose
 
-Turn user outcomes, end-to-end journey boundaries, roles, situations, reachable
-states, evidence needs, and action priority into a coherent page and flow
-structure before visual styling or motion chooses the surface.
+Connect user outcomes and tasks to objects, states, relationships, evidence,
+permissions, actions, navigation, page boundaries, and recovery before a
+visual layout or component catalogue becomes the product structure.
 
 ## Use when
 
-Use for web or product UI work that must decide page scope, section order,
-navigation, role- or state-dependent content, action emphasis, continuity
-between pages, or whether an interaction deserves separate motion design.
+Use for page scope, navigation, object and state modeling, role-aware content,
+task flow, dashboards, list-detail decisions, consequential actions, and
+cross-page continuity. Use a compact task map for bounded single decisions and
+an end-to-end journey only when the broader path changes the design.
 
 ## Inputs
 
-- evidence-backed user problems and desired outcomes;
-- entry channels, prerequisites, prior knowledge, and downstream destinations;
-- roles, permissions, task frequency, experience, working context, and device or
-  accessibility constraints;
-- reachable default, returning, loading, empty, success, failure, retry,
-  cancellation, undo, and permission-denied states;
-- content, data, proof, help, action, and policy inventories;
-- current journeys, analytics, support findings, research, and rendered
-  artifacts when available.
+- evidence-backed user outcomes, tasks, current process, and failure consequences;
+- entry channels, prerequisites, downstream destinations, and recovery;
+- objects, states, relationships, permissions, evidence, content, and actions;
+- roles, situations, frequency, time pressure, expertise, and device constraints;
+- realistic data, analytics, research, support findings, and current journey.
 
 ## Decision checks
 
-1. **Bound the journey.** Name the problem being solved, what happens before
-   this surface, the user's desired outcome, what happens after it, and the
-   continuation or recovery path. Do not let organizational or technical
-   ownership define the user's journey.
-2. **Map role and situation differences.** Compare task, frequency, experience,
-   permissions, evidence needs, risk, collaboration, interruption, and device
-   constraints. Split the experience only where these differences change
-   information, action, or verification; do not fork by persona label alone.
-3. **Inventory decisions and evidence.** For each journey step, list the user
-   question, decision, information, proof, status, help, and next action. Every
-   prominent element must serve one of these jobs.
-4. **Choose page and section boundaries.** Group content that answers the same
-   question or supports one decision. Split when prerequisites, risk, state,
-   recovery, or cognitive load require a checkpoint. Keep together when users
-   must compare, repeat, or switch rapidly. “One thing per page” and progressive
-   disclosure are context-dependent patterns, not universal rules.
-5. **Set action hierarchy per state.** Name primary, secondary, destructive,
-   recovery, and deferred actions for each role and reachable state. Reserve
-   strongest prominence and persistent placement for the action that advances
-   the current outcome; do not make every possible action compete.
-6. **Preserve meaningful order and continuity.** Align visual grouping,
-   programmatic reading order, focus order, responsive reflow, navigation,
-   labels, help, and repeated controls so they preserve meaning and a coherent
-   mental model. Avoid needless repeated input and provide review or correction
-   for consequential submissions.
-7. **Place interaction by job.** Use interaction for feedback, authoritative
-   state change, continuity, orientation, disclosure, comparison, manipulation,
-   or decision support. Prefer static content or native controls when they do
-   the job. Keep essential information and recovery available without
-   animation.
-8. **Hand off motion deliberately.** When the decision requires microinteraction
-   choreography, scroll-trigger thresholds, progress-linked scrub or pin,
-   parallax, motion reduction, browser support, or runtime performance, state
-   the interaction job and send the mechanism to `interactive-web-motion`.
+1. Bound the user problem before and after the surface: entry, prerequisites,
+   desired outcome, completion, cancellation, failure, retry, and recovery.
+2. Build an object-state-relationship model and a task-to-information map.
+   Separate source facts, calculated summaries, inferences, and unavailable
+   evidence where that distinction changes user trust.
+3. Compare roles and situations by task, context, permission, evidence, action,
+   risk, collaboration, frequency, and verification. Do not fork by persona
+   label alone.
+4. Give every prominent element and persistent action a user question,
+   decision, proof, status, or next-action job.
+5. Choose page and section boundaries from comparison, switching, prerequisite,
+   risk, recovery, and cognitive load. One-thing-per-page and progressive
+   disclosure are optional patterns, not universal rules.
+6. Choose the primary representation from the task: graph for topology and
+   causality, timeline for chronology, table for cross-row comparison,
+   list-detail for selection and investigation, and cards for modular summary.
+7. Preserve meaning across visual order, DOM order, focus order, responsive
+   reflow, navigation, repeated labels, and help.
+8. Keep critical status, prerequisites, consequence, failure, and recovery out
+   of secondary disclosure.
 
 ## Required evidence
 
-- at least one representative user need, task, or journey artifact;
-- a page or flow inventory with entry, exit, completion, cancellation, and
-  recovery states;
-- role × situation × state differences that change content, proof, or action;
-- traceability from prominent elements and controls to a user question,
-  decision, evidence need, status, or next action;
-- representative content and task evidence at relevant viewport and input
-  conditions;
-- a clear unknown or research request wherever the structure depends on an
-  unsupported assumption.
+- proportional task or journey map with entry, exit, cancellation, failure,
+  retry, and recovery;
+- object, state, relationship, permission, evidence, and action inventory;
+- role and situation differences that actually change content or behavior;
+- traceability from prominent elements and controls to task needs;
+- representative end-to-end walkthrough with realistic content and states.
 
 ## Reject or stop when
 
-- the primary user problem or desired outcome is unknown and plausible answers
-  would change page scope;
-- roles are labels without task, context, permission, or evidence differences;
-- a critical state, policy, status, or recovery path has no authoritative
-  source;
-- the proposed order works only visually and breaks reading, focus, responsive,
-  or cross-page continuity;
-- interaction or motion is proposed only to create novelty or emphasis;
-- a current competitor, platform, or browser claim is required but no validated
-  contextual research exists.
+- the organization chart, database, or component catalogue is being mirrored
+  without a task rationale;
+- critical object, state, permission, policy, or recovery facts are unknown;
+- a visual order works only at one width or only with pointer interaction;
+- a graph, card grid, or disclosure is selected because it looks modern.
 
 ## Verification
 
-Walk representative end-to-end tasks with realistic content for each material
-role, situation, and reachable state. Confirm:
+Walk representative primary, switching, comparison, partial-failure,
+permission-denied, cancellation, and recovery tasks. Confirm users can locate
+the current state, evidence, next safe action, and return path. Record dead
+ends, duplicate input, hidden prerequisites, and broken continuity.
 
-- users can identify where they are, what matters now, and the next safe action;
-- no journey step becomes a dead end and completion, cancellation, correction,
-  retry, undo, and permission-denied paths remain reachable where applicable;
-- primary and recovery actions retain the intended priority at narrow widths,
-  zoom, long content, localization, keyboard, touch, and screen-reader order;
-- repeated navigation, labels, help, and controls remain predictable;
-- hidden content is not required to understand status, prerequisites,
-  consequence, or recovery;
-- any motion handoff names a user-facing job, static or reduced alternative, and
-  evidence needed from `interactive-web-motion`.
+## Authority and evidence boundary
 
-Use rendered prototypes, task walkthroughs, accessibility inspection, and
-representative user or operational evidence. Source inspection alone is not
-proof that the structure works.
+- **rule** — `w3c-wcag-reflow`, `w3c-focus-order`, and
+  `w3c-animation-from-interactions` constrain meaning across reflow, focus,
+  and interaction-triggered motion.
+- **checklist** — `govuk-user-needs`, `govuk-whole-journey`,
+  `govuk-internal-users`, and `uswds-principles` support outcome-led,
+  end-to-end, role-aware and continuously tested service structure.
+- **examples** — `uswds-card`, `primer-progressive-disclosure`, and
+  `material-canonical-layouts` show local cards, disclosure, feed,
+  list-detail, and supporting-pane choices.
+- **derived checklist** — the object-state-relationship-permission-evidence
+  model, role/situation comparison dimensions, representation-selection
+  matrix, and critical-information disclosure boundary synthesize these
+  sources for this Pack.
+- **current evidence gap** — there is no independent IA-method source or
+  retained project journey, object model, card sort, tree test, task
+  walkthrough, or usability observation. A future publication review must
+  evaluate the derived model rather than treating ten linked sources as proof.
 
 ## Counterexamples
 
-- A marketing moodboard needs visual and brand direction, not a full task-flow
-  map unless it also defines a transactional journey.
-- A backend retry queue has states and flows but is not web information
-  architecture.
-- A typography-only correction belongs to the inherited typography Guide.
-- A scroll storytelling scene belongs to `interactive-web-motion` after the
-  page narrative and content order are already justified.
-- A high-frequency operations screen may keep comparison and batch actions
-  together; blindly splitting every decision onto a separate page can slow the
-  task and remove necessary context.
+- A typography-only correction does not require a full journey.
+- A backend retry graph has states and edges but is not product information
+  architecture unless a user must inspect or act on it.
+- High-frequency internal users may need comparison, batch action, and complete
+  relevant context in one view rather than repeated disclosure.

@@ -1,129 +1,76 @@
 {
+  "schema_version": "maestro_expertise_eval_results_v1",
   "expertise_pack_id": "product-design",
   "results": [
     {
-      "case_id": "routine-dashboard",
-      "observed_guides": [
-        "design-brief",
-        "visual-hierarchy-layout",
-        "interaction-responsive-accessibility"
-      ],
-      "observed_mode": "reuse",
+      "case_id": "normal-furniture-landing-system",
       "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "korean-type",
-      "observed_guides": [
-        "typography-korean",
-        "visual-hierarchy-layout"
-      ],
-      "observed_mode": "reuse",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "current-references",
-      "observed_guides": [
-        "reference-selection"
-      ],
       "observed_mode": "contextualize",
+      "observed_guides": ["reference-selection", "design-brief", "design-system-and-components", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-cinema-data-page",
       "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "responsive-accessibility",
-      "observed_guides": [
-        "interaction-responsive-accessibility"
-      ],
-      "observed_mode": "reuse",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "refresh-pack",
-      "observed_guides": [
-        "design-brief"
-      ],
-      "observed_mode": "refresh",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "operations-dashboard-verification",
-      "observed_guides": [],
-      "observed_mode": "reuse",
-      "observed_pack_id": null,
-      "verdict": "pass"
-    },
-    {
-      "case_id": "unknown-expertise",
-      "observed_guides": [],
-      "observed_mode": "discover",
-      "observed_pack_id": null,
-      "verdict": "pass"
-    },
-    {
-      "case_id": "normal-role-aware-onboarding",
-      "observed_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "observed_mode": "reuse",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "normal-decision-support-page",
-      "observed_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "observed_mode": "reuse",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "edge-high-frequency-operations",
-      "observed_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "observed_mode": "reuse",
-      "observed_pack_id": "product-design",
-      "verdict": "pass"
-    },
-    {
-      "case_id": "non-trigger-backend-orchestration",
-      "observed_guides": [],
-      "observed_mode": "reuse",
-      "observed_pack_id": null,
-      "verdict": "pass"
-    },
-    {
-      "case_id": "overlap-scroll-storytelling",
-      "observed_guides": [],
-      "observed_mode": "reuse",
-      "observed_pack_id": null,
-      "verdict": "pass"
-    },
-    {
-      "case_id": "korean-design-research-theme",
-      "observed_guides": [
-        "reference-selection"
-      ],
       "observed_mode": "contextualize",
-      "observed_pack_id": "product-design",
+      "observed_guides": ["design-system-and-components", "information-architecture-and-user-flow", "design-brief", "visual-hierarchy-layout"],
       "verdict": "pass"
     },
     {
-      "case_id": "adjective-only-ui-refresh",
-      "observed_guides": [
-        "design-brief",
-        "visual-hierarchy-layout",
-        "interaction-responsive-accessibility"
-      ],
-      "observed_mode": "reuse",
+      "case_id": "edge-new-button-decision",
       "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["design-brief", "design-system-and-components", "typography-korean", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-compact-existing-button",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": ["design-system-and-components", "visual-hierarchy-layout", "design-brief", "interaction-responsive-accessibility"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-form-recovery",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["interaction-responsive-accessibility", "design-system-and-components", "design-brief", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-korean-typography",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["typography-korean", "visual-hierarchy-layout", "design-brief", "design-system-and-components"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-new-visual-language",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["design-brief", "design-system-and-components", "visual-hierarchy-layout", "interaction-responsive-accessibility"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-scheduler",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-scroll-motion",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-operational-workflow",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["reference-selection", "information-architecture-and-user-flow", "operational-workflow-interface", "design-brief"],
       "verdict": "pass"
     }
-  ],
-  "schema_version": "maestro_expertise_eval_results_v1"
+  ]
 }

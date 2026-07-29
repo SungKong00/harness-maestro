@@ -6,7 +6,7 @@ status: active
 authority: repository
 owner: harness-maestro
 topic: operations-viewer
-scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/expertise_health.py, src/maestro/resources/viewer/**]
+scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/request_records.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/expertise_health.py, src/maestro/resources/viewer/**]
 summary: 작업 계획과 Host 실측값, Expertise 구성요소 근거, 반복 개선 신호와 typed project-local 작업을 한 로컬 페이지에서 다루고 전체 연결을 점검하는 최소 운영 구조.
 last_verified: 2026-07-29
 supersedes: []
@@ -151,7 +151,7 @@ Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승
 | --- | --- | --- | --- |
 | 작업 결과 | `completed/corrected/failed/blocked/interrupted` | 완료됨 / 수정 후 완료 / 실패함 / 진행 불가 / 실행 중단됨 | 작업이 최종적으로 어떻게 끝났는가 |
 | 단계 실행 | `planned_only/not_observed/completed/failed/blocked/skipped/interrupted` | 실행 전(계획) / 이전 형식·세부 기록 없음 / 완료 / 실패 / 진행 불가 / 선행 결과로 생략 / 실행 중단 | 단계별 terminal 결과가 실제로 기록됐는가 |
-| 모델·토큰 기록 | `host_not_connected/host_request_observed/host_event_stream_complete` | 모델·토큰 기록 없음 / 채팅에서 선택한 설정만 기록됨 / 실제 실행 모델 기록됨 | 실행 환경에서 어떤 값을 실제로 받았는가 |
+| 모델·추론·토큰 기록 | `host_not_connected/host_request_observed/host_event_stream_complete` 또는 `execution_ledger_unavailable/execution_ledger_request_only/execution_ledger_complete` | 관측 연결 없음 / 요청 설정만 기록 / 실행 Ledger 측정값 없음 / 실측 기록 완료 | 실행 환경에서 권고·요청과 구분되는 어떤 값을 실제로 받았는가 |
 | 최종 기록 전 관측 | `in_progress/stale/receipt_pending/receipt_stale` | 실행 관측 중 / 실행 상태가 24시간 넘게 미정리 / 실행 종료·최종 기록 대기 / 실행 종료 뒤 24시간 넘게 최종 기록 미완료 | 실행과 최종 기록이 각각 어느 상태인가 |
 | Pack 사용 단계 | `candidate/pilot/active/deprecated/retired` | 확정 전 후보 / 시험 사용 / 정식 사용 / 교체 예정 / 사용 종료 | 전문 지식 묶음이 어느 사용 단계인가 |
 | Guide 최신성 | `stable/versioned/volatile` | 변경이 드문 기준 / 사용 버전별 확인 / 작업 때 최신 자료 확인 | 근거를 언제 다시 확인해야 하는가 |
@@ -162,10 +162,10 @@ Pack 하나의 Guide·근거를 master-detail로 보여준다. 검증 명령 승
 - 짧은 배지는 상태만 말하고, 원인과 다음 행동은 바로 옆 설명이나 tooltip에 쓴다.
 - `기록 없음`, `불러옴 기록 없음`은 오류가 아니므로 경고색으로 표시하지
   않는다. 실제 실패·충돌·검토 필요 상태만 경고나 오류색을 사용한다.
-- compact 실행 footer는 설명 label을 반복하지 않고
-  `5.6 terra - 요청 high, 55,550, 27.6m`처럼 비교 가능한 순서로만 표시한다. 다만 없는
-  값을 하나의 모호한 `기록 없음`으로 합치지 않고 `모델 기록 없음`,
-  `추론 기록 없음`, `토큰 기록 없음`, `시간 기록 없음`처럼 필드별로 말한다.
+- compact 실행 footer는 첫 줄에 `실측/Hook/요청/권고/해당 없음/미기록` 출처와
+  모델·추론을, 둘째 줄에 token·시간을 같은 순서로 표시한다. 없는 값을 하나의
+  모호한 `기록 없음`으로 합치거나 권고·요청값으로 채우지 않고 `모델 미기록`,
+  `추론 미기록`, `토큰 미기록`, `시간 미기록`처럼 필드별로 말한다.
 - 색만으로 상태를 구분하지 않고 항상 텍스트를 함께 표시한다.
 - 후보 상태는 내부 enum을 직역하지 않는다. `현재 사용 가능 · 프로젝트에 미확정`,
   `프로젝트에 확정됨`, `사용 기한 종료 · 기준 다시 확인 필요`,
@@ -221,8 +221,36 @@ Route depth는 작업 절차, reasoning effort는 모델에 요청한 추론 강
 
 최근 작업 목록에서 Run 하나를 선택하면 `?view=work&run=<event-id>`의 단일 작업
 workspace로 이동한다. 목록과 workspace를 동시에 노출하지 않으며, Back/Forward와
-`← 작업 목록`이 같은 이동 계약을 사용한다. workspace는 결과·검증·실제 모델·시간·
-수정 횟수를 먼저 보여준 뒤 실행 지도를 렌더링한다.
+`← 작업 목록`이 같은 이동 계약을 사용한다. workspace는 완료 상태·검증·실제 모델·
+요청 추론 강도·실측 token·실행 시도 시간 합계의 여섯 지표를 먼저 보여준 뒤 실행
+지도를 렌더링한다. 시도 시간 합계는 wall-clock 요청 latency로 부르지 않으며,
+부분 관측이면 관측된 시도 수를 함께 표시한다.
+수정 횟수와 전문성 라우팅은 별도 보조문으로 둔다. 모델 지표의 설명에서도
+`실측`, `Host 요청`, `Maestro 권고`를 서로 다른 출처로 유지한다.
+
+### 모델 정책 피드백 화면
+
+작업 workspace의 모델·추론·token·시간은 한 Run의 실행 사실이다. 집계 피드백은
+그 칸에 합치지 않고 관리 화면의 `모델 정책 피드백` section에 따로 둔다. 현재
+Run에는 정확히 같은 일곱 subject 축의 그룹만 sibling `model_feedback_ref`로
+연결하며, 현재-definition이 아니거나 read-only stage이거나 한 축이라도 다르면
+참조하지 않는다. 브라우저 계약은 끊어진 report/group ID와 subject 불일치를
+fail-closed로 거부한다. top-level·flow·stage뿐 아니라 해당 mutation-owner의 모든
+observed-work card도 같은 ref를 가져야 하며, card ref가 삭제되거나 다른 Assignment에
+붙으면 snapshot 전체를 거부한다.
+
+화면은 최근 200개 증거 창과 mutation-owner-only 범위를 먼저 밝히고 다음 세 지표를
+분리해 표시한다.
+
+- 경로 권고 후 검증 실패
+- 실제 적용 모델에서 검증 실패
+- 모델에 귀속 가능한 구현 실패
+
+각 값은 실패/표본, 실패율, Wilson 95% 구간, 귀속 제외 이유, gate와 정책 후보를
+보여 준다. `모델 실패 탐지율`이라고 부르지 않는다. 검증하지 않은 모든 실제 결함의
+분모가 없으므로 detector recall을 측정한 값이 아니기 때문이다. 보고서는
+`관찰 통계 · 자동 정책 변경 없음 · 자동 하향 없음`으로 표시하며, 상향 후보도
+현재 권고·요청·적용 모델처럼 보이지 않게 구분한다.
 
 실행 지도는 관계 rank를 시간·인과의 화면 단위로 사용한다. 가장 오래된 첫 rank부터
 최종 결과까지 **위→아래**로 두고, 같은 rank의 관계상 독립 작업만 같은 wave 안에
@@ -231,11 +259,36 @@ workspace로 이동한다. 목록과 workspace를 동시에 노출하지 않으�
 기본 geometry는 인접 rank만 연결하고, 1→N·N→1 또는 완전한 bipartite component만
 shared fork/join trunk를 사용할 수 있다.
 
+wave와 카드는 관계 번호만 반복하지 않고 raw kind와 display edge에서 증명할 수 있는
+`제어 시작`, `위임 검토`, `독립 실행`, `결과 합성`, `후속 판단` 역할을 함께
+표시한다. 한 wave에 역할이 섞이면 역할별 개수를 따로 쓰며, 다른 카드와 relation이
+없는 기록은 `관계 미연결`로 낮춘다. 이 판정에는 화면용 인접 관계 묶음뿐 아니라
+detail-only raw edge도 사용한다. raw 선행 관계가 있으면 `독립 실행`이나
+`관계 미연결`로 승격·강등하지 않고, 인접 단계가 아니어서 선이 생략됐음을 카드
+문장으로 알린다. request attempt가 달라도 임의로 재시도라 부르지 않는다.
+`request_record_projection` provenance의 `followup_of` edge로 증명된 경계만
+`요청 시도 N 종료 → 요청 시도 N+1 재시작`으로 표시한다. fork·join·follow-up은
+SVG 선만으로 설명하지 않고 인접 wave 사이의 DOM 문장과 카드의 관계 문장에도
+남긴다.
+
+카드의 terminal 상태는 그 **단계 자체**의 결과이고 요청 workspace의 결과와 다른
+축이다. 따라서 마지막 제어 판단이 `completed`여도 요청 결과가 `blocked`이면
+`후속 판단 자체는 완료됨 · 요청 최종 결과는 진행 불가`처럼 두 범위를 동시에
+표시한다. 비성공 요청은 실행 지도 앞에서 최종 결과와 blocked·skipped 계획 단계의
+영향을 지속 노출한다. 로컬 단계 성공색만으로 요청 전체 성공을 암시하지 않는다.
+
 접힌 카드의 읽기 순서는 단계 주제 → 근거 있는 짧은 결정·결과 → 담당 책임과
 전문 지식 → compact 모델·추론 설정·token·시간이다. 선택한 단계는
 `stage=<work-or-stage-id>`로 표현하며 **같은 카드가 자기 자리에서 아래로
-확장**되어 outcome, handoff, evidence·verification, Pack→Guide→Lens, 기술
-provenance를 품는다. 같은 카드를 다시 선택하거나 카드 안에서 Escape를 누르면
+확장**되어 outcome, handoff, evidence·verification, Pack→Guide→Lens와
+Maestro 권고·Host 요청·실측 적용 모델·token scope/attribution·시간 coverage를
+품는다. 작업·단계 전체 시간과 개별 모델 호출 latency는 서로 다른 축이다.
+producer가 모델 호출 시간을 따로 제공하지 않으면 `모델 호출 시간 기록 없음`으로
+남기고 작업 단계 시간으로 대체하지 않는다. 요청 workspace에는 시도별 권고·요청·
+실측 모델, token scope와 시도 시간을 대응해 보는 접이식 목록을 둔다. 요청 합계가
+부분 관측이면 알려진 시도만 합산했다는 범위를 함께 표시한다. 같은 카드를 다시
+선택하거나 카드 안에서
+Escape를 누르면
 접히고 해당 카드 trigger로 포커스가 돌아간다. Pack과 정보 disclosure의 Escape는
 자신만 닫고 단계 카드는 유지한다. 별도 고정 오른쪽 inspector는 두지 않는다.
 
@@ -244,8 +297,9 @@ provenance를 품는다. 같은 카드를 다시 선택하거나 카드 안에�
 연결선을 다시 계산한다. 긴 상세은 카드별 nested scroll이 아니라 문서의 자연스러운
 page scroll을 사용한다.
 
-좁은 화면에서는 최근 작업 표를 가로 스크롤로 숨기지 않고 작업명 아래에 결과·시간·
-모델과 token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다. 실행 지도도
+폭 800px 이하에서는 최근 작업 표를 가로 스크롤로 숨기지 않고 작업명 아래에
+결과·시간·모델·추론·token 기록·전문 지식을 라벨이 붙은 카드 행으로 재배치한다.
+실행 지도도
 wide canvas를 축소하지 않고 같은 위→아래 wave와 DOM 순서를 유지하며 compact
 footer는 필요한 경우 두 줄로 재배치한다. geometry를 안전하게 그리지 못하면
 dependency text가 관계를 대신한다.
@@ -285,6 +339,56 @@ route 1·2차, 닫힌 충돌 코드만 보관한다. 이 값은 호출자가 Run
 - `receipt`, `verification`, `measurement_provenance`는 최종 기록·근거 참조와
   RunReceipt 값/관측 stage 합계를 구분한다.
 - 출처를 보존하고 빈 token은 측정값이 아니다.
+- 현재 Registry의 Lens·Executor·Pack 정의 digest와 달라진 유효한 과거 receipt도
+  불변 실행 이력과 요청 기록에서는 계속 조회한다. 이때 raw event는 수정하지 않고
+  `definition_status=historical`, `governance_eligible=false`인 별도 projection
+  근거를 붙인다. 같은 기록은 현재 정의를 사용하는 거버넌스·전문지식 건강도·자동
+  후보 신호에서는 제외한다. 손상되었거나 다른 project·checkout의 기록은 이
+  호환 경계를 적용하지 않고 계속 fail-closed로 제외한다.
+
+### 사용자 요청과 실행 기록의 경계
+
+Run은 실행·재시도·검토 escalation마다 생기는 불변 기록이고, 사용자가 작업
+목록에서 여는 단위는 한 번의 사용자 요청이다. 둘을 같은 객체로 취급하지 않는다.
+
+- `snapshot.runs`는 기존 이력·감사·묶음 동작을 위한 원본 Run 투영을 그대로
+  유지한다.
+- `request_records.py`는 `maestro_host_observation_v2`의 source가
+  `codex-desktop-request-meta`, quality가 `host_reported`인 `thread:turn`
+  correlation만 요청 식별자로 신뢰한다. 화면에는 correlation 원문 대신 해시한
+  opaque `request_record_id`를 쓴다.
+- 같은 correlation의 Run은 `snapshot.request_records` 한 건으로 투영한다. 원본
+  `event_id`와 `run_id`는 `source_event_ids`, `source_run_ids`, `attempts`에
+  보존한다. correlation이 없으면 작업명이나 본문 유사도로 묶지 않고 Run 하나를
+  요청 하나로 둔다.
+- 각 Run의 실제 WorkSpan 카드는 실행 시도 순서대로 namespace를 붙여 한 그래프로
+  합성한다. 시도 경계는 `request_record_projection` provenance의 follow-up
+  관계이며 원본 WorkSpan과 RunReceipt를 수정하지 않는다. 합성된 각 카드는 최신
+  시도의 stage 권고를 다시 붙이지 않고 자신이 실행된 시도의 typed model route를
+  보존한다.
+- 합성 요청의 병렬 상태는 원본 Run의 계측 범위를 보존한다. 실제 겹침 pair가
+  하나라도 있으면 `observed`, 모든 원본이 완전한 비교 구간에서 겹침 없음을
+  기록했을 때만 `none_observed`, 하나라도 계측 범위가 불명확하면
+  `unavailable`이다. pair가 비었다는 이유만으로 “병렬 실행 없음”을 만들지 않는다.
+- 요청 단위 token은 측정된 Run과 Assignment 합계만 더한다. 요청 설정, 권고 모델,
+  누락된 Desktop parent 값을 actual이나 0으로 대체하지 않는다. 모델·요청 추론·
+  token·시간마다 `관측된 시도/전체 시도` 범위를 함께 제공하고 각 시도의 권고·요청·
+  실측값, token scope와 duration source를 같은 attempt record에 대응 보존한다.
+  서로 호환되는 token scope만 요청 합계로 더하며 scope가 섞이면
+  `mixed_attempt_scopes`로 표시하고 합계를 만들지 않는다. `estimated`는 항상
+  `false`다.
+- 신규 Run은 `execution_measurements`를 모델·추론 강도·token·시간의 canonical
+  source로 사용한다. 각 값은 원장 revision과 producer coverage를 포함하며,
+  값이 없을 때도 필드를 삭제하지 않고 누락 이유를 제공한다. stage, Host singleton,
+  RunReceipt 필드는 기존 기록을 읽는 호환 projection일 뿐 신규 값을 따로
+  계산하는 쓰기 경로가 아니다.
+- 작업 화면에서 `request_records`는 필수다. `snapshot-contract.js`가 렌더링 전
+  snapshot·Run·요청 record 형식과 ID 중복을 검사한다. 위반하면
+  `DASHBOARD_REQUEST_RECORDS_INVALID`로 닫고 원본 Run으로 대체하지 않는다.
+- `snapshot.runs`는 이력 묶음과 event ID 확인에만 쓴다. 작업 개수·검색·상세는
+  `request_records` 어댑터만 거친다.
+- WorkSpan이 없으면 계획 카드를 “계획만 기록됨 · 실제 작업 단계 기록 없음”으로
+  표시해 계획과 관측을 구분한다.
 
 plan은 실제 실행 증거가 아니다. routing summary의 `route_attempt`는 최종 Plan이
 첫 route인지 한 번 보정된 route인지만 뜻한다. 실제 작업 attempt·시작/종료·retry,
@@ -368,22 +472,37 @@ Harness checkout에서 직접 반영할 수 있으면 `기본 Pack 반영 가능
 도달해도 개요의 action queue에서는 사용자가 실제로 수행할 Pack 검토 한 건으로
 묶고, Guide 목록은 전문 지식 상세에서 보존한다.
 
-전문 지식 화면은 `사용 중`, `수정안`, `보관함` 세 보기로 나눈다. 사용 중 Pack에는
-연결된 수정안 수를 표시하고 같은 ChangeSet 상세로 이동한다. 수정안은 변경 이유,
-영향받는 Pack, `+` 추가·`~` 수정·`→` 이동·`⧉` 복사·`−` 사용 중지 operation,
-증거 단계, 문제와 프로젝트·전역 승인 상태 순서로 보여 준다.
-원자 수정안 카드에는 `전체 프로젝트 확정`, `전체 보관`, `전체 복원`, `전체 영구
-제거`만 표시한다. member 후보 행과 보관함 행에는 개별 버튼을 표시하지 않으며
-서버도 같은 우회 요청을 거부한다.
+전문 지식 화면은 실제 관리 책임에 맞춰 다음 다섯 목적지로 나눈다.
 
-프로젝트 후보가 lifecycle validator를 통과하면 즉시 사용 여부와 candidate
-definition digest에 결합된 선택·배정·불러옴·반영·검증 횟수, 최근 반영 작업의 제목과 결과를
-최대 세 건까지 함께 보여 준다. 후보는 Pack을
-게시하지 않아도 작업에 적용될 수 있지만, 후보 상태를 유지해 결과를 더 눈에 띄게
-검토한다. `자동 생성`과 `사용자 요청` 출처, 하위 변경 종류와 대상 Guide를
-분리해 표시한다. 하위 Guide 변경은 Pack 총사용 대신 그 Guide의 적용 관찰 횟수와 다음
-검토 시점을 함께 보여 준다. 검증 실패·만료·동일 최고 version 충돌·게시된
-version 이하 후보는 라우팅되지 않는다.
+1. `사용 중`: 현재 작업 라우팅 권위인 Pack과 Guide·근거, 연결된 ChangeSet 수를
+   master-detail로 표시한다.
+2. `재구성 검토함`: 후보 생성이나 실행 권한이 없는 nomination과
+   `candidate/paused` ChangeSet만 표시한다. `archived/rejected/project_approved`는
+   allowlist 투영 단계에서 제외한다.
+3. `평가·전환`: disposed되지 않은 후보를 확인 필요, 근거 관찰 중, 전환 결정
+   가능으로 나누고 source·evaluation·실사용 근거와 다음 행동을 보여 준다.
+4. `완료 결과`: 현재 snapshot이 증명하는 `project_approved` ChangeSet과
+   `published/globally_promoted` 개별 후보만 표시한다. 시간 event 계약이 없으므로
+   연대기 이력이나 가짜 완료 시각을 만들지 않는다.
+5. `보관함`: archived/rejected ChangeSet, 겹치지 않는 개별 disposition, 영구 제거
+   tombstone을 작업 큐와 분리해 보존한다.
+
+이 분류는 `expertise-projection.js`의 순수 allowlist 함수 하나가 소유한다.
+렌더러마다 제외 조건을 반복하지 않는다. 활성 원자 ChangeSet 카드에는
+`전체 프로젝트 확정`, `전체 보관`만, 보관된 원자 ChangeSet에는
+`전체 복원`, `전체 영구 제거`만 표시한다. member 후보 행에는 개별 버튼을
+표시하지 않으며 서버도 같은 우회 요청을 거부한다.
+
+프로젝트 후보가 lifecycle validator를 통과해도 사용 가능성은 별도 routing role로
+판정한다. `ordinary-route`만 일반 후보 선택에 들어가고,
+`corrected-task-gap`은 정확한 producing task의 한 번의 보정 route에만 들어간다.
+복합 또는 multi-member 후보는 `management-only`로 표시해 validation PASS를
+현재 작업 권위로 오해하지 않게 한다. 후보 상세에는 candidate definition digest에
+결합된 선택·배정·불러옴·반영·검증 횟수와 최근 반영 작업의 제목·결과를 최대 세
+건까지 함께 보여 준다. `자동 생성`, `사용자 요청`, `task-gap` 출처와 하위 변경
+종류·대상 Guide를 분리한다. 하위 Guide 변경은 Pack 총사용 대신 그 Guide의 적용
+관찰 횟수와 다음 검토 시점을 함께 보여 준다. 검증 실패·만료·동일 최고 version
+충돌·게시된 version 이하 후보는 라우팅되지 않는다.
 
 후보 행은 native disclosure로 열고 닫는다. 열면 프로젝트 확정, 기본 Pack 반영,
 보관 작업을 긴 Pack·Guide 상세보다 먼저 보여 준다. 이어서 검증된 candidate
@@ -421,6 +540,17 @@ live Guide 행에서 즉시 편집하거나 삭제하지 않는다. Host가 Guid
 load나 적용을 증명하지 않으면 선택 기록과 구분해 unavailable로 남긴다.
 `application_observed`가 있는 서로 다른 Run만 5회 검토 주기에 포함한다.
 stale·변조 plan은 lifecycle validator가 거부한다.
+
+이 정보 구조는 외부 제품의 시각 스타일을 복사하지 않고 관리 경계만 차용한다.
+[MLflow Model Registry](https://mlflow.org/docs/latest/ml/model-registry/workflow/)의
+immutable version과 이동 가능한 alias 분리,
+[Argo Rollouts](https://argoproj.github.io/argo-rollouts/dashboard/)의 stable/preview
+동시 가시성, [Renovate Dependency Dashboard](https://docs.renovatebot.com/key-concepts/dashboard/)의
+pending approval과 closed 제안 분리,
+[GitHub deployment review](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/review-deployments)의
+exact 대상 결합 승인을 Pack artifact·authority·validation·lifecycle 분리에
+맞게 제한해 적용한다. 제품별 색·pill·배포 scheduler·검사 우회 동작은 가져오지
+않는다.
 
 ## 검증 명령 승인
 
@@ -529,8 +659,9 @@ Desktop 공개 메타데이터에 요청 모델이 없으면 값을 추측하지
 - CSP, no-store, nosniff, frame 차단을 적용하며 외부 script·font dependency가 없다.
 - raw prompt, 대화, hidden reasoning과 파일 본문은 관측 계약에 없다.
 - 실행당 최종 JSONL 한 건만 장기 기록하고 in-flight marker에는 작업명, compact
-  계획과 Assignment별 terminal 결과만 둔다. 완료 marker는 최종화 뒤 snapshot에서
-  제외된다.
+  계획, semantic execution ledger와 호환 projection을 둔다. Assignment terminal은
+  실행 완료가 아니며 running work가 없고 모든 Assignment가 terminal인 때 finalizer
+  하나만 seal한다. 완료 marker는 최종화 뒤 snapshot에서 제외된다.
 - `.maestro/state/`는 프로젝트별 local state이며 Git에 올리지 않는다.
 
 ## 의도적으로 제외한 것

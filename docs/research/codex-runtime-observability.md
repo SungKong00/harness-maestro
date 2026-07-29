@@ -267,6 +267,21 @@ App Server token usage의 `last`와 `total`을 보존하되 scope를 명시한�
 `total` 하나만 작업별 token으로 노출하지 않는다. 부모 thread 누적량을 child 단계로
 배분하지 않고, 가격표를 곱한 추정값을 실제 비용으로 승격하지 않는다.
 
+### 공식 인터페이스별 채택 결론
+
+| 실행 소유자 | 채택 수집 경로 | 확정 가능한 값 | 구조적 처리 |
+| --- | --- | --- | --- |
+| Maestro-owned Codex | App Server `thread→turn→item`, `model/rerouted`, `thread/tokenUsage/updated`, `turn/completed` | 요청·적용 모델, reroute, 직접 usage, terminal, collector 또는 event 시간 | `codex_app_server/full_stream` producer의 direct measurement |
+| batch 실행 | `codex exec --json` JSONL | 해당 exec가 내보낸 lifecycle과 usage | 별도 adapter 후보, Desktop 기록과 합치지 않음 |
+| Desktop/CLI | 사용자가 신뢰한 Hook | Hook이 내보낸 시점 model과 제한된 lifecycle | `hook_lifecycle`, complete stream으로 승격 금지 |
+| 현재 Desktop 요청 | 공개 request metadata | 요청 model·reasoning effort·correlation | `request_only`; 실제 model·token은 typed unavailable |
+| 과거 transcript | 없음 | 안정적으로 확정할 값 없음 | parser를 만들지 않고 `legacy_unmeasured` |
+
+이 결론에 따라 수집 책임은 producer adapter, 저장 책임은 execution ledger,
+화면 책임은 measurement projection으로 분리한다. stage·work·Host가 각각 token을
+다시 계산하거나 snapshot이 요청값을 actual로 승격하지 않는다. 원장은 네 측정
+슬롯을 항상 보존하고 직접값이 없는 경우 source coverage와 누락 이유를 함께 남긴다.
+
 ## 완전성, 복구와 호환성
 
 각 projection은 값뿐 아니라 coverage를 받아야 한다.
@@ -361,8 +376,8 @@ adapter는 다음을 지킨다.
 - [x] `collabAgentToolCall` item started·completed와 child thread relation을 중복 없이
       work lifecycle로 변환한다.
 - [x] child terminal, report, join, follow-up의 의미 mapping을 fixture로 검증한다.
-- [ ] model provenance와 stream coverage를 work span에 추가한다.
-- [ ] `last`·`total` token scope를 분리하고 부모 값을 child에 전파하지 않는다.
+- [x] model provenance와 stream coverage를 work span과 execution ledger에 추가한다.
+- [x] `last`·`total` token scope를 분리하고 부모 값을 child에 전파하지 않는다.
 - [ ] Hook adapter는 별도 opt-in으로 만들고 trust·coverage·dedupe를 검증한다.
 - [x] prompt·transcript·reasoning·tool payload가 state와 snapshot에 남지 않는지
       검사한다.

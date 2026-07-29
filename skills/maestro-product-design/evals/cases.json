@@ -1,242 +1,185 @@
 {
-  "cases": [
-    {
-      "case_id": "routine-dashboard",
-      "expected_guides": [
-        "design-brief",
-        "visual-hierarchy-layout",
-        "interaction-responsive-accessibility"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Treats the request as generic code styling"
-      ],
-      "goal": "Improve the product dashboard layout",
-      "observable_criteria": [
-        "Routes the dashboard task to product design criteria"
-      ],
-      "stratum": "normal"
-    },
-    {
-      "case_id": "korean-type",
-      "expected_guides": [
-        "typography-korean",
-        "visual-hierarchy-layout"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Uses a Latin-only typography rubric"
-      ],
-      "goal": "한글 웹 디자인의 폰트와 글자 위계를 개선해줘",
-      "observable_criteria": [
-        "Loads Hangul typography and hierarchy criteria"
-      ],
-      "stratum": "edge"
-    },
-    {
-      "case_id": "current-references",
-      "expected_guides": [
-        "reference-selection"
-      ],
-      "expected_mode": "contextualize",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Claims current trends from static memory"
-      ],
-      "goal": "최신 레퍼런스를 찾아 현대적인 랜딩 페이지를 디자인해줘",
-      "observable_criteria": [
-        "Opens contextual reference research"
-      ],
-      "stratum": "edge"
-    },
-    {
-      "case_id": "responsive-accessibility",
-      "expected_guides": [
-        "interaction-responsive-accessibility"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Reviews only visual appearance"
-      ],
-      "goal": "Review the mobile UI focus order and responsive accessibility",
-      "observable_criteria": [
-        "Selects interaction and accessibility checks"
-      ],
-      "stratum": "normal"
-    },
-    {
-      "case_id": "refresh-pack",
-      "expected_guides": [
-        "design-brief"
-      ],
-      "expected_mode": "refresh",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Updates reusable guidance without refreshed evidence"
-      ],
-      "goal": "디자인 출처 갱신 후 웹 디자인 기준을 업데이트해줘",
-      "observable_criteria": [
-        "Routes the request through refresh research"
-      ],
-      "stratum": "edge"
-    },
-    {
-      "case_id": "operations-dashboard-verification",
-      "expected_guides": [],
-      "expected_mode": "reuse",
-      "expected_pack_id": null,
-      "forbidden_behaviors": [
-        "Selects product design from the generic surface noun dashboard"
-      ],
-      "goal": "Verify the dashboard backend and operations telemetry",
-      "observable_criteria": [
-        "Keeps operational verification outside the product-design Pack"
-      ],
-      "stratum": "non-trigger"
-    },
-    {
-      "case_id": "unknown-expertise",
-      "expected_guides": [],
-      "expected_mode": "discover",
-      "expected_pack_id": null,
-      "forbidden_behaviors": [
-        "Selects product design because expert criteria were requested"
-      ],
-      "goal": "Select a technology stack using expert criteria and best practices",
-      "observable_criteria": [
-        "Does not force a design Pack onto architecture work"
-      ],
-      "stratum": "non-trigger"
-    },
-    {
-      "case_id": "normal-role-aware-onboarding",
-      "expected_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Treats the organization chart or one default persona as the page information architecture",
-        "Assigns exact prominence or position without a traceable user need, journey step, or state"
-      ],
-      "goal": "신규 고객과 반복 운영자가 함께 쓰는 SaaS 온보딩 대시보드의 정보 구조와 페이지 흐름을 설계해줘. 첫 방문, 재방문, 권한 부족, 오류 상태에서 무엇을 어디에 두고 어떤 행동을 강조할지도 정해줘",
-      "observable_criteria": [
-        "Selects the information-architecture Guide together with the inherited brief, hierarchy, and interaction criteria",
-        "Requires role, situation, state, entry, exit, evidence, and action priorities before fixing element placement"
-      ],
-      "stratum": "normal"
-    },
-    {
-      "case_id": "normal-decision-support-page",
-      "expected_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Makes every role-specific action equally prominent",
-        "Uses a fashionable layout pattern as sufficient evidence for the decision flow"
-      ],
-      "goal": "B2B 가격 비교 페이지에서 실무자, 구매 담당자, 관리자에게 필요한 증거와 CTA를 어떤 순서와 위치로 보여줄지, 비교에서 문의 또는 구매로 이어지는 흐름까지 설계해줘",
-      "observable_criteria": [
-        "Separates shared content from role- or situation-dependent evidence and actions",
-        "Defines page scope, decision sequence, continuity, and correction paths before visual emphasis"
-      ],
-      "stratum": "normal"
-    },
-    {
-      "case_id": "edge-high-frequency-operations",
-      "expected_guides": [
-        "information-architecture-and-user-flow"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Applies one-thing-per-page as a universal rule despite high-frequency comparison and batch work",
-        "Hides consequential status or recovery behind progressive disclosure"
-      ],
-      "goal": "초보 검토자와 하루 수백 건을 처리하는 숙련 운영자가 함께 쓰는 승인 화면을 설계해줘. 대기, 빈 상태, 부분 실패, 재시도, 되돌리기, 일괄 작업에서 정보와 액션 우선순위를 역할과 상황별로 정해줘",
-      "observable_criteria": [
-        "Distinguishes novice comprehension from expert frequency and switching needs without forking unrelated products",
-        "Requires reachable loading, empty, failure, retry, undo, and permission states with a coherent next action"
-      ],
-      "stratum": "edge"
-    },
-    {
-      "case_id": "non-trigger-backend-orchestration",
-      "expected_guides": [],
-      "expected_mode": "reuse",
-      "expected_pack_id": null,
-      "forbidden_behaviors": [
-        "Selects information architecture because the request contains flow or state concepts"
-      ],
-      "goal": "백엔드 작업 큐의 재시도, 지수 백오프, 멱등성 키와 dead-letter 처리 구조를 설계해줘",
-      "observable_criteria": [
-        "Keeps backend orchestration outside the product-design web-structure extension"
-      ],
-      "stratum": "non-trigger"
-    },
-    {
-      "case_id": "overlap-scroll-storytelling",
-      "expected_guides": [],
-      "expected_mode": "reuse",
-      "expected_pack_id": null,
-      "forbidden_behaviors": [
-        "Hijacks a motion-specific request with generic information-architecture criteria",
-        "Treats the new Guide as a substitute for motion accessibility or runtime evidence"
-      ],
-      "goal": "제품 소개 랜딩페이지에 scroll-driven animation, pin, scrub, parallax 장면을 설계하고 reduced motion과 runtime performance를 검토해줘",
-      "observable_criteria": [
-        "Leaves explicit scroll-linked motion design and verification to interactive-web-motion"
-      ],
-      "stratum": "overlap"
-    },
-    {
-      "case_id": "korean-design-research-theme",
-      "expected_guides": [
-        "reference-selection"
-      ],
-      "expected_mode": "contextualize",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Treats a design research request as a style-only reuse request",
-        "Allows execution before a validated research artifact is attached"
-      ],
-      "goal": "전체적으로 모든 디자인과 색 테마 등이 너무 구려. 충분한 리서치를 하고 모던하고 심플하고 신뢰감 있는 테마/디자인으로 바꿔줘.",
-      "observable_criteria": [
-        "Selects reference-selection from the bounded 디자인 리서치 phrase",
-        "Opens contextual research and requires evidence before execution"
-      ],
-      "stratum": "edge"
-    },
-    {
-      "case_id": "adjective-only-ui-refresh",
-      "expected_guides": [
-        "design-brief",
-        "visual-hierarchy-layout",
-        "interaction-responsive-accessibility"
-      ],
-      "expected_mode": "reuse",
-      "expected_pack_id": "product-design",
-      "forbidden_behaviors": [
-        "Selects reference-selection from modern or simple alone",
-        "Opens contextual research without an explicit research, reference, or example request"
-      ],
-      "goal": "Make this dashboard UI modern, simple, and trustworthy.",
-      "observable_criteria": [
-        "Keeps routine adjective-only UI refinement on the reuse path"
-      ],
-      "stratum": "non-trigger"
-    }
-  ],
-  "evaluated_on": "2026-07-28",
+  "schema_version": "maestro_expertise_eval_v2",
+  "expertise_pack_id": "product-design",
+  "evaluated_on": "2026-07-30",
   "evaluation_artifact": {
     "path": "evals/results.json",
-    "sha256": "eb9e9d479b6fa1674668d1302dcec54286f6c21e6271b41049de8ef24109072a"
+    "sha256": "53014a17fa72fc8721f5051d300c643e161deae89d615a6e89067a01dfee60ce"
   },
-  "expertise_pack_id": "product-design",
-  "schema_version": "maestro_expertise_eval_v2"
+  "cases": [
+    {
+      "case_id": "normal-furniture-landing-system",
+      "stratum": "normal",
+      "goal": "가구 랜딩 페이지 리디자인을 실제 UI 레퍼런스 리서치와 새 디자인 시스템 수립부터 진행해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["reference-selection", "design-system-and-components", "visual-hierarchy-layout"],
+      "observable_criteria": [
+        "Researches exact-task shipped states and transfer limits before choosing the visual language",
+        "Defines a proportional foundation, semantic-token, component, and lifecycle contract without inventing unused system layers",
+        "Maps every material landing-page decision to realistic Korean, responsive, and rendered scenarios"
+      ],
+      "forbidden_behaviors": [
+        "Uses broad style adjectives or one attractive reference as the decision authority",
+        "Chooses untraceable spacing, typography, radius, color, or imagery values",
+        "Calls an unrendered landing page coherent or verified"
+      ]
+    },
+    {
+      "case_id": "normal-cinema-data-page",
+      "stratum": "normal",
+      "goal": "영화 탐색 UI page redesign 해줘. 카드, 필터, 테이블과 data visualization의 정보 구조 리서치도 해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["design-system-and-components", "information-architecture-and-user-flow"],
+      "observable_criteria": [
+        "Chooses cards, tables, filters, and visualization encodings from browse, compare, inspect, and decision tasks",
+        "Defines shared component anatomy, variants, states, content extremes, and semantic-token lineage across the feature-rich page",
+        "Verifies realistic dense, empty, loading, partial-failure, narrow, and localized states"
+      ],
+      "forbidden_behaviors": [
+        "Treats a card grid as the default representation for every movie datum",
+        "Styles each feature independently without a shared system contract",
+        "Uses visual-diff success as the only quality verdict"
+      ]
+    },
+    {
+      "case_id": "edge-new-button-decision",
+      "stratum": "edge",
+      "goal": "새 결제 primary button design을 해줘. 기존 컴포넌트에 맞는지 판단하고 긴 한국어 라벨과 상태를 검증해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["design-system-and-components", "typography-korean"],
+      "observable_criteria": [
+        "Classifies action, priority, consequence, reversibility, permission, and state before visual treatment",
+        "Derives control dimensions from the project control role, content metrics, target-size constraint, icon gap, and density context",
+        "Checks the consuming page with long Korean content and every relevant interaction and outcome state"
+      ],
+      "forbidden_behaviors": [
+        "Selects button pixels, color, radius, or margin because they look appropriate",
+        "Uses 44 or 48 pixels as a universal WCAG AA button rule",
+        "Promotes one attractive render directly to a stable reusable primitive"
+      ]
+    },
+    {
+      "case_id": "edge-compact-existing-button",
+      "stratum": "edge",
+      "goal": "기존 제품 UI의 결제 버튼을 이미 승인된 stable component와 semantic spacing token으로만 교정해줘. 의미, 위계, 상태, 토큰은 바꾸지 않아",
+      "expected_pack_id": "product-design",
+      "expected_mode": "reuse",
+      "expected_guides": ["design-system-and-components"],
+      "observable_criteria": [
+        "Allows compact execution only after unchanged semantics, hierarchy, states, localization, and accessibility certainty are each backed by current content-addressed project-system evidence",
+        "Binds the referenced stable component and semantic tokens to an exact current inventory and digest rather than accepting eligibility booleans as proof",
+        "Keeps exactly one bounded decision and one render scenario with existing-token or component-contract lineage only",
+        "Requires a fully decoded PNG whose dimensions match the declared viewport and whose scenario is the real consuming page"
+      ],
+      "forbidden_behaviors": [
+        "Opens a full design-system research project for proven stable token reuse",
+        "Accepts self-attested compact eligibility or invented evidence references",
+        "Introduces a raw local value, owner preference, derived local value, or new variant under compact mode",
+        "Accepts a signature-only, non-decodable, or viewport-mismatched image as rendered verification"
+      ]
+    },
+    {
+      "case_id": "normal-form-recovery",
+      "stratum": "normal",
+      "goal": "회원가입 UI form design과 validation, 키보드 포커스 검증, 오류 복구를 설계해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["interaction-responsive-accessibility", "design-system-and-components"],
+      "observable_criteria": [
+        "Defines labels, constraints, prevention, validation timing, input preservation, textual errors, correction, announcement, focus, confirmation, and recovery",
+        "Binds input and action variants to existing semantic tokens and relevant state contracts",
+        "Verifies keyboard, zoom, autofill, paste, long localized content, failure, and recovery in context"
+      ],
+      "forbidden_behaviors": [
+        "Treats field border styling as a complete form design",
+        "Makes live validation the default without user evidence",
+        "Drops entered data or hides recovery after an error"
+      ]
+    },
+    {
+      "case_id": "edge-korean-typography",
+      "stratum": "edge",
+      "goal": "한국어 UI 타이포그래피 리서치로 글자 역할, 위계, 폰트 fallback과 긴 라벨 렌더링을 설계해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["typography-korean", "design-system-and-components"],
+      "observable_criteria": [
+        "Classifies text by product job and intended reading order before choosing size, weight, line height, measure, or family",
+        "Uses a real corpus spanning Hangul, Latin, numerals, units, symbols, punctuation, errors, long labels, weights, and narrow widths",
+        "Derives semantic type tokens from actual font metrics and rendered content with fallback and loading evidence"
+      ],
+      "forbidden_behaviors": [
+        "Copies a foreign type scale as universal Korean UI values",
+        "Creates hierarchy primarily by accumulating arbitrary sizes, weights, colors, and families",
+        "Approves typography from a font-family declaration without browser renders"
+      ]
+    },
+    {
+      "case_id": "normal-new-visual-language",
+      "stratum": "normal",
+      "goal": "제품 디자인 웹 디자인 화면 디자인 사용자 인터페이스의 새 시각 언어, 새 디자인 시스템, 새 토큰 계열, 새 컴포넌트 프리미티브를 설계해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["design-system-and-components", "design-brief"],
+      "observable_criteria": [
+        "Uses system scope with complete foundations, semantic roles, component taxonomy, lifecycle, provenance, representative fixtures, and held-out evaluation",
+        "Introduces component tokens only where a distinct reusable component decision requires them",
+        "Records adopted and rejected reference transfers and a bounded adoption or migration path"
+      ],
+      "forbidden_behaviors": [
+        "Uses compact mode for a new visual language or token family",
+        "Builds unused token tiers and component abstractions for completeness",
+        "Treats DTCG format conformance as proof that the token values are good design"
+      ]
+    },
+    {
+      "case_id": "non-trigger-backend-scheduler",
+      "stratum": "non-trigger",
+      "goal": "백엔드 스케줄러의 재시도, 멱등성, backoff와 dead-letter queue를 설계해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Keeps backend scheduling and recovery semantics outside Product Design assurance"
+      ],
+      "forbidden_behaviors": [
+        "Selects Product Design because the backend request contains state or flow concepts"
+      ]
+    },
+    {
+      "case_id": "overlap-scroll-motion",
+      "stratum": "overlap",
+      "goal": "랜딩페이지에 scroll-triggered pin, scrub, parallax 장면과 reduced-motion 대체를 설계해줘",
+      "expected_pack_id": null,
+      "expected_mode": "reuse",
+      "expected_guides": [],
+      "observable_criteria": [
+        "Leaves detailed scroll-linked choreography and runtime mechanics to interactive-web-motion"
+      ],
+      "forbidden_behaviors": [
+        "Uses Product Design assurance as a substitute for motion mechanism and performance expertise"
+      ]
+    },
+    {
+      "case_id": "normal-operational-workflow",
+      "stratum": "normal",
+      "goal": "개발자 운영 대시보드의 작업 실행 의존 그래프를 디자인 레퍼런스 조사와 정보 구조 리서치로 설계해줘",
+      "expected_pack_id": "product-design",
+      "expected_mode": "contextualize",
+      "expected_guides": ["reference-selection", "information-architecture-and-user-flow", "operational-workflow-interface"],
+      "observable_criteria": [
+        "Preserves raw typed relations and execution provenance while testing any reduced display projection",
+        "Uses dependency waves and contextual detail to support operator investigation without inventing measured facts",
+        "Verifies dense forks, joins, selection, focus, reflow, localization, natural scrolling, and a linear alternative"
+      ],
+      "forbidden_behaviors": [
+        "Loads the operational Guide from generic backend graph vocabulary alone",
+        "Presents requested model, token, or timing settings as observed facts",
+        "Uses a wide canvas as the only chronology representation"
+      ]
+    }
+  ]
 }

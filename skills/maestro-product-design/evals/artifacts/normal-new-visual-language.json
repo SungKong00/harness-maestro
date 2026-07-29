@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-new-visual-language",
+  "baseline_observation": "Product Design v6 has no system assurance mode, design-system Guide, token architecture, component lifecycle, or bounded adoption contract.",
+  "candidate_observation": "Product Design v7 requires system scope, research, foundations, semantic roles, component taxonomy and lifecycle, representative fixtures, held-out evaluation, rejected transfers, and bounded adoption while forbidding unused layers.",
+  "evidence_refs": [
+    "candidate:SKILL.md:system-scope",
+    "candidate:design-system-and-components:system-mode",
+    "candidate:design-system-and-components:required-evidence-system",
+    "candidate:design-system-and-components:counterexamples",
+    "research:claim-token-format-not-design-oracle",
+    "research:claim-semantic-token-layers",
+    "research:claim-component-lifecycle",
+    "route-result:normal-new-visual-language"
+  ]
+}
