@@ -3,16 +3,16 @@
   "registry": {
     "sha256": "0091b249b07d99d5b57d491715ded179acbf377743b35062725fd26f232194b7"
   },
-  "release_id": "d97bbd95394e2c945bcdec18a62aa68a99d0e44b26d5727527ef0d51f3cf4488",
+  "release_id": "cee19638e7ac1ffb30ca73884cc97e9c495abfddac022b7d1eb47817db3519be",
   "runtime": {
     "file_count": 149,
-    "sha256": "750d77a3fa0fe0af85376b9067a82ef42b3e99effc62b3514aa64d76a995e05b"
+    "sha256": "f46964959fbda19752ca80112c506f95d58e6f9d68262a9e4832b3c789a16a67"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 12,
-      "sha256": "01b6752736216d30b5349eedf42de8e252071749b3d333d8b62121726f595fb4"
+      "sha256": "dd7e1f5ad3fff2afb9850366f499957f44265c16bc64b2d8505aec071288d049"
     },
     "maestro-adapter-builder": {
       "file_count": 4,
@@ -48,7 +48,7 @@
     },
     "maestro-product-design": {
       "file_count": 39,
-      "sha256": "c2e4c565d54cc99b808ba3e91c4954264639c512141735ef811f700e0d28cd25"
+      "sha256": "faed0b8037372b5e8d78c143367f2ad2e54cb85e2b98f4a52d2a590764e1d30b"
     },
     "maestro-reference-research": {
       "file_count": 10,
