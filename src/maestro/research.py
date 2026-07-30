@@ -1185,12 +1185,12 @@ def _request_binding_issues(
             "selected_pack_ids must be a unique list with at most one Pack.",
         )
         pack_ids = []
-    if not _string_list(guide_ids, maximum=4, identifiers=True):
+    if not _string_list(guide_ids, maximum=64, identifiers=True):
         _issue(
             issues,
             "RESEARCH_REQUEST_GUIDES_INVALID",
             f"{path}.selected_guide_ids",
-            "selected_guide_ids must be a unique list with at most four Guides.",
+            "selected_guide_ids must be a unique list with at most 64 Guides.",
         )
     digests = value["pack_definition_digests"]
     if (

@@ -197,6 +197,26 @@ class ResearchValidationTests(unittest.TestCase):
         self.assertEqual(bundle["packets"][0]["claims"], context["claims"])
         self.assertEqual(bundle["synthesis"], context["synthesis"])
 
+    def test_bundle_can_bind_complete_multi_batch_guide_inventory(
+        self,
+    ) -> None:
+        bundle = _bundle()
+        bundle["request_binding"]["selected_guide_ids"] = [
+            "design-brief",
+            "design-system-and-components",
+            "information-architecture-and-user-flow",
+            "interaction-responsive-accessibility",
+            "operational-workflow-interface",
+            "reference-selection",
+            "typography-korean",
+            "visual-hierarchy-layout",
+        ]
+
+        result = validate_research_bundle(bundle, repo_path=".")
+
+        self.assertEqual("PASS", result["status"])
+        self.assertEqual("completed", result["evidence_status"])
+
     def test_unknown_source_and_weak_rule_are_rejected(self) -> None:
         packet = _packet(tier=5, adoption="rule")
         packet["claims"][0]["source_refs"] = ["missing-source"]
