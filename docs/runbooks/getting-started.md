@@ -248,6 +248,12 @@ projection을 함께 전달한다. Downstream 단계가 축약 projection을 새
 자동 생성한다. 이 네 단계는 Maestro의 내부 작업이며 사용자가 명령을 입력할
 필요가 없다.
 
+한 사용자 요청은 최초 관측에서 immutable `root_request_id`를 하나만 가진다.
+Assignment마다 새 Run을 만들지 않는다. detached 검증·평가·repair·retry가 별도
+RunReceipt를 꼭 필요로 할 때만 `observe child`가 exact parent observation에서
+root를 상속한다. `child`는 membership만, `retry`는 membership과 명시적 retry
+causality를 함께 기록한다. 제목·revision suffix·시간으로 관계를 추론하지 않는다.
+
 Codex Desktop이 현재 요청의 공개 메타데이터로 모델·추론 강도와 thread·turn ID를
 제공하면 `observe desktop`으로 요청 설정을 함께 기록한다. 이때 상태는
 `desktop_request`이며 아직 fallback이 아니다. Host가 완전한 공개
@@ -329,6 +335,18 @@ maestro observe desktop --repo /path/to/project \
   --requested-model <requested-model> \
   --requested-reasoning-effort <requested-effort> \
   --json
+
+# Desktop 공개 요청 메타데이터가 없는 Host의 단 한 번의 root intake
+maestro observe start --repo /path/to/project \
+  --run-id run-20260726-01 \
+  --task-label "결제 webhook 재시도 변경" \
+  --request-key <stable-opaque-intake-id> --json
+
+# 같은 요청에서 별도 RunReceipt가 필요한 detached 검증 또는 retry
+maestro observe child --repo /path/to/project \
+  --run-id run-20260726-01-verifier --task-label "분리 검증" \
+  --parent-observation <observation-id> \
+  --parent-run-id run-20260726-01 --relation child --json
 
 # route가 확정되면 같은 run에 계획을 한 번 결합한다.
 maestro observe plan --repo /path/to/project \
@@ -697,8 +715,11 @@ Git history 정리는 `NEEDS_DECISION`이며 전용 자동 archive/delete CLI는
 - `expertise activate`, `update`, `deactivate`도 `--apply-plan` 전에는
   미리보기만 한다. activate/update는 검토된 tracked project pilot만 게시하고,
   deactivate는 allowlist만 제거한다.
-- `observe start` 또는 `observe desktop`은 prompt 없이 작업명·시각과 공개된 요청
-  설정만 쓴다. `observe plan`은 검증된 compact route를 같은 marker에 한 번 결합한다.
+- `observe start` 또는 `observe desktop`은 prompt 없이 작업명·시각, immutable
+  request lineage와 공개된 요청 설정만 쓴다. `start`는 stable opaque
+  `--request-key`를 요구한다. 같은 요청에서 별도 receipt가 필요하면 새 root 대신
+  `observe child`로 정확한 부모를 상속한다. `observe plan`은 검증된 compact
+  route를 같은 marker에 한 번 결합한다.
 - `host codex`는 App Server로 실행한 Assignment의 terminal 상태와 공개 실측값을
   자동 기록한다. 현재 Host나 결정론적 명령은 `observe stage`로 결과와 증거만
   기록하며 모델·token을 주장할 수 없다.

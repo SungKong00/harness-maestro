@@ -8,7 +8,7 @@ owner: harness-maestro
 topic: observed-work-graph
 scope: [src/maestro/work/**, src/maestro/codex_host.py]
 summary: 계획 Assignment와 실제 오케스트레이터·위임 작업·보고·합류·후속 시도를 분리해 관찰하고 작업 중심 GUI로 투영하는 계약.
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -47,8 +47,11 @@ Assignment는 최대 다섯 개, 한 명 writer, 하나의 terminal stage result
 | `work/lifecycle.py` | 시작·종료의 idempotency와 관계 무결성 | 현재 시각 계산, CLI |
 | `work/ledger.py` | 의미 이벤트 순서·revision·producer·측정 슬롯·seal과 파일 잠금 | UI용 재해석, 누락값 추정 |
 | `work/codex.py` | App Server collaboration item을 redacted work action으로 변환 | Observation 저장, prompt·message 보존 |
+| `work/assignment.py` | 검증된 Assignment와 terminal Packet을 분배 관측·구조화 outcome·Guide 적용 관측으로 변환 | raw final message 파싱, Host 파일 읽기 |
 | `work/graph.py` | 계획 그래프와 실제 그래프의 typed edge 구성 | 실행 순서·동시성 추정 |
 | `work/projection.py` | GUI가 읽는 카드·rank·근거 수준과 별도 display edge 구성 | raw relation 삭제, DOM 생성, 번역 재계산 |
+| `expertise_runtime.py` | projected Pack·Skill·Guide digest를 확인하고 정확한 본문을 Host context에 로드해 attestation 생성 | 선택만으로 적용 주장, 본문 영속화 |
+| `codex_host.py` | App Server source envelope, 정확한 Pack load, Packet 검증 뒤 root terminal 생산 | invalid Packet을 completed work로 확정 |
 | `observations.py` | 프로젝트 관찰 파일의 안전한 읽기·쓰기 | 그래프 의미 계산 |
 | `governance.py` | terminal span의 RunReceipt·event 전달과 검증 | 실행 이벤트 생성 |
 | viewer | 정렬, 선택, 카드 인라인 상세과 한글 표현 | 모델·시간·성공 여부 재계산 |
@@ -108,6 +111,10 @@ closure는 Event/RunReceipt에 함께 저장되어 history validator가 plan·st
 - producer interface·version·schema digest·capability·correlation과 event coverage
 - 요청 모델, 적용 모델, reroute·token 범위와 증거 수준
 - Lens, Pack, Guide와 선택·로드·적용의 증거 수준
+- 계획이 해당 Executor에 일을 배분한 이유·근거·선행 Assignment를 담는
+  `allocation` 관측. producer가 이유를 주지 않으면 `unavailable`이다.
+- Pack definition·Skill digest·Guide별 loaded reference와 Host load·Packet
+  disposition을 분리한 `expertise_observation`
 - `depends_on`, `joins`, `followup_of` 관계와 근거 참조
 - 제한된 문제·결론·결정·다음 행동·handoff·artifact·검증 결과
 
@@ -168,7 +175,21 @@ lineage의 최종 권위는 runtime validator에 있다.
 - `timing_evidence=host_event`는 Codex App Server 또는 Host Adapter의 실제 lifecycle
   coverage가 있을 때만 허용한다. 현재 Host의 로컬 시각은
   `current_host_clock`이며 외부 이벤트 시각으로 승격하지 않는다.
-- Lens·Pack·Guide 선택은 Host 로드나 결과 적용의 증명이 아니다.
+- Lens·Pack·Guide 선택은 Host 로드나 결과 적용의 증명이 아니다. Maestro-owned
+  Host만 exact catalog definition, installed Skill tree, selected Guide file을
+  digest로 다시 확인하고 본문을 turn context에 넣은 뒤 `host_loaded`를 기록한다.
+  `application_observed`는 검증된 terminal Packet이 정확한 Pack·Guide 쌍마다
+  `consulted|applied` disposition과 projected result evidence를 반환한 경우에만
+  허용한다. `current_host`와 `host_adapter`는 강한 로드·적용 증거를 생산할 수
+  없으며, 완료된 writer Packet에 `conflict`가 하나라도 남으면 적용 관측 전에
+  실패한다. Host는 prompt에 넣은 바로 그 Guide bytes에서 digest를 만들고, 읽기
+  전후 Skill tree digest가 달라지면 dispatch 전에 중단한다. 본문과 disposition
+  reason 원문은 core state에 저장하지 않는다.
+- 구조화된 `expertise_observation`이 없는 과거 WorkSpan은 계속 읽되, coarse
+  `host_loaded|application_observed` 값을 현재 보증으로 투영하지 않는다. 선택된
+  Pack·Guide가 있으면 `selection_only`, 없으면 `unavailable`로 표시한다.
+- 브라우저는 run의 expected·loaded·applied Work ID와 Pack·Guide pair가 실제
+  작업 카드의 정확한 집합과 다르면 snapshot 전체를 거부한다.
 - 종료 보고 요약은 원문이나 완전한 FindingPacket이 아니다.
 - 실행 시간 구간이 완전하고 같은 clock domain임을 증명하기 전에는 실제 병렬 실행을
   표시하지 않는다.
@@ -227,7 +248,10 @@ collaboration RPC의 `completed`는 child terminal이 아니며, terminal 상태
 child는 running으로 남겨 복구 가능성을 보존한다.
 
 parent의 terminal action은 즉시 확정하지 않고 root 완료 뒤 bounded drain 전체에서
-늦은 child·root event를 수집한 다음 한 번만 flush한다. 실제 child model, 직접 token과
+늦은 child·root event를 수집한 다음 보류한다. 관리형 Assignment root는 final
+Packet shape·binding·Guide disposition과 effect/receipt 조건을 모두 검증한 뒤 한
+번만 terminal로 저장한다. Packet이 잘못되면 같은 root를 typed failed work로 닫고
+generic completed outcome을 남기지 않는다. 실제 child model, 직접 token과
 Host event 시간은 child started·completed, 지원 runtime version·schema와
 `complete_stream` coverage가 모두 있을 때만 승격한다. stream이 불완전하면 work
 완료 상태는 유지할 수 있지만 requested-only, applied model 없음, token unavailable로

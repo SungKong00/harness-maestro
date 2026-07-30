@@ -296,6 +296,132 @@ class AssignmentBoundaryContractTests(unittest.TestCase):
             set(terminal_schema["properties"]),
         )
 
+    def test_owned_host_requires_exact_guide_dispositions(self) -> None:
+        plan = route_goal_v2(
+            "Review software architecture module boundary behavior contract",
+            "medium",
+            ["contract"],
+            intent="review",
+            repo_path=ROOT,
+        )
+        projection = project_assignment_input(
+            ROOT,
+            plan,
+            "review",
+            baseline_for(plan),
+        )
+        projected = projection["input"]
+        packet = finding_packet(plan, "review")
+        packet["expertise_dispositions"] = [
+            {
+                "expertise_pack_id": pack["expertise_pack_id"],
+                "definition_digest": pack["definition_digest"],
+                "guide_id": guide["guide_id"],
+                "skill_definition_digest": guide[
+                    "skill_definition_digest"
+                ],
+                "disposition": "consulted",
+                "reason": "Used the exact projected Guide for review.",
+                "evidence_refs": ["readme"],
+            }
+            for pack in projected["expertise_load"]["packs"]
+            for guide in pack["guides"]
+        ]
+        schema = assignment_output_schema(
+            projected,
+            require_expertise_dispositions=True,
+        )
+        self.assertIn("expertise_dispositions", schema["required"])
+        validation = validate_assignment_packet(
+            packet,
+            plan,
+            "review",
+            projected,
+            repo_path=ROOT,
+            require_expertise_dispositions=True,
+        )
+        self.assertEqual("PASS", validation["status"])
+
+        incomplete = copy.deepcopy(packet)
+        incomplete["expertise_dispositions"].pop()
+        rejected = validate_assignment_packet(
+            incomplete,
+            plan,
+            "review",
+            projected,
+            repo_path=ROOT,
+            require_expertise_dispositions=True,
+        )
+        self.assertEqual("FAIL", rejected["status"])
+        self.assertIn(
+            "PACKET_EXPERTISE_DISPOSITIONS_INVALID",
+            {issue["code"] for issue in rejected["issues"]},
+        )
+
+    def test_completed_writer_rejects_unresolved_expertise_conflict(
+        self,
+    ) -> None:
+        plan = route_goal_v2(
+            (
+                "Implement software architecture module boundary behavior "
+                "contract and verify it"
+            ),
+            "medium",
+            intent="implementation",
+            repo_path=ROOT,
+        )
+        baseline = baseline_for(plan)
+        review_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "review",
+            baseline,
+        )
+        implementation_projection = project_assignment_input(
+            ROOT,
+            plan,
+            "implementation",
+            baseline,
+            dependency_packets=[finding_packet(plan, "review")],
+            dependency_projections=[review_projection],
+        )
+        projected = implementation_projection["input"]
+        packet = completed_terminal_packet(
+            plan,
+            "implementation",
+            implementation_projection,
+        )
+        packet["expertise_dispositions"] = [
+            {
+                "expertise_pack_id": pack["expertise_pack_id"],
+                "definition_digest": pack["definition_digest"],
+                "guide_id": guide["guide_id"],
+                "skill_definition_digest": guide[
+                    "skill_definition_digest"
+                ],
+                "disposition": "conflict",
+                "reason": "The selected Guide conflicts with the task contract.",
+                "evidence_refs": [],
+            }
+            for pack in projected["expertise_load"]["packs"]
+            for guide in pack["guides"]
+        ]
+
+        rejected = validate_assignment_packet(
+            packet,
+            plan,
+            "implementation",
+            projected,
+            repo_path=ROOT,
+            require_expertise_dispositions=True,
+        )
+
+        self.assertEqual("FAIL", rejected["status"])
+        self.assertIn(
+            "PACKET_EXPERTISE_CONFLICT_UNRESOLVED",
+            {issue["code"] for issue in rejected["issues"]},
+        )
+
     def test_open_research_gate_blocks_projection_and_completed_bundle_is_used(
         self,
     ) -> None:

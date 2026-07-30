@@ -33,6 +33,7 @@ from .execution_units import (
     build_execution_attempt,
     build_execution_unit_receipt,
 )
+from .expertise_runtime import load_assignment_expertise
 from .observations import (
     MAX_MODEL_REROUTES,
     claim_maestro_owned_codex_execution,
@@ -59,6 +60,11 @@ from .work.codex import (
     codex_work_id,
 )
 from .work.completion import terminal_assignment_work_heads
+from .work.assignment import (
+    allocation_from_assignment,
+    application_from_packet,
+    outcome_from_assignment_packet,
+)
 
 HOST_RUN_VERSION = "maestro_codex_host_run_v1"
 MAX_PROMPT_BYTES = 256_000
@@ -201,6 +207,7 @@ def _bounded_text_file(path_value: str | Path) -> str:
 def _assignment_prompt(
     projection: dict[str, Any],
     output_schema: dict[str, Any],
+    expertise_context: dict[str, Any] | None = None,
 ) -> str:
     prompt = (
         "Execute only the following validated Maestro AssignmentInput. "
@@ -209,7 +216,16 @@ def _assignment_prompt(
         "answer is machine-validated: return exactly one JSON object matching "
         "the final-answer JSON Schema below, with no Markdown fence, preface, "
         "or trailing commentary.\n"
-        "Final-answer JSON Schema:\n"
+        + (
+            "The owned Host loaded and digest-verified the exact Expertise "
+            "content below. Use it only within the Assignment contract and "
+            "report one closed disposition per Guide in the final Packet.\n"
+            "Loaded Expertise context:\n"
+            f"{canonical_json(expertise_context)}\n"
+            if expertise_context is not None
+            else ""
+        )
+        + "Final-answer JSON Schema:\n"
         f"{canonical_json(output_schema)}\n"
         "Validated AssignmentInput:\n"
         f"{canonical_json(projection)}"
@@ -232,6 +248,7 @@ def _validated_assignment_result(
     projection: dict[str, Any],
     repo: Path,
     research_bundle: dict[str, Any] | None,
+    require_expertise_dispositions: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if (
         not final_message_is_final
@@ -261,6 +278,7 @@ def _validated_assignment_result(
         projection,
         repo_path=repo,
         research_bundle=research_bundle,
+        require_expertise_dispositions=require_expertise_dispositions,
     )
     if validation["status"] != "PASS":
         first = validation["issues"][0]
@@ -480,6 +498,7 @@ def _host_contract(
     projection_plan: dict[str, Any] | None = None
     projection: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
+    expertise_execution: dict[str, Any] | None = None
     research_bundle: dict[str, Any] | None = None
     dependency_packet_digests: dict[str, str] = {}
     plan_id: str | None = None
@@ -688,7 +707,13 @@ def _host_contract(
                 "Projection does not exactly match the AssignmentInput reconstructed from authoritative inputs.",
             )
         projection = reconstructed["input"]
-        output_schema = assignment_output_schema(projection)
+        expertise_execution = load_assignment_expertise(repo, projection)
+        output_schema = assignment_output_schema(
+            projection,
+            require_expertise_dispositions=(
+                expertise_execution["attestation_digest"] is not None
+            ),
+        )
         dependency_packet_digests = {
             packet["assignment_id"]: sha256_text(canonical_json(packet))
             for packet in dependency_packets
@@ -816,6 +841,7 @@ def _host_contract(
         "plan": plan,
         "projection": projection,
         "output_schema": output_schema,
+        "expertise_execution": expertise_execution,
         "research_bundle": research_bundle,
         "dependency_packet_digests": dependency_packet_digests,
     }
@@ -1670,6 +1696,10 @@ def _record_codex_work_action(
             usage=action.get("usage"),
             outcome=action.get("outcome"),
             diagnostics=action.get("diagnostics"),
+            allocation=action.get("allocation"),
+            expertise_observation=action.get(
+                "expertise_observation"
+            ),
             event_started_at=action["started_at"],
         )
         return
@@ -1684,11 +1714,16 @@ def _record_codex_work_action(
             evidence_refs=action["evidence_refs"],
             applied_model=action.get("applied_model"),
             model_evidence=action.get("model_evidence"),
+            expertise_evidence=action.get("expertise_evidence"),
             source_binding=action.get("source_binding"),
             model_observation=action.get("model_observation"),
             usage=action.get("usage"),
             outcome=action.get("outcome"),
             diagnostics=action.get("diagnostics"),
+            allocation=action.get("allocation"),
+            expertise_observation=action.get(
+                "expertise_observation"
+            ),
             event_ended_at=action["ended_at"],
             event_duration_ms=action.get("duration_ms"),
         )
@@ -1697,6 +1732,109 @@ def _record_codex_work_action(
         "CODEX_WORK_EVENT_INVALID",
         "Codex collaboration adapter returned an unsupported work action.",
     )
+
+
+def _managed_root_finish_action(
+    action: dict[str, Any],
+    *,
+    status: str,
+    result_summary: str,
+    evidence_refs: list[str],
+    runtime_binding: dict[str, Any],
+    requested_model: str,
+    applied_model: str | None,
+    reroutes: list[dict[str, Any]],
+    tokens_last: dict[str, Any] | None,
+    tokens_total: dict[str, Any] | None,
+    outcome: dict[str, Any],
+    diagnostics: dict[str, Any],
+    expertise_evidence: str,
+    expertise_observation: dict[str, Any],
+    preserve_host_timing: bool,
+    correlation_id: str,
+) -> dict[str, Any]:
+    complete_coverage = (
+        runtime_binding["capability"] == "full_stream"
+        and runtime_binding["version"] is not None
+        and runtime_binding["schema_digest"] is not None
+    )
+    complete_model_coverage = (
+        complete_coverage and applied_model is not None
+    )
+    work_status = {
+        "completed": "completed",
+        "failed": "failed",
+        "blocked": "blocked",
+        "interrupted": "interrupted",
+        "skipped": "interrupted",
+    }.get(status, "failed")
+    return {
+        **action,
+        "status": work_status,
+        "result_summary": result_summary[:240],
+        "evidence_refs": evidence_refs[:5],
+        "ended_at": (
+            action.get("ended_at")
+            if preserve_host_timing
+            else None
+        ),
+        "duration_ms": (
+            action.get("duration_ms")
+            if preserve_host_timing
+            else None
+        ),
+        "applied_model": (
+            applied_model if complete_model_coverage else None
+        ),
+        "model_evidence": (
+            "complete"
+            if complete_model_coverage
+            else "host_request"
+        ),
+        "expertise_evidence": expertise_evidence,
+        "source_binding": {
+            "interface": "codex_app_server",
+            "version": runtime_binding["version"],
+            "schema_digest": runtime_binding["schema_digest"],
+            "capability": runtime_binding["capability"],
+            "correlation_id": correlation_id,
+            "event_coverage": (
+                "complete_stream"
+                if complete_coverage
+                else "partial_stream"
+            ),
+        },
+        "model_observation": {
+            "observed_model": None,
+            "coverage": (
+                "complete_stream"
+                if complete_model_coverage
+                else "request_only"
+            ),
+            "reroutes": list(reroutes) if complete_model_coverage else [],
+        },
+        "usage": {
+            "last": tokens_last if complete_coverage else None,
+            "total": tokens_total if complete_coverage else None,
+            "scope": (
+                "work_turn"
+                if complete_coverage and tokens_total is not None
+                else "unavailable"
+            ),
+            "attribution": (
+                "direct"
+                if complete_coverage and tokens_total is not None
+                else "unavailable"
+            ),
+            "timing_coverage": (
+                "host_event" if complete_coverage else "partial"
+            ),
+            "cost": None,
+        },
+        "outcome": outcome,
+        "diagnostics": diagnostics,
+        "expertise_observation": expertise_observation,
+    }
 
 
 def _record_dependency_handoff(
@@ -2657,6 +2795,14 @@ def _run_codex_host_locked(
         prompt = _assignment_prompt(
             contract["projection"],
             contract["output_schema"],
+            (
+                contract["expertise_execution"]["prompt_context"]
+                if isinstance(
+                    contract.get("expertise_execution"),
+                    dict,
+                )
+                else None
+            ),
         )
     else:
         if prompt_file is None:
@@ -2822,6 +2968,7 @@ def _run_codex_host_locked(
             run_id=run_id,
             task_label=task_label,
             plan_path=plan_path,
+            request_key=run_id,
             execution_binding={
                 "schema_version": "maestro_execution_binding_v1",
                 "mode": "maestro_owned_codex_app_server",
@@ -2853,6 +3000,7 @@ def _run_codex_host_locked(
         "final_message_is_final": False,
         "root_work_id": None,
         "root_work_terminal": False,
+        "pending_root_finish": None,
         "work_tracker": None,
         "work_action_sink": None,
         "delegated_work_ids": set(),
@@ -3018,6 +3166,44 @@ def _run_codex_host_locked(
             )
             else None
         )
+        expertise_execution = contract.get("expertise_execution")
+        expertise_observation = (
+            expertise_execution["observation"]
+            if isinstance(expertise_execution, dict)
+            else None
+        )
+        loaded_packs = (
+            expertise_observation.get("packs", [])
+            if isinstance(expertise_observation, dict)
+            else []
+        )
+        expertise_pack_ids = [
+            item["expertise_pack_id"]
+            for item in loaded_packs
+        ]
+        decision_guide_ids = [
+            guide_id
+            for item in loaded_packs
+            for guide_id in item["guide_ids"]
+        ]
+        root_projection_digest = (
+            contract["projection"].get("projection_digest")
+            if isinstance(contract.get("projection"), dict)
+            else None
+        )
+        root_allocation = (
+            allocation_from_assignment(
+                plan_id=contract["plan_id"],
+                assignment=contract["assignment"],
+                projection_digest=root_projection_digest,
+            )
+            if (
+                isinstance(contract.get("assignment"), dict)
+                and isinstance(contract.get("plan_id"), str)
+                and isinstance(root_projection_digest, str)
+            )
+            else None
+        )
         record_work_start(
             repo,
             observation_id=observation["observation_id"],
@@ -3038,6 +3224,20 @@ def _run_codex_host_locked(
             requested_model=requested_model,
             requested_reasoning_effort=requested_effort,
             model_evidence="host_request",
+            lens_ids=(
+                list(contract["assignment"]["lens_ids"])
+                if isinstance(contract.get("assignment"), dict)
+                else []
+            ),
+            expertise_pack_ids=expertise_pack_ids,
+            decision_guide_ids=decision_guide_ids,
+            expertise_evidence=(
+                "host_loaded"
+                if expertise_pack_ids
+                else "unavailable"
+            ),
+            allocation=root_allocation,
+            expertise_observation=expertise_observation,
             source_binding={
                 "interface": "codex_app_server",
                 "version": runtime_binding["version"],
@@ -3108,6 +3308,19 @@ def _run_codex_host_locked(
                         "A delegated work attempt received conflicting terminal states.",
                     )
                 state["pending_child_finishes"][action["work_id"]] = action
+                return
+            if (
+                action["action"] == "finish"
+                and action["work_id"] == root_work_id
+                and contract["assignment_id"] is not None
+            ):
+                pending_root = state.get("pending_root_finish")
+                if pending_root is not None and pending_root != action:
+                    raise MaestroError(
+                        "CODEX_HOST_PROTOCOL_INVALID",
+                        "The Assignment root received conflicting terminal states.",
+                    )
+                state["pending_root_finish"] = action
                 return
             recorded_action = action
             if (
@@ -3434,6 +3647,7 @@ def _run_codex_host_locked(
         verification_assessment = None
         execution_unit_receipt = None
         packet_error: MaestroError | None = None
+        packet: dict[str, Any] | None = None
         result_status = completion["status"]
         if contract["assignment_id"] is not None:
             projection_digest = contract["projection"].get(
@@ -3451,11 +3665,19 @@ def _run_codex_host_locked(
                 ),
                 f"assignment-input:{projection_digest}",
             ]
+            load_evidence_ref = (
+                contract["expertise_execution"].get("evidence_ref")
+                if isinstance(
+                    contract.get("expertise_execution"),
+                    dict,
+                )
+                else None
+            )
             if completion["status"] == "completed":
                 assert isinstance(contract["plan"], dict)
                 assert isinstance(contract["projection"], dict)
                 try:
-                    _, packet_validation, result_status = (
+                    packet, packet_validation, result_status = (
                         _validated_assignment_result(
                             state["final_message"],
                             final_message_is_final=state[
@@ -3466,6 +3688,9 @@ def _run_codex_host_locked(
                             projection=contract["projection"],
                             repo=repo,
                             research_bundle=contract["research_bundle"],
+                            require_expertise_dispositions=(
+                                load_evidence_ref is not None
+                            ),
                         )
                     )
                 except MaestroError as exc:
@@ -3587,6 +3812,110 @@ def _run_codex_host_locked(
                             },
                         )
                     )
+            pending_root_finish = state.get("pending_root_finish")
+            if not isinstance(pending_root_finish, dict):
+                raise MaestroError(
+                    "CODEX_HOST_WORK_INCOMPLETE",
+                    "The managed Assignment turn did not produce a root terminal action.",
+                )
+            if packet is not None and packet_digest is not None:
+                root_outcome = outcome_from_assignment_packet(packet)
+                root_expertise, root_expertise_evidence = (
+                    application_from_packet(
+                        contract["expertise_execution"]["observation"],
+                        packet,
+                        packet_evidence_ref=(
+                            f"assignment-packet:{packet_digest}"
+                        ),
+                    )
+                )
+            else:
+                root_outcome = {
+                    "finding_summary": None,
+                    "conclusion": (
+                        "The managed Assignment result failed closed before "
+                        "a valid terminal Packet was accepted."
+                        if packet_error is not None
+                        else pending_root_finish["result_summary"]
+                    ),
+                    "decision": (
+                        "Reject the terminal result and preserve failure evidence."
+                        if packet_error is not None
+                        else "Preserve the Host terminal status."
+                    ),
+                    "next_action": (
+                        "blocked"
+                        if result_status in {"failed", "blocked"}
+                        else "finish"
+                    ),
+                    "consumed_work_ids": [],
+                    "handoff": None,
+                    "artifacts": [],
+                    "verification": None,
+                }
+                root_expertise = contract[
+                    "expertise_execution"
+                ]["observation"]
+                root_expertise_evidence = (
+                    "host_loaded"
+                    if root_expertise["load"]["status"] == "host_loaded"
+                    else "unavailable"
+                )
+            diagnostic_count = min(
+                state["error_count"] + (1 if packet_error else 0),
+                20,
+            )
+            diagnostic_error = (
+                f"{packet_error.code}: Assignment Packet validation failed."
+                if packet_error is not None
+                else state["last_error"]
+            )
+            if diagnostic_count and diagnostic_error is None:
+                diagnostic_error = "Codex Host reported an execution error."
+            managed_root_action = _managed_root_finish_action(
+                pending_root_finish,
+                status=result_status,
+                result_summary=root_outcome["conclusion"],
+                evidence_refs=[
+                    *evidence_refs,
+                    *(
+                        [load_evidence_ref]
+                        if isinstance(load_evidence_ref, str)
+                        else []
+                    ),
+                ],
+                runtime_binding=runtime_binding,
+                requested_model=requested_model,
+                applied_model=applied_model,
+                reroutes=list(state["reroutes"]),
+                tokens_last=state["tokens_last"],
+                tokens_total=state["tokens"],
+                outcome=root_outcome,
+                diagnostics={
+                    "interrupt_requested": state[
+                        "interrupt_requested"
+                    ],
+                    "error_count": diagnostic_count,
+                    "last_error": diagnostic_error,
+                    "followup_reason": None,
+                },
+                expertise_evidence=root_expertise_evidence,
+                expertise_observation=root_expertise,
+                preserve_host_timing=root_event_started_at is not None,
+                correlation_id=codex_work_id(
+                    "source",
+                    root_work_id,
+                    str(state["thread_id"]),
+                    str(state["turn_id"]),
+                ),
+            )
+            _record_codex_work_action(
+                repo,
+                observation_id=observation["observation_id"],
+                run_id=run_id,
+                action=managed_root_action,
+            )
+            state["root_work_terminal"] = True
             if (
                 result_status != "completed"
                 and contract["assignment"]["mutation_owner"]

@@ -11,10 +11,11 @@ from tests.support import (
     write_json,
 )
 
-from maestro.governance import finalize_run
+from maestro.governance import finalize_run, recent_run_events
 from maestro.observations import (
     record_execution_fallback,
     record_stage_observation,
+    start_child_run_observation,
     start_desktop_request_observation,
 )
 from maestro.planning import route_goal_v2
@@ -215,20 +216,10 @@ class RequestRecordProjectionTests(unittest.TestCase):
         self.assertEqual([0, 1], [
             card["rank"] for card in execution["cards"]
         ])
+        self.assertEqual([], execution["graph"]["edges"])
         self.assertEqual(
-            {
-                "from": "attempt-1:work-a",
-                "to": "attempt-2:work-b",
-                "type": "followup_of",
-                "provenance": "request_record_projection",
-                "source": "trusted_desktop_request_correlation",
-                "coverage": "derived_attempt_order",
-            },
-            execution["graph"]["edges"][0],
-        )
-        self.assertEqual(
-            "shared_trunk",
-            execution["graph"]["display_edge_groups"][0]["routing"],
+            [],
+            execution["graph"]["display_edge_groups"],
         )
         self.assertEqual(
             "unavailable",
@@ -240,6 +231,67 @@ class RequestRecordProjectionTests(unittest.TestCase):
                 card["assignment"]["model_route"]["route_recommended"]
                 for card in execution["cards"]
             ],
+        )
+
+    def test_expertise_rollup_uses_namespaced_work_across_attempts(
+        self,
+    ) -> None:
+        attempts = [
+            _run(
+                event_id=f"event-{attempt}",
+                run_id=f"run-{attempt}",
+                timestamp=f"2026-07-29T00:0{attempt}:00Z",
+                outcome="completed",
+                work_id=f"work-{attempt}",
+                correlation_id="thread-1:turn-expertise",
+                model=None,
+                tokens=None,
+            )
+            for attempt in (1, 2)
+        ]
+        for run in attempts:
+            card = run["work_detail"]["execution"]["cards"][0]
+            card["expertise"] = {
+                "pack_ids": ["software-engineering"],
+                "guide_ids": ["contracts-and-invariants"],
+                "packs": [
+                    {
+                        "expertise_pack_id": "software-engineering",
+                        "guide_ids": ["contracts-and-invariants"],
+                    }
+                ],
+                "load": {"status": "host_loaded"},
+                "application": {
+                    "status": "observed",
+                    "guide_ids": ["contracts-and-invariants"],
+                },
+            }
+            run["expertise"] = {
+                "packs": ["software-engineering"],
+                "guides": ["contracts-and-invariants"],
+                "evidence": {
+                    "assignment_ids": ["implementation"],
+                },
+            }
+
+        evidence = project_request_records(attempts)[0][
+            "expertise"
+        ]["evidence"]
+
+        expected = ["attempt-1:work-1", "attempt-2:work-2"]
+        self.assertEqual(expected, evidence["work_ids"]["expected"])
+        self.assertEqual(expected, evidence["work_ids"]["loaded"])
+        self.assertEqual(expected, evidence["work_ids"]["applied"])
+        self.assertEqual("complete", evidence["host_load"])
+        self.assertEqual("observed", evidence["application"])
+        self.assertEqual(
+            [
+                {
+                    "expertise_pack_id": "software-engineering",
+                    "guide_id": "contracts-and-invariants",
+                }
+            ],
+            evidence["applied_pairs"],
         )
 
     def test_request_concurrency_preserves_source_measurement_coverage(
@@ -687,18 +739,36 @@ class RequestRecordProjectionTests(unittest.TestCase):
             plan_path = Path(temporary) / "plan.json"
             write_json(plan_path, plan)
 
+            parent: dict[str, str] | None = None
             for attempt, outcome in ((1, "failed"), (2, "completed")):
                 run_id = f"request-attempt-{attempt}"
-                started = start_desktop_request_observation(
-                    repo,
-                    run_id=run_id,
-                    task_label="요청 단위 투영",
-                    thread_id="thread-1",
-                    turn_id="turn-1",
-                    requested_model="gpt-5.6-sol",
-                    requested_reasoning_effort="high",
-                    plan_path=plan_path,
+                started = (
+                    start_desktop_request_observation(
+                        repo,
+                        run_id=run_id,
+                        task_label="요청 단위 투영",
+                        thread_id="thread-1",
+                        turn_id="turn-1",
+                        requested_model="gpt-5.6-sol",
+                        requested_reasoning_effort="high",
+                        plan_path=plan_path,
+                    )
+                    if parent is None
+                    else start_child_run_observation(
+                        repo,
+                        run_id=run_id,
+                        task_label="요청 단위 투영 재시도",
+                        parent_observation_id=parent["observation_id"],
+                        parent_run_id=parent["run_id"],
+                        relation="retry",
+                        plan_path=plan_path,
+                    )
                 )
+                if parent is None:
+                    parent = {
+                        "observation_id": started["observation_id"],
+                        "run_id": run_id,
+                    }
                 record_execution_fallback(
                     repo,
                     observation_id=started["observation_id"],
@@ -746,9 +816,23 @@ class RequestRecordProjectionTests(unittest.TestCase):
             snapshot = snapshot_report(repo)
 
             self.assertEqual(2, len(snapshot["runs"]))
+            self.assertTrue(
+                all(
+                    run["request_lineage"]["root_request_id"]
+                    == snapshot["runs"][0]["request_lineage"][
+                        "root_request_id"
+                    ]
+                    for run in snapshot["runs"]
+                )
+            )
             self.assertEqual(1, len(snapshot["request_records"]))
             record = snapshot["request_records"][0]
             self.assertEqual(2, record["attempt_count"])
+            self.assertEqual(
+                "explicit_request_lineage",
+                record["request_identity_evidence"],
+            )
+            self.assertEqual(1, record["rework_count"])
             self.assertEqual(
                 ["request-attempt-1", "request-attempt-2"],
                 record["source_run_ids"],
@@ -763,6 +847,26 @@ class RequestRecordProjectionTests(unittest.TestCase):
             self.assertEqual(
                 "request_records",
                 snapshot["measurement_coverage"]["duration"]["scope"],
+            )
+            raw_window = recent_run_events(repo, window=1)
+            self.assertEqual(1, len(raw_window["display_runs"]))
+            request_complete_window = snapshot_report(repo, window=1)
+            self.assertEqual(2, len(request_complete_window["runs"]))
+            self.assertEqual(
+                1,
+                len(request_complete_window["request_records"]),
+            )
+            self.assertEqual(
+                2,
+                request_complete_window["request_records"][0][
+                    "attempt_count"
+                ],
+            )
+            self.assertEqual(
+                1,
+                request_complete_window["history_projection"][
+                    "governance_eligible_runs"
+                ],
             )
 
 

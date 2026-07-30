@@ -75,6 +75,7 @@ class ExecutionLedgerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="desktop-measurement-gap",
+                request_key="desktop-measurement-gap",
                 task_label="Desktop 요청 계측",
                 plan_path=plan_path,
             )
@@ -124,6 +125,7 @@ class ExecutionLedgerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="late-work-after-stages",
+                request_key="late-work-after-stages",
                 task_label="단계 뒤 작업 기록",
                 plan_path=plan_path,
                 execution_binding={
@@ -241,6 +243,7 @@ class ExecutionLedgerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="stale-writer",
+                request_key="stale-writer",
                 task_label="동시 기록 충돌",
                 plan_path=plan_path,
             )
@@ -290,6 +293,7 @@ class ExecutionLedgerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="legacy-projection",
+                request_key="legacy-projection",
                 task_label="기존 관측 호환",
                 plan_path=plan_path,
             )
@@ -372,6 +376,7 @@ class ExecutionLedgerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="measurement-cross-fields",
+                request_key="measurement-cross-fields",
                 task_label="측정 교차 필드",
                 plan_path=plan_path,
             )

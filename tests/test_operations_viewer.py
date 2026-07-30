@@ -575,7 +575,7 @@ class OperationsViewerTests(unittest.TestCase):
                 work_detail["limitations"]["stage_findings"],
             )
             self.assertEqual(
-                "unavailable",
+                "not_selected",
                 work_detail["limitations"]["guide_application"],
             )
             self.assertEqual("run_summary", run["receipt"]["kind"])
@@ -845,6 +845,47 @@ class OperationsViewerTests(unittest.TestCase):
         self.assertEqual("unavailable", legacy["selection_state"])
         self.assertIsNone(legacy["route_attempt"])
 
+    def test_run_card_rolls_up_exact_work_expertise_evidence(self) -> None:
+        pack_id = "software-engineering"
+        guide_id = "contracts-and-invariants"
+        event = {
+            "event_id": "event-expertise-rollup",
+            "run_id": "expertise-rollup",
+            "timestamp": "2026-07-30T00:00:00Z",
+            "risk": "medium",
+            "route_depth": "standard",
+            "outcome": "completed",
+            "verifier_result": "passed",
+            "selected_expertise_packs": [pack_id],
+            "selected_decision_guides": [guide_id],
+            "work_spans": [
+                application_work_span(pack_id, [guide_id])
+            ],
+        }
+
+        run = _run_card(event)
+        evidence = run["expertise"]["evidence"]
+
+        self.assertEqual("complete", evidence["host_load"])
+        self.assertEqual("observed", evidence["application"])
+        self.assertEqual(
+            {
+                "expected": 1,
+                "loaded": 1,
+                "applied": 1,
+                "not_applicable": 0,
+            },
+            evidence["counts"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "expertise_pack_id": pack_id,
+                    "guide_id": guide_id,
+                }
+            ],
+            evidence["applied_pairs"],
+        )
     def test_public_schemas_share_the_routing_summary_contract(self) -> None:
         schemas = [
             json.loads(
@@ -884,6 +925,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="incomplete-stages",
+                request_key="incomplete-stages",
                 task_label="누락 단계 검증",
                 plan_path=plan_path,
                 execution_binding={
@@ -935,6 +977,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="current-host-boundary",
+                request_key="current-host-boundary",
                 task_label="현재 Host 근거 경계",
                 plan_path=plan_path,
             )
@@ -1000,6 +1043,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="stage-order",
+                request_key="stage-order",
                 task_label="실행 단계 순서",
                 plan_path=plan_path,
             )
@@ -1101,12 +1145,14 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="late-fallback-run",
+                request_key="late-fallback-run",
                 task_label="브라우저 상호작용 검증",
                 plan_path=plan_path,
             )
             attached = start_run_observation(
                 repo,
                 run_id="late-fallback-run",
+                request_key="late-fallback-run",
                 task_label="브라우저 상호작용 검증",
                 plan_path=plan_path,
                 execution_binding={
@@ -1226,11 +1272,11 @@ class OperationsViewerTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(
-                "unavailable",
+                "not_selected",
                 snapshot["runs"][0]["expertise"]["evidence"]["host_load"],
             )
             self.assertEqual(
-                "unavailable",
+                "not_selected",
                 snapshot["runs"][0]["expertise"]["evidence"]["application"],
             )
             self.assertIsNone(snapshot["runs"][0]["tokens"])
@@ -1270,6 +1316,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="definition-drift-run",
+                request_key="definition-drift-run",
                 task_label="정의 변경 전 완료한 작업",
                 plan_path=plan_path,
                 execution_binding={
@@ -1515,6 +1562,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="receipt-stale-run",
+                request_key="receipt-stale-run",
                 task_label="완료 후 기록이 누락된 작업",
             )
             observation_path = repo / started["observation_path"]
@@ -1570,6 +1618,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="missing-execution-evidence",
+                request_key="missing-execution-evidence",
                 task_label="실행 근거 누락",
                 plan_path=plan_path,
             )
@@ -1613,6 +1662,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="failed-self-attested-execution",
+                request_key="failed-self-attested-execution",
                 task_label="실패 실행 근거 자체 주장",
                 plan_path=plan_path,
             )
@@ -1656,6 +1706,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="host-observed-run",
+                request_key="host-observed-run",
                 task_label="Host 측정값 연결",
                 plan_path=plan_path,
                 execution_binding={
@@ -1779,6 +1830,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="requested-only-run",
+                request_key="requested-only-run",
                 task_label="요청 모델만 관측",
                 plan_path=plan_path,
                 execution_binding={
@@ -1902,6 +1954,43 @@ class OperationsViewerTests(unittest.TestCase):
                 run["models"]["model_event_evidence"],
             )
 
+    def test_compatibility_receipt_cannot_spoof_desktop_request_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = self._initialized_repo(root)
+            plan = route_goal_v2(
+                "호환 receipt의 요청 식별자 위조를 막는다",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            receipt = _receipt_from_plan(plan)
+            receipt["run_id"] = "spoofed-desktop-request"
+            receipt["host_observation"] = {
+                "schema_version": "maestro_host_observation_v2",
+                "source": "codex-desktop-request-meta",
+                "quality": "host_reported",
+                "correlation_id": "thread:turn",
+                "requested_model": "gpt-5.6-sol",
+                "requested_reasoning_effort": "high",
+                "applied_model": None,
+                "model_event_evidence": "unavailable",
+                "reroutes": [],
+                "tokens": None,
+                "duration_ms": None,
+                "observed_at": "2026-07-30T00:00:00Z",
+            }
+
+            with self.assertRaises(MaestroError) as raised:
+                record_run(repo, receipt)
+
+            self.assertEqual(
+                "HOST_OBSERVATION_TRUST_REQUIRED",
+                raised.exception.code,
+            )
+
     def test_applied_model_requires_complete_host_event_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1909,6 +1998,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="model-evidence-run",
+                request_key="model-evidence-run",
                 task_label="모델 이벤트 근거 검사",
             )
             with self.assertRaises(MaestroError) as rejected:
@@ -1961,6 +2051,7 @@ class OperationsViewerTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="app-server-run",
+                request_key="app-server-run",
                 task_label="App Server 실측 수집",
             )
             trace = root / "app-server.jsonl"
@@ -2872,6 +2963,8 @@ const request = {
   schema_version: "maestro_request_record_v1",
   request_record_id: "request-one",
   source_event_ids: ["run-1", "run-2"],
+  source_run_ids: ["run-1", "run-2"],
+  request_identity_evidence: "trusted_desktop_thread_turn",
   run_id: "run-2",
   task_label: "요청 계약",
   outcome: "completed",
@@ -2956,7 +3049,10 @@ const feedbackReport = {
 const valid = {
   schema_version: "maestro_snapshot_v1",
   project_id: null,
-  runs: [{ event_id: "run-1" }, { event_id: "run-2" }],
+  runs: [
+    { event_id: "run-1", run_id: "run-1" },
+    { event_id: "run-2", run_id: "run-2" },
+  ],
   request_records: [request],
   governance: {
     model_feedback_window: 200,
@@ -2966,6 +3062,218 @@ const valid = {
 };
 assert.equal(contract.validateSnapshot(valid), valid);
 assert.deepEqual(contract.requestRecords(valid), [request]);
+
+const mismatchedSourcePair = {
+  ...valid,
+  request_records: [{
+    ...request,
+    source_run_ids: ["run-2", "run-1"],
+  }],
+};
+assert.throws(
+  () => contract.validateSnapshot(mismatchedSourcePair),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
+
+const omittedRawRun = {
+  ...valid,
+  runs: [...valid.runs, { event_id: "run-3", run_id: "run-3" }],
+};
+assert.throws(
+  () => contract.validateSnapshot(omittedRawRun),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
+
+const overlappingMembership = {
+  ...valid,
+  request_records: [
+    request,
+    {
+      ...request,
+      request_record_id: "request-two",
+    },
+  ],
+};
+assert.throws(
+  () => contract.validateSnapshot(overlappingMembership),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
+
+const splitRoot = {
+  ...valid,
+  request_records: [
+    {
+      ...request,
+      root_request_id: "request-one",
+      root_run_id: "run-1",
+    },
+    {
+      ...request,
+      request_record_id: "request-two",
+      root_request_id: "request-one",
+      root_run_id: "run-1",
+      source_event_ids: ["run-2"],
+      source_run_ids: ["run-2"],
+    },
+  ],
+};
+assert.throws(
+  () => contract.validateSnapshot(splitRoot),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
+
+const workExpertise = {
+  lens_ids: [],
+  pack_ids: ["software-engineering"],
+  guide_ids: ["contracts-and-invariants"],
+  evidence: "application_observed",
+  packs: [{
+    expertise_pack_id: "software-engineering",
+    definition_digest: "d".repeat(64),
+    skill_id: "maestro-software-engineering",
+    skill_definition_digest: "e".repeat(64),
+    guide_ids: ["contracts-and-invariants"],
+    loaded_guide_refs: [
+      `guide:software-engineering:contracts-and-invariants:${"f".repeat(64)}`,
+    ],
+  }],
+  load: {
+    status: "host_loaded",
+    evidence_refs: [`expertise-load:${"1".repeat(64)}`],
+  },
+  application: {
+    status: "observed",
+    guide_ids: ["contracts-and-invariants"],
+    evidence_refs: ["assignment-packet:packet-one"],
+  },
+};
+const workCard = {
+  work_id: "work-1",
+  assignment: {},
+  relationships: {
+    parent_work_id: null,
+    followup_of_work_id: null,
+    depends_on_work_ids: [],
+    joins_work_ids: [],
+  },
+  models: {},
+  measurements: {duration_ms: null},
+  execution_facts: {
+    duration: {value_ms: null},
+    tokens: {value: null},
+  },
+  evidence: {count: 0, refs: []},
+  expertise: workExpertise,
+  outcome: {
+    finding_summary: null,
+    conclusion: null,
+    decision: null,
+    next_action: null,
+    consumed_work_ids: [],
+    handoff: null,
+    artifacts: [],
+    verification: null,
+    result_summary: null,
+    decision_evidence: "unavailable",
+  },
+};
+const exactExpertiseEvidence = {
+  selection: "run_receipt",
+  assignment_attachment: "unavailable",
+  assignment_ids: [],
+  host_load: "complete",
+  application: "observed",
+  work_ids: {
+    expected: ["work-1"],
+    loaded: ["work-1"],
+    applied: ["work-1"],
+    not_applicable: [],
+  },
+  counts: {
+    expected: 1,
+    loaded: 1,
+    applied: 1,
+    not_applicable: 0,
+  },
+  loaded_pairs: [{
+    expertise_pack_id: "software-engineering",
+    guide_id: "contracts-and-invariants",
+  }],
+  applied_pairs: [{
+    expertise_pack_id: "software-engineering",
+    guide_id: "contracts-and-invariants",
+  }],
+  interpretation: "Exact per-work Expertise evidence.",
+};
+const expertiseRequest = {
+  ...request,
+  request_record_id: "request-expertise",
+  expertise: {
+    packs: ["software-engineering"],
+    guides: ["contracts-and-invariants"],
+    observations: [],
+    evidence: exactExpertiseEvidence,
+  },
+  work_detail: {
+    ...request.work_detail,
+    execution: {cards: [workCard], graph: {}},
+  },
+};
+const expertiseSnapshot = {
+  ...valid,
+  request_records: [expertiseRequest],
+};
+assert.equal(
+  contract.validateSnapshot(expertiseSnapshot),
+  expertiseSnapshot,
+);
+
+const unrelatedLoadedWork = structuredClone(expertiseSnapshot);
+unrelatedLoadedWork.request_records[0].expertise.evidence.work_ids.loaded = [
+  "not-an-expected-work-id",
+];
+assert.throws(
+  () => contract.validateSnapshot(unrelatedLoadedWork),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
+
+const unavailableExpertise = structuredClone(expertiseSnapshot);
+const unavailableRecord = unavailableExpertise.request_records[0];
+unavailableRecord.request_record_id = "request-unavailable-expertise";
+unavailableRecord.expertise.evidence.host_load = "unavailable";
+unavailableRecord.expertise.evidence.application = "unavailable";
+unavailableRecord.expertise.evidence.work_ids.loaded = [];
+unavailableRecord.expertise.evidence.work_ids.applied = [];
+unavailableRecord.expertise.evidence.counts.loaded = 0;
+unavailableRecord.expertise.evidence.counts.applied = 0;
+unavailableRecord.expertise.evidence.loaded_pairs = [];
+unavailableRecord.expertise.evidence.applied_pairs = [];
+const unavailableCard = unavailableRecord.work_detail.execution.cards[0];
+unavailableCard.expertise.evidence = "selection_only";
+unavailableCard.expertise.packs = [];
+unavailableCard.expertise.load = {
+  status: "unavailable",
+  evidence_refs: [],
+};
+unavailableCard.expertise.application = {
+  status: "unavailable",
+  guide_ids: [],
+  evidence_refs: [],
+};
+assert.equal(
+  contract.validateSnapshot(unavailableExpertise),
+  unavailableExpertise,
+);
+unavailableCard.expertise.application.guide_ids = [
+  "contracts-and-invariants",
+];
+unavailableCard.expertise.application.evidence_refs = [
+  "assignment-packet:forged",
+];
+assert.throws(
+  () => contract.validateSnapshot(unavailableExpertise),
+  (reason) => reason.code === "DASHBOARD_REQUEST_RECORDS_INVALID",
+);
 
 for (const snapshot of [
   { schema_version: "maestro_snapshot_v1", runs: [] },
@@ -3037,6 +3345,18 @@ for (const snapshot of [
     request_records: [{
       ...request,
       work_detail: {...request.work_detail, stages: [null]},
+    }],
+  },
+  {
+    schema_version: "maestro_snapshot_v1",
+    runs: [],
+    request_records: [{
+      ...request,
+      expertise: {
+        packs: [],
+        guides: [],
+        observations: [{}],
+      },
     }],
   },
   {
@@ -3591,6 +3911,7 @@ assert.equal(
             started = start_run_observation(
                 repo,
                 run_id="history-run-1",
+                request_key="history-run-1",
                 task_label="History run",
             )
             write_json(receipt_path, receipt)

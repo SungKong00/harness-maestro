@@ -41,6 +41,27 @@
     );
   }
 
+  function isUniqueStringArray(value) {
+    return isStringArray(value) && new Set(value).size === value.length;
+  }
+
+  function sameStringSet(left, right) {
+    return (
+      isUniqueStringArray(left)
+      && isUniqueStringArray(right)
+      && left.length === right.length
+      && left.every((item) => right.includes(item))
+    );
+  }
+
+  function isStringSubset(subset, superset) {
+    return (
+      isUniqueStringArray(subset)
+      && isUniqueStringArray(superset)
+      && subset.every((item) => superset.includes(item))
+    );
+  }
+
   function isNullableMeasurement(value) {
     return (
       value === null
@@ -69,6 +90,30 @@
     return (
       typeof value === "string"
       && /^[a-f0-9]{64}$/.test(value)
+    );
+  }
+
+  function exactKeys(value, required, optional = []) {
+    if (!isObject(value)) {
+      return false;
+    }
+    const allowed = new Set([...required, ...optional]);
+    const keys = Object.keys(value);
+    return (
+      required.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+      && keys.every((key) => allowed.has(key))
+    );
+  }
+
+  function isStringOrNull(value) {
+    return value === null || typeof value === "string";
+  }
+
+  function validReferenceList(value, maximum = 16) {
+    return (
+      isStringArray(value)
+      && value.length <= maximum
+      && value.every((item) => Boolean(item) && item.length <= 240)
     );
   }
 
@@ -502,6 +547,286 @@
     );
   }
 
+  function validExpertiseSignal(value) {
+    return (
+      exactKeys(value, [
+        "kind",
+        "domain",
+        "pack_id",
+        "guide_id",
+        "severity",
+        "reusable",
+        "resolution",
+        "evidence_ref",
+      ])
+      && [
+        "missing_pack",
+        "missing_guide",
+        "stale_guide",
+        "trigger_miss",
+        "trigger_false_positive",
+        "guide_not_loaded",
+        "guide_unassigned",
+        "guide_ineffective",
+        "pack_conflict",
+        "unnecessary_research",
+      ].includes(value.kind)
+      && typeof value.domain === "string"
+      && Boolean(value.domain)
+      && isStringOrNull(value.pack_id)
+      && isStringOrNull(value.guide_id)
+      && ["medium", "high", "critical"].includes(value.severity)
+      && typeof value.reusable === "boolean"
+      && [
+        "reuse",
+        "research",
+        "manual_correction",
+        "unresolved",
+        "author_candidate",
+      ].includes(value.resolution)
+      && typeof value.evidence_ref === "string"
+      && Boolean(value.evidence_ref)
+    );
+  }
+
+  function validExpertisePair(value) {
+    return (
+      exactKeys(value, ["expertise_pack_id", "guide_id"])
+      && typeof value.expertise_pack_id === "string"
+      && Boolean(value.expertise_pack_id)
+      && typeof value.guide_id === "string"
+      && Boolean(value.guide_id)
+    );
+  }
+
+  function expertisePairKey(value) {
+    return `${value.expertise_pack_id}\u0000${value.guide_id}`;
+  }
+
+  function validUniqueExpertisePairs(value) {
+    return (
+      Array.isArray(value)
+      && value.every(validExpertisePair)
+      && new Set(value.map(expertisePairKey)).size === value.length
+    );
+  }
+
+  function validRunExpertiseEvidence(
+    value,
+    {
+      selectedPacks = [],
+      selectedGuides = [],
+      workCards = [],
+    } = {},
+  ) {
+    if (
+      !exactKeys(
+        value,
+        [
+          "selection",
+          "assignment_attachment",
+          "assignment_ids",
+          "host_load",
+          "application",
+          "interpretation",
+        ],
+        [
+          "work_ids",
+          "counts",
+          "loaded_pairs",
+          "applied_pairs",
+        ],
+      )
+      || !["not_selected", "run_receipt"].includes(value.selection)
+      || !["unavailable", "plan_projection"].includes(
+        value.assignment_attachment,
+      )
+      || !isUniqueStringArray(value.assignment_ids)
+      || !["not_selected", "complete", "partial", "unavailable"].includes(
+        value.host_load,
+      )
+      || ![
+        "not_selected",
+        "observed",
+        "not_applicable",
+        "partial",
+        "unavailable",
+      ].includes(value.application)
+      || typeof value.interpretation !== "string"
+    ) {
+      return false;
+    }
+    const optionalPresent = [
+      "work_ids",
+      "counts",
+      "loaded_pairs",
+      "applied_pairs",
+    ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+    if (!optionalPresent) {
+      return false;
+    }
+    if (
+      !exactKeys(value.work_ids, [
+        "expected",
+        "loaded",
+        "applied",
+        "not_applicable",
+      ])
+      || !Object.values(value.work_ids).every(isUniqueStringArray)
+      || !exactKeys(value.counts, [
+        "expected",
+        "loaded",
+        "applied",
+        "not_applicable",
+      ])
+      || !Object.entries(value.counts).every(
+        ([key, count]) => (
+          isNonNegativeInteger(count)
+          && count === value.work_ids[key].length
+        ),
+      )
+      || !validUniqueExpertisePairs(value.loaded_pairs)
+      || !validUniqueExpertisePairs(value.applied_pairs)
+    ) {
+      return false;
+    }
+    const expected = value.work_ids.expected;
+    const loaded = value.work_ids.loaded;
+    const applied = value.work_ids.applied;
+    const notApplicable = value.work_ids.not_applicable;
+    const resolved = [...applied, ...notApplicable];
+    const loadedPairKeys = value.loaded_pairs.map(expertisePairKey);
+    const appliedPairKeys = value.applied_pairs.map(expertisePairKey);
+    if (!Array.isArray(workCards)) {
+      return false;
+    }
+    const evidenceCards = workCards.filter(
+      (card) => (
+        isObject(card)
+        && typeof card.work_id === "string"
+        && validWorkExpertise(card.expertise, { observed: true })
+      ),
+    );
+    const expectedFromCards = evidenceCards
+      .filter(
+        (card) => (
+          card.expertise.pack_ids.some(
+            (packId) => selectedPacks.includes(packId),
+          )
+          || card.expertise.guide_ids.some(
+            (guideId) => selectedGuides.includes(guideId),
+          )
+        ),
+      )
+      .map((card) => card.work_id);
+    const loadedCards = evidenceCards.filter(
+      (card) => card?.expertise?.load?.status === "host_loaded",
+    );
+    const appliedCards = evidenceCards.filter(
+      (card) => card?.expertise?.application?.status === "observed",
+    );
+    const notApplicableCards = evidenceCards.filter(
+      (card) => (
+        card?.expertise?.application?.status === "not_applicable"
+      ),
+    );
+    const loadedPairsFromCards = loadedCards.flatMap(
+      (card) => card.expertise.packs.flatMap(
+        (pack) => pack.guide_ids.map(
+          (guideId) => ({
+            expertise_pack_id: pack.expertise_pack_id,
+            guide_id: guideId,
+          }),
+        ),
+      ),
+    );
+    const appliedPairsFromCards = appliedCards.flatMap(
+      (card) => card.expertise.application.guide_ids.flatMap(
+        (guideId) => card.expertise.packs
+          .filter((pack) => pack.guide_ids.includes(guideId))
+          .map((pack) => ({
+            expertise_pack_id: pack.expertise_pack_id,
+            guide_id: guideId,
+          })),
+      ),
+    );
+    const loadedPairKeysFromCards = [
+      ...new Set(loadedPairsFromCards.map(expertisePairKey)),
+    ];
+    const appliedPairKeysFromCards = [
+      ...new Set(appliedPairsFromCards.map(expertisePairKey)),
+    ];
+    const noSelection = selectedPacks.length === 0
+      && selectedGuides.length === 0;
+    const expectedHostLoad = noSelection
+      ? "not_selected"
+      : (
+        expected.length > 0 && sameStringSet(expected, loaded)
+          ? "complete"
+          : (loaded.length > 0 ? "partial" : "unavailable")
+      );
+    const expectedApplication = noSelection
+      ? "not_selected"
+      : (
+        expected.length > 0
+        && sameStringSet(expected, resolved)
+        && applied.length > 0
+          ? "observed"
+          : (
+            expected.length > 0
+            && sameStringSet(expected, notApplicable)
+              ? "not_applicable"
+              : (
+                resolved.length > 0
+                  ? "partial"
+                  : "unavailable"
+              )
+          )
+      );
+    return (
+      isUniqueStringArray(selectedPacks)
+      && isUniqueStringArray(selectedGuides)
+      && value.selection === (
+        noSelection ? "not_selected" : "run_receipt"
+      )
+      && value.assignment_attachment === (
+        value.assignment_ids.length > 0
+          ? "plan_projection"
+          : "unavailable"
+      )
+      && isStringSubset(loaded, expected)
+      && isStringSubset(applied, loaded)
+      && isStringSubset(notApplicable, loaded)
+      && !applied.some((item) => notApplicable.includes(item))
+      && sameStringSet(expected, expectedFromCards)
+      && sameStringSet(
+        loaded,
+        loadedCards.map((card) => card.work_id),
+      )
+      && sameStringSet(
+        applied,
+        appliedCards.map((card) => card.work_id),
+      )
+      && sameStringSet(
+        notApplicable,
+        notApplicableCards.map((card) => card.work_id),
+      )
+      && value.host_load === expectedHostLoad
+      && value.application === expectedApplication
+      && value.loaded_pairs.every(
+        (pair) => (
+          selectedPacks.includes(pair.expertise_pack_id)
+          && selectedGuides.includes(pair.guide_id)
+        ),
+      )
+      && appliedPairKeys.every((key) => loadedPairKeys.includes(key))
+      && sameStringSet(loadedPairKeys, loadedPairKeysFromCards)
+      && sameStringSet(appliedPairKeys, appliedPairKeysFromCards)
+      && (loaded.length === 0 || value.loaded_pairs.length > 0)
+      && (applied.length === 0 || value.applied_pairs.length > 0)
+    );
+  }
+
   function validModels(models) {
     return (
       isObject(models)
@@ -514,12 +839,298 @@
     );
   }
 
-  function validExpertise(expertise) {
+  function validExpertise(expertise, { workCards = [] } = {}) {
     return (
       isObject(expertise)
       && isStringArray(expertise.packs)
       && isStringArray(expertise.guides)
       && Array.isArray(expertise.observations)
+      && expertise.observations.every(validExpertiseSignal)
+      && (
+        expertise.routing === undefined
+        || isObject(expertise.routing)
+      )
+      && (
+        expertise.evidence === undefined
+        || validRunExpertiseEvidence(
+          expertise.evidence,
+          {
+            selectedPacks: expertise.packs,
+            selectedGuides: expertise.guides,
+            workCards,
+          },
+        )
+      )
+    );
+  }
+
+  function validAllocation(value) {
+    return (
+      exactKeys(value, [
+        "status",
+        "source",
+        "reason",
+        "basis_refs",
+        "dependency_assignment_ids",
+        "evidence",
+      ])
+      && ["observed", "unavailable"].includes(value.status)
+      && [
+        "route_plan",
+        "codex_app_server",
+        "current_host",
+        "host_adapter",
+        "unavailable",
+      ].includes(value.source)
+      && isStringOrNull(value.reason)
+      && validReferenceList(value.basis_refs, 5)
+      && validReferenceList(value.dependency_assignment_ids, 16)
+      && typeof value.evidence === "string"
+      && (
+        value.status === "observed"
+          ? (
+            value.source !== "unavailable"
+            && Boolean(value.reason)
+            && value.basis_refs.length > 0
+          )
+          : (
+            value.source === "unavailable"
+            && value.reason === null
+            && value.basis_refs.length === 0
+            && value.dependency_assignment_ids.length === 0
+          )
+      )
+    );
+  }
+
+  function validWorkExpertisePack(value) {
+    return (
+      exactKeys(value, [
+        "expertise_pack_id",
+        "definition_digest",
+        "skill_id",
+        "skill_definition_digest",
+        "guide_ids",
+        "loaded_guide_refs",
+      ])
+      && typeof value.expertise_pack_id === "string"
+      && Boolean(value.expertise_pack_id)
+      && isDigest(value.definition_digest)
+      && typeof value.skill_id === "string"
+      && Boolean(value.skill_id)
+      && isDigest(value.skill_definition_digest)
+      && validReferenceList(value.guide_ids, 16)
+      && isUniqueStringArray(value.guide_ids)
+      && value.guide_ids.length > 0
+      && validReferenceList(value.loaded_guide_refs, 16)
+      && isUniqueStringArray(value.loaded_guide_refs)
+      && value.loaded_guide_refs.length === value.guide_ids.length
+    );
+  }
+
+  function validWorkExpertise(value, { observed = false } = {}) {
+    const base = ["pack_ids", "guide_ids", "evidence"];
+    const legacyObserved = (
+      observed
+      && exactKeys(value, [...base, "lens_ids"])
+    );
+    const required = observed
+      ? (
+        legacyObserved
+          ? [...base, "lens_ids"]
+          : [...base, "lens_ids", "packs", "load", "application"]
+      )
+      : [...base, "host_load", "application"];
+    if (
+      !exactKeys(value, required)
+      || !isUniqueStringArray(value.pack_ids)
+      || !isUniqueStringArray(value.guide_ids)
+      || ![
+        "unavailable",
+        "selection_only",
+        "host_loaded",
+        "application_observed",
+      ].includes(value.evidence)
+    ) {
+      return false;
+    }
+    if (!observed) {
+      return (
+        ["unavailable", "host_loaded"].includes(value.host_load)
+        && [
+          "unavailable",
+          "not_reported",
+          "not_applicable",
+          "observed",
+        ].includes(value.application)
+      );
+    }
+    if (legacyObserved) {
+      return (
+        isUniqueStringArray(value.lens_ids)
+        && ["unavailable", "selection_only"].includes(value.evidence)
+      );
+    }
+    const observedPacks = Array.isArray(value.packs)
+      ? value.packs
+      : [];
+    const loadedPackIds = observedPacks.map(
+      (pack) => pack?.expertise_pack_id,
+    );
+    const loadedGuideIds = observedPacks.flatMap(
+      (pack) => (
+        Array.isArray(pack?.guide_ids)
+          ? pack.guide_ids
+          : []
+      ),
+    );
+    const loadUnavailable = (
+      isObject(value.load)
+      && value.load.status === "unavailable"
+    );
+    const applicationObserved = (
+      isObject(value.application)
+      && value.application.status === "observed"
+    );
+    return (
+      isUniqueStringArray(value.lens_ids)
+      && Array.isArray(value.packs)
+      && value.packs.every(validWorkExpertisePack)
+      && new Set(loadedPackIds).size === loadedPackIds.length
+      && new Set(loadedGuideIds).size === loadedGuideIds.length
+      && exactKeys(value.load, ["status", "evidence_refs"])
+      && ["host_loaded", "unavailable"].includes(value.load.status)
+      && validReferenceList(value.load.evidence_refs, 5)
+      && exactKeys(value.application, [
+        "status",
+        "guide_ids",
+        "evidence_refs",
+      ])
+      && [
+        "observed",
+        "not_applicable",
+        "not_reported",
+        "unavailable",
+      ].includes(value.application.status)
+      && isUniqueStringArray(value.application.guide_ids)
+      && validReferenceList(value.application.evidence_refs, 5)
+      && isStringSubset(value.application.guide_ids, loadedGuideIds)
+      && (
+        value.application.status !== "unavailable"
+        || loadUnavailable
+      )
+      && (
+        loadUnavailable
+          ? (
+            value.packs.length === 0
+            && value.load.evidence_refs.length === 0
+            && value.application.status === "unavailable"
+            && value.application.guide_ids.length === 0
+            && value.application.evidence_refs.length === 0
+            && ["unavailable", "selection_only"].includes(value.evidence)
+          )
+          : (
+            value.packs.length > 0
+            && value.load.evidence_refs.length > 0
+            && sameStringSet(loadedPackIds, value.pack_ids)
+            && sameStringSet(loadedGuideIds, value.guide_ids)
+            && ["host_loaded", "application_observed"].includes(
+              value.evidence,
+            )
+          )
+      )
+      && (
+        applicationObserved
+          ? (
+            value.evidence === "application_observed"
+            && value.application.guide_ids.length > 0
+            && value.application.evidence_refs.length > 0
+          )
+          : (
+            value.evidence !== "application_observed"
+            && (
+              value.application.status !== "not_reported"
+              || (
+                value.application.guide_ids.length === 0
+                && value.application.evidence_refs.length === 0
+              )
+            )
+            && (
+              value.application.status !== "not_applicable"
+              || (
+                sameStringSet(
+                  value.application.guide_ids,
+                  loadedGuideIds,
+                )
+                && value.application.evidence_refs.length > 0
+              )
+            )
+          )
+      )
+    );
+  }
+
+  function validRelationships(value) {
+    return (
+      exactKeys(value, [
+        "parent_work_id",
+        "followup_of_work_id",
+        "depends_on_work_ids",
+        "joins_work_ids",
+      ])
+      && isStringOrNull(value.parent_work_id)
+      && isStringOrNull(value.followup_of_work_id)
+      && validReferenceList(value.depends_on_work_ids, 16)
+      && validReferenceList(value.joins_work_ids, 16)
+    );
+  }
+
+  function validWorkEvidence(value) {
+    return (
+      exactKeys(value, ["count", "refs"])
+      && isNonNegativeInteger(value.count)
+      && validReferenceList(value.refs, 16)
+      && value.count === value.refs.length
+    );
+  }
+
+  function validWorkOutcome(value) {
+    return (
+      exactKeys(value, [
+        "finding_summary",
+        "conclusion",
+        "decision",
+        "next_action",
+        "consumed_work_ids",
+        "handoff",
+        "artifacts",
+        "verification",
+        "result_summary",
+        "decision_evidence",
+      ])
+      && isStringOrNull(value.finding_summary)
+      && isStringOrNull(value.conclusion)
+      && isStringOrNull(value.decision)
+      && (
+        value.next_action === null
+        || [
+          "continue",
+          "revise",
+          "redelegate",
+          "verify",
+          "finish",
+          "blocked",
+          "user_decision",
+        ].includes(value.next_action)
+      )
+      && validReferenceList(value.consumed_work_ids, 16)
+      && (value.handoff === null || isObject(value.handoff))
+      && Array.isArray(value.artifacts)
+      && (value.verification === null || isObject(value.verification))
+      && isStringOrNull(value.result_summary)
+      && ["structured_work_outcome", "unavailable"].includes(
+        value.decision_evidence,
+      )
     );
   }
 
@@ -534,8 +1145,8 @@
       && isNullableMeasurement(stage.measurements.duration_ms)
       && validTokenMap(stage.measurements.tokens)
       && isObject(stage.execution_facts)
-      && isObject(stage.evidence)
-      && isObject(stage.expertise)
+      && validWorkEvidence(stage.evidence)
+      && validWorkExpertise(stage.expertise)
       && validFeedbackRef(stage.model_feedback_ref, index)
     );
   }
@@ -547,7 +1158,11 @@
       && typeof card.work_id === "string"
       && Boolean(card.work_id)
       && isObject(card.assignment)
-      && isObject(card.relationships)
+      && validRelationships(card.relationships)
+      && (
+        card.allocation === undefined
+        || validAllocation(card.allocation)
+      )
       && isObject(card.models)
       && isObject(card.measurements)
       && isNullableMeasurement(card.measurements.duration_ms)
@@ -556,8 +1171,9 @@
       && isNullableMeasurement(facts.duration.value_ms)
       && isObject(facts.tokens)
       && validTokenMap(facts.tokens.value)
-      && isObject(card.evidence)
-      && isObject(card.expertise)
+      && validWorkEvidence(card.evidence)
+      && validWorkExpertise(card.expertise, { observed: true })
+      && validWorkOutcome(card.outcome)
       && validFeedbackRef(card.model_feedback_ref, index)
     );
   }
@@ -609,6 +1225,9 @@
       );
     }
     const recordIds = new Set();
+    const rootRequestIds = new Set();
+    const sourceEventIds = new Set();
+    const sourceRunIds = new Set();
     snapshot.request_records.forEach((record) => {
       if (
         !record
@@ -617,6 +1236,29 @@
         || !record.request_record_id
         || !Array.isArray(record.source_event_ids)
         || !record.source_event_ids.length
+        || !isUniqueStringArray(record.source_event_ids)
+        || !Array.isArray(record.source_run_ids)
+        || !record.source_run_ids.length
+        || !isUniqueStringArray(record.source_run_ids)
+        || record.source_event_ids.length !== record.source_run_ids.length
+        || ![
+          "explicit_request_lineage",
+          "content_addressed_legacy_alias",
+          "mixed_structural_lineage",
+          "trusted_desktop_thread_turn",
+          "single_run_fallback",
+        ].includes(record.request_identity_evidence)
+        || (
+          Object.prototype.hasOwnProperty.call(record, "root_request_id")
+          && (
+            typeof record.root_request_id !== "string"
+            || !record.root_request_id
+            || record.root_request_id !== record.request_record_id
+            || typeof record.root_run_id !== "string"
+            || !record.root_run_id
+            || !record.source_run_ids.includes(record.root_run_id)
+          )
+        )
         || typeof record.run_id !== "string"
         || !record.run_id
         || typeof record.task_label !== "string"
@@ -631,7 +1273,15 @@
           Object.prototype.hasOwnProperty.call(record, "tokens")
           && !validTokenMap(record.tokens)
         )
-        || !validExpertise(record.expertise)
+        || !validExpertise(
+          record.expertise,
+          {
+            workCards: (
+              record.work_detail?.execution?.cards
+              || []
+            ),
+          },
+        )
         || !Array.isArray(record.flow)
         || !isObject(record.flow_graph)
         || !isObject(record.stage_coverage)
@@ -645,6 +1295,24 @@
         throw contractError("중복된 작업 요청 식별자가 있습니다.");
       }
       recordIds.add(record.request_record_id);
+      if (Object.prototype.hasOwnProperty.call(record, "root_request_id")) {
+        if (rootRequestIds.has(record.root_request_id)) {
+          throw contractError("하나의 요청 계보가 여러 작업 기록으로 분리됐습니다.");
+        }
+        rootRequestIds.add(record.root_request_id);
+      }
+      record.source_event_ids.forEach((eventId) => {
+        if (sourceEventIds.has(eventId)) {
+          throw contractError("하나의 실행 이벤트가 여러 작업 요청에 포함됐습니다.");
+        }
+        sourceEventIds.add(eventId);
+      });
+      record.source_run_ids.forEach((runId) => {
+        if (sourceRunIds.has(runId)) {
+          throw contractError("하나의 실행이 여러 작업 요청에 포함됐습니다.");
+        }
+        sourceRunIds.add(runId);
+      });
     });
     return snapshot.request_records;
   }
@@ -667,10 +1335,42 @@
       throw contractError("원본 실행의 모델 정책 피드백 참조가 올바르지 않습니다.");
     }
     const records = requestRecords(snapshot, index);
-    const runsByEvent = new Map(
-      snapshot.runs.map((run) => [run.event_id, run]),
-    );
+    const runsByEvent = new Map();
+    const runsByRun = new Map();
+    snapshot.runs.forEach((run) => {
+      if (
+        typeof run.event_id !== "string"
+        || !run.event_id
+        || typeof run.run_id !== "string"
+        || !run.run_id
+        || runsByEvent.has(run.event_id)
+        || runsByRun.has(run.run_id)
+      ) {
+        throw contractError(
+          "원본 실행 이력의 이벤트 또는 실행 식별자가 올바르지 않습니다.",
+        );
+      }
+      runsByEvent.set(run.event_id, run);
+      runsByRun.set(run.run_id, run);
+    });
+    const representedEvents = new Set();
+    const representedRuns = new Set();
     records.forEach((record) => {
+      record.source_event_ids.forEach((eventId, sourceIndex) => {
+        const runId = record.source_run_ids[sourceIndex];
+        const sourceRun = runsByEvent.get(eventId);
+        if (
+          !sourceRun
+          || sourceRun.run_id !== runId
+          || runsByRun.get(runId) !== sourceRun
+        ) {
+          throw contractError(
+            "요청 기록의 원본 이벤트와 실행 대응이 올바르지 않습니다.",
+          );
+        }
+        representedEvents.add(eventId);
+        representedRuns.add(runId);
+      });
       const latestEventId = record.source_event_ids.at(-1);
       const latest = runsByEvent.get(latestEventId);
       const recordRef = record.model_feedback_ref;
@@ -690,6 +1390,14 @@
         );
       }
     });
+    if (
+      representedEvents.size !== snapshot.runs.length
+      || representedRuns.size !== snapshot.runs.length
+    ) {
+      throw contractError(
+        "원본 실행 이력 일부가 요청 단위 작업 기록에서 누락됐습니다.",
+      );
+    }
     return snapshot;
   }
 

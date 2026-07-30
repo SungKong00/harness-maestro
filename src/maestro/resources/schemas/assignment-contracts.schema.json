@@ -958,6 +958,47 @@
         }
       }
     },
+    "expertiseDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expertise_pack_id",
+        "definition_digest",
+        "guide_id",
+        "skill_definition_digest",
+        "disposition",
+        "reason",
+        "evidence_refs"
+      ],
+      "properties": {
+        "expertise_pack_id": {
+          "$ref": "#/$defs/id"
+        },
+        "definition_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "guide_id": {
+          "$ref": "#/$defs/id"
+        },
+        "skill_definition_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "disposition": {
+          "enum": [
+            "consulted",
+            "applied",
+            "not_applicable",
+            "conflict"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/referenceList"
+        }
+      }
+    },
     "findingPacket": {
       "type": "object",
       "additionalProperties": false,
@@ -1022,6 +1063,13 @@
         },
         "skipped": {
           "$ref": "#/$defs/referenceList"
+        },
+        "expertise_dispositions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/expertiseDisposition"
+          }
         }
       }
     },
@@ -1262,6 +1310,13 @@
         },
         "design_assurance_result": {
           "$ref": "#/$defs/designAssuranceResult"
+        },
+        "expertise_dispositions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/expertiseDisposition"
+          }
         }
       }
     },
@@ -1349,6 +1404,13 @@
         },
         "writes_performed": {
           "const": false
+        },
+        "expertise_dispositions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/expertiseDisposition"
+          }
         },
         "design_verification": {
           "$ref": "#/$defs/designVerification"

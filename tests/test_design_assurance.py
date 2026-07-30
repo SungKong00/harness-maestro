@@ -753,6 +753,7 @@ class ProductDesignAssuranceTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id=run_id,
+                request_key=run_id,
                 task_label="Assured fallback bypass",
                 plan_path=plan_path,
                 execution_binding={

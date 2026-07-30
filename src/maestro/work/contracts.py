@@ -46,6 +46,21 @@ EXPERTISE_EVIDENCE = {
     "host_loaded",
     "application_observed",
 }
+ALLOCATION_STATUSES = {"observed", "unavailable"}
+ALLOCATION_SOURCES = {
+    "route_plan",
+    "codex_app_server",
+    "current_host",
+    "host_adapter",
+    "unavailable",
+}
+EXPERTISE_LOAD_STATUSES = {"host_loaded", "unavailable"}
+EXPERTISE_APPLICATION_STATUSES = {
+    "observed",
+    "not_applicable",
+    "not_reported",
+    "unavailable",
+}
 TIMING_EVIDENCE = {
     "current_host_clock",
     "host_event",
@@ -126,6 +141,11 @@ _WORK_SPAN_V2_FIELDS = {
     "usage",
     "outcome",
     "diagnostics",
+}
+_WORK_SPAN_V2_OBSERVATION_FIELDS = {
+    *_WORK_SPAN_V2_FIELDS,
+    "allocation",
+    "expertise_observation",
 }
 
 
@@ -484,6 +504,177 @@ def _valid_diagnostics(value: Any) -> bool:
     return (value["error_count"] == 0) == (value["last_error"] is None)
 
 
+def _valid_allocation(value: Any) -> bool:
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "status",
+            "source",
+            "reason",
+            "basis_refs",
+            "dependency_assignment_ids",
+        }
+        or value["status"] not in ALLOCATION_STATUSES
+        or value["source"] not in ALLOCATION_SOURCES
+        or not _valid_line(value["reason"], maximum=240, optional=True)
+        or not _valid_evidence_refs(value["basis_refs"])
+        or not _valid_ids(value["dependency_assignment_ids"])
+    ):
+        return False
+    if value["status"] == "unavailable":
+        return (
+            value["source"] == "unavailable"
+            and value["reason"] is None
+            and not value["basis_refs"]
+            and not value["dependency_assignment_ids"]
+        )
+    return (
+        value["source"] != "unavailable"
+        and value["reason"] is not None
+        and bool(value["basis_refs"])
+    )
+
+
+def _valid_expertise_observation(
+    value: Any,
+    span: dict[str, Any],
+) -> bool:
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"packs", "load", "application"}
+        or not isinstance(value["packs"], list)
+        or len(value["packs"]) > MAX_RELATIONS_PER_SPAN
+    ):
+        return False
+    observed_pack_ids: list[str] = []
+    observed_guide_ids: list[str] = []
+    for pack in value["packs"]:
+        if (
+            not isinstance(pack, dict)
+            or set(pack)
+            != {
+                "expertise_pack_id",
+                "definition_digest",
+                "skill_id",
+                "skill_definition_digest",
+                "guide_ids",
+                "loaded_guide_refs",
+            }
+            or not _valid_id(pack["expertise_pack_id"])
+            or not isinstance(pack["definition_digest"], str)
+            or _DIGEST.fullmatch(pack["definition_digest"]) is None
+            or not _valid_id(pack["skill_id"])
+            or not isinstance(pack["skill_definition_digest"], str)
+            or _DIGEST.fullmatch(pack["skill_definition_digest"]) is None
+            or not _valid_ids(pack["guide_ids"])
+            or not pack["guide_ids"]
+            or not isinstance(pack["loaded_guide_refs"], list)
+            or len(pack["loaded_guide_refs"]) > MAX_RELATIONS_PER_SPAN
+            or not all(
+                _valid_line(item, maximum=240)
+                for item in pack["loaded_guide_refs"]
+            )
+            or len(pack["loaded_guide_refs"])
+            != len(set(pack["loaded_guide_refs"]))
+            or len(pack["loaded_guide_refs"]) != len(pack["guide_ids"])
+        ):
+            return False
+        observed_pack_ids.append(pack["expertise_pack_id"])
+        observed_guide_ids.extend(pack["guide_ids"])
+    if (
+        len(observed_pack_ids) != len(set(observed_pack_ids))
+        or len(observed_guide_ids) != len(set(observed_guide_ids))
+    ):
+        return False
+
+    load = value["load"]
+    if (
+        not isinstance(load, dict)
+        or set(load) != {"status", "evidence_refs"}
+        or load["status"] not in EXPERTISE_LOAD_STATUSES
+        or not _valid_evidence_refs(load["evidence_refs"])
+    ):
+        return False
+    if load["status"] == "unavailable":
+        if value["packs"] or load["evidence_refs"]:
+            return False
+    elif (
+        span["source"] != "codex_app_server"
+        or span["source_binding"]["interface"] != "codex_app_server"
+        or span["source_binding"]["correlation_id"] is None
+        or span["source_binding"]["capability"]
+        not in {"full_stream", "lifecycle_only"}
+        or span["source_binding"]["event_coverage"]
+        not in {
+            "partial_stream",
+            "hook_lifecycle",
+            "complete_stream",
+            "recovered_full",
+        }
+        or not value["packs"]
+        or not load["evidence_refs"]
+        or set(observed_pack_ids) != set(span["expertise_pack_ids"])
+        or set(observed_guide_ids) != set(span["decision_guide_ids"])
+    ):
+        return False
+
+    application = value["application"]
+    if (
+        not isinstance(application, dict)
+        or set(application) != {"status", "guide_ids", "evidence_refs"}
+        or application["status"] not in EXPERTISE_APPLICATION_STATUSES
+        or not _valid_ids(application["guide_ids"])
+        or not _valid_evidence_refs(application["evidence_refs"])
+        or not set(application["guide_ids"]).issubset(
+            set(observed_guide_ids)
+        )
+    ):
+        return False
+    coarse = span["expertise_evidence"]
+    if (
+        load["status"] == "unavailable"
+        and coarse in {"host_loaded", "application_observed"}
+    ):
+        return False
+    if (
+        load["status"] == "host_loaded"
+        and coarse not in {"host_loaded", "application_observed"}
+    ):
+        return False
+    if (
+        application["status"] == "observed"
+        and coarse != "application_observed"
+    ):
+        return False
+    if (
+        application["status"] != "observed"
+        and coarse == "application_observed"
+    ):
+        return False
+    if application["status"] == "unavailable":
+        return (
+            load["status"] == "unavailable"
+            and not application["guide_ids"]
+            and not application["evidence_refs"]
+        )
+    if load["status"] != "host_loaded":
+        return False
+    if application["status"] == "not_reported":
+        return (
+            not application["guide_ids"]
+            and not application["evidence_refs"]
+        )
+    if application["status"] == "not_applicable":
+        return (
+            set(application["guide_ids"]) == set(observed_guide_ids)
+            and bool(application["evidence_refs"])
+        )
+    return bool(
+        application["guide_ids"] and application["evidence_refs"]
+    )
+
+
 def _valid_evidence_binding(value: dict[str, Any]) -> bool:
     """Keep complete claims bound to one compatible producer surface."""
 
@@ -594,10 +785,16 @@ def validate_work_span(value: Any) -> bool:
         return _validate_work_span_base(value, _WORK_SPAN_V1_FIELDS)
     if (
         version != WORK_SPAN_VERSION
-        or not _validate_work_span_base(value, _WORK_SPAN_V2_FIELDS)
+        or (
+            not _validate_work_span_base(value, _WORK_SPAN_V2_FIELDS)
+            and not _validate_work_span_base(
+                value,
+                _WORK_SPAN_V2_OBSERVATION_FIELDS,
+            )
+        )
     ):
         return False
-    return (
+    valid = (
         _valid_source_binding(value["source_binding"])
         and value["source_binding"]["interface"] == value["source"]
         and _valid_model_observation(value["model_observation"], value)
@@ -605,6 +802,16 @@ def validate_work_span(value: Any) -> bool:
         and _valid_outcome(value["outcome"], value)
         and _valid_diagnostics(value["diagnostics"])
         and _valid_evidence_binding(value)
+    )
+    if not valid:
+        return False
+    if "allocation" not in value:
+        return "expertise_observation" not in value
+    return _valid_allocation(
+        value["allocation"]
+    ) and _valid_expertise_observation(
+        value["expertise_observation"],
+        value,
     )
 
 
@@ -687,6 +894,8 @@ def new_work_span(
     usage: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    allocation: dict[str, Any] | None = None,
+    expertise_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     span = {
         "schema_version": WORK_SPAN_VERSION,
@@ -774,6 +983,33 @@ def new_work_span(
             "last_error": None,
             "followup_reason": None,
         },
+        "allocation": (
+            allocation
+            if allocation is not None
+            else {
+                "status": "unavailable",
+                "source": "unavailable",
+                "reason": None,
+                "basis_refs": [],
+                "dependency_assignment_ids": [],
+            }
+        ),
+        "expertise_observation": (
+            expertise_observation
+            if expertise_observation is not None
+            else {
+                "packs": [],
+                "load": {
+                    "status": "unavailable",
+                    "evidence_refs": [],
+                },
+                "application": {
+                    "status": "unavailable",
+                    "guide_ids": [],
+                    "evidence_refs": [],
+                },
+            }
+        ),
     }
     if not validate_work_span(span):
         raise MaestroError(
@@ -799,6 +1035,8 @@ def complete_work_span(
     usage: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    allocation: dict[str, Any] | None = None,
+    expertise_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not validate_work_span(span) or span["status"] != "running":
         raise MaestroError(
@@ -826,6 +1064,22 @@ def complete_work_span(
                 "usage": usage or span["usage"],
                 "outcome": outcome or span["outcome"],
                 "diagnostics": diagnostics or span["diagnostics"],
+                **(
+                    {
+                        "allocation": (
+                            allocation
+                            if allocation is not None
+                            else span["allocation"]
+                        ),
+                        "expertise_observation": (
+                            expertise_observation
+                            if expertise_observation is not None
+                            else span["expertise_observation"]
+                        ),
+                    }
+                    if "allocation" in span
+                    else {}
+                ),
             }
             if span["schema_version"] == WORK_SPAN_VERSION
             else {}

@@ -481,6 +481,7 @@ def _attest_candidate(repo: Path, candidate_id: str) -> None:
     authored = start_run_observation(
         repo,
         run_id=authoring_run,
+        request_key=authoring_run,
         task_label=f"Author {candidate_id}",
         plan_path=authoring_plan_path,
     )
@@ -511,6 +512,7 @@ def _attest_candidate(repo: Path, candidate_id: str) -> None:
     evaluated = start_run_observation(
         repo,
         run_id=evaluation_run,
+        request_key=evaluation_run,
         task_label=f"Evaluate {candidate_id}",
         plan_path=evaluation_plan_path,
     )

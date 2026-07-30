@@ -61,6 +61,26 @@ coverage → validate coverage → route
 → one authorized writer
 ```
 
+For a staged decision, replace the first route handoff with:
+
+```text
+coverage → decide with expertise_work_requirement=required
+→ plan and close every read-only Expertise batch
+→ validate each Specialist packet with the exact READY closure
+→ DecisionBundle binds closure → enact embeds exact sidecars
+→ ordinary Coverage admission → one authorized writer
+```
+
+The staged DecisionPlan is a supported `plan-work` source. Its route-selected
+Pack and four Guides remain the bounded Specialist load; the work closure
+carries every additional material Guide judgment into synthesis. This does not
+raise the five-Assignment limit or turn a work batch into a Specialist.
+`validate-decision --packet` and `enact` require both
+`--expertise-work-plan` and `--expertise-closure` when the plan reports
+`DECISION_GUIDE_BATCHING_REQUIRED`. Enactment also receives the exact Coverage
+and repeatable Pack research evidence. A prompt summary, a list of item IDs, or
+the existence of a work plan without READY closure is insufficient.
+
 The AI owns semantic work: discovering needed judgments, deciding whether an
 existing Guide is sufficient, defining each batch responsibility, applying
 Guide criteria, and surfacing conflicts. The deterministic layer owns bounded

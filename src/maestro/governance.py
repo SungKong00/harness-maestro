@@ -42,6 +42,11 @@ from .observations import (
     observation_receipt_fields,
 )
 from .project import checkout_id
+from .request_lineage import (
+    load_request_alias_bindings,
+    resolve_request_identity,
+    validate_request_lineage,
+)
 from .registry import definition_digest_maps, registry_digest
 from .util import (
     canonical_json,
@@ -114,6 +119,7 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "execution_measurements",
     "completion_policy",
     "completion_closure",
+    "request_lineage",
 }
 
 
@@ -1484,6 +1490,7 @@ def record_run(
     caller_execution_evidence = sorted(
         field
         for field in (
+            "request_lineage",
             "execution_measurements",
             "completion_policy",
             "completion_closure",
@@ -1541,6 +1548,9 @@ def record_run(
                     f"RunReceipt {field} differs from the in-flight observation.",
                 )
             receipt[field] = observed[field]
+        request_lineage = observed.get("request_lineage")
+        if request_lineage is not None:
+            receipt["request_lineage"] = request_lineage
         if receipt.get("duration_ms") is None:
             receipt["duration_ms"] = observed["duration_ms"]
         host_observation = observed.get("host_observation")
@@ -1586,6 +1596,21 @@ def record_run(
                     "RunReceipt execution binding differs from the in-flight observation.",
                 )
             receipt["execution_binding"] = execution_binding
+    if (
+        observed is None
+        and isinstance(receipt.get("host_observation"), dict)
+        and receipt["host_observation"].get("schema_version")
+        == "maestro_host_observation_v2"
+        and receipt["host_observation"].get("source")
+        == "codex-desktop-request-meta"
+    ):
+        raise MaestroError(
+            "HOST_OBSERVATION_TRUST_REQUIRED",
+            (
+                "Trusted Desktop request identity may be recorded only "
+                "through a bound native observation."
+            ),
+        )
     unexpected = sorted(set(receipt) - RUN_RECEIPT_ALLOWED_FIELDS)
     if unexpected:
         raise MaestroError(
@@ -2163,6 +2188,7 @@ def record_run(
         "execution_measurements",
         "completion_policy",
         "completion_closure",
+        "request_lineage",
     ):
         if receipt.get(field) is not None:
             event[field] = receipt[field]
@@ -2521,6 +2547,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "execution_measurements",
         "completion_policy",
         "completion_closure",
+        "request_lineage",
     }
     if set(event) - allowed_fields:
         return False
@@ -2570,6 +2597,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "fingerprint",
     )
     if event.get("schema_version") != "maestro_event_v1":
+        return False
+    if (
+        event.get("request_lineage") is not None
+        and not validate_request_lineage(
+            event.get("request_lineage"),
+            current_run_id=event.get("run_id"),
+        )
+    ):
         return False
     if any(not isinstance(event.get(field), str) or not event[field] for field in required_strings):
         return False
@@ -3135,6 +3170,7 @@ def recent_run_events(
     repo_path: str | Path,
     *,
     window: int = 20,
+    complete_display_requests: bool = False,
 ) -> dict[str, Any]:
     if (
         not isinstance(window, int)
@@ -3164,12 +3200,14 @@ def recent_run_events(
         )
     events_directory = safe_target(repo, ".maestro/state/events")
     if not events_directory.exists():
+        request_alias_bindings = load_request_alias_bindings(repo, [])
         return {
             "schema_version": "maestro_run_history_v1",
             "runs": [],
             "display_runs": [],
             "run_evidence": {},
             "recorded_run_ids": [],
+            "request_alias_bindings": request_alias_bindings,
             "evidence_status": "empty",
             "invalid_records": 0,
             "historical_definition_records": 0,
@@ -3289,11 +3327,33 @@ def recent_run_events(
                         )
         if records_scanned > MAX_EVENT_RECORDS:
             break
-    ordered_entries = sorted(
+    all_ordered_entries = sorted(
         latest.values(),
         key=lambda item: (item[0], item[1]["run_id"]),
         reverse=True,
-    )[:window]
+    )
+    request_alias_bindings = load_request_alias_bindings(
+        repo,
+        [event for _, event, _ in all_ordered_entries],
+    )
+    ordered_entries = all_ordered_entries[:window]
+    if complete_display_requests:
+        anchored_identities = {
+            resolve_request_identity(
+                event,
+                alias=request_alias_bindings.get(event["run_id"]),
+            )["identity"]
+            for _, event, _ in ordered_entries
+        }
+        ordered_entries = [
+            item
+            for item in all_ordered_entries
+            if resolve_request_identity(
+                item[1],
+                alias=request_alias_bindings.get(item[1]["run_id"]),
+            )["identity"]
+            in anchored_identities
+        ]
     display_ordered = [
         event for _, event, _ in ordered_entries
     ]
@@ -3322,12 +3382,21 @@ def recent_run_events(
         }
         for _, event, status in ordered_entries
     }
+    displayed_run_ids = {
+        event["run_id"]
+        for event in display_ordered
+    }
     return {
         "schema_version": "maestro_run_history_v1",
         "runs": governance_ordered,
         "display_runs": display_ordered,
         "run_evidence": run_evidence,
         "recorded_run_ids": sorted(recorded_run_ids),
+        "request_alias_bindings": {
+            run_id: binding
+            for run_id, binding in request_alias_bindings.items()
+            if run_id in displayed_run_ids
+        },
         "evidence_status": "truncated" if scan_truncated else "sufficient",
         "invalid_records": invalid_records,
         "historical_definition_records": (

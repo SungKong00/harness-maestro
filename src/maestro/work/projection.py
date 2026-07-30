@@ -151,6 +151,49 @@ def _usage(span: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _allocation(span: dict[str, Any]) -> dict[str, Any]:
+    value = span.get("allocation")
+    if isinstance(value, dict):
+        return {
+            **value,
+            "evidence": "structured_allocation_observation",
+        }
+    return {
+        "status": "unavailable",
+        "source": "unavailable",
+        "reason": None,
+        "basis_refs": [],
+        "dependency_assignment_ids": [],
+        "evidence": "legacy_work_span",
+    }
+
+
+def _expertise(span: dict[str, Any]) -> dict[str, Any]:
+    observation = span.get("expertise_observation")
+    selected = bool(
+        span["expertise_pack_ids"]
+        or span["decision_guide_ids"]
+    )
+    projected = {
+        "lens_ids": list(span["lens_ids"]),
+        "pack_ids": list(span["expertise_pack_ids"]),
+        "guide_ids": list(span["decision_guide_ids"]),
+        "evidence": (
+            span["expertise_evidence"]
+            if isinstance(observation, dict)
+            else ("selection_only" if selected else "unavailable")
+        ),
+    }
+    if not isinstance(observation, dict):
+        return projected
+    return {
+        **projected,
+        "packs": [dict(item) for item in observation["packs"]],
+        "load": dict(observation["load"]),
+        "application": dict(observation["application"]),
+    }
+
+
 def project_observed_work(
     work_spans: list[dict[str, Any]] | None,
     stages: list[dict[str, Any]],
@@ -240,6 +283,7 @@ def project_observed_work(
                     "role": span["role"],
                     "read_only": span["read_only"],
                 },
+                "allocation": _allocation(span),
                 "relationships": {
                     "parent_work_id": span["parent_work_id"],
                     "followup_of_work_id": span["followup_of_work_id"],
@@ -337,12 +381,7 @@ def project_observed_work(
                         ),
                     },
                 },
-                "expertise": {
-                    "lens_ids": list(span["lens_ids"]),
-                    "pack_ids": list(span["expertise_pack_ids"]),
-                    "guide_ids": list(span["decision_guide_ids"]),
-                    "evidence": span["expertise_evidence"],
-                },
+                "expertise": _expertise(span),
                 "evidence": {
                     "count": len(span["evidence_refs"]),
                     "refs": list(span["evidence_refs"]),

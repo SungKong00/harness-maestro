@@ -8,7 +8,7 @@ owner: harness-maestro
 topic: operations-viewer
 scope: [src/maestro/dashboard.py, src/maestro/snapshot.py, src/maestro/snapshot_runs.py, src/maestro/request_records.py, src/maestro/observations.py, src/maestro/verification.py, src/maestro/expertise_health.py, src/maestro/resources/viewer/**]
 summary: 작업 계획과 Host 실측값, Expertise 구성요소 근거, 반복 개선 신호와 typed project-local 작업을 한 로컬 페이지에서 다루고 전체 연결을 점검하는 최소 운영 구조.
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -46,6 +46,9 @@ route가 확정되면 같은 run에 계획을 한 번 결합한다. 이렇게 �
 각 Assignment는 `completed`, `failed`, `blocked`, `skipped`, `interrupted` 중 하나의
 terminal 결과를 정확히 한 번 가진다. 선행 단계가 실패해 실행하지 않은 하위 단계도
 `skipped`와 원인 근거를 남긴다.
+
+작업 카드와 브라우저 계약은 `observed-work-graph.md`의
+allocation·Expertise·outcome 불변식을 따른다.
 
 ## 앱 셸과 화면 이동
 
@@ -351,44 +354,23 @@ route 1·2차, 닫힌 충돌 코드만 보관한다. 이 값은 호출자가 Run
 Run은 실행·재시도·검토 escalation마다 생기는 불변 기록이고, 사용자가 작업
 목록에서 여는 단위는 한 번의 사용자 요청이다. 둘을 같은 객체로 취급하지 않는다.
 
-- `snapshot.runs`는 기존 이력·감사·묶음 동작을 위한 원본 Run 투영을 그대로
-  유지한다.
-- `request_records.py`는 `maestro_host_observation_v2`의 source가
-  `codex-desktop-request-meta`, quality가 `host_reported`인 `thread:turn`
-  correlation만 요청 식별자로 신뢰한다. 화면에는 correlation 원문 대신 해시한
-  opaque `request_record_id`를 쓴다.
-- 같은 correlation의 Run은 `snapshot.request_records` 한 건으로 투영한다. 원본
-  `event_id`와 `run_id`는 `source_event_ids`, `source_run_ids`, `attempts`에
-  보존한다. correlation이 없으면 작업명이나 본문 유사도로 묶지 않고 Run 하나를
-  요청 하나로 둔다.
-- 각 Run의 실제 WorkSpan 카드는 실행 시도 순서대로 namespace를 붙여 한 그래프로
-  합성한다. 시도 경계는 `request_record_projection` provenance의 follow-up
-  관계이며 원본 WorkSpan과 RunReceipt를 수정하지 않는다. 합성된 각 카드는 최신
-  시도의 stage 권고를 다시 붙이지 않고 자신이 실행된 시도의 typed model route를
-  보존한다.
-- 합성 요청의 병렬 상태는 원본 Run의 계측 범위를 보존한다. 실제 겹침 pair가
-  하나라도 있으면 `observed`, 모든 원본이 완전한 비교 구간에서 겹침 없음을
-  기록했을 때만 `none_observed`, 하나라도 계측 범위가 불명확하면
-  `unavailable`이다. pair가 비었다는 이유만으로 “병렬 실행 없음”을 만들지 않는다.
-- 요청 단위 token은 측정된 Run과 Assignment 합계만 더한다. 요청 설정, 권고 모델,
-  누락된 Desktop parent 값을 actual이나 0으로 대체하지 않는다. 모델·요청 추론·
-  token·시간마다 `관측된 시도/전체 시도` 범위를 함께 제공하고 각 시도의 권고·요청·
-  실측값, token scope와 duration source를 같은 attempt record에 대응 보존한다.
-  서로 호환되는 token scope만 요청 합계로 더하며 scope가 섞이면
-  `mixed_attempt_scopes`로 표시하고 합계를 만들지 않는다. `estimated`는 항상
-  `false`다.
-- 신규 Run은 `execution_measurements`를 모델·추론 강도·token·시간의 canonical
-  source로 사용한다. 각 값은 원장 revision과 producer coverage를 포함하며,
-  값이 없을 때도 필드를 삭제하지 않고 누락 이유를 제공한다. stage, Host singleton,
-  RunReceipt 필드는 기존 기록을 읽는 호환 projection일 뿐 신규 값을 따로
-  계산하는 쓰기 경로가 아니다.
-- 작업 화면에서 `request_records`는 필수다. `snapshot-contract.js`가 렌더링 전
-  snapshot·Run·요청 record 형식과 ID 중복을 검사한다. 위반하면
+- `snapshot.runs`는 원본 이력·감사용이고, 작업 목록·검색·상세는
+  `request_records`만 사용한다.
+- 최초 atomic observation이 immutable request root를 정한다. 후속 Run은 정확한
+  부모에서 상속한다. 구조적 계보가 없는 legacy Run만 검증된 alias, trusted
+  Desktop correlation, 단일 event fallback 순서로 처리하며 제목·시간으로 묶지 않는다.
+- 같은 root는 요청 한 건이 되고 원본 event·run ID와 attempt를 보존한다.
+  WorkSpan ID에는 attempt namespace를 붙이고 명시적 `relation=retry`에만
+  follow-up edge를 만든다. 원본 WorkSpan과 RunReceipt는 수정하지 않는다.
+- 모델·추론 강도·token·시간은 `execution_measurements`와 각 attempt의 증거 범위를
+  보존한다. 호환되는 측정값만 합산하며 혼합 token scope는
+  `mixed_attempt_scopes`, 불완전한 병렬 계측은 `unavailable`로 남긴다. 요청값이나
+  권고값으로 실제값·0을 만들지 않고 `estimated`는 항상 `false`다.
+- `snapshot-contract.js`는 root 분할, source 중복 소유, Work ID와 Pack·Guide
+  evidence set의 정확한 대응을 렌더 전에 검사한다. 위반하면
   `DASHBOARD_REQUEST_RECORDS_INVALID`로 닫고 원본 Run으로 대체하지 않는다.
-- `snapshot.runs`는 이력 묶음과 event ID 확인에만 쓴다. 작업 개수·검색·상세는
-  `request_records` 어댑터만 거친다.
-- WorkSpan이 없으면 계획 카드를 “계획만 기록됨 · 실제 작업 단계 기록 없음”으로
-  표시해 계획과 관측을 구분한다.
+- window는 같은 root의 Run을 함께 표시한다. bounded scan은 `scan_truncated`,
+  WorkSpan 부재는 “계획만 기록됨”으로 드러낸다.
 
 plan은 실제 실행 증거가 아니다. routing summary의 `route_attempt`는 최종 Plan이
 첫 route인지 한 번 보정된 route인지만 뜻한다. 실제 작업 attempt·시작/종료·retry,
@@ -635,8 +617,9 @@ maestro dashboard --repo /path/to/first \
 명령의 terminal 사실을 남기지만 모델·token 값을 받지 않는다. 따라서 Desktop
 채팅에서 측정할 수 없는 값을 계획 모델로 대신 채울 수 없다. 일반 사용자가 이
 명령을 직접 작성하지 않는다.
-Desktop 공개 메타데이터에 요청 모델이 없으면 값을 추측하지 않고 `observe start`를
-사용한다. `current_host`가 실제로 필요한 경우에는 같은 task·plan 관측에
+Desktop 공개 메타데이터가 없으면 `observe start --request-key`를 한 번 사용하고,
+별도 receipt가 필요한 후속 작업만 `observe child`로 부모를 상속한다.
+`current_host`가 실제로 필요한 경우에는 같은 task·plan 관측에
 `observe fallback`을 단조롭게 추가할 수 있어, 최종 기록을 위해 marker 파일을
 수동 수정할 필요가 없다.
 

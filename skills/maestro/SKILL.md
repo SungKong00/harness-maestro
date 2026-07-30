@@ -65,8 +65,10 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
      one run observation now, before routing. Use a concise task label in the
      user's language. In Codex Desktop, allowlist the public request
      `model`, `reasoning_effort`, `thread_id`, and `turn_id` into
-     `maestro observe desktop`; otherwise use `maestro observe start`. Attach
-     no fallback at intake. `desktop_request` means only that the request
+     `maestro observe desktop`; otherwise use `maestro observe start` with one
+     stable opaque `--request-key` created at intake. This is the only root
+     observation for that user request. Attach no fallback at intake.
+     `desktop_request` means only that the request
      setting and correlation IDs were observed; it does not authorize
      current-Host execution. Keep the returned run and observation IDs for the
      whole workflow. Do not start this operational observation for a read-only request.
@@ -155,11 +157,11 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
      attestation, not a trusted approval receipt: set it only after checking
      the current user request against the exact goal, risk, bundle, and scope;
      stop when that authority is ambiguous.
-     A staged decision whose blocking or important Coverage needs an omitted
-     Pack/Guide currently stops with
-     `DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED` before Specialists run. Do not
-     silently decide first and apply the omitted Pack later; use the ordinary
-     multi-Pack route when direction is already settled.
+     A staged decision exceeding one Pack or four Guides returns
+     `DECISION_GUIDE_BATCHING_REQUIRED`; read
+     `references/expertise-work-allocation.md`, use that DecisionPlan for
+     `plan-work`, and accept no Specialist packet until the exact READY closure.
+     Bundle and enactment bind every sidecar; partial closure stays fail-closed.
    - Project project facts, owner decisions, checks, Conventions, deferrals,
      and exclusions with `maestro project-coverage`, then run
      `maestro validate-coverage-projection`. Bare item IDs are diagnostics, not
@@ -226,6 +228,12 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
      official applied-model, reroute, duration, token, and terminal evidence
      to that Assignment in the parent run. It must not create a separate run
      for every Assignment.
+     If detached authoring, verification, evaluation, repair, or retry truly
+     requires a distinct RunReceipt, start it only with `maestro observe child
+     --parent-observation <id> --parent-run-id <id> --relation child|retry`.
+     Never call `observe start` or `observe desktop` again for the same user
+     request. `child` preserves membership; only `retry` creates retry
+     causality in the dashboard.
      Pass the exact `--projection` returned by `assignment project`, its
      authoritative `--baseline`, the same `--document`,
      `--dependency-packet`/`--dependency-projection`, and

@@ -56,6 +56,8 @@ def finish_work_span(
     usage: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    allocation: dict[str, Any] | None = None,
+    expertise_observation: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     existing = list(work_spans or [])
     if not validate_work_spans(existing):
@@ -92,6 +94,8 @@ def finish_work_span(
         comparable = {
             "status": status,
             "result_summary": result_summary,
+            "ended_at": ended_at,
+            "duration_ms": duration_ms,
             "evidence_refs": list(evidence_refs),
             "applied_model": applied_model,
             "model_evidence": model_evidence or recorded["model_evidence"],
@@ -113,6 +117,21 @@ def finish_work_span(
                     "diagnostics": diagnostics or recorded["diagnostics"],
                 }
             )
+            if "allocation" in recorded:
+                comparable.update(
+                    {
+                        "allocation": (
+                            allocation
+                            if allocation is not None
+                            else recorded["allocation"]
+                        ),
+                        "expertise_observation": (
+                            expertise_observation
+                            if expertise_observation is not None
+                            else recorded["expertise_observation"]
+                        ),
+                    }
+                )
         if all(recorded[key] == value for key, value in comparable.items()):
             return existing, False
         raise MaestroError(
@@ -134,6 +153,8 @@ def finish_work_span(
         usage=usage,
         outcome=outcome,
         diagnostics=diagnostics,
+        allocation=allocation,
+        expertise_observation=expertise_observation,
     )
     updated = list(existing)
     updated[index] = completed

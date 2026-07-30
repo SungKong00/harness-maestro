@@ -515,8 +515,14 @@ def _work_detail_projection(run: dict[str, Any]) -> dict[str, Any]:
             "stage_findings": "unavailable",
             "stage_conclusions": "unavailable",
             "typed_artifacts": "unavailable",
-            "guide_host_load": "unavailable",
-            "guide_application": "unavailable",
+            "guide_host_load": run.get("expertise", {}).get(
+                "evidence",
+                {},
+            ).get("host_load", "unavailable"),
+            "guide_application": run.get("expertise", {}).get(
+                "evidence",
+                {},
+            ).get("application", "unavailable"),
             "verification_criteria": run.get("verification", {}).get(
                 "criteria",
                 "unavailable",
@@ -974,12 +980,170 @@ def _attach_model_feedback_ref(
     return reference
 
 
+def _work_expertise_rollup(
+    work_spans: Any,
+    *,
+    selected_packs: list[str],
+    selected_guides: list[str],
+) -> dict[str, Any]:
+    if not selected_packs and not selected_guides:
+        return {
+            "host_load": "not_selected",
+            "application": "not_selected",
+            "work_ids": {
+                "expected": [],
+                "loaded": [],
+                "applied": [],
+                "not_applicable": [],
+            },
+            "counts": {
+                "expected": 0,
+                "loaded": 0,
+                "applied": 0,
+                "not_applicable": 0,
+            },
+            "loaded_pairs": [],
+            "applied_pairs": [],
+        }
+    spans = [
+        item
+        for item in (work_spans if isinstance(work_spans, list) else [])
+        if isinstance(item, dict)
+    ]
+    expected_work_ids = _unique_strings(
+        [
+            item.get("work_id")
+            for item in spans
+            if item.get("expertise_pack_ids")
+            or item.get("decision_guide_ids")
+        ]
+    )
+    loaded_work_ids: list[str] = []
+    applied_work_ids: list[str] = []
+    not_applicable_work_ids: list[str] = []
+    loaded_pairs: set[tuple[str, str]] = set()
+    applied_pairs: set[tuple[str, str]] = set()
+    for span in spans:
+        observation = span.get("expertise_observation")
+        if not isinstance(observation, dict):
+            continue
+        load = observation.get("load")
+        application = observation.get("application")
+        packs = observation.get("packs")
+        if (
+            isinstance(load, dict)
+            and load.get("status") == "host_loaded"
+            and isinstance(span.get("work_id"), str)
+        ):
+            loaded_work_ids.append(span["work_id"])
+        guide_to_pack: dict[str, str] = {}
+        for pack in packs if isinstance(packs, list) else []:
+            if not isinstance(pack, dict):
+                continue
+            pack_id = pack.get("expertise_pack_id")
+            for guide_id in pack.get("guide_ids", []):
+                if isinstance(pack_id, str) and isinstance(guide_id, str):
+                    guide_to_pack[guide_id] = pack_id
+                    loaded_pairs.add((pack_id, guide_id))
+        if not isinstance(application, dict):
+            continue
+        application_status = application.get("status")
+        if (
+            application_status == "observed"
+            and isinstance(span.get("work_id"), str)
+        ):
+            applied_work_ids.append(span["work_id"])
+        elif (
+            application_status == "not_applicable"
+            and isinstance(span.get("work_id"), str)
+        ):
+            not_applicable_work_ids.append(span["work_id"])
+        if application_status == "observed":
+            for guide_id in application.get("guide_ids", []):
+                pack_id = guide_to_pack.get(guide_id)
+                if pack_id is not None:
+                    applied_pairs.add((pack_id, guide_id))
+
+    loaded_work_ids = _unique_strings(loaded_work_ids)
+    applied_work_ids = _unique_strings(applied_work_ids)
+    not_applicable_work_ids = _unique_strings(
+        not_applicable_work_ids
+    )
+    expected = set(expected_work_ids)
+    loaded = set(loaded_work_ids)
+    resolved_application = set(applied_work_ids) | set(
+        not_applicable_work_ids
+    )
+    host_load = (
+        "not_selected"
+        if not selected_packs and not selected_guides
+        else (
+            "complete"
+            if expected and expected.issubset(loaded)
+            else ("partial" if loaded else "unavailable")
+        )
+    )
+    application = (
+        "not_selected"
+        if not selected_packs and not selected_guides
+        else (
+            "observed"
+            if expected
+            and expected.issubset(resolved_application)
+            and applied_work_ids
+            else (
+                "not_applicable"
+                if expected
+                and expected.issubset(
+                    set(not_applicable_work_ids)
+                )
+                else (
+                    "partial"
+                    if resolved_application
+                    else "unavailable"
+                )
+            )
+        )
+    )
+    return {
+        "host_load": host_load,
+        "application": application,
+        "work_ids": {
+            "expected": expected_work_ids,
+            "loaded": loaded_work_ids,
+            "applied": applied_work_ids,
+            "not_applicable": not_applicable_work_ids,
+        },
+        "counts": {
+            "expected": len(expected_work_ids),
+            "loaded": len(loaded_work_ids),
+            "applied": len(applied_work_ids),
+            "not_applicable": len(not_applicable_work_ids),
+        },
+        "loaded_pairs": [
+            {
+                "expertise_pack_id": pack_id,
+                "guide_id": guide_id,
+            }
+            for pack_id, guide_id in sorted(loaded_pairs)
+        ],
+        "applied_pairs": [
+            {
+                "expertise_pack_id": pack_id,
+                "guide_id": guide_id,
+            }
+            for pack_id, guide_id in sorted(applied_pairs)
+        ],
+    }
+
+
 def _run_card(
     event: dict[str, Any],
     display_labels: dict[str, str] | None = None,
     *,
     history_evidence: dict[str, Any] | None = None,
     model_feedback_report: dict[str, Any] | None = None,
+    request_lineage_alias: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     flow, flow_evidence = _run_flow(event)
     model_feedback_ref = _attach_model_feedback_ref(
@@ -1137,6 +1301,11 @@ def _run_card(
     )
     selected_packs = list(event.get("selected_expertise_packs", []))
     selected_guides = list(event.get("selected_decision_guides", []))
+    expertise_rollup = _work_expertise_rollup(
+        event.get("work_spans"),
+        selected_packs=selected_packs,
+        selected_guides=selected_guides,
+    )
     expertise_assignment_ids = _unique_strings(
         [
             stage.get("assignment_id")
@@ -1217,6 +1386,8 @@ def _run_card(
         },
         "execution_binding": event.get("execution_binding"),
         "execution_measurements": execution_measurements,
+        "request_lineage": event.get("request_lineage"),
+        "request_lineage_alias": request_lineage_alias,
         "agent_calls": event.get("agent_calls"),
         "correction_count": event.get("correction_count", 0),
         "correction_summary": list(event.get("correction_summary", [])),
@@ -1319,11 +1490,16 @@ def _run_card(
                     else "unavailable"
                 ),
                 "assignment_ids": expertise_assignment_ids,
-                "host_load": "unavailable",
-                "application": "unavailable",
+                "host_load": expertise_rollup["host_load"],
+                "application": expertise_rollup["application"],
+                "work_ids": expertise_rollup["work_ids"],
+                "counts": expertise_rollup["counts"],
+                "loaded_pairs": expertise_rollup["loaded_pairs"],
+                "applied_pairs": expertise_rollup["applied_pairs"],
                 "interpretation": (
-                    "Selection and Assignment projection do not prove that "
-                    "the Host loaded or applied the Guide body."
+                    "Run-level Expertise evidence is aggregated from exact "
+                    "per-work Host load and validated Packet dispositions; "
+                    "selection-only work remains unavailable."
                 ),
             },
         },

@@ -270,6 +270,31 @@ def _route_plan(
     repo: Path,
     research_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if (
+        isinstance(plan, dict)
+        and plan.get("schema_version") == "maestro_decision_plan_v1"
+    ):
+        from .decisions import validate_decision_plan
+
+        validation = validate_decision_plan(plan)
+        if validation["status"] != "PASS":
+            first = validation["issues"][0]
+            raise MaestroError(first["code"], first["message"])
+        requirement = plan.get("expertise_work_requirement")
+        if (
+            not isinstance(requirement, dict)
+            or requirement.get("status") != "required"
+        ):
+            raise MaestroError(
+                "DECISION_EXPERTISE_WORK_NOT_APPLICABLE",
+                "This staged DecisionPlan has no omitted material Guide allocation to batch.",
+            )
+        return {
+            "plan_id": plan["plan_id"],
+            "goal": plan["goal"],
+            "risk": plan["risk"],
+            "model_route": {"host": plan["host"]},
+        }
     context = normalize_execution_contract(
         plan,
         repo_path=repo,
@@ -792,6 +817,19 @@ def validate_expertise_work_plan(
     expertise_research_bundles: Any = None,
 ) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
+    validation_plan = plan
+    if (
+        isinstance(plan, dict)
+        and plan.get("schema_version") == "maestro_execution_plan_v1"
+        and isinstance(plan.get("decision_evidence"), dict)
+        and plan["decision_evidence"].get("expertise_work_plan")
+        == value
+        and isinstance(
+            plan["decision_evidence"].get("decision_plan"),
+            dict,
+        )
+    ):
+        validation_plan = plan["decision_evidence"]["decision_plan"]
     shape_error = _work_plan_shape_error(value)
     if shape_error is not None:
         issues.append(
@@ -837,7 +875,7 @@ def validate_expertise_work_plan(
                 repo_path,
                 goal=goal,
                 coverage=coverage,
-                plan=plan,
+                plan=validation_plan,
                 draft=draft,
                 research_bundle=research_bundle,
                 expertise_research_bundles=expertise_research_bundles,

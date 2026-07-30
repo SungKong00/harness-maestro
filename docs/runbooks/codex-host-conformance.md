@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Codex가 Maestro의 Fast·Standard·Deep 계약을 실제로 지키는지 릴리스 전에 확인하는 최소 수동 검사.
 scope: [release, codex, routing]
-last_verified: 2026-07-28
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -46,8 +46,10 @@ route JSON, AssignmentInput digest, Packet validation 결과, 최종 diff, 검�
   `maestro_execution_plan_v1` 전까지 파일 diff가 없다.
 - Host가 reviewer write tool 호출을 실제로 거부하고 거부 artifact를 남긴다.
 - DecisionBundle 뒤 checkout이나 Registry를 바꾸면 기존 승인 재사용이 거부된다.
-- staged DecisionPlan이 route 밖의 blocking·important Pack 판단을 요구하면
-  Specialist보다 먼저 중단하고, omitted 판단으로 DecisionBundle을 만들지 않는다.
+- staged DecisionPlan이 route 밖의 blocking·important Pack/Guide 판단을 요구하면
+  선택·누락·영향을 기록하고 최대 네 Guide씩 read-only batch로 나눈다. exact READY
+  closure 전에는 Specialist packet과 DecisionBundle이 거부되고, omitted 판단을
+  prompt 요약만으로 대신하지 않는다.
 - `authorization_source`를 넣기 전에 현재 사용자 요청이 exact goal·risk·bundle·
   allowed path를 실제로 승인했는지 Host가 확인한다. label 자체는 승인 증거가 아니다.
 - reviewer는 파일을 수정하지 않고 artifact reference가 있는 짧은 packet만 반환한다.

@@ -51,6 +51,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="observed-work",
+                request_key="observed-work",
                 task_label="실제 위임 관찰",
                 plan_path=plan_path,
                 execution_binding={
@@ -274,6 +275,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="assignment-work-policy",
+                request_key="assignment-work-policy",
                 task_label="Assignment 작업 권한",
                 plan_path=plan_path,
             )
@@ -360,6 +362,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="stage-outcome-conflict",
+                request_key="stage-outcome-conflict",
                 task_label="단계 결과 우선",
                 plan_path=plan_path,
                 execution_binding={
@@ -439,6 +442,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="corrected-routing",
+                request_key="corrected-routing",
                 task_label="보정 라우팅 관찰",
                 plan_path=plan_path,
                 execution_binding={
@@ -506,6 +510,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="invalid-binding",
+                request_key="invalid-binding",
                 task_label="잘못된 작업 연결",
                 plan_path=plan_path,
             )
@@ -534,6 +539,7 @@ class WorkObservationTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="complete-stream",
+                request_key="complete-stream",
                 task_label="완전한 작업 stream",
                 plan_path=plan_path,
                 execution_binding={
@@ -590,6 +596,34 @@ class WorkObservationTests(unittest.TestCase):
                 applied_model="gpt-5.6-sol",
                 model_evidence="complete",
                 expertise_evidence="application_observed",
+                expertise_observation={
+                    "packs": [
+                        {
+                            "expertise_pack_id": "product-design",
+                            "definition_digest": "b" * 64,
+                            "skill_id": "maestro-product-design",
+                            "skill_definition_digest": "c" * 64,
+                            "guide_ids": ["visual-hierarchy-layout"],
+                            "loaded_guide_refs": [
+                                "skill:maestro-product-design/"
+                                "guide:visual-hierarchy-layout"
+                            ],
+                        }
+                    ],
+                    "load": {
+                        "status": "host_loaded",
+                        "evidence_refs": [
+                            "host_attestation:complete-stream"
+                        ],
+                    },
+                    "application": {
+                        "status": "observed",
+                        "guide_ids": ["visual-hierarchy-layout"],
+                        "evidence_refs": [
+                            "tests:test_complete_stream"
+                        ],
+                    },
+                },
                 source_binding={
                     **partial_binding,
                     "event_coverage": "complete_stream",

@@ -6,12 +6,40 @@ management signals, and dashboard launch.
 ## Contents
 
 - [Finalize one run](#finalize-one-run)
+- [Request lineage](#request-lineage)
 - [Host evidence](#host-evidence)
 - [Receipt contents](#receipt-contents)
 - [Expertise management](#expertise-management)
 - [Dashboard](#dashboard)
 - [Owned Codex Host](#owned-codex-host)
 - [Stale baselines and verification approval](#stale-baselines-and-verification-approval)
+
+## Request lineage
+
+Create exactly one root observation at user-request intake. Desktop intake uses
+`observe desktop`; another Host uses `observe start --request-key
+<stable-opaque-intake-id>`. Request lineage is written in the initial atomic
+observation and is independent from optional Host telemetry.
+
+Keep all Assignments in that observation. When detached authoring,
+verification, evaluation, repair, or retry genuinely needs a distinct
+RunReceipt, inherit the exact parent instead of starting another root:
+
+```text
+maestro observe child --repo <repo> --run-id <child-run> \
+  --task-label "<bounded label>" --parent-observation <parent-observation> \
+  --parent-run-id <parent-run> --relation child|retry --json
+```
+
+`child` means another execution lane in the same request. `retry` additionally
+binds explicit retry causality to its parent. Time, task labels, and revision
+suffixes never prove either relationship. A conflicting root or replay fails
+closed.
+
+Historical uncorrelated events may be grouped only through `maestro request
+link`, which binds project, checkout, run, event ID, and canonical full-event
+SHA-256 in project-local state. It changes projection only and never rewrites
+JSONL events.
 
 ## Finalize one run
 

@@ -163,8 +163,15 @@ class WorkContractTests(unittest.TestCase):
             "usage",
             "outcome",
             "diagnostics",
+            "allocation",
+            "expertise_observation",
         ):
-            self.assertFalse(properties[field]["additionalProperties"])
+            definition = properties[field]
+            if "$ref" in definition:
+                definition = schemas[0]["$defs"][
+                    definition["$ref"].removeprefix("#/$defs/")
+                ]
+            self.assertFalse(definition["additionalProperties"])
 
     def test_running_and_terminal_spans_preserve_evidence_boundaries(self) -> None:
         running = _span("domain-review", assignment_id="implementation")
@@ -217,6 +224,7 @@ class WorkContractTests(unittest.TestCase):
             "applied-expertise",
             expertise_pack_ids=["product-design"],
         )
+        running["decision_guide_ids"] = ["typography-korean"]
         with self.assertRaises(MaestroError) as missing_evidence:
             finish_work_span(
                 [running],
@@ -233,8 +241,42 @@ class WorkContractTests(unittest.TestCase):
             missing_evidence.exception.code,
         )
 
+        trusted_running = json.loads(json.dumps(running))
+        trusted_running["source"] = "codex_app_server"
+        trusted_running["source_binding"] = {
+            "interface": "codex_app_server",
+            "version": "codex-app-server-test",
+            "schema_digest": "e" * 64,
+            "capability": "full_stream",
+            "correlation_id": "source-applied-expertise",
+            "event_coverage": "partial_stream",
+        }
+        strong_observation = {
+            "packs": [
+                {
+                    "expertise_pack_id": "product-design",
+                    "definition_digest": "a" * 64,
+                    "skill_id": "maestro-product-design",
+                    "skill_definition_digest": "b" * 64,
+                    "guide_ids": ["typography-korean"],
+                    "loaded_guide_refs": [
+                        "guide:product-design:typography-korean:"
+                        + "c" * 64
+                    ],
+                }
+            ],
+            "load": {
+                "status": "host_loaded",
+                "evidence_refs": ["expertise-load:" + "d" * 64],
+            },
+            "application": {
+                "status": "observed",
+                "guide_ids": ["typography-korean"],
+                "evidence_refs": ["tests/test_work_graph.py"],
+            },
+        }
         completed, changed = finish_work_span(
-            [running],
+            [trusted_running],
             work_id="applied-expertise",
             status="completed",
             result_summary="전문 기준을 반영했습니다.",
@@ -242,12 +284,27 @@ class WorkContractTests(unittest.TestCase):
             duration_ms=3000,
             evidence_refs=["tests/test_work_graph.py"],
             expertise_evidence="application_observed",
+            expertise_observation=strong_observation,
         )
         self.assertTrue(changed)
         self.assertEqual(
             "application_observed",
             completed[0]["expertise_evidence"],
         )
+
+        with self.assertRaises(MaestroError) as forged:
+            finish_work_span(
+                [running],
+                work_id="applied-expertise",
+                status="completed",
+                result_summary="현재 Host가 강한 증거를 자체 주장합니다.",
+                ended_at="2026-07-28T01:00:03Z",
+                duration_ms=3000,
+                evidence_refs=["tests/test_work_graph.py"],
+                expertise_evidence="application_observed",
+                expertise_observation=strong_observation,
+            )
+        self.assertEqual("WORK_SPAN_INVALID", forged.exception.code)
 
     def test_terminal_span_requires_a_result_and_duration(self) -> None:
         with self.assertRaises(MaestroError):
@@ -272,11 +329,93 @@ class WorkContractTests(unittest.TestCase):
             "usage",
             "outcome",
             "diagnostics",
+            "allocation",
+            "expertise_observation",
         ):
             legacy.pop(field)
         self.assertTrue(validate_work_spans([legacy]))
         legacy["usage"] = {}
         self.assertFalse(validate_work_spans([legacy]))
+
+    def test_v2_records_allocation_and_exact_expertise_lineage(self) -> None:
+        span = new_work_span(
+            work_id="expertise-run",
+            assignment_id="implementation",
+            kind="implementation",
+            role="구현 담당",
+            executor_id="implementation-engineer",
+            task_summary="검증된 Guide를 적용해 구현합니다.",
+            read_only=False,
+            source="codex_app_server",
+            started_at="2026-07-28T01:00:00Z",
+            timing_evidence="current_host_clock",
+            source_binding={
+                "interface": "codex_app_server",
+                "version": "codex-app-server-test",
+                "schema_digest": "f" * 64,
+                "capability": "full_stream",
+                "correlation_id": "source-expertise-run",
+                "event_coverage": "partial_stream",
+            },
+            expertise_pack_ids=["software-engineering"],
+            decision_guide_ids=["contracts-and-invariants"],
+            expertise_evidence="host_loaded",
+            allocation={
+                "status": "observed",
+                "source": "route_plan",
+                "reason": "The route plan assigned the implementation owner.",
+                "basis_refs": ["route-plan:" + "a" * 64],
+                "dependency_assignment_ids": ["review"],
+            },
+            expertise_observation={
+                "packs": [
+                    {
+                        "expertise_pack_id": "software-engineering",
+                        "definition_digest": "b" * 64,
+                        "skill_id": "maestro-software-engineering",
+                        "skill_definition_digest": "c" * 64,
+                        "guide_ids": ["contracts-and-invariants"],
+                        "loaded_guide_refs": [
+                            "guide:software-engineering:"
+                            "contracts-and-invariants:" + "d" * 64
+                        ],
+                    }
+                ],
+                "load": {
+                    "status": "host_loaded",
+                    "evidence_refs": ["expertise-load:" + "e" * 64],
+                },
+                "application": {
+                    "status": "not_reported",
+                    "guide_ids": [],
+                    "evidence_refs": [],
+                },
+            },
+        )
+        self.assertTrue(validate_work_span(span))
+        card = project_observed_work(
+            [span],
+            [
+                {
+                    "assignment_id": "implementation",
+                    "kind": "implementation",
+                }
+            ],
+        )["cards"][0]
+        self.assertEqual("observed", card["allocation"]["status"])
+        self.assertEqual(
+            "host_loaded",
+            card["expertise"]["load"]["status"],
+        )
+
+        malformed = json.loads(json.dumps(span))
+        malformed["expertise_observation"]["packs"][0][
+            "definition_digest"
+        ] = "not-a-digest"
+        self.assertFalse(validate_work_span(malformed))
+        unbound_producer = json.loads(json.dumps(span))
+        unbound_producer["source_binding"]["correlation_id"] = None
+        self.assertFalse(validate_work_span(unbound_producer))
 
     def test_ordering_relations_must_form_a_dag(self) -> None:
         left = _span("left")
@@ -459,12 +598,22 @@ class WorkContractTests(unittest.TestCase):
             work_id="review",
             status="completed",
             result_summary="검토가 끝났습니다.",
-            ended_at="2026-07-28T01:00:04Z",
-            duration_ms=4000,
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
             evidence_refs=["tests/test_work_graph.py"],
         )
         self.assertFalse(changed)
         self.assertEqual(completed, repeated)
+        with self.assertRaises(MaestroError):
+            finish_work_span(
+                completed,
+                work_id="review",
+                status="completed",
+                result_summary="검토가 끝났습니다.",
+                ended_at="2026-07-28T01:00:04Z",
+                duration_ms=4000,
+                evidence_refs=["tests/test_work_graph.py"],
+            )
         with self.assertRaises(MaestroError):
             finish_work_span(
                 completed,
@@ -709,6 +858,42 @@ class WorkGraphTests(unittest.TestCase):
         )
         self.assertIsNone(card["models"]["applied"])
         self.assertEqual("host_request", card["models"]["evidence"])
+
+    def test_projection_downgrades_historical_coarse_expertise_assurance(
+        self,
+    ) -> None:
+        historical = _span(
+            "historical-expertise",
+            expertise_pack_ids=["product-design"],
+        )
+        historical["decision_guide_ids"] = ["visual-hierarchy-layout"]
+        historical["expertise_evidence"] = "application_observed"
+        historical.pop("allocation")
+        historical.pop("expertise_observation")
+        completed = complete_work_span(
+            historical,
+            status="completed",
+            result_summary="과거 coarse 적용 근거를 보존합니다.",
+            ended_at="2026-07-28T01:00:03Z",
+            duration_ms=3000,
+            evidence_refs=["legacy:expertise-application"],
+        )
+
+        card = project_observed_work([completed], [])["cards"][0]
+
+        self.assertEqual(
+            {
+                "lens_ids": ["data-integrity"],
+                "pack_ids": ["product-design"],
+                "guide_ids": ["visual-hierarchy-layout"],
+                "evidence": "selection_only",
+            },
+            card["expertise"],
+        )
+        self.assertEqual(
+            "legacy_work_span",
+            card["allocation"]["evidence"],
+        )
 
     def test_actual_concurrency_requires_same_complete_clock_domain(self) -> None:
         first = _terminal_complete_stream(

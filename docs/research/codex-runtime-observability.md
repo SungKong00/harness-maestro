@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Codex가 공식 제공하는 App Server, SDK, exec JSONL과 Hooks를 Maestro 작업 그래프의 신뢰 가능한 관측값으로 연결하기 위한 근거와 채택 경계.
 scope: [codex-runtime-observability, src/maestro/codex_host.py, src/maestro/observations.py, src/maestro/work/**]
-last_verified: 2026-07-28
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -127,7 +127,12 @@ codex app-server generate-json-schema --out <temporary-directory>
 - `threadId:turnId`로 상관시키고 `turn/completed`를 terminal로 기다린다.
 - `model/rerouted`와 `thread/tokenUsage/updated`를 제한적으로 수집한다.
 - terminal `durationMs`와 최종 `agentMessage`를 기록한다.
-- Assignment 실행은 typed Packet 검증 뒤 stage result로 연결한다.
+- Assignment 실행은 typed Packet 검증 뒤 stage result로 연결하며, root WorkSpan도
+  그 검증이 끝난 뒤에만 terminal로 닫는다.
+- projected Expertise가 있으면 active catalog definition, installed Skill tree와
+  exact Guide file digest를 다시 확인하고 Skill·Guide 본문을 ephemeral turn
+  context에 로드한다. terminal Packet의 Guide별 disposition이 exact projection을
+  덮어야 application evidence가 된다.
 - parent turn을 오케스트레이터 work span으로 만들고, allowlisted
   `collabAgentToolCall` started·completed event를 child work lifecycle로 연결한다.
 - `spawnAgent`는 child attempt, `resumeAgent`는 `followup_of` attempt로 만들고
@@ -167,6 +172,9 @@ Hook producer도 아직 없다.
 | 재작업 | `resumeAgent` attempt·`followup_of` 가능 | explicit resume item | 사용자 의미 reason code는 후속 과제 |
 | 실제 병렬 실행 | 수동 span 시간이 완전할 때 가능 | 겹치는 child lifecycle | coverage complete일 때만 계산 |
 | 비용 | 불가 | 공식 event는 token이지 provider 비용 receipt가 아님 | 가격 추정으로 대체 금지 |
+| Pack 선택 | 가능 | Route·Assignment projection | Host load나 적용으로 승격 금지 |
+| Pack·Guide Host load | Maestro-owned Assignment에서 가능 | digest-verified local Skill·Guide context | 다른 Host 실행에 상속 금지 |
+| Guide 적용 | Maestro-owned Assignment Packet에서 가능 | exact Guide disposition + projected evidence | raw final message 문장으로 추론 금지 |
 
 ## 채택할 수집 구조
 

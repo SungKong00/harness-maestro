@@ -3,12 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from .util import sha256_text
+from .errors import MaestroError
+from .request_lineage import resolve_request_identity
 from .work import build_display_edge_groups
 
 
 REQUEST_RECORD_VERSION = "maestro_request_record_v1"
-_DESKTOP_REQUEST_SOURCE = "codex-desktop-request-meta"
 _ORDERING_EDGE_TYPES = {
     "delegates_to",
     "depends_on",
@@ -25,31 +25,6 @@ def _unique_strings(values: list[Any]) -> list[str]:
             if isinstance(value, str) and value
         )
     )
-
-
-def _trusted_request_correlation(run: dict[str, Any]) -> str | None:
-    host = run.get("host_observation")
-    if (
-        not isinstance(host, dict)
-        or host.get("schema_version") != "maestro_host_observation_v2"
-        or host.get("source") != _DESKTOP_REQUEST_SOURCE
-        or host.get("quality") != "host_reported"
-        or not isinstance(host.get("correlation_id"), str)
-        or not host["correlation_id"].strip()
-    ):
-        return None
-    return host["correlation_id"]
-
-
-def _request_identity(run: dict[str, Any]) -> tuple[str, str]:
-    correlation = _trusted_request_correlation(run)
-    if correlation is None:
-        return (
-            f"event:{run['event_id']}",
-            f"event-{run['event_id']}",
-        )
-    digest = sha256_text(correlation)[:20]
-    return f"desktop:{correlation}", f"request-{digest}"
 
 
 def _attempt_started_at(run: dict[str, Any]) -> str:
@@ -186,7 +161,8 @@ def _merge_observed_execution(
     bindings: list[dict[str, Any]] = []
     lanes_by_id: dict[str, dict[str, Any]] = {}
     concurrent_pairs: list[list[str]] = []
-    previous_terminals: list[str] = []
+    entries_by_run: dict[str, list[str]] = {}
+    terminals_by_run: dict[str, list[str]] = {}
     next_rank = 0
     completeness: list[str] = []
     concurrency_coverage: list[str] = []
@@ -282,20 +258,8 @@ def _merge_observed_execution(
                 if card.get("request_attempt") == attempt
                 and card.get("rank") == next_rank
             ]
-        if previous_terminals and entries:
-            for source in previous_terminals:
-                for target in entries:
-                    edges.append(
-                        {
-                            "from": source,
-                            "to": target,
-                            "type": "followup_of",
-                            "provenance": "request_record_projection",
-                            "source": "trusted_desktop_request_correlation",
-                            "coverage": "derived_attempt_order",
-                        }
-                    )
-        previous_terminals = terminals or entries
+        entries_by_run[run["run_id"]] = entries
+        terminals_by_run[run["run_id"]] = terminals or entries
         next_rank = max(
             (
                 card["rank"]
@@ -341,6 +305,23 @@ def _merge_observed_execution(
 
     if not cards:
         return None
+    for run in attempts:
+        identity = resolve_request_identity(run)
+        if identity["relation"] != "retry":
+            continue
+        parent_run_id = identity["parent_run_id"]
+        for source in terminals_by_run.get(parent_run_id, []):
+            for target in entries_by_run.get(run["run_id"], []):
+                edges.append(
+                    {
+                        "from": source,
+                        "to": target,
+                        "type": "followup_of",
+                        "provenance": "request_record_projection",
+                        "source": "explicit_request_lineage",
+                        "coverage": "explicit_retry_parent",
+                    }
+                )
 
     ranks = {card["work_id"]: card["rank"] for card in cards}
     node_ids = [card["work_id"] for card in cards]
@@ -466,7 +447,10 @@ def _request_work_detail(
         "summary": list(record.get("correction_summary", [])),
         "source": "request_attempt_lineage",
         "attempt_lineage": "request_record_projection",
-        "observed_followups": max(len(attempts) - 1, 0),
+        "observed_followups": sum(
+            resolve_request_identity(run)["relation"] == "retry"
+            for run in attempts
+        ),
     }
     header["models"] = {
         "requested": list(record.get("models", {}).get("requested", [])),
@@ -494,10 +478,204 @@ def _request_work_detail(
     return work
 
 
+def _unique_pairs(
+    values: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    pairs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for value in values:
+        pack_id = value.get("expertise_pack_id")
+        guide_id = value.get("guide_id")
+        if not isinstance(pack_id, str) or not isinstance(guide_id, str):
+            continue
+        key = (pack_id, guide_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append(
+            {
+                "expertise_pack_id": pack_id,
+                "guide_id": guide_id,
+            }
+        )
+    return pairs
+
+
+def _request_expertise_evidence(
+    expertise: dict[str, Any],
+    attempts: list[dict[str, Any]],
+    cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    selected_packs = list(expertise.get("packs", []))
+    selected_guides = list(expertise.get("guides", []))
+    evidence_cards = [
+        card
+        for card in cards
+        if isinstance(card, dict)
+        and isinstance(card.get("work_id"), str)
+        and isinstance(card.get("expertise"), dict)
+    ]
+    expected = [
+        card
+        for card in evidence_cards
+        if (
+            set(card["expertise"].get("pack_ids", []))
+            & set(selected_packs)
+            or set(card["expertise"].get("guide_ids", []))
+            & set(selected_guides)
+        )
+    ]
+    loaded = [
+        card
+        for card in expected
+        if card["expertise"].get("load", {}).get("status")
+        == "host_loaded"
+    ]
+    applied = [
+        card
+        for card in loaded
+        if card["expertise"].get("application", {}).get("status")
+        == "observed"
+    ]
+    not_applicable = [
+        card
+        for card in loaded
+        if card["expertise"].get("application", {}).get("status")
+        == "not_applicable"
+    ]
+    loaded_pairs = _unique_pairs(
+        [
+            {
+                "expertise_pack_id": pack.get(
+                    "expertise_pack_id"
+                ),
+                "guide_id": guide_id,
+            }
+            for card in loaded
+            for pack in card["expertise"].get("packs", [])
+            if isinstance(pack, dict)
+            for guide_id in pack.get("guide_ids", [])
+        ]
+    )
+    applied_pairs = _unique_pairs(
+        [
+            {
+                "expertise_pack_id": pack.get(
+                    "expertise_pack_id"
+                ),
+                "guide_id": guide_id,
+            }
+            for card in applied
+            for guide_id in (
+                card["expertise"]
+                .get("application", {})
+                .get("guide_ids", [])
+            )
+            for pack in card["expertise"].get("packs", [])
+            if isinstance(pack, dict)
+            and guide_id in pack.get("guide_ids", [])
+        ]
+    )
+    expected_ids = _unique_strings(
+        [card["work_id"] for card in expected]
+    )
+    loaded_ids = _unique_strings(
+        [card["work_id"] for card in loaded]
+    )
+    applied_ids = _unique_strings(
+        [card["work_id"] for card in applied]
+    )
+    not_applicable_ids = _unique_strings(
+        [card["work_id"] for card in not_applicable]
+    )
+    no_selection = not selected_packs and not selected_guides
+    resolved_ids = set(applied_ids) | set(not_applicable_ids)
+    host_load = (
+        "not_selected"
+        if no_selection
+        else (
+            "complete"
+            if expected_ids and set(expected_ids) == set(loaded_ids)
+            else ("partial" if loaded_ids else "unavailable")
+        )
+    )
+    application = (
+        "not_selected"
+        if no_selection
+        else (
+            "observed"
+            if (
+                expected_ids
+                and set(expected_ids) == resolved_ids
+                and applied_ids
+            )
+            else (
+                "not_applicable"
+                if (
+                    expected_ids
+                    and set(expected_ids)
+                    == set(not_applicable_ids)
+                )
+                else (
+                    "partial"
+                    if resolved_ids
+                    else "unavailable"
+                )
+            )
+        )
+    )
+    assignment_ids = _unique_strings(
+        [
+            assignment_id
+            for run in attempts
+            for assignment_id in (
+                run.get("expertise", {})
+                .get("evidence", {})
+                .get("assignment_ids", [])
+            )
+        ]
+    )
+    return {
+        "selection": (
+            "not_selected"
+            if no_selection
+            else "run_receipt"
+        ),
+        "assignment_attachment": (
+            "plan_projection"
+            if assignment_ids
+            else "unavailable"
+        ),
+        "assignment_ids": assignment_ids,
+        "host_load": host_load,
+        "application": application,
+        "work_ids": {
+            "expected": expected_ids,
+            "loaded": loaded_ids,
+            "applied": applied_ids,
+            "not_applicable": not_applicable_ids,
+        },
+        "counts": {
+            "expected": len(expected_ids),
+            "loaded": len(loaded_ids),
+            "applied": len(applied_ids),
+            "not_applicable": len(not_applicable_ids),
+        },
+        "loaded_pairs": loaded_pairs,
+        "applied_pairs": applied_pairs,
+        "interpretation": (
+            "Request-level Expertise evidence is recomputed from the "
+            "exact namespaced work cards of every source run."
+        ),
+    }
+
+
 def _project_group(
     grouped_runs: list[dict[str, Any]],
     request_record_id: str,
-    trusted_correlation: bool,
+    identity_evidence: str,
+    root_request_id: str | None,
+    root_run_id: str | None,
 ) -> dict[str, Any]:
     attempts = sorted(
         grouped_runs,
@@ -580,20 +758,31 @@ def _project_group(
         run.get("outcome") in {"failed", "blocked", "corrected"}
         for run in attempts[:-1]
     )
+    identities = [resolve_request_identity(run) for run in attempts]
+    explicit_retry_count = sum(
+        identity["relation"] == "retry"
+        for identity in identities
+    )
+    rework_count = (
+        explicit_retry_count
+        if identity_evidence
+        in {
+            "explicit_request_lineage",
+            "content_addressed_legacy_alias",
+            "mixed_structural_lineage",
+        }
+        else prior_failures
+    )
 
     record.update(
         {
             "schema_version": REQUEST_RECORD_VERSION,
             "request_record_id": request_record_id,
-            "request_identity_evidence": (
-                "trusted_desktop_thread_turn"
-                if trusted_correlation
-                else "single_run_fallback"
-            ),
+            "request_identity_evidence": identity_evidence,
             "source_event_ids": source_event_ids,
             "source_run_ids": source_run_ids,
             "attempt_count": len(attempts),
-            "rework_count": prior_failures,
+            "rework_count": rework_count,
             "history_evidence": {
                 "definition_status": request_definition_status,
                 "governance_eligible": (
@@ -627,7 +816,7 @@ def _project_group(
                 run.get("correction_count", 0)
                 for run in attempts
             )
-            + prior_failures,
+            + rework_count,
             "correction_summary": _unique_strings(
                 [
                     *[
@@ -637,15 +826,18 @@ def _project_group(
                     ],
                     *(
                         [
-                            f"{prior_failures}개 이전 실행 시도 후 재작업"
+                            f"{rework_count}개 명시적 재시도"
                         ]
-                        if prior_failures
+                        if rework_count
                         else []
                     ),
                 ]
             ),
         }
     )
+    if root_request_id is not None:
+        record["root_request_id"] = root_request_id
+        record["root_run_id"] = root_run_id or attempts[0]["run_id"]
     record["models"] = {
         **deepcopy(latest.get("models", {})),
         "requested": _unique_strings(
@@ -826,6 +1018,8 @@ def _project_group(
             "attempt": index,
             "event_id": run["event_id"],
             "run_id": run["run_id"],
+            "relation": identities[index - 1]["relation"],
+            "parent_run_id": identities[index - 1]["parent_run_id"],
             "timestamp": run.get("timestamp"),
             "outcome": run.get("outcome"),
             "verifier_result": run.get("verifier_result"),
@@ -872,24 +1066,35 @@ def _project_group(
         }
         for index, run in enumerate(attempts, 1)
     ]
+    record["work_detail"] = _request_work_detail(record, attempts)
+    selected_packs = _unique_strings(
+        [
+            value
+            for run in attempts
+            for value in run.get("expertise", {}).get("packs", [])
+        ]
+    )
+    selected_guides = _unique_strings(
+        [
+            value
+            for run in attempts
+            for value in run.get("expertise", {}).get("guides", [])
+        ]
+    )
     record["expertise"] = {
         **deepcopy(latest.get("expertise", {})),
-        "packs": _unique_strings(
-            [
-                value
-                for run in attempts
-                for value in run.get("expertise", {}).get("packs", [])
-            ]
-        ),
-        "guides": _unique_strings(
-            [
-                value
-                for run in attempts
-                for value in run.get("expertise", {}).get("guides", [])
-            ]
-        ),
+        "packs": selected_packs,
+        "guides": selected_guides,
     }
-    record["work_detail"] = _request_work_detail(record, attempts)
+    record["expertise"]["evidence"] = _request_expertise_evidence(
+        record["expertise"],
+        attempts,
+        (
+            record["work_detail"]
+            .get("execution", {})
+            .get("cards", [])
+        ),
+    )
     return record
 
 
@@ -900,21 +1105,46 @@ def project_request_records(
 
     grouped: dict[str, dict[str, Any]] = {}
     for run in runs:
-        identity, record_id = _request_identity(run)
+        resolved = resolve_request_identity(run)
+        identity = resolved["identity"]
         group = grouped.setdefault(
             identity,
             {
-                "request_record_id": record_id,
-                "trusted": identity.startswith("desktop:"),
+                "request_record_id": resolved["request_record_id"],
+                "root_request_id": resolved["root_request_id"],
+                "root_run_ids": set(),
+                "evidence": set(),
                 "runs": [],
             },
         )
+        if (
+            resolved["root_run_id"] is not None
+            and group["root_run_ids"]
+            and resolved["root_run_id"] not in group["root_run_ids"]
+        ):
+            raise MaestroError(
+                "RUN_REQUEST_LINEAGE_CONFLICT",
+                "One request record resolves to multiple root runs.",
+            )
+        if resolved["root_run_id"] is not None:
+            group["root_run_ids"].add(resolved["root_run_id"])
+        group["evidence"].add(resolved["evidence"])
         group["runs"].append(run)
     records = [
         _project_group(
             group["runs"],
             group["request_record_id"],
-            group["trusted"],
+            (
+                next(iter(group["evidence"]))
+                if len(group["evidence"]) == 1
+                else "mixed_structural_lineage"
+            ),
+            group["root_request_id"],
+            (
+                next(iter(group["root_run_ids"]))
+                if len(group["root_run_ids"]) == 1
+                else None
+            ),
         )
         for group in grouped.values()
     ]

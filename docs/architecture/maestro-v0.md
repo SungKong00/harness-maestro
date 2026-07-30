@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro v0의 작은 커널, 읽기·쓰기 경계와 프로젝트 적용 흐름.
 scope: [src/maestro, skills, docs]
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -104,7 +104,9 @@ Codex의 `$maestro` workflow가 그 계획을 따른다.
 | `maestro decide --repo <path> --goal "<goal>" --json` | 구현 전 독립 Specialist 판단과 synthesis·기술 타당성의 read-only 계획 생성 | 없음 |
 | `maestro validate-decision --plan <plan> [--packet <packet>] --json` | 판단 계획 또는 역할 범위가 닫힌 Specialist packet 검사 | 없음 |
 | `maestro enact --repo <path> --plan <plan> --bundle <bundle> --packet <packet>... --authorization-source <source> --json` | 결정·근거·checkout을 재검사하고 digest-bound ExecutionPlan 생성 | 없음 |
-| `maestro observe start|desktop --repo <path> --run-id <id> --task-label "<label>" ... --json` | route 전에 prompt 없이 작업명·시작 시각과 공개된 요청 설정 관측 시작 | `.maestro/state/inflight/` 한 건 |
+| `maestro observe start|desktop --repo <path> --run-id <id> --task-label "<label>" ... --json` | route 전에 prompt 없이 작업명·시작 시각·immutable request lineage와 공개된 요청 설정 관측 시작. `start`는 stable `--request-key` 필수 | `.maestro/state/inflight/` 한 건 |
+| `maestro observe child --parent-observation <id> --parent-run-id <id> --relation child|retry ... --json` | 별도 receipt가 필요한 검증·평가·repair·retry Run에 정확한 부모 request lineage 상속 | 별도 in-flight marker, 같은 root request |
+| `maestro request link --root-run-id <id> --member-run-id <id>... --json` | owner가 확인한 legacy event membership을 project·checkout·canonical event digest에 결합 | `.maestro/state/request-lineage-aliases.json`, raw event 불변 |
 | `maestro observe plan --observation <id> --run-id <id> --plan <route-v2> --json` | 검증된 compact 계획을 같은 요청 관측에 한 번 결합 | 같은 in-flight marker |
 | `maestro observe stage --observation <id> --run-id <id> --assignment <id> ... --json` | 현재 Host 또는 결정론적 명령이 확인한 Assignment terminal 결과와 근거 기록 | 같은 in-flight marker의 bounded stage result |
 | `maestro observe host ... --json` | 공개 Host가 제공한 요청 모델·요청 추론 강도·완전한 model event 근거·적용 모델·token과 상관 ID 연결 | 같은 in-flight marker의 bounded telemetry |
@@ -148,8 +150,9 @@ block 바깥을 수정하지 않는다. 저장소 바깥 경로와 symlink 탈�
 4. Coverage를 route에 묶고 Fast, Standard, Deep 중 가장 작은 충분한 경로를 만든다.
    방향이 정해진 변경은 route v2, 판단이 먼저인 요청은 `decide`를 사용한다.
    staged 경로는 독립 packet·synthesis·기술 타당성 뒤 `enact`가 유효한 실행
-   contract를 만들기 전 writer를 열지 않는다. 다만 blocking·important Coverage가
-   route 밖 Pack을 요구하면 현재는 Specialist 전에 안전하게 중단한다.
+   contract를 만들기 전 writer를 열지 않는다. blocking·important Coverage가
+   한 route의 네 Guide 상한을 넘으면 DecisionPlan이 선택·누락·영향을 보존하고,
+   Pack별 read-only batch의 exact READY closure를 Specialist 전에 요구한다.
 5. project fact·owner 결정·계획 검증·Convention·보류·제외를
    `project-coverage`로 typed evidence에 묶고 다시 검증한다. bare item ID는
    근거나 권한이 아니며 owner 결정은 기존 repository-relative 파일 digest에 묶는다.

@@ -4,6 +4,7 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.support import ROOT, apply_fresh_init
 from tests.test_assignment_contracts import (
@@ -23,7 +24,9 @@ from maestro.coverage_projection import build_coverage_projection
 from maestro.decisions import (
     build_decision_plan,
     build_execution_plan,
+    validate_decision_bundle,
     validate_execution_plan,
+    validate_specialist_packet,
 )
 from maestro.errors import MaestroError
 from maestro.expertise_adaptation import build_expertise_adaptation_plan
@@ -187,47 +190,266 @@ class DecisionContinuityTests(unittest.TestCase):
             execution["route_plan"]["expertise"]["selected_pack_ids"],
         )
 
-    def test_staged_decision_fails_before_omitted_pack_judgments(
+    def test_staged_decision_batches_all_omitted_guide_judgments_before_specialists(
         self,
     ) -> None:
-        goal = "Choose architecture boundaries using latest design references"
+        goal = "제품 화면의 일곱 판단 축을 확정한 후 구현해줘"
+        guide_ids = [
+            "design-brief",
+            "typography-korean",
+            "visual-hierarchy-layout",
+            "design-system-and-components",
+            "interaction-responsive-accessibility",
+            "reference-selection",
+            "information-architecture-and-user-flow",
+        ]
         coverage = _coverage(
             ROOT,
             goal,
             [
                 _coverage_item(
-                    "architecture",
+                    f"guide-{index}",
                     allocation_kind="expertise-guide",
-                    target_ref=(
-                        "guide:software-engineering/"
-                        "architecture-boundaries-and-tradeoffs"
-                    ),
+                    target_ref=f"guide:product-design/{guide_id}",
                     evidence_type="external-stable",
-                ),
-                _coverage_item(
-                    "references",
-                    allocation_kind="expertise-guide",
-                    target_ref="guide:product-design/reference-selection",
-                    evidence_type="external-stable",
-                ),
+                )
+                for index, guide_id in enumerate(guide_ids, start=1)
             ],
         )
+        plan = build_decision_plan(
+            ROOT,
+            goal,
+            "medium",
+            route_hints=normalize_route_hints(
+                explicit_pack_id="product-design",
+                affected_paths=["src"],
+            ),
+            coverage=coverage,
+        )
+        requirement = plan["expertise_work_requirement"]
+        selected = [
+            item
+            for item in requirement["allocations"]
+            if item["selected_in_decision"]
+        ]
+        omitted = [
+            item
+            for item in requirement["allocations"]
+            if not item["selected_in_decision"]
+        ]
 
-        with self.assertRaises(MaestroError) as raised:
-            build_decision_plan(
-                ROOT,
-                goal,
-                "medium",
-                route_hints=normalize_route_hints(
-                    work_kinds=["software-structure"],
-                    affected_paths=["src"],
-                ),
-                coverage=coverage,
-            )
-
+        self.assertEqual("required", requirement["status"])
         self.assertEqual(
-            "DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED",
-            raised.exception.code,
+            "DECISION_GUIDE_BATCHING_REQUIRED",
+            requirement["reason_code"],
+        )
+        self.assertEqual(7, requirement["required_guide_count"])
+        self.assertEqual(4, len(selected))
+        self.assertEqual(3, len(omitted))
+        self.assertTrue(
+            all(item["omission_impact"] for item in omitted)
+        )
+        self.assertTrue(
+            all(
+                "ExpertiseWorkClosure" in assignment["input_packets"]
+                for assignment in plan["assignments"]
+                if not assignment["depends_on"]
+            )
+        )
+
+        blocked_packet = _packets(plan)[0]
+        blocked_validation = validate_specialist_packet(
+            blocked_packet,
+            plan,
+        )
+        self.assertIn(
+            "DECISION_EXPERTISE_CLOSURE_REQUIRED",
+            {
+                issue["code"]
+                for issue in blocked_validation["issues"]
+            },
+        )
+
+        first_pairs = [
+            {
+                "coverage_item_id": f"guide-{index}",
+                "target_ref": f"guide:product-design/{guide_id}",
+            }
+            for index, guide_id in enumerate(
+                guide_ids[:4],
+                start=1,
+            )
+        ]
+        second_pairs = [
+            {
+                "coverage_item_id": f"guide-{index}",
+                "target_ref": f"guide:product-design/{guide_id}",
+            }
+            for index, guide_id in enumerate(
+                guide_ids[4:],
+                start=5,
+            )
+        ]
+        work_plan = build_expertise_work_plan(
+            ROOT,
+            goal=goal,
+            coverage=coverage,
+            plan=plan,
+            draft={
+                "batches": [
+                    {
+                        "batch_id": "product-design-primary",
+                        "responsibility": (
+                            "Apply the first four Product Design judgments."
+                        ),
+                        "coverage_pairs": first_pairs,
+                        "depends_on": [],
+                    },
+                    {
+                        "batch_id": "product-design-secondary",
+                        "responsibility": (
+                            "Apply the remaining Product Design judgments."
+                        ),
+                        "coverage_pairs": second_pairs,
+                        "depends_on": [],
+                    },
+                ]
+            },
+        )
+        self.assertEqual(
+            [4, 3],
+            sorted(
+                (
+                    len(batch["guide_ids"])
+                    for batch in work_plan["batches"]
+                ),
+                reverse=True,
+            ),
+        )
+        work_packets = [
+            _work_packet(work_plan, batch)
+            for batch in work_plan["batches"]
+        ]
+        blocked_work_packets = copy.deepcopy(work_packets)
+        blocked_work_packets[0] = _work_packet(
+            work_plan,
+            work_plan["batches"][0],
+            status="blocked",
+        )
+        blocked_closure = build_expertise_work_closure(
+            work_plan,
+            blocked_work_packets,
+        )
+        blocked_closure_validation = validate_specialist_packet(
+            blocked_packet,
+            plan,
+            expertise_work_plan=work_plan,
+            expertise_work_closure=blocked_closure,
+        )
+        self.assertIn(
+            "DECISION_EXPERTISE_CLOSURE_BLOCKED",
+            {
+                issue["code"]
+                for issue in blocked_closure_validation["issues"]
+            },
+        )
+        closure = build_expertise_work_closure(
+            work_plan,
+            work_packets,
+        )
+        self.assertEqual("READY", closure["status"])
+
+        packets = _packets(plan)
+        packet_validation = validate_specialist_packet(
+            packets[0],
+            plan,
+            expertise_work_plan=work_plan,
+            expertise_work_closure=closure,
+        )
+        self.assertEqual("PASS", packet_validation["status"])
+        bundle = _bundle(
+            plan,
+            packets,
+            expertise_work_plan=work_plan,
+            expertise_work_closure=closure,
+        )
+        with patch(
+            "maestro.decisions.repository_revision",
+            return_value=plan["base_revision"],
+        ), patch(
+            "maestro.task_coverage.repository_revision",
+            return_value=plan["base_revision"],
+        ):
+            bundle_validation = validate_decision_bundle(
+                bundle,
+                plan,
+                packets,
+                ROOT,
+                coverage=coverage,
+                expertise_work_plan=work_plan,
+                expertise_work_closure=closure,
+            )
+            self.assertEqual("PASS", bundle_validation["status"])
+            execution = build_execution_plan(
+                ROOT,
+                plan,
+                bundle,
+                packets,
+                authorization_source="prior_explicit_request",
+                coverage=coverage,
+                expertise_work_plan=work_plan,
+                expertise_work_closure=closure,
+            )
+            self.assertEqual(
+                work_plan,
+                execution["decision_evidence"][
+                    "expertise_work_plan"
+                ],
+            )
+            self.assertEqual(
+                "PASS",
+                validate_execution_plan(
+                    execution,
+                    repo_path=ROOT,
+                )["status"],
+            )
+            admission = build_task_coverage_admission(
+                ROOT,
+                goal=goal,
+                coverage=coverage,
+                plan=execution,
+                expertise_work_plan=work_plan,
+                expertise_closure=closure,
+            )
+        self.assertEqual("READY", admission["status"])
+        alternate_packets = copy.deepcopy(work_packets)
+        alternate_packets[0]["recommendations"] = [
+            "A different post-decision recommendation."
+        ]
+        alternate_packets[0]["packet_digest"] = ""
+        alternate_packets[0]["packet_digest"] = sha256_text(
+            canonical_json(alternate_packets[0])
+        )
+        alternate_closure = build_expertise_work_closure(
+            work_plan,
+            alternate_packets,
+        )
+        with patch(
+            "maestro.decisions.repository_revision",
+            return_value=plan["base_revision"],
+        ):
+            mismatched = build_task_coverage_admission(
+                ROOT,
+                goal=goal,
+                coverage=coverage,
+                plan=execution,
+                expertise_work_plan=work_plan,
+                expertise_closure=alternate_closure,
+            )
+        self.assertEqual("INVALID", mismatched["status"])
+        self.assertIn(
+            "TASK_COVERAGE_DECISION_EXPERTISE_MISMATCH",
+            {issue["code"] for issue in mismatched["issues"]},
         )
 
 

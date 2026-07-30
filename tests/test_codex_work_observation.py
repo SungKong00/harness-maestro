@@ -24,6 +24,7 @@ class CodexWorkObservationTests(unittest.TestCase):
             run = start_run_observation(
                 repo,
                 run_id="codex-event-timing",
+                request_key="codex-event-timing",
                 task_label="Codex 이벤트 시각 검증",
             )
             kwargs = {
@@ -56,6 +57,19 @@ class CodexWorkObservationTests(unittest.TestCase):
             record_work_finish(repo, **terminal)
             finished_replay = record_work_finish(repo, **terminal)
             self.assertEqual("already_recorded", finished_replay["status"])
+            with self.assertRaises(MaestroError) as conflict:
+                record_work_finish(
+                    repo,
+                    **{
+                        **terminal,
+                        "event_ended_at": "2026-07-28T01:00:03Z",
+                        "event_duration_ms": 3_000,
+                    },
+                )
+            self.assertEqual(
+                "WORK_SPAN_CONFLICT",
+                conflict.exception.code,
+            )
 
             span = observation_receipt_fields(
                 repo,
@@ -75,6 +89,7 @@ class CodexWorkObservationTests(unittest.TestCase):
             run = start_run_observation(
                 repo,
                 run_id="current-host-event-time",
+                request_key="current-host-event-time",
                 task_label="현재 Host 시각 경계",
             )
             with self.assertRaises(MaestroError) as raised:

@@ -266,7 +266,11 @@ def _provider_output_schema(value: Any) -> Any:
     return compiled
 
 
-def assignment_output_schema(projection: Any) -> dict[str, Any]:
+def assignment_output_schema(
+    projection: Any,
+    *,
+    require_expertise_dispositions: bool = False,
+) -> dict[str, Any]:
     """Derive the exact final-answer JSON Schema for one AssignmentInput."""
 
     projected = _projection_value(projection)
@@ -306,6 +310,92 @@ def assignment_output_schema(projection: Any) -> dict[str, Any]:
     properties["assignment_id"] = {
         "enum": [projected["assignment_id"]],
     }
+    expertise_load = projected.get("expertise_load")
+    expected_expertise = [
+        {
+            "expertise_pack_id": pack["expertise_pack_id"],
+            "definition_digest": pack["definition_digest"],
+            "guide_id": guide["guide_id"],
+            "skill_definition_digest": guide[
+                "skill_definition_digest"
+            ],
+        }
+        for pack in (
+            expertise_load.get("packs", [])
+            if isinstance(expertise_load, dict)
+            else []
+        )
+        if isinstance(pack, dict)
+        for guide in pack.get("guides", [])
+        if isinstance(guide, dict)
+    ]
+    if expected_expertise and require_expertise_dispositions:
+        properties["expertise_dispositions"] = {
+            "type": "array",
+            "items": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "expertise_pack_id",
+                            "definition_digest",
+                            "guide_id",
+                            "skill_definition_digest",
+                            "disposition",
+                            "reason",
+                            "evidence_refs",
+                        ],
+                        "properties": {
+                            "expertise_pack_id": {
+                                "enum": [
+                                    item["expertise_pack_id"]
+                                ]
+                            },
+                            "definition_digest": {
+                                "enum": [item["definition_digest"]]
+                            },
+                            "guide_id": {
+                                "enum": [item["guide_id"]]
+                            },
+                            "skill_definition_digest": {
+                                "enum": [
+                                    item["skill_definition_digest"]
+                                ]
+                            },
+                            "disposition": {
+                                "enum": [
+                                    "consulted",
+                                    "applied",
+                                    "not_applicable",
+                                    "conflict",
+                                ]
+                            },
+                            "reason": {"type": "string"},
+                            "evidence_refs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    }
+                    for item in expected_expertise
+                ]
+            },
+        }
+        required = schema.get("required")
+        if not isinstance(required, list):
+            raise MaestroError(
+                "PACKET_OUTPUT_SCHEMA_INVALID",
+                "The packaged Assignment Packet has no required field set.",
+            )
+        required.append("expertise_dispositions")
+    elif require_expertise_dispositions:
+        raise MaestroError(
+            "PACKET_OUTPUT_SCHEMA_INVALID",
+            "Expertise dispositions cannot be required without selected Guides.",
+        )
+    else:
+        properties.pop("expertise_dispositions", None)
     if definition_id == "findingPacket":
         lens_ids = assignment.get("lens_ids")
         if (
@@ -2027,6 +2117,189 @@ def _research_disposition_issues(
     return issues
 
 
+def _expertise_disposition_issues(
+    dispositions: Any,
+    *,
+    projection: Any,
+    required: bool,
+    completed: bool,
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    projected = _projection_value(projection)
+    expertise_load = (
+        projected.get("expertise_load")
+        if isinstance(projected, dict)
+        else None
+    )
+    expected = {
+        (
+            pack.get("expertise_pack_id"),
+            guide.get("guide_id"),
+        ): {
+            "definition_digest": pack.get("definition_digest"),
+            "skill_definition_digest": guide.get(
+                "skill_definition_digest"
+            ),
+        }
+        for pack in (
+            expertise_load.get("packs", [])
+            if isinstance(expertise_load, dict)
+            else []
+        )
+        if isinstance(pack, dict)
+        for guide in pack.get("guides", [])
+        if isinstance(guide, dict)
+    }
+    if not expected:
+        if dispositions is not None and dispositions != []:
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_DISPOSITIONS_UNEXPECTED",
+                    "expertise_dispositions",
+                    "Guide dispositions require projected Expertise Guides.",
+                )
+            )
+        return issues
+    if dispositions is None:
+        if required:
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_DISPOSITIONS_REQUIRED",
+                    "expertise_dispositions",
+                    "The owned Host requires one disposition for every loaded Guide.",
+                )
+            )
+        return issues
+    if (
+        not isinstance(dispositions, list)
+        or len(dispositions) != len(expected)
+        or len(dispositions) > 32
+    ):
+        issues.append(
+            _issue(
+                "PACKET_EXPERTISE_DISPOSITIONS_INVALID",
+                "expertise_dispositions",
+                "Expertise dispositions must exactly cover the projected Guide set.",
+            )
+        )
+        return issues
+
+    allowed_refs, _ = _projection_refs(projection)
+    application_mode = (
+        expertise_load.get("application_mode")
+        if isinstance(expertise_load, dict)
+        else None
+    )
+    seen: set[tuple[Any, Any]] = set()
+    has_conflict = False
+    for index, item in enumerate(dispositions):
+        path = f"expertise_dispositions[{index}]"
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "expertise_pack_id",
+                "definition_digest",
+                "guide_id",
+                "skill_definition_digest",
+                "disposition",
+                "reason",
+                "evidence_refs",
+            }
+            or item.get("disposition")
+            not in {
+                "consulted",
+                "applied",
+                "not_applicable",
+                "conflict",
+            }
+            or not _line(item.get("reason"), 400)
+            or not _lines(
+                item.get("evidence_refs"),
+                5,
+                allow_empty=True,
+            )
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_DISPOSITION_INVALID",
+                    path,
+                    "Guide disposition does not satisfy the closed result contract.",
+                )
+            )
+            continue
+        key = (
+            item["expertise_pack_id"],
+            item["guide_id"],
+        )
+        binding = expected.get(key)
+        if (
+            binding is None
+            or key in seen
+            or item["definition_digest"]
+            != binding["definition_digest"]
+            or item["skill_definition_digest"]
+            != binding["skill_definition_digest"]
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_DISPOSITION_MISMATCH",
+                    path,
+                    "Guide disposition identity or digest is outside the projection.",
+                )
+            )
+        seen.add(key)
+        refs = set(item["evidence_refs"])
+        if not refs.issubset(allowed_refs):
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_EVIDENCE_OUT_OF_PROJECTION",
+                    f"{path}.evidence_refs",
+                    "Guide-use evidence contains a reference outside the projection.",
+                )
+            )
+        if (
+            item["disposition"] in {"consulted", "applied"}
+            and not refs
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_APPLICATION_EVIDENCE_REQUIRED",
+                    f"{path}.evidence_refs",
+                    "Consulted or applied Guides require projected result evidence.",
+                )
+            )
+        if (
+            item["disposition"] == "applied"
+            and application_mode == "advisory-only"
+        ):
+            issues.append(
+                _issue(
+                    "PACKET_EXPERTISE_APPLICATION_FORBIDDEN",
+                    f"{path}.disposition",
+                    "An advisory-only Assignment cannot claim Guide application.",
+                )
+            )
+        has_conflict = has_conflict or item["disposition"] == "conflict"
+    if seen != set(expected):
+        issues.append(
+            _issue(
+                "PACKET_EXPERTISE_DISPOSITION_SET_MISMATCH",
+                "expertise_dispositions",
+                "Guide dispositions must cover the exact projected Pack and Guide pairs.",
+            )
+        )
+    if completed and has_conflict:
+        issues.append(
+            _issue(
+                "PACKET_EXPERTISE_CONFLICT_UNRESOLVED",
+                "expertise_dispositions",
+                "A writer cannot complete with an unresolved Expertise conflict.",
+            )
+        )
+    return issues
+
+
 def _coverage_disposition_issues(
     dispositions: Any,
     *,
@@ -2209,6 +2482,8 @@ def validate_finding_packet(
         "inspected",
         "skipped",
     }
+    if isinstance(packet, dict) and "expertise_dispositions" in packet:
+        packet_fields.add("expertise_dispositions")
     if not _exact(packet, packet_fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != FINDING_PACKET_VERSION:
@@ -2572,6 +2847,8 @@ def validate_terminal_packet(
         fields.add("coverage_dispositions")
     if isinstance(packet, dict) and "design_assurance_result" in packet:
         fields.add("design_assurance_result")
+    if isinstance(packet, dict) and "expertise_dispositions" in packet:
+        fields.add("expertise_dispositions")
     if not _exact(packet, fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != TERMINAL_PACKET_VERSION:
@@ -2997,6 +3274,8 @@ def validate_verification_verdict(
     }
     if isinstance(packet, dict) and "design_verification" in packet:
         fields.add("design_verification")
+    if isinstance(packet, dict) and "expertise_dispositions" in packet:
+        fields.add("expertise_dispositions")
     if not _exact(packet, fields, "$", issues):
         return _validation(packet, issues)
     if packet["schema_version"] != VERIFICATION_VERDICT_VERSION:
@@ -3252,6 +3531,7 @@ def validate_assignment_packet(
     *,
     repo_path: str | Path | None = None,
     research_bundle: dict[str, Any] | None = None,
+    require_expertise_dispositions: bool = False,
 ) -> dict[str, Any]:
     route_plan, _, execution_issues = _execution_context(
         plan,
@@ -3300,17 +3580,40 @@ def validate_assignment_packet(
                 )
             ],
         )
+    expertise_issues = _expertise_disposition_issues(
+        (
+            packet.get("expertise_dispositions")
+            if isinstance(packet, dict)
+            else None
+        ),
+        projection=projection,
+        required=require_expertise_dispositions,
+        completed=(
+            version == TERMINAL_PACKET_VERSION
+            and isinstance(packet, dict)
+            and packet.get("status") == "completed"
+            and _assignments(plan).get(
+                assignment_id,
+                {},
+            ).get("mutation_owner")
+            is True
+        ),
+    )
     research_issues = _projection_research_issues(
         plan,
         projection,
         research_bundle,
         repo_path=repo_path,
     )
-    if not research_issues:
+    if not expertise_issues and not research_issues:
         return result
     return _validation(
         packet,
-        [*result["issues"], *research_issues],
+        [
+            *result["issues"],
+            *expertise_issues,
+            *research_issues,
+        ],
     )
 
 

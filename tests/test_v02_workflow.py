@@ -463,6 +463,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             authored = start_run_observation(
                 repo,
                 run_id=authoring_run,
+                request_key=authoring_run,
                 task_label="Author provenance Convention",
                 plan_path=authoring_plan_path,
             )
@@ -492,6 +493,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             evaluated = start_run_observation(
                 repo,
                 run_id=evaluation_run,
+                request_key=evaluation_run,
                 task_label="Evaluate provenance Convention",
                 plan_path=evaluation_plan_path,
             )

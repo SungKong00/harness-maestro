@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 반복 가능한 전문가 판단을 선택형 Expertise Pack으로 재사용하고 최신 맥락 조사와 후보 승격을 bounded gate로 분리하는 계약.
 scope: [expertise, registry, route-v2, skills, governance]
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -312,8 +312,19 @@ route v2의 `expertise`는 optional additive extension이다. 기존 v2 계획�
 Guide ID 외에도 Skill ID, Guide resource path와 Skill tree digest를
 `expertise_load`에 넣는다. 읽기 Assignment는 `advisory-only`, 이미 mutation owner인
 Assignment만 `authorized-executor-may-apply`다. Pack 자체는 어느 경우에도 쓰기 권한을
-만들지 않는다. Host가 실제로 해당 digest를 로드했다는 공개 증거가 없으면
-`host_attestation.status=unavailable`이며, 선택 기록을 load proof로 간주하지 않는다.
+만들지 않는다. AssignmentInput의 `host_attestation`은 projection 시점에는 계속
+`unavailable`이다. Maestro-owned Codex Host가 실행 직전에 active Pack definition,
+installed Skill tree와 선택된 Guide file을 exact digest로 다시 확인하고 ephemeral
+prompt context에 넣은 경우에만 root WorkSpan의 `expertise_observation.load`가
+`host_loaded`가 된다. 다른 Host나 과거 실행에는 이 attestation을 상속하지 않으며,
+선택 기록을 load proof로 간주하지 않는다.
+
+owned Host의 final-answer schema는 로드한 Pack·Guide 쌍마다 exact digest가 붙은
+`expertise_dispositions`를 요구한다. `consulted|applied`는 projected result evidence가
+있어야 하고 advisory-only Assignment는 `applied`를 주장할 수 없다. 검증된 Packet의
+`consulted|applied`만 `application_observed`, 전부 `not_applicable`이면 별도
+비적용 관측으로 남는다. raw final message나 결과 문구에서 Guide 사용을 추정하지
+않는다.
 
 라우팅은 검증된 최신 프로젝트 후보, 명시적으로 게시한 프로젝트 Pack, bundled
 Pack 순으로 보고, 그 안에서는
@@ -444,9 +455,13 @@ RunReceipt에는 다음 선택 정보와 bounded 실행 증거를 optional로 �
 - 사용한 팩 definition digest
 - Assignment에 배정된 Pack·Guide
 - WorkSpan의 `selection_only`, `host_loaded`, `application_observed`
+- WorkSpan별 Pack definition·Skill digest·loaded Guide reference와 validated
+  application status
 
 대화 전문, guide 본문, screenshot, web page와 research 원문은 JSONL에 복사하지 않는다.
-`maestro govern report`는 팩 사용과 research mode만 집계한다.
+request snapshot은 Expertise가 기대된 work, 실제 load된 work, 적용 또는
+not-applicable로 닫힌 work의 ID와 count를 각각 집계한다. 일부 work만 load된 경우
+가장 강한 한 관측을 전체 run으로 승격하지 않고 `partial`로 남긴다.
 
 반복 co-selection·handoff·중복·coverage gap은 곧바로 후보나 활성 변경이 아니라
 `recomposition_nominations`로 snapshot에 투영한다. nomination은 정확한

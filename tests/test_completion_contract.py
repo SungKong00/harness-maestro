@@ -235,6 +235,7 @@ class CompletionContractTests(unittest.TestCase):
         started = start_run_observation(
             repo,
             run_id=run_id,
+            request_key=run_id,
             task_label="managed completion 검증",
             plan_path=plan_path,
             execution_binding={
@@ -887,6 +888,7 @@ class CompletionContractTests(unittest.TestCase):
             started = start_run_observation(
                 repo,
                 run_id="explicit-production-synthesis",
+                request_key="explicit-production-synthesis",
                 task_label="managed completion production 검증",
                 plan_path=plan_path,
                 execution_binding={

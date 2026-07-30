@@ -50,6 +50,10 @@ EXECUTION_DECISION_EVIDENCE_FIELDS = {
     "decision_plan",
     "decision_bundle",
     "specialist_packets",
+    "task_coverage",
+    "expertise_work_plan",
+    "expertise_work_closure",
+    "expertise_research_bundles",
 }
 EXECUTION_AUTHORIZATION_FIELDS = {
     "decision_bundle_digest",
@@ -60,6 +64,7 @@ EXECUTION_AUTHORIZATION_FIELDS = {
     "status",
 }
 MAX_DECISION_ASSIGNMENTS = 5
+MAX_GUIDES_PER_DECISION_PROJECTION = 4
 DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SKILL_PATH_PATTERN = re.compile(
@@ -85,6 +90,7 @@ DECISION_PLAN_FIELDS = {
     "host",
     "request_contract",
     "expertise",
+    "expertise_work_requirement",
     "specialist_contracts",
     "assignments",
     "entry_assignments",
@@ -143,13 +149,25 @@ def _route_expertise_binding(route_plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _decision_expertise_preflight_gaps(
+def _empty_expertise_work_requirement() -> dict[str, Any]:
+    return {
+        "status": "not-required",
+        "reason_code": None,
+        "projection_limit": MAX_GUIDES_PER_DECISION_PROJECTION,
+        "required_pack_count": 0,
+        "required_guide_count": 0,
+        "allocations": [],
+        "completion_gate": None,
+    }
+
+
+def _decision_expertise_work_requirement(
     coverage: dict[str, Any],
     expertise: dict[str, Any],
     *,
     repo_path: str | Path,
-) -> list[str]:
-    """Return material Guide allocations missing from the staged decision."""
+) -> dict[str, Any]:
+    """Describe material Guide work that must close before Specialists run."""
 
     selected_pack_ids = set(expertise.get("selected_pack_ids", []))
     selected_guide_ids = set(expertise.get("selected_guide_ids", []))
@@ -157,15 +175,20 @@ def _decision_expertise_preflight_gaps(
         repo_path,
         include_candidates=True,
     )
-    guide_owners: dict[str, set[str]] = {}
+    guide_owners: dict[str, list[dict[str, str]]] = {}
     for pack in catalog:
         if pack.get("status") not in {"pilot", "active"}:
             continue
         pack_id = pack["expertise_pack_id"]
         for guide in pack["guides"]:
-            guide_owners.setdefault(guide["guide_id"], set()).add(pack_id)
+            guide_owners.setdefault(guide["guide_id"], []).append(
+                {
+                    "pack_id": pack_id,
+                    "guide_id": guide["guide_id"],
+                }
+            )
 
-    missing: list[str] = []
+    allocations: list[dict[str, Any]] = []
     for item in coverage.get("items", []):
         if (
             not isinstance(item, dict)
@@ -183,16 +206,89 @@ def _decision_expertise_preflight_gaps(
             target = target_ref.removeprefix("guide:")
             if "/" in target:
                 pack_id, guide_id = target.split("/", 1)
+                matches = [
+                    owner
+                    for owner in guide_owners.get(guide_id, [])
+                    if owner["pack_id"] == pack_id
+                ]
             else:
                 guide_id = target
-                owners = guide_owners.get(guide_id, set())
-                pack_id = next(iter(owners)) if len(owners) == 1 else ""
-            if (
-                pack_id not in selected_pack_ids
-                or guide_id not in selected_guide_ids
-            ):
-                missing.append(f"{item.get('item_id')}:{target_ref}")
-    return sorted(set(missing))
+                matches = guide_owners.get(guide_id, [])
+            if len(matches) != 1:
+                raise MaestroError(
+                    "DECISION_GUIDE_ALLOCATION_UNRESOLVED",
+                    (
+                        f"Material Coverage allocation {item.get('item_id')}:"
+                        f"{target_ref} must resolve to exactly one eligible "
+                        "current Pack and Guide before staged batching."
+                    ),
+                )
+            pack_id = matches[0]["pack_id"]
+            guide_id = matches[0]["guide_id"]
+            allocations.append(
+                {
+                    "coverage_item_id": item["item_id"],
+                    "materiality": item["materiality"],
+                    "target_ref": target_ref,
+                    "pack_id": pack_id,
+                    "guide_id": guide_id,
+                    "selected_in_decision": (
+                        pack_id in selected_pack_ids
+                        and guide_id in selected_guide_ids
+                    ),
+                    "omission_impact": item["failure_if_omitted"],
+                }
+            )
+    allocations.sort(
+        key=lambda item: (
+            item["coverage_item_id"],
+            item["pack_id"],
+            item["guide_id"],
+        )
+    )
+    if len(
+        {
+            (item["coverage_item_id"], item["target_ref"])
+            for item in allocations
+        }
+    ) != len(allocations):
+        raise MaestroError(
+            "DECISION_GUIDE_ALLOCATION_DUPLICATE",
+            "Material staged Coverage Guide allocations must be unique.",
+        )
+    omitted = [
+        item for item in allocations if not item["selected_in_decision"]
+    ]
+    if not omitted:
+        return {
+            **_empty_expertise_work_requirement(),
+            "required_pack_count": len(
+                {item["pack_id"] for item in allocations}
+            ),
+            "required_guide_count": len(
+                {
+                    (item["pack_id"], item["guide_id"])
+                    for item in allocations
+                }
+            ),
+            "allocations": allocations,
+        }
+    return {
+        "status": "required",
+        "reason_code": "DECISION_GUIDE_BATCHING_REQUIRED",
+        "projection_limit": MAX_GUIDES_PER_DECISION_PROJECTION,
+        "required_pack_count": len(
+            {item["pack_id"] for item in allocations}
+        ),
+        "required_guide_count": len(
+            {
+                (item["pack_id"], item["guide_id"])
+                for item in allocations
+            }
+        ),
+        "allocations": allocations,
+        "completion_gate": "ready-expertise-closure-before-specialists",
+    }
 
 
 def _git(repo: Path, *arguments: str) -> bytes:
@@ -847,6 +943,7 @@ def _decision_assignments(
     specialists: list[dict[str, Any]],
     *,
     product_design: bool,
+    expertise_work_required: bool,
     goal: str,
     risk: str,
     host_id: str,
@@ -860,6 +957,9 @@ def _decision_assignments(
             kind=kind,
         )
 
+    pre_specialist_inputs = (
+        ["ExpertiseWorkClosure"] if expertise_work_required else []
+    )
     if product_design:
         initial = [
             _decision_assignment(
@@ -870,6 +970,7 @@ def _decision_assignments(
                 input_packets=[
                     "DecisionTaskPacket",
                     "SpecialistContract",
+                    *pre_specialist_inputs,
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
@@ -886,6 +987,7 @@ def _decision_assignments(
                 input_packets=[
                     "DecisionTaskPacket",
                     "SpecialistContract",
+                    *pre_specialist_inputs,
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
@@ -905,6 +1007,7 @@ def _decision_assignments(
                 input_packets=[
                     "DecisionTaskPacket",
                     "SpecialistContract",
+                    *pre_specialist_inputs,
                 ],
                 output_packet="SpecialistFindingPacket",
                 conclusion_visibility="blind",
@@ -1060,29 +1163,18 @@ def build_decision_plan(
         intent="review",
     )
     coverage_binding: dict[str, Any] | None = None
+    expertise_work_requirement = _empty_expertise_work_requirement()
     if coverage is not None:
         coverage_binding = build_coverage_binding(
             coverage,
             goal=goal,
             repo_path=repo_path,
         )
-        preflight_gaps = _decision_expertise_preflight_gaps(
+        expertise_work_requirement = _decision_expertise_work_requirement(
             coverage,
             expertise,
             repo_path=repo_path,
         )
-        if preflight_gaps:
-            raise MaestroError(
-                "DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED",
-                (
-                    "A staged decision cannot run before all material Coverage "
-                    "Guide judgments are available. The staged pre-specialist "
-                    "multi-Pack closure binding is not implemented; use the "
-                    "ordinary multi-Pack route only when direction is already "
-                    "settled. Missing allocations: "
-                    + ", ".join(preflight_gaps)
-                ),
-            )
     selected_pack_ids = expertise["selected_pack_ids"]
     selected_families = {
         *selected_pack_ids,
@@ -1129,6 +1221,15 @@ def build_decision_plan(
                     f"{', '.join(review_specialist_ids)}. Nothing was truncated."
                 ),
             )
+    expertise_work_required = (
+        expertise_work_requirement["status"] == "required"
+    )
+    if expertise_work_required:
+        for specialist in specialists:
+            if "ExpertiseWorkClosure" not in specialist["allowed_inputs"]:
+                specialist["allowed_inputs"].append(
+                    "ExpertiseWorkClosure"
+                )
     specialists = _bind_specialist_expertise(
         specialists,
         expertise["pack_cards"],
@@ -1136,6 +1237,7 @@ def build_decision_plan(
     assignments = _decision_assignments(
         specialists,
         product_design=product_design,
+        expertise_work_required=expertise_work_required,
         goal=goal,
         risk=risk,
         host_id=host_id,
@@ -1153,6 +1255,36 @@ def build_decision_plan(
     }
     revision = repository_revision(repo_path)
     warnings = [*expertise["warnings"]]
+    if expertise_work_required:
+        selected = [
+            (
+                f"{item['coverage_item_id']}:"
+                f"{item['pack_id']}/{item['guide_id']}"
+            )
+            for item in expertise_work_requirement["allocations"]
+            if item["selected_in_decision"]
+        ]
+        omitted = [
+            (
+                f"{item['coverage_item_id']}:"
+                f"{item['pack_id']}/{item['guide_id']} "
+                f"(impact: {item['omission_impact']})"
+            )
+            for item in expertise_work_requirement["allocations"]
+            if not item["selected_in_decision"]
+        ]
+        warnings.append(
+            {
+                "code": "DECISION_GUIDE_BATCHING_REQUIRED",
+                "message": (
+                    "The staged decision requires read-only Expertise batches "
+                    "and one READY closure before Specialists run. "
+                    f"Projected: {', '.join(selected) or 'none'}. "
+                    f"Omitted from the four-Guide projection: "
+                    f"{', '.join(omitted)}."
+                ),
+            }
+        )
     if revision["kind"] == "unavailable":
         warnings.append(
             {
@@ -1187,6 +1319,7 @@ def build_decision_plan(
                 else {}
             ),
         },
+        "expertise_work_requirement": expertise_work_requirement,
         "specialist_contracts": specialists,
         "assignments": assignments,
         "entry_assignments": [
@@ -1492,6 +1625,142 @@ def _validate_request_contract(
         )
 
 
+def _validate_expertise_work_requirement(
+    value: Any,
+    *,
+    coverage_binding: Any,
+    path: str,
+    issues: list[dict[str, str]],
+) -> None:
+    fields = {
+        "status",
+        "reason_code",
+        "projection_limit",
+        "required_pack_count",
+        "required_guide_count",
+        "allocations",
+        "completion_gate",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != fields
+        or value.get("status") not in {"not-required", "required"}
+        or value.get("projection_limit")
+        != MAX_GUIDES_PER_DECISION_PROJECTION
+        or not isinstance(value.get("required_pack_count"), int)
+        or isinstance(value.get("required_pack_count"), bool)
+        or value["required_pack_count"] < 0
+        or not isinstance(value.get("required_guide_count"), int)
+        or isinstance(value.get("required_guide_count"), bool)
+        or value["required_guide_count"] < 0
+        or not isinstance(value.get("allocations"), list)
+    ):
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_WORK_REQUIREMENT_INVALID",
+                path,
+                "Staged Expertise work requirement fields are invalid.",
+            )
+        )
+        return
+    allocations: list[dict[str, Any]] = []
+    for index, allocation in enumerate(value["allocations"]):
+        allocation_path = f"{path}.allocations[{index}]"
+        if (
+            not isinstance(allocation, dict)
+            or set(allocation)
+            != {
+                "coverage_item_id",
+                "materiality",
+                "target_ref",
+                "pack_id",
+                "guide_id",
+                "selected_in_decision",
+                "omission_impact",
+            }
+            or not isinstance(allocation.get("coverage_item_id"), str)
+            or ID_PATTERN.fullmatch(allocation["coverage_item_id"]) is None
+            or allocation.get("materiality")
+            not in {"blocking", "important"}
+            or not isinstance(allocation.get("target_ref"), str)
+            or not allocation["target_ref"].startswith("guide:")
+            or not isinstance(allocation.get("pack_id"), str)
+            or ID_PATTERN.fullmatch(allocation["pack_id"]) is None
+            or not isinstance(allocation.get("guide_id"), str)
+            or ID_PATTERN.fullmatch(allocation["guide_id"]) is None
+            or not isinstance(
+                allocation.get("selected_in_decision"),
+                bool,
+            )
+            or not isinstance(allocation.get("omission_impact"), str)
+            or not allocation["omission_impact"].strip()
+        ):
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_WORK_ALLOCATION_INVALID",
+                    allocation_path,
+                    "Material staged Guide allocation fields are invalid.",
+                )
+            )
+            continue
+        allocations.append(allocation)
+    identities = [
+        (item["coverage_item_id"], item["target_ref"])
+        for item in allocations
+    ]
+    if (
+        len(identities) != len(set(identities))
+        or allocations
+        != sorted(
+            allocations,
+            key=lambda item: (
+                item["coverage_item_id"],
+                item["pack_id"],
+                item["guide_id"],
+            ),
+        )
+        or value["required_pack_count"]
+        != len({item["pack_id"] for item in allocations})
+        or value["required_guide_count"]
+        != len(
+            {
+                (item["pack_id"], item["guide_id"])
+                for item in allocations
+            }
+        )
+    ):
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_WORK_ALLOCATION_SET_INVALID",
+                f"{path}.allocations",
+                "Staged Guide allocations must be unique, sorted, and count-consistent.",
+            )
+        )
+    omitted = [
+        item for item in allocations if not item["selected_in_decision"]
+    ]
+    required = bool(omitted)
+    if (
+        value["status"] != ("required" if required else "not-required")
+        or value["reason_code"]
+        != ("DECISION_GUIDE_BATCHING_REQUIRED" if required else None)
+        or value["completion_gate"]
+        != (
+            "ready-expertise-closure-before-specialists"
+            if required
+            else None
+        )
+        or (allocations and coverage_binding is None)
+    ):
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_WORK_GATE_INVALID",
+                path,
+                "The staged Guide batching gate does not match its omitted allocations or Coverage binding.",
+            )
+        )
+
+
 def validate_decision_plan(plan: Any) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
     if not isinstance(plan, dict):
@@ -1591,6 +1860,12 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                     "Decision Coverage binding is invalid.",
                 )
             )
+        _validate_expertise_work_requirement(
+            plan.get("expertise_work_requirement"),
+            coverage_binding=coverage_binding,
+            path="expertise_work_requirement",
+            issues=issues,
+        )
         specialists = plan.get("specialist_contracts")
         specialist_ids: set[str] = set()
         specialist_by_id: dict[str, dict[str, Any]] = {}
@@ -1873,6 +2148,54 @@ def validate_decision_plan(plan: Any) -> dict[str, Any]:
                         "Initial specialist conclusions must be blind.",
                     )
                 )
+        expertise_work_required = (
+            isinstance(plan.get("expertise_work_requirement"), dict)
+            and plan["expertise_work_requirement"].get("status")
+            == "required"
+        )
+        initial_specialist_assignments = [
+            assignment
+            for assignment in by_id.values()
+            if assignment.get("kind") == "specialist-review"
+            and assignment.get("specialist_id")
+            != "technical-feasibility"
+            and not assignment.get("depends_on")
+        ]
+        if any(
+            (
+                "ExpertiseWorkClosure"
+                in assignment.get("input_packets", [])
+            )
+            != expertise_work_required
+            for assignment in initial_specialist_assignments
+        ):
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_WORK_INPUT_INVALID",
+                    "assignments",
+                    "Initial Specialists must consume the READY Expertise closure exactly when staged Guide batching is required.",
+                )
+            )
+        initial_specialist_ids = {
+            assignment.get("specialist_id")
+            for assignment in initial_specialist_assignments
+        }
+        if any(
+            (
+                "ExpertiseWorkClosure"
+                in specialist.get("allowed_inputs", [])
+            )
+            != expertise_work_required
+            for specialist_id, specialist in specialist_by_id.items()
+            if specialist_id in initial_specialist_ids
+        ):
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_WORK_SPECIALIST_INPUT_INVALID",
+                    "specialist_contracts",
+                    "Initial Specialist contracts must allow the staged Expertise closure exactly when batching is required.",
+                )
+            )
         declared_entries = plan.get("entry_assignments")
         declared_terminals = plan.get("terminal_assignments")
         if not _valid_string_list(declared_entries, nonempty=True):
@@ -2016,9 +2339,171 @@ def _contains_implementation_command(statement: str) -> bool:
     )
 
 
+def _decision_expertise_work_binding(
+    plan: dict[str, Any],
+    *,
+    work_plan: Any = None,
+    closure: Any = None,
+    coverage: Any = None,
+    repo_path: str | Path | None = None,
+    expertise_research_bundles: Any = None,
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    requirement = plan.get("expertise_work_requirement")
+    required = (
+        isinstance(requirement, dict)
+        and requirement.get("status") == "required"
+    )
+    empty = {
+        "status": "not-required",
+        "work_plan_id": None,
+        "closure_id": None,
+        "coverage_id": None,
+        "required_allocation_refs": [],
+    }
+    if not required:
+        issues = []
+        if work_plan is not None or closure is not None:
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_WORK_NOT_APPLICABLE",
+                    "expertise_work",
+                    "This DecisionPlan does not require a pre-Specialist Expertise closure.",
+                )
+            )
+        return empty, issues
+    if not isinstance(work_plan, dict) or not isinstance(closure, dict):
+        return empty, [
+            _error(
+                "DECISION_EXPERTISE_CLOSURE_REQUIRED",
+                "expertise_work",
+                "Every required staged Guide batch must have one exact READY closure before Specialist packets are accepted.",
+            )
+        ]
+
+    from .expertise_work import (
+        validate_expertise_work_closure,
+        validate_expertise_work_plan,
+    )
+
+    issues: list[dict[str, str]] = []
+    closure_validation = validate_expertise_work_closure(
+        closure,
+        work_plan=work_plan,
+    )
+    if closure_validation["status"] != "PASS":
+        for issue in closure_validation["issues"]:
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_CLOSURE_INVALID",
+                    f"expertise_work.{issue.get('path', '$')}",
+                    issue.get(
+                        "message",
+                        "The staged Expertise closure is invalid.",
+                    ),
+                )
+            )
+    elif closure_validation.get("execution_status") != "READY":
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_CLOSURE_BLOCKED",
+                "expertise_work.closure",
+                "Blocked, failed, conflicting, or unresolved Expertise batches cannot reach Specialists.",
+            )
+        )
+
+    coverage_binding = plan.get("coverage_binding")
+    expected_coverage_id = (
+        coverage_binding.get("coverage_id")
+        if isinstance(coverage_binding, dict)
+        else None
+    )
+    if (
+        work_plan.get("source_plan_id") != plan.get("plan_id")
+        or work_plan.get("coverage_id") != expected_coverage_id
+        or closure.get("source_plan_id") != plan.get("plan_id")
+        or closure.get("coverage_id") != expected_coverage_id
+    ):
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_WORK_BINDING_MISMATCH",
+                "expertise_work",
+                "Expertise work must bind the exact DecisionPlan and Task Coverage.",
+            )
+        )
+
+    required_refs = sorted(
+        (
+            f"{item['coverage_item_id']}:{item['target_ref']}"
+            for item in requirement.get("allocations", [])
+            if isinstance(item, dict)
+        )
+    )
+    work_refs = {
+        f"{pair.get('coverage_item_id')}:{pair.get('target_ref')}"
+        for pair in work_plan.get("pairs", [])
+        if isinstance(pair, dict)
+    }
+    if not set(required_refs).issubset(work_refs):
+        issues.append(
+            _error(
+                "DECISION_EXPERTISE_WORK_COVERAGE_MISMATCH",
+                "expertise_work.work_plan.pairs",
+                "The staged work plan must cover every blocking and important Guide allocation.",
+            )
+        )
+
+    if repo_path is not None:
+        if coverage is None:
+            issues.append(
+                _error(
+                    "DECISION_EXPERTISE_COVERAGE_REQUIRED",
+                    "expertise_work.coverage",
+                    "Current validation requires the exact Task Coverage behind the staged work plan.",
+                )
+            )
+        else:
+            work_validation = validate_expertise_work_plan(
+                work_plan,
+                repo_path=repo_path,
+                goal=plan.get("goal", ""),
+                coverage=coverage,
+                plan=plan,
+                expertise_research_bundles=expertise_research_bundles,
+            )
+            if work_validation["status"] != "PASS":
+                for issue in work_validation["issues"]:
+                    issues.append(
+                        _error(
+                            "DECISION_EXPERTISE_WORK_INVALID",
+                            f"expertise_work.{issue.get('path', '$')}",
+                            issue.get(
+                                "message",
+                                "The staged Expertise work plan is invalid or stale.",
+                            ),
+                        )
+                    )
+
+    binding = {
+        "status": (
+            "READY"
+            if not issues
+            and closure_validation.get("execution_status") == "READY"
+            else "BLOCKED"
+        ),
+        "work_plan_id": work_plan.get("work_plan_id"),
+        "closure_id": closure.get("closure_id"),
+        "coverage_id": expected_coverage_id,
+        "required_allocation_refs": required_refs,
+    }
+    return binding, issues
+
+
 def validate_specialist_packet(
     packet: Any,
     plan: dict[str, Any],
+    *,
+    expertise_work_plan: Any = None,
+    expertise_work_closure: Any = None,
 ) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
     plan_result = validate_decision_plan(plan)
@@ -2030,6 +2515,12 @@ def validate_specialist_packet(
                 "Cannot validate a packet against an invalid decision plan.",
             )
         )
+    _, expertise_work_issues = _decision_expertise_work_binding(
+        plan,
+        work_plan=expertise_work_plan,
+        closure=expertise_work_closure,
+    )
+    issues.extend(expertise_work_issues)
     if not isinstance(packet, dict):
         issues.append(
             _error(
@@ -2272,6 +2763,11 @@ def validate_decision_bundle(
     plan: dict[str, Any],
     packets: Iterable[dict[str, Any]],
     repo_path: str | Path,
+    *,
+    coverage: Any = None,
+    expertise_work_plan: Any = None,
+    expertise_work_closure: Any = None,
+    expertise_research_bundles: Any = None,
 ) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
     plan_result = validate_decision_plan(plan)
@@ -2304,6 +2800,7 @@ def validate_decision_bundle(
         "risk",
         "request_contract",
         "expertise",
+        "expertise_work",
         "source_packet_digests",
         "accepted_constraints",
         "accepted_decisions",
@@ -2399,9 +2896,34 @@ def validate_decision_bundle(
             )
         )
 
+    expected_expertise_work, expertise_work_issues = (
+        _decision_expertise_work_binding(
+            plan,
+            work_plan=expertise_work_plan,
+            closure=expertise_work_closure,
+            coverage=coverage,
+            repo_path=repo_path,
+            expertise_research_bundles=expertise_research_bundles,
+        )
+    )
+    issues.extend(expertise_work_issues)
+    if bundle.get("expertise_work") != expected_expertise_work:
+        issues.append(
+            _error(
+                "DECISION_BUNDLE_EXPERTISE_WORK_MISMATCH",
+                "expertise_work",
+                "DecisionBundle must bind the exact staged Expertise work plan and READY closure.",
+            )
+        )
+
     packet_by_assignment: dict[str, dict[str, Any]] = {}
     for packet in packets:
-        packet_result = validate_specialist_packet(packet, plan)
+        packet_result = validate_specialist_packet(
+            packet,
+            plan,
+            expertise_work_plan=expertise_work_plan,
+            expertise_work_closure=expertise_work_closure,
+        )
         if packet_result["status"] != "PASS":
             issues.extend(packet_result["issues"])
             continue
@@ -2540,6 +3062,9 @@ def validate_decision_bundle(
         and technical_feasibility in {"pass", "conditional"}
         and gate in {"not-required", "satisfied"}
         and side_effect_policy == "after_decision"
+        and expected_expertise_work["status"]
+        in {"not-required", "READY"}
+        and not expertise_work_issues
     )
     expected_status = "ready" if ready else "blocked"
     if bundle.get("status") != expected_status:
@@ -2603,6 +3128,9 @@ def build_execution_plan(
     research_evidence: dict[str, Any] | None = None,
     prior_route_plan: dict[str, Any] | None = None,
     coverage: dict[str, Any] | None = None,
+    expertise_work_plan: dict[str, Any] | None = None,
+    expertise_work_closure: dict[str, Any] | None = None,
+    expertise_research_bundles: list[dict[str, Any]] | None = None,
     model_policy_overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     packet_list = sorted(
@@ -2618,6 +3146,10 @@ def build_execution_plan(
         plan,
         packet_list,
         repo_path,
+        coverage=coverage,
+        expertise_work_plan=expertise_work_plan,
+        expertise_work_closure=expertise_work_closure,
+        expertise_research_bundles=expertise_research_bundles,
     )
     if validation["status"] != "PASS":
         first = validation["issues"][0]
@@ -2748,6 +3280,16 @@ def build_execution_plan(
             "decision_plan": copy.deepcopy(plan),
             "decision_bundle": copy.deepcopy(bundle),
             "specialist_packets": packet_list,
+            "task_coverage": copy.deepcopy(coverage),
+            "expertise_work_plan": copy.deepcopy(
+                expertise_work_plan
+            ),
+            "expertise_work_closure": copy.deepcopy(
+                expertise_work_closure
+            ),
+            "expertise_research_bundles": copy.deepcopy(
+                expertise_research_bundles or []
+            ),
         },
         "execution_authorization": execution_authorization,
         "route_plan": route_plan,
@@ -2834,6 +3376,10 @@ def validate_execution_plan(
     evidence_plan: Any = None
     evidence_bundle: Any = None
     evidence_packets: Any = None
+    evidence_coverage: Any = None
+    evidence_work_plan: Any = None
+    evidence_work_closure: Any = None
+    evidence_research_bundles: Any = None
     if (
         not isinstance(decision_evidence, dict)
         or set(decision_evidence)
@@ -2853,12 +3399,30 @@ def validate_execution_plan(
         evidence_plan = decision_evidence.get("decision_plan")
         evidence_bundle = decision_evidence.get("decision_bundle")
         evidence_packets = decision_evidence.get("specialist_packets")
+        evidence_coverage = decision_evidence.get("task_coverage")
+        evidence_work_plan = decision_evidence.get(
+            "expertise_work_plan"
+        )
+        evidence_work_closure = decision_evidence.get(
+            "expertise_work_closure"
+        )
+        evidence_research_bundles = decision_evidence.get(
+            "expertise_research_bundles"
+        )
         if not isinstance(evidence_packets, list):
             issues.append(
                 _error(
                     "EXECUTION_DECISION_EVIDENCE_INVALID",
                     "decision_evidence.specialist_packets",
                     "Specialist evidence packets must be a bounded list.",
+                )
+            )
+        elif not isinstance(evidence_research_bundles, list):
+            issues.append(
+                _error(
+                    "EXECUTION_DECISION_EVIDENCE_INVALID",
+                    "decision_evidence.expertise_research_bundles",
+                    "Expertise research evidence must be a bounded list.",
                 )
             )
         elif not isinstance(evidence_plan, dict) or not isinstance(
@@ -2886,6 +3450,10 @@ def validate_execution_plan(
                 evidence_plan,
                 evidence_packets,
                 repo_path,
+                coverage=evidence_coverage,
+                expertise_work_plan=evidence_work_plan,
+                expertise_work_closure=evidence_work_closure,
+                expertise_research_bundles=evidence_research_bundles,
             )
             if decision_validation["status"] != "PASS":
                 for issue in decision_validation["issues"]:

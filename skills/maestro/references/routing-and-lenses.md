@@ -146,7 +146,11 @@ Pack has no evaluated domain-specific split, use one bounded
 them or inventing a permanent role.
 
 This fallback covers the Pack selected by the DecisionPlan. If blocking or
-important Coverage needs an omitted Pack/Guide, current staged planning stops
-before Specialist execution with `DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED`.
-Use the ordinary multi-Pack route for a settled direction; do not decide first
-and attach omitted findings afterward.
+important Coverage needs omitted Pack/Guide judgments, staged planning records
+every selected and omitted allocation plus its impact under
+`expertise_work_requirement` and returns
+`DECISION_GUIDE_BATCHING_REQUIRED`. Use the DecisionPlan as the source for
+bounded `plan-work` batches. Specialist packets are invalid until the exact
+READY closure covers every material allocation, and the DecisionBundle plus
+execution wrapper bind the same closure. Do not decide first and attach omitted
+findings afterward.

@@ -255,6 +255,9 @@
     "completion_closure": {
       "$ref": "#/$defs/completionClosure"
     },
+    "request_lineage": {
+      "$ref": "#/$defs/requestLineage"
+    },
     "project_convention_action": {
       "enum": [
         "none",
@@ -366,6 +369,104 @@
     }
   },
   "$defs": {
+    "requestLineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "root_request_id",
+        "root_run_id",
+        "parent_run_id",
+        "parent_observation_id",
+        "relation",
+        "identity_source"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_request_lineage_v1"
+        },
+        "root_request_id": {
+          "type": "string",
+          "pattern": "^request-[a-f0-9]{20}$"
+        },
+        "root_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_observation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "relation": {
+          "enum": [
+            "root",
+            "child",
+            "retry"
+          ]
+        },
+        "identity_source": {
+          "enum": [
+            "desktop_thread_turn",
+            "generated_intake",
+            "inherited"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "relation": {
+                "const": "root"
+              }
+            },
+            "required": [
+              "relation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parent_run_id": {
+                "const": null
+              },
+              "parent_observation_id": {
+                "const": null
+              },
+              "identity_source": {
+                "enum": [
+                  "desktop_thread_turn",
+                  "generated_intake"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "parent_run_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parent_observation_id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              "identity_source": {
+                "const": "inherited"
+              }
+            }
+          }
+        }
+      ]
+    },
     "completionPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -1881,6 +1982,173 @@
         }
       }
     },
+    "workAllocationObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "source",
+        "reason",
+        "basis_refs",
+        "dependency_assignment_ids"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["observed", "unavailable"]
+        },
+        "source": {
+          "enum": [
+            "route_plan",
+            "codex_app_server",
+            "current_host",
+            "host_adapter",
+            "unavailable"
+          ]
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "basis_refs": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "dependency_assignment_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          }
+        }
+      }
+    },
+    "workExpertiseObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packs", "load", "application"],
+      "properties": {
+        "packs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "expertise_pack_id",
+              "definition_digest",
+              "skill_id",
+              "skill_definition_digest",
+              "guide_ids",
+              "loaded_guide_refs"
+            ],
+            "properties": {
+              "expertise_pack_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "definition_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "skill_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "skill_definition_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "guide_ids": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                }
+              },
+              "loaded_guide_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                }
+              }
+            }
+          }
+        },
+        "load": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "evidence_refs"],
+          "properties": {
+            "status": {
+              "enum": ["host_loaded", "unavailable"]
+            },
+            "evidence_refs": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            }
+          }
+        },
+        "application": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "guide_ids", "evidence_refs"],
+          "properties": {
+            "status": {
+              "enum": [
+                "observed",
+                "not_applicable",
+                "not_reported",
+                "unavailable"
+              ]
+            },
+            "guide_ids": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "evidence_refs": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            }
+          }
+        }
+      }
+    },
     "workSpan": {
       "type": "object",
       "additionalProperties": false,
@@ -2134,6 +2402,12 @@
             "minLength": 1,
             "maxLength": 240
           }
+        },
+        "allocation": {
+          "$ref": "#/$defs/workAllocationObservation"
+        },
+        "expertise_observation": {
+          "$ref": "#/$defs/workExpertiseObservation"
         },
         "source_binding": {
           "type": "object",
@@ -2612,6 +2886,16 @@
                 {
                   "required": [
                     "diagnostics"
+                  ]
+                },
+                {
+                  "required": [
+                    "allocation"
+                  ]
+                },
+                {
+                  "required": [
+                    "expertise_observation"
                   ]
                 }
               ]

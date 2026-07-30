@@ -25,6 +25,14 @@ from .expertise_routing import (
 )
 from .model_feedback import validate_verification_assessment
 from .project import checkout_id
+from .request_lineage import (
+    assert_request_lineage_available,
+    desktop_root_lineage,
+    generated_root_lineage,
+    inherited_request_lineage,
+    request_lineage_write_lock,
+    validate_request_lineage,
+)
 from .util import (
     atomic_write,
     canonical_json,
@@ -1030,6 +1038,8 @@ def start_run_observation(
     task_label: str,
     plan_path: str | Path | None = None,
     execution_binding: dict[str, Any] | None = None,
+    request_key: str | None = None,
+    request_lineage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     project = read_json(safe_target(repo, ".maestro/project.json"))
@@ -1046,6 +1056,34 @@ def start_run_observation(
         )
     label = _task_label(task_label)
     current_checkout = checkout_id(repo)
+    if request_key is not None and request_lineage is not None:
+        raise MaestroError(
+            "REQUEST_LINEAGE_INVALID",
+            "Provide either request-key or inherited request lineage, not both.",
+        )
+    if request_key is None and request_lineage is None:
+        raise MaestroError(
+            "REQUEST_LINEAGE_UNAVAILABLE",
+            (
+                "A root observation requires an explicit request-key; "
+                "a detached child or retry requires inherited request lineage."
+            ),
+        )
+    lineage = (
+        request_lineage
+        if request_lineage is not None
+        else generated_root_lineage(
+            project_id=project_id,
+            current_checkout=current_checkout,
+            run_id=run_id,
+            request_key=request_key,
+        )
+    )
+    if not validate_request_lineage(lineage, current_run_id=run_id):
+        raise MaestroError(
+            "REQUEST_LINEAGE_INVALID",
+            "The request lineage does not match the run being started.",
+        )
     observation_id = _observation_id(
         project_id=project_id,
         current_checkout=current_checkout,
@@ -1071,6 +1109,7 @@ def start_run_observation(
         "task_label": label,
         "started_at": now,
         "plan_summary": plan_summary,
+        "request_lineage": lineage,
     }
     if plan_summary is not None:
         value["plan_attached_at"] = now
@@ -1089,6 +1128,7 @@ def start_run_observation(
         payload={
             "task_label": label,
             "started_at": now,
+            "request_lineage": lineage,
         },
     )
     if plan_summary is not None:
@@ -1126,7 +1166,19 @@ def start_run_observation(
         )
     value["execution_ledger"] = ledger
     if target.exists() or target.is_symlink():
+        with request_lineage_write_lock(repo):
+            assert_request_lineage_available(
+                repo,
+                observation_id=observation_id,
+                run_id=run_id,
+                lineage=lineage,
+            )
         existing = _read_observation_file(target)
+        if existing.get("request_lineage") != lineage:
+            raise MaestroError(
+                "RUN_REQUEST_LINEAGE_CONFLICT",
+                "The run ID already has a different immutable request lineage.",
+            )
         runtime_fields = {
             "started_at",
             "plan_attached_at",
@@ -1203,6 +1255,7 @@ def start_run_observation(
                     "run_id": run_id,
                     "observation_id": observation_id,
                     "observation_path": relative_path,
+                    "request_lineage": lineage,
                     "writes_performed": True,
                 }
         if (
@@ -1235,6 +1288,7 @@ def start_run_observation(
                     "run_id": run_id,
                     "observation_id": observation_id,
                     "observation_path": relative_path,
+                    "request_lineage": lineage,
                     "writes_performed": claim is not None,
                 }
         if comparable != expected:
@@ -1255,6 +1309,7 @@ def start_run_observation(
             "run_id": run_id,
             "observation_id": observation_id,
             "observation_path": relative_path,
+            "request_lineage": lineage,
             "writes_performed": claim is not None,
         }
     claim = _claim_corrected_route(
@@ -1263,13 +1318,20 @@ def start_run_observation(
         observation_id=observation_id,
     )
     try:
-        with observation_write_lock(target):
-            if target.exists() or target.is_symlink():
-                raise MaestroError(
-                    "RUN_OBSERVATION_CONFLICT",
-                    "The run observation appeared concurrently.",
-                )
-            atomic_write(target, pretty_json(value).encode("utf-8"))
+        with request_lineage_write_lock(repo):
+            assert_request_lineage_available(
+                repo,
+                observation_id=observation_id,
+                run_id=run_id,
+                lineage=lineage,
+            )
+            with observation_write_lock(target):
+                if target.exists() or target.is_symlink():
+                    raise MaestroError(
+                        "RUN_OBSERVATION_CONFLICT",
+                        "The run observation appeared concurrently.",
+                    )
+                atomic_write(target, pretty_json(value).encode("utf-8"))
     except Exception:
         _rollback_corrected_route_claim(
             claim,
@@ -1284,7 +1346,80 @@ def start_run_observation(
         "run_id": run_id,
         "observation_id": observation_id,
         "observation_path": relative_path,
+        "request_lineage": lineage,
         "writes_performed": True,
+    }
+
+
+def start_child_run_observation(
+    repo_path: str | Path,
+    *,
+    run_id: str,
+    task_label: str,
+    parent_observation_id: str,
+    parent_run_id: str,
+    relation: str,
+    plan_path: str | Path | None = None,
+    execution_binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Start a distinct run that remains inside one existing request."""
+
+    repo = ensure_repo(repo_path)
+    if (
+        not isinstance(parent_observation_id, str)
+        or len(parent_observation_id) != 32
+        or any(
+            character not in "0123456789abcdef"
+            for character in parent_observation_id
+        )
+    ):
+        raise MaestroError(
+            "REQUEST_LINEAGE_PARENT_NOT_FOUND",
+            "parent-observation must be an exact 32-character observation ID.",
+        )
+    parent_target = safe_target(
+        repo,
+        f".maestro/state/inflight/{parent_observation_id}.json",
+    )
+    if not parent_target.is_file() or parent_target.is_symlink():
+        raise MaestroError(
+            "REQUEST_LINEAGE_PARENT_NOT_FOUND",
+            "The exact parent observation could not be found.",
+        )
+    parent = _read_observation_file(parent_target)
+    project = read_json(safe_target(repo, ".maestro/project.json"))
+    if (
+        parent.get("schema_version") != OBSERVATION_VERSION
+        or parent.get("observation_id") != parent_observation_id
+        or parent.get("project_id") != project.get("project_id")
+        or parent.get("checkout_id") != checkout_id(repo)
+        or parent.get("run_id") != parent_run_id
+    ):
+        raise MaestroError(
+            "REQUEST_LINEAGE_PARENT_NOT_FOUND",
+            "The parent observation does not match this project and run.",
+        )
+    lineage = inherited_request_lineage(
+        parent.get("request_lineage"),
+        parent_run_id=parent_run_id,
+        parent_observation_id=parent_observation_id,
+        child_run_id=run_id,
+        relation=relation,
+    )
+    result = start_run_observation(
+        repo,
+        run_id=run_id,
+        task_label=task_label,
+        plan_path=plan_path,
+        execution_binding=execution_binding,
+        request_lineage=lineage,
+    )
+    return {
+        **result,
+        "command": "observe-child",
+        "parent_observation_id": parent_observation_id,
+        "parent_run_id": parent_run_id,
+        "relation": relation,
     }
 
 
@@ -1965,6 +2100,8 @@ def record_work_start(
     usage: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    allocation: dict[str, Any] | None = None,
+    expertise_observation: dict[str, Any] | None = None,
     event_started_at: str | None = None,
 ) -> dict[str, Any]:
     """Append one bounded actual-work attempt to a run observation."""
@@ -2085,6 +2222,8 @@ def record_work_start(
         usage=usage,
         outcome=outcome,
         diagnostics=diagnostics,
+        allocation=allocation,
+        expertise_observation=expertise_observation,
     )
     before = copy.deepcopy(value)
     work_spans, changed = append_work_span(
@@ -2146,6 +2285,8 @@ def record_work_finish(
     usage: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    allocation: dict[str, Any] | None = None,
+    expertise_observation: dict[str, Any] | None = None,
     event_ended_at: str | None = None,
     event_duration_ms: float | None = None,
 ) -> dict[str, Any]:
@@ -2204,10 +2345,16 @@ def record_work_finish(
             "WORK_EVENT_TIME_INVALID",
             "Only a Host event source may supply valid terminal event timing.",
         )
+    recorded_end = _parse_timestamp(recorded.get("ended_at"))
+    terminal_replay = recorded.get("status") != "running"
     now = (
         event_end.astimezone(timezone.utc)
         if event_end is not None
-        else _utc_now()
+        else (
+            recorded_end
+            if terminal_replay and recorded_end is not None
+            else _utc_now()
+        )
     )
     started_at = _parse_timestamp(recorded.get("started_at"))
     if started_at is None:
@@ -2218,9 +2365,14 @@ def record_work_finish(
     duration_ms = (
         round(float(event_duration_ms), 3)
         if event_duration_ms is not None
-        else round(
-            max(0.0, (now - started_at).total_seconds() * 1000),
-            3,
+        else (
+            recorded["duration_ms"]
+            if terminal_replay
+            and isinstance(recorded.get("duration_ms"), (int, float))
+            else round(
+                max(0.0, (now - started_at).total_seconds() * 1000),
+                3,
+            )
         )
     )
     before = copy.deepcopy(value)
@@ -2240,6 +2392,8 @@ def record_work_finish(
         usage=usage,
         outcome=outcome,
         diagnostics=diagnostics,
+        allocation=allocation,
+        expertise_observation=expertise_observation,
     )
     if changed:
         value["work_spans"] = work_spans
@@ -2324,12 +2478,18 @@ def start_desktop_request_observation(
         "schema_version": EXECUTION_BINDING_VERSION,
         "mode": "desktop_request",
     }
+    lineage = desktop_root_lineage(
+        run_id=run_id,
+        thread_id=thread,
+        turn_id=turn,
+    )
     started = start_run_observation(
         repo_path,
         run_id=run_id,
         task_label=task_label,
         plan_path=plan_path,
         execution_binding=binding,
+        request_lineage=lineage,
     )
     attached = record_host_observation(
         repo_path,
@@ -2367,6 +2527,7 @@ def start_desktop_request_observation(
         "telemetry_scope": "desktop_request_only",
         "telemetry": telemetry,
         "execution_binding": effective_binding,
+        "request_lineage": observed_fields["request_lineage"],
         "writes_performed": writes_performed,
     }
 
@@ -2403,6 +2564,7 @@ def observation_receipt_fields(
         "plan_summary",
     }
     optional_fields = {
+        "request_lineage",
         "host_observation",
         "plan_attached_at",
         "stage_results",
@@ -2438,6 +2600,13 @@ def observation_receipt_fields(
         )
         or not _valid_plan_summary_for_observation(
             value.get("plan_summary")
+        )
+        or (
+            value.get("request_lineage") is not None
+            and not validate_request_lineage(
+                value.get("request_lineage"),
+                current_run_id=run_id,
+            )
         )
         or (
             isinstance(value.get("execution_binding"), dict)
@@ -2500,6 +2669,8 @@ def observation_receipt_fields(
         "stage_results": list(value.get("stage_results", [])),
         "work_spans": list(value.get("work_spans", [])),
     }
+    if value.get("request_lineage") is not None:
+        result["request_lineage"] = value["request_lineage"]
     ledger = ensure_execution_ledger(value)
     result["execution_measurements"] = execution_measurements(
         ledger,
@@ -3280,6 +3451,13 @@ def inflight_observations(
             or any(
                 character in value["task_label"]
                 for character in "\r\n\x00"
+            )
+            or (
+                value.get("request_lineage") is not None
+                and not validate_request_lineage(
+                    value.get("request_lineage"),
+                    current_run_id=run_id,
+                )
             )
             or not _valid_plan_summary_for_observation(value.get("plan_summary"))
             or (

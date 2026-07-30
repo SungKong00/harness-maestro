@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 구현 전 전문 판단이 필요한 요청을 read-only DecisionPlan, 역할 제한 packet, DecisionBundle과 digest-bound enactment로 처리하는 계약.
 scope: [src/maestro/decisions.py, src/maestro/planning.py, src/maestro/registry.py, skills/maestro, decision-workflow]
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -86,12 +86,19 @@ CLI는 이 계약을 검증하지만 batch를 자동 시작·대기·취소·재
 명시적으로 실행하고 terminal stage 근거를 남겨야 하며, 모든 Coverage pair가
 READY가 아니면 writer를 열지 않는다.
 
-현재 staged DecisionPlan은 blocking·important Coverage에 선택 route 밖의 Pack/Guide가
-필요하면 Specialist 실행 전에 `DECISION_MULTIPACK_PREFLIGHT_UNSUPPORTED`로
-중단한다. 즉 omitted Pack 판단 없이 방향을 먼저 정한 뒤 나중에 붙이는 흐름은
-허용하지 않는다. 방향이 이미 정해졌다면 위의 일반 multi-Pack 경로를 사용한다.
-향후 staged 결정까지 지원하려면 Expertise closure를 Specialist보다 먼저 만들고
-DecisionBundle이 그 sidecar를 직접 결합하는 별도 계약이 필요하다.
+staged DecisionPlan이 blocking·important Coverage의 Pack/Guide를 한 route의 네
+Guide 투영 안에 모두 담지 못하면 요구를 줄이지 않는다. 대신 선택·누락 allocation,
+누락 영향, Pack·Guide 수와 네 Guide 상한을 `expertise_work_requirement`에 기록하고
+`DECISION_GUIDE_BATCHING_REQUIRED` 진단을 반환한다. 그 DecisionPlan을 source로
+기존 `plan-work`가 Pack별 최대 네 Guide read-only batch를 만들며, 모든 packet을
+`close-work`로 닫아 READY가 된 뒤에만 Specialist packet을 검증한다.
+
+DecisionBundle은 work plan·closure·Coverage identity를 직접 결합하고 `enact`는
+그 exact sidecar와 Pack별 ResearchBundle을 다시 검증해 execution wrapper에
+포함한다. 이후 Coverage admission과 writer projection도 execution wrapper 안의
+동일 work plan을 재사용한다. 누락·중복·stale·BLOCKED closure는 어느 경계에서도
+Specialist나 writer로 진행할 수 없다. CLI는 batch를 자동 실행하지 않으며 기존
+Assignment 최대 다섯 개도 늘리지 않는다.
 
 ## 구현 계약
 
@@ -207,7 +214,9 @@ enactment를 fail-closed한다.
 - 한·영 no-write 부정 표현이 구현보다 우선함
 - unknown auto가 read-only review로 감
 - staged 요청이 direct route를 열지 못함
-- staged 결정이 omitted multi-Pack 판단을 건너뛰지 못하고 preflight에서 중단함
+- staged 결정이 네 Guide를 초과해도 선택·누락·영향을 보존하고 bounded batch로 나뉨
+- READY closure 전 Specialist packet·DecisionBundle·enactment가 모두 거부됨
+- DecisionBundle과 execution wrapper가 exact work plan·closure·Coverage를 결합함
 - visual이 기술 타당성을, UX가 코드 지시를, technical이 typography를 소유하지 못함
 - decision reviewer가 write capability를 요청하지 못함
 - 새 Pack의 Guide 경로·digest가 범용 Specialist 계약에 결합됨

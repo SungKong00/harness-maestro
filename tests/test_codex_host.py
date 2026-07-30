@@ -62,6 +62,30 @@ from tests.test_assignment_contracts import (
 from tests.test_decision_workflow import _bundle, _packets
 
 
+def expertise_dispositions(
+    projection: dict[str, object],
+    *,
+    disposition: str,
+    evidence_refs: list[str],
+) -> list[dict[str, object]]:
+    projected = projection["input"]
+    return [
+        {
+            "expertise_pack_id": pack["expertise_pack_id"],
+            "definition_digest": pack["definition_digest"],
+            "guide_id": guide["guide_id"],
+            "skill_definition_digest": guide[
+                "skill_definition_digest"
+            ],
+            "disposition": disposition,
+            "reason": "Used the exact projected Guide for this Assignment.",
+            "evidence_refs": evidence_refs,
+        }
+        for pack in projected["expertise_load"]["packs"]
+        for guide in pack["guides"]
+    ]
+
+
 FAKE_APP_SERVER = r"""
 import json
 import sys
@@ -1556,6 +1580,7 @@ for line in sys.stdin:
             parent = start_run_observation(
                 repo,
                 run_id="assignment-turn",
+                request_key="assignment-turn",
                 task_label="Assignment 기반 실행",
                 plan_path=plan_path,
                 execution_binding={
@@ -2049,6 +2074,13 @@ for line in sys.stdin:
             )
             self.assertEqual("PASS", review_projection["status"])
             review_packet = finding_packet(plan, "review")
+            review_packet["expertise_dispositions"] = (
+                expertise_dispositions(
+                    review_projection,
+                    disposition="consulted",
+                    evidence_refs=["readme"],
+                )
+            )
             implementation_projection = project_assignment_input(
                 repo,
                 plan,
@@ -2097,6 +2129,7 @@ for line in sys.stdin:
             parent = start_run_observation(
                 repo,
                 run_id="dependency-evidence",
+                request_key="dependency-evidence",
                 task_label="dependency packet 결합",
                 plan_path=plan_path,
                 execution_binding={
@@ -2153,6 +2186,7 @@ for line in sys.stdin:
             started = start_run_observation(
                 repo,
                 run_id="handoff-recovery",
+                request_key="handoff-recovery",
                 task_label="dependency handoff 복구",
                 plan_path=plan_path,
             )
@@ -2286,6 +2320,13 @@ for line in sys.stdin:
                 baseline,
             )
             review_packet = finding_packet(plan, "review")
+            review_packet["expertise_dispositions"] = (
+                expertise_dispositions(
+                    review_projection,
+                    disposition="consulted",
+                    evidence_refs=["readme"],
+                )
+            )
             implementation_projection = project_assignment_input(
                 repo,
                 plan,
@@ -2298,6 +2339,15 @@ for line in sys.stdin:
                 plan,
                 "implementation",
                 implementation_projection,
+            )
+            implementation_packet["expertise_dispositions"] = (
+                expertise_dispositions(
+                    implementation_projection,
+                    disposition="applied",
+                    evidence_refs=implementation_packet[
+                        "evidence_refs"
+                    ],
+                )
             )
             plan_path = root / "handoff-plan.json"
             baseline_path = root / "handoff-baseline.json"
@@ -2320,6 +2370,7 @@ for line in sys.stdin:
             parent = start_run_observation(
                 repo,
                 run_id="dependency-handoff",
+                request_key="dependency-handoff",
                 task_label="dependency handoff 기록",
                 plan_path=plan_path,
                 execution_binding={
@@ -2389,6 +2440,30 @@ for line in sys.stdin:
             self.assertEqual(
                 [handoff["work_id"]],
                 root["depends_on_work_ids"],
+            )
+            self.assertEqual(
+                "observed",
+                root["allocation"]["status"],
+            )
+            self.assertEqual(
+                "route_plan",
+                root["allocation"]["source"],
+            )
+            self.assertEqual(
+                "host_loaded",
+                root["expertise_observation"]["load"]["status"],
+            )
+            self.assertEqual(
+                "observed",
+                root["expertise_observation"]["application"]["status"],
+            )
+            self.assertEqual(
+                "application_observed",
+                root["expertise_evidence"],
+            )
+            self.assertEqual(
+                implementation_packet["summary"],
+                root["outcome"]["conclusion"],
             )
             self.assertIsNone(handoff["requested_model"])
             self.assertIsNone(handoff["applied_model"])

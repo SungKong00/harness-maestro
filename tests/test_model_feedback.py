@@ -527,15 +527,37 @@ const writer = snapshot.runs[0].flow.find(
 const feedbackCard = (reference) => ({
   work_id: "feedback-work",
   assignment: {assignment_id: writer.assignment_id},
-  relationships: {},
+  relationships: {
+    parent_work_id: null,
+    followup_of_work_id: null,
+    depends_on_work_ids: [],
+    joins_work_ids: [],
+  },
   models: {},
   measurements: {duration_ms: null},
   execution_facts: {
     duration: {value_ms: null},
     tokens: {value: null},
   },
-  evidence: {},
-  expertise: {},
+  evidence: {count: 0, refs: []},
+  expertise: {
+    pack_ids: [],
+    guide_ids: [],
+    lens_ids: [],
+    evidence: "unavailable",
+  },
+  outcome: {
+    finding_summary: null,
+    conclusion: null,
+    decision: null,
+    next_action: null,
+    consumed_work_ids: [],
+    handoff: null,
+    artifacts: [],
+    verification: null,
+    result_summary: null,
+    decision_evidence: "unavailable",
+  },
   model_feedback_ref: structuredClone(reference),
 });
 snapshot.runs[0].work_detail.execution.cards.push(

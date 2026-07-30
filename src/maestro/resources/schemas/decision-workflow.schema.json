@@ -199,6 +199,151 @@
         }
       }
     },
+    "expertiseWorkAllocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_item_id",
+        "materiality",
+        "target_ref",
+        "pack_id",
+        "guide_id",
+        "selected_in_decision",
+        "omission_impact"
+      ],
+      "properties": {
+        "coverage_item_id": {
+          "$ref": "#/$defs/id"
+        },
+        "materiality": {
+          "enum": [
+            "blocking",
+            "important"
+          ]
+        },
+        "target_ref": {
+          "type": "string",
+          "pattern": "^guide:(?:[a-z0-9]+(?:-[a-z0-9]+)*/)?[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "pack_id": {
+          "$ref": "#/$defs/id"
+        },
+        "guide_id": {
+          "$ref": "#/$defs/id"
+        },
+        "selected_in_decision": {
+          "type": "boolean"
+        },
+        "omission_impact": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "expertiseWorkRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason_code",
+        "projection_limit",
+        "required_pack_count",
+        "required_guide_count",
+        "allocations",
+        "completion_gate"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-required",
+            "required"
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            "DECISION_GUIDE_BATCHING_REQUIRED",
+            null
+          ]
+        },
+        "projection_limit": {
+          "const": 4
+        },
+        "required_pack_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "required_guide_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allocations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/expertiseWorkAllocation"
+          }
+        },
+        "completion_gate": {
+          "enum": [
+            "ready-expertise-closure-before-specialists",
+            null
+          ]
+        }
+      }
+    },
+    "expertiseWorkBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "work_plan_id",
+        "closure_id",
+        "coverage_id",
+        "required_allocation_refs"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-required",
+            "READY",
+            "BLOCKED"
+          ]
+        },
+        "work_plan_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closure_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_allocation_refs": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
     "expertiseGuideLoad": {
       "type": "object",
       "additionalProperties": false,
@@ -459,6 +604,7 @@
         "host",
         "request_contract",
         "expertise",
+        "expertise_work_requirement",
         "specialist_contracts",
         "assignments",
         "entry_assignments",
@@ -504,6 +650,9 @@
         },
         "expertise": {
           "$ref": "#/$defs/expertiseSelection"
+        },
+        "expertise_work_requirement": {
+          "$ref": "#/$defs/expertiseWorkRequirement"
         },
         "coverage_binding": {
           "type": "object",
@@ -676,6 +825,7 @@
         "risk",
         "request_contract",
         "expertise",
+        "expertise_work",
         "source_packet_digests",
         "accepted_constraints",
         "accepted_decisions",
@@ -722,6 +872,9 @@
         },
         "expertise": {
           "$ref": "#/$defs/expertiseSelection"
+        },
+        "expertise_work": {
+          "$ref": "#/$defs/expertiseWorkBinding"
         },
         "source_packet_digests": {
           "type": "object",
@@ -835,7 +988,11 @@
           "required": [
             "decision_plan",
             "decision_bundle",
-            "specialist_packets"
+            "specialist_packets",
+            "task_coverage",
+            "expertise_work_plan",
+            "expertise_work_closure",
+            "expertise_research_bundles"
           ],
           "properties": {
             "decision_plan": {
@@ -849,6 +1006,42 @@
               "maxItems": 5,
               "items": {
                 "$ref": "#/$defs/specialistFindingPacket"
+              }
+            },
+            "task_coverage": {
+              "oneOf": [
+                {
+                  "$ref": "task-coverage.schema.json"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expertise_work_plan": {
+              "oneOf": [
+                {
+                  "$ref": "expertise-work.schema.json#/$defs/workPlan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expertise_work_closure": {
+              "oneOf": [
+                {
+                  "$ref": "expertise-work.schema.json#/$defs/workClosure"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expertise_research_bundles": {
+              "type": "array",
+              "items": {
+                "$ref": "research-bundle.schema.json"
               }
             }
           }

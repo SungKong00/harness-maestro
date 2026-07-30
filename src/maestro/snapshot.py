@@ -21,6 +21,7 @@ from .model_feedback import (
 )
 from .observations import inflight_observations
 from .request_records import project_request_records
+from .request_lineage import resolve_request_identity
 from .snapshot_runs import (
     _measurement_coverage,
     _run_card,
@@ -267,12 +268,25 @@ def snapshot_report(
             "writes_performed": False,
         }
 
-    history = recent_run_events(repo, window=window)
+    history = recent_run_events(
+        repo,
+        window=window,
+        complete_display_requests=True,
+    )
     display_events = history.get("display_runs", history["runs"])
     run_evidence = history.get("run_evidence", {})
+    request_alias_bindings = history.get("request_alias_bindings", {})
     labels = run_display_labels(repo)
     history_state = history_inventory(repo)
     bundled_event_ids = set(history_state["bundled_event_ids"])
+    bundled_request_identities = {
+        resolve_request_identity(
+            event,
+            alias=request_alias_bindings.get(event["run_id"]),
+        )["identity"]
+        for event in display_events
+        if event["event_id"] in bundled_event_ids
+    }
     history_bundles = []
     for bundle in history_state["bundles"]:
         rendered = dict(bundle)
@@ -293,9 +307,16 @@ def snapshot_report(
             labels,
             history_evidence=run_evidence.get(event["event_id"]),
             model_feedback_report=governance.get("model_feedback"),
+            request_lineage_alias=request_alias_bindings.get(
+                event["run_id"]
+            ),
         )
         for event in display_events
-        if event["event_id"] not in bundled_event_ids
+        if resolve_request_identity(
+            event,
+            alias=request_alias_bindings.get(event["run_id"]),
+        )["identity"]
+        not in bundled_request_identities
     ]
     request_records = project_request_records(runs)
     completed_run_ids = set(

@@ -176,6 +176,34 @@ def application_work_span(
 ) -> dict[str, object]:
     from maestro.work import complete_work_span, new_work_span
 
+    load_observation = (
+        {
+            "packs": [
+                {
+                    "expertise_pack_id": pack_id,
+                    "definition_digest": "a" * 64,
+                    "skill_id": f"maestro-{pack_id}",
+                    "skill_definition_digest": "b" * 64,
+                    "guide_ids": guide_ids,
+                    "loaded_guide_refs": [
+                        f"guide:{pack_id}:{guide_id}:" + "c" * 64
+                        for guide_id in guide_ids
+                    ],
+                }
+            ],
+            "load": {
+                "status": "host_loaded",
+                "evidence_refs": ["expertise-load:" + "d" * 64],
+            },
+            "application": {
+                "status": "not_reported",
+                "guide_ids": [],
+                "evidence_refs": [],
+            },
+        }
+        if guide_ids
+        else None
+    )
     started = new_work_span(
         work_id=work_id,
         kind="implementation",
@@ -183,13 +211,27 @@ def application_work_span(
         executor_id="implementation-engineer",
         task_summary="Apply selected Expertise criteria.",
         read_only=False,
-        source="current_host",
+        source="codex_app_server",
         started_at="2026-07-24T00:00:00Z",
         timing_evidence="current_host_clock",
+        source_binding={
+            "interface": "codex_app_server",
+            "version": "codex-app-server-test",
+            "schema_digest": "e" * 64,
+            "capability": "full_stream",
+            "correlation_id": f"source-{work_id}",
+            "event_coverage": "partial_stream",
+        },
         expertise_pack_ids=[pack_id],
         decision_guide_ids=guide_ids,
-        expertise_evidence="selection_only",
+        expertise_evidence=(
+            "host_loaded" if guide_ids else "selection_only"
+        ),
+        expertise_observation=load_observation,
     )
+    if not guide_ids:
+        started.pop("allocation")
+        started.pop("expertise_observation")
     return complete_work_span(
         started,
         status="completed",
@@ -198,6 +240,18 @@ def application_work_span(
         duration_ms=1000,
         evidence_refs=["tests:expertise-application"],
         expertise_evidence="application_observed",
+        expertise_observation=(
+            {
+                **started["expertise_observation"],
+                "application": {
+                    "status": "observed",
+                    "guide_ids": guide_ids,
+                    "evidence_refs": ["tests:expertise-application"],
+                },
+            }
+            if guide_ids
+            else None
+        ),
     )
 
 

@@ -99,7 +99,12 @@ from .expertise_promotion import (
     apply_expertise_promotion_decision_plan,
     build_expertise_promotion_decision_plan,
 )
-from .governance import finalize_run, govern_report, record_run
+from .governance import (
+    finalize_run,
+    govern_report,
+    recent_run_events,
+    record_run,
+)
 from .host import apply_host_sync_plan, build_host_sync_plan
 from .observations import (
     attach_run_plan,
@@ -109,6 +114,7 @@ from .observations import (
     record_stage_observation,
     record_work_finish,
     record_work_start,
+    start_child_run_observation,
     start_desktop_request_observation,
     start_run_observation,
 )
@@ -118,6 +124,7 @@ from .project import (
     build_upgrade_plan,
     inspect_adapter,
 )
+from .request_lineage import write_legacy_request_alias
 from .research import (
     BUNDLE_VERSION,
     expected_research_binding,
@@ -1150,8 +1157,17 @@ def parser() -> argparse.ArgumentParser:
         "validate-decision",
         help="Validate a decision plan or one specialist packet",
     )
+    validate_decision.add_argument("--repo", default=".")
     validate_decision.add_argument("--plan", required=True)
     validate_decision.add_argument("--packet")
+    validate_decision.add_argument(
+        "--expertise-work-plan",
+        help="Exact staged Expertise work plan required before Specialist packets.",
+    )
+    validate_decision.add_argument(
+        "--expertise-closure",
+        help="Exact READY staged Expertise closure required before Specialist packets.",
+    )
     validate_decision.add_argument("--json", action="store_true")
 
     enact = commands.add_parser(
@@ -1187,6 +1203,20 @@ def parser() -> argparse.ArgumentParser:
         help="Exact Task Coverage artifact bound by the decision plan.",
     )
     enact.add_argument(
+        "--expertise-work-plan",
+        help="Exact staged Expertise work plan bound by the DecisionBundle.",
+    )
+    enact.add_argument(
+        "--expertise-closure",
+        help="Exact READY staged Expertise closure bound by the DecisionBundle.",
+    )
+    enact.add_argument(
+        "--expertise-research-evidence",
+        action="append",
+        default=[],
+        help="Completed ResearchBundle for one staged Coverage Pack; repeat per required Pack.",
+    )
+    enact.add_argument(
         "--model-policy-overlay",
         action="append",
         default=[],
@@ -1217,6 +1247,14 @@ def parser() -> argparse.ArgumentParser:
     observe_start.add_argument("--run-id", required=True)
     observe_start.add_argument("--task-label", required=True)
     observe_start.add_argument(
+        "--request-key",
+        required=True,
+        help=(
+            "Stable opaque intake key for the one user request that owns "
+            "this root run"
+        ),
+    )
+    observe_start.add_argument(
         "--plan",
         help="Optional validated route v2 plan whose compact assignments are recorded",
     )
@@ -1241,6 +1279,38 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     observe_start.add_argument("--json", action="store_true")
+    observe_child = observe_commands.add_parser(
+        "child",
+        help=(
+            "Start a distinct child or retry run while inheriting one "
+            "existing user request"
+        ),
+    )
+    observe_child.add_argument("--repo", default=".")
+    observe_child.add_argument("--run-id", required=True)
+    observe_child.add_argument("--task-label", required=True)
+    observe_child.add_argument("--parent-observation", required=True)
+    observe_child.add_argument("--parent-run-id", required=True)
+    observe_child.add_argument(
+        "--relation",
+        choices=["child", "retry"],
+        required=True,
+    )
+    observe_child.add_argument(
+        "--plan",
+        help="Optional validated route v2 plan for this distinct child run",
+    )
+    observe_child.add_argument(
+        "--fallback-reason",
+        choices=[
+            "interactive_required",
+            "network_required",
+            "app_connector_required",
+            "capability_unavailable",
+        ],
+    )
+    observe_child.add_argument("--fallback-evidence")
+    observe_child.add_argument("--json", action="store_true")
     observe_desktop = observe_commands.add_parser(
         "desktop",
         help=(
@@ -1260,6 +1330,36 @@ def parser() -> argparse.ArgumentParser:
         help="Optional validated route v2 plan whose compact assignments are recorded",
     )
     observe_desktop.add_argument("--json", action="store_true")
+
+    request = commands.add_parser(
+        "request",
+        help="Manage explicit request lineage without rewriting run events",
+    )
+    request_commands = request.add_subparsers(
+        dest="request_command",
+        required=True,
+    )
+    request_link = request_commands.add_parser(
+        "link",
+        help=(
+            "Bind exact legacy events to one request using canonical "
+            "content digests"
+        ),
+    )
+    request_link.add_argument("--repo", default=".")
+    request_link.add_argument("--root-run-id", required=True)
+    request_link.add_argument(
+        "--member-run-id",
+        action="append",
+        required=True,
+    )
+    request_link.add_argument(
+        "--retry-run-id",
+        action="append",
+        default=[],
+        help="Member whose explicit relation to the root is retry",
+    )
+    request_link.add_argument("--json", action="store_true")
     observe_fallback = observe_commands.add_parser(
         "fallback",
         help=(
@@ -2819,6 +2919,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 validate_specialist_packet(
                     read_json(Path(args.packet).expanduser().resolve()),
                     plan,
+                    expertise_work_plan=(
+                        read_json(
+                            Path(args.expertise_work_plan)
+                            .expanduser()
+                            .resolve()
+                        )
+                        if args.expertise_work_plan
+                        else None
+                    ),
+                    expertise_work_closure=(
+                        read_json(
+                            Path(args.expertise_closure)
+                            .expanduser()
+                            .resolve()
+                        )
+                        if args.expertise_closure
+                        else None
+                    ),
                 )
                 if args.packet
                 else validate_decision_plan(plan)
@@ -2863,6 +2981,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.coverage
                     else None
                 ),
+                expertise_work_plan=(
+                    read_json(
+                        Path(args.expertise_work_plan)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_work_plan
+                    else None
+                ),
+                expertise_work_closure=(
+                    read_json(
+                        Path(args.expertise_closure)
+                        .expanduser()
+                        .resolve()
+                    )
+                    if args.expertise_closure
+                    else None
+                ),
+                expertise_research_bundles=[
+                    read_json(Path(path).expanduser().resolve())
+                    for path in args.expertise_research_evidence
+                ],
                 model_policy_overlays=[
                     read_json(Path(path).expanduser().resolve())
                     for path in args.model_policy_overlay
@@ -2896,6 +3036,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 task_label=args.task_label,
                 plan_path=args.plan,
                 execution_binding=execution_binding,
+                request_key=args.request_key,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "observe" and args.observe_command == "child":
+            if bool(args.fallback_reason) != bool(args.fallback_evidence):
+                raise MaestroError(
+                    "RUN_EXECUTION_FALLBACK_INVALID",
+                    "fallback-reason and fallback-evidence must be provided together.",
+                )
+            execution_binding = (
+                {
+                    "schema_version": "maestro_execution_binding_v1",
+                    "mode": "explicit_fallback",
+                    "reason": args.fallback_reason,
+                    "evidence": args.fallback_evidence,
+                }
+                if args.fallback_reason
+                else None
+            )
+            result = start_child_run_observation(
+                args.repo,
+                run_id=args.run_id,
+                task_label=args.task_label,
+                parent_observation_id=args.parent_observation,
+                parent_run_id=args.parent_run_id,
+                relation=args.relation,
+                plan_path=args.plan,
+                execution_binding=execution_binding,
             )
             _emit(result, args.json)
             return 0
@@ -2911,6 +3080,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.requested_reasoning_effort
                 ),
                 plan_path=args.plan,
+            )
+            _emit(result, args.json)
+            return 0
+        if args.command == "request" and args.request_command == "link":
+            history = recent_run_events(args.repo, window=100)
+            result = write_legacy_request_alias(
+                args.repo,
+                events=history.get("display_runs", history["runs"]),
+                root_run_id=args.root_run_id,
+                member_run_ids=args.member_run_id,
+                retry_run_ids=args.retry_run_id,
             )
             _emit(result, args.json)
             return 0

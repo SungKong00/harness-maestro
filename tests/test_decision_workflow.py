@@ -80,11 +80,48 @@ def _bundle(
     status: str = "ready",
     feasibility: str = "pass",
     unresolved: list[dict[str, object]] | None = None,
+    expertise_work_plan: dict[str, object] | None = None,
+    expertise_work_closure: dict[str, object] | None = None,
 ) -> dict[str, object]:
     packet_digests = {
         packet["assignment_id"]: sha256_text(canonical_json(packet))
         for packet in packets
     }
+    requirement = plan["expertise_work_requirement"]
+    if requirement["status"] == "required":
+        if (
+            expertise_work_plan is None
+            or expertise_work_closure is None
+        ):
+            expertise_work = {
+                "status": "BLOCKED",
+                "work_plan_id": None,
+                "closure_id": None,
+                "coverage_id": plan["coverage_binding"]["coverage_id"],
+                "required_allocation_refs": sorted(
+                    f"{item['coverage_item_id']}:{item['target_ref']}"
+                    for item in requirement["allocations"]
+                ),
+            }
+        else:
+            expertise_work = {
+                "status": expertise_work_closure["status"],
+                "work_plan_id": expertise_work_plan["work_plan_id"],
+                "closure_id": expertise_work_closure["closure_id"],
+                "coverage_id": expertise_work_plan["coverage_id"],
+                "required_allocation_refs": sorted(
+                    f"{item['coverage_item_id']}:{item['target_ref']}"
+                    for item in requirement["allocations"]
+                ),
+            }
+    else:
+        expertise_work = {
+            "status": "not-required",
+            "work_plan_id": None,
+            "closure_id": None,
+            "coverage_id": None,
+            "required_allocation_refs": [],
+        }
     bundle = {
         "schema_version": DECISION_BUNDLE_VERSION,
         "bundle_digest": "",
@@ -96,6 +133,7 @@ def _bundle(
         "risk": plan["risk"],
         "request_contract": plan["request_contract"],
         "expertise": plan["expertise"],
+        "expertise_work": expertise_work,
         "source_packet_digests": packet_digests,
         "accepted_constraints": ["Preserve the evidence-backed priority."],
         "accepted_decisions": [

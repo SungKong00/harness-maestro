@@ -341,6 +341,34 @@ def build_task_coverage_admission(
             )
         )
     elif expertise_work_plan is not None:
+        decision_evidence = (
+            plan.get("decision_evidence")
+            if isinstance(plan, dict)
+            and plan.get("schema_version")
+            == "maestro_execution_plan_v1"
+            and isinstance(plan.get("decision_evidence"), dict)
+            else None
+        )
+        if decision_evidence is not None and (
+            decision_evidence.get("task_coverage") != coverage
+            or decision_evidence.get("expertise_work_plan")
+            != expertise_work_plan
+            or decision_evidence.get("expertise_work_closure")
+            != expertise_closure
+            or decision_evidence.get("expertise_research_bundles")
+            != (expertise_research_bundles or [])
+        ):
+            issues.append(
+                _issue(
+                    "TASK_COVERAGE_DECISION_EXPERTISE_MISMATCH",
+                    "expertise_work_plan",
+                    (
+                        "Decision enactment must reuse the exact embedded "
+                        "Coverage, Expertise work plan, READY closure, and "
+                        "Pack research sidecars."
+                    ),
+                )
+            )
         work_validation = validate_expertise_work_plan(
             expertise_work_plan,
             repo_path=repo,

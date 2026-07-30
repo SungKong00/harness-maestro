@@ -271,6 +271,7 @@ def _record_authoring(
     started = start_run_observation(
         repo,
         run_id=run_id,
+        request_key=run_id,
         task_label="후보 작성",
         plan_path=plan_path,
         execution_binding={
@@ -335,6 +336,7 @@ def _start_evaluation(
     started = start_run_observation(
         repo,
         run_id=run_id,
+        request_key=run_id,
         task_label="독립 후보 평가",
         plan_path=plan_path,
     )
@@ -1147,6 +1149,7 @@ class TaskGapCandidateTests(unittest.TestCase):
             initial = start_run_observation(
                 repo,
                 run_id="initial-route-observation",
+                request_key="initial-route-observation",
                 task_label="초기 경로",
                 plan_path=source_path,
             )
@@ -1164,6 +1167,7 @@ class TaskGapCandidateTests(unittest.TestCase):
             corrected_observation = start_run_observation(
                 repo,
                 run_id="corrected-route-one",
+                request_key="corrected-route-one",
                 task_label="첫 보정 경로",
                 plan_path=corrected_path,
             )
@@ -1192,6 +1196,7 @@ class TaskGapCandidateTests(unittest.TestCase):
                 start_run_observation(
                     repo,
                     run_id="corrected-route-reuse",
+                    request_key="corrected-route-reuse",
                     task_label="다른 관찰의 같은 보정 경로",
                     plan_path=corrected_path,
                 )
@@ -1202,6 +1207,7 @@ class TaskGapCandidateTests(unittest.TestCase):
             start_run_observation(
                 repo,
                 run_id="corrected-route-one",
+                request_key="corrected-route-one",
                 task_label="첫 보정 경로",
                 plan_path=corrected_path,
             )
@@ -1237,6 +1243,7 @@ class TaskGapCandidateTests(unittest.TestCase):
                 start_run_observation(
                     repo,
                     run_id="corrected-route-two",
+                    request_key="corrected-route-two",
                     task_label="두 번째 보정 경로",
                     plan_path=sibling_path,
                 )
