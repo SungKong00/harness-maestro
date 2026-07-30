@@ -33,6 +33,186 @@
         "minLength": 1
       }
     },
+    "decisionFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem",
+        "desired_outcome",
+        "decision_criteria",
+        "known_constraints",
+        "unknowns"
+      ],
+      "properties": {
+        "problem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "desired_outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_criteria": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "minItems": 1,
+              "maxItems": 16
+            }
+          ]
+        },
+        "known_constraints": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "maxItems": 16
+            }
+          ]
+        },
+        "unknowns": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "maxItems": 16
+            }
+          ]
+        }
+      }
+    },
+    "decisionAlternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alternative_id",
+        "summary",
+        "material_differences",
+        "tradeoffs",
+        "evidence_refs"
+      ],
+      "properties": {
+        "alternative_id": {
+          "$ref": "#/$defs/id"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "material_differences": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "minItems": 1,
+              "maxItems": 12
+            }
+          ]
+        },
+        "tradeoffs": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "minItems": 1,
+              "maxItems": 12
+            }
+          ]
+        },
+        "evidence_refs": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "minItems": 1,
+              "maxItems": 16
+            }
+          ]
+        }
+      }
+    },
+    "acceptedDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "decision",
+        "rationale",
+        "evidence_refs",
+        "uncertainty",
+        "decision_character",
+        "alternatives",
+        "selected_alternative_id",
+        "selection_authority"
+      ],
+      "properties": {
+        "decision_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/stringList"
+            },
+            {
+              "minItems": 1,
+              "maxItems": 16
+            }
+          ]
+        },
+        "uncertainty": {
+          "enum": [
+            "settled",
+            "material"
+          ]
+        },
+        "decision_character": {
+          "enum": [
+            "evidence-dominant",
+            "preference-sensitive"
+          ]
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/decisionAlternative"
+          }
+        },
+        "selected_alternative_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selection_authority": {
+          "enum": [
+            "not-required",
+            "evidence",
+            "owner"
+          ]
+        }
+      }
+    },
     "requestContract": {
       "type": "object",
       "additionalProperties": false,
@@ -827,6 +1007,7 @@
         "expertise",
         "expertise_work",
         "source_packet_digests",
+        "decision_frame",
         "accepted_constraints",
         "accepted_decisions",
         "conflicts",
@@ -838,7 +1019,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "maestro_decision_bundle_v1"
+          "const": "maestro_decision_bundle_v2"
         },
         "bundle_digest": {
           "$ref": "#/$defs/digest"
@@ -882,13 +1063,18 @@
             "$ref": "#/$defs/digest"
           }
         },
+        "decision_frame": {
+          "$ref": "#/$defs/decisionFrame"
+        },
         "accepted_constraints": {
           "$ref": "#/$defs/stringList"
         },
         "accepted_decisions": {
           "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
           "items": {
-            "type": "object"
+            "$ref": "#/$defs/acceptedDecision"
           }
         },
         "conflicts": {

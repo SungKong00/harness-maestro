@@ -23,7 +23,7 @@ ASSURANCE_REQUIREMENT_VERSION = (
     "maestro_product_design_assurance_requirement_v1"
 )
 DESIGN_DECISION_PACKET_VERSION = (
-    "maestro_product_design_decision_packet_v2"
+    "maestro_product_design_decision_packet_v3"
 )
 DESIGN_ASSURANCE_PROFILE_ID = "product-design-evidence-v1"
 
@@ -38,6 +38,22 @@ SYSTEM_ARTIFACT_ROLES = {
     "layout",
     "theme",
     "documentation",
+}
+SYSTEM_ARTIFACT_DISPOSITIONS = {
+    "retain",
+    "adapt",
+    "replace",
+    "not-applicable",
+}
+DIRECTION_UNCERTAINTY = {"settled", "material"}
+DIRECTION_SELECTION_CHARACTERS = {
+    "evidence-dominant",
+    "preference-sensitive",
+}
+DIRECTION_SELECTION_AUTHORITIES = {
+    "not-required",
+    "evidence",
+    "owner",
 }
 SURFACE_IDS = (
     "outcome-content",
@@ -527,10 +543,12 @@ def _validate_system_context(
     *,
     repo: Path,
     mode: str | None,
+    change_kind: str | None,
     issues: list[dict[str, str]],
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[str, set[str]],
+    dict[str, str],
 ]:
     fields = {
         "status",
@@ -542,7 +560,7 @@ def _validate_system_context(
         "component_lifecycle",
     }
     if not _exact(value, fields, "system_context", issues):
-        return {}, {}
+        return {}, {}, {}
     if (
         not isinstance(value["status"], str)
         or value["status"] not in SYSTEM_STATUSES
@@ -585,22 +603,33 @@ def _validate_system_context(
     artifact_roles: dict[str, set[str]] = {}
     artifact_digests: dict[str, str] = {}
     artifact_refs_by_role: dict[str, set[str]] = {}
+    artifact_dispositions: dict[str, str] = {}
     for index, artifact in enumerate(artifacts):
         path = f"system_context.artifacts[{index}]"
         if (
             not isinstance(artifact, dict)
-            or set(artifact) != {"path", "sha256", "role"}
+            or set(artifact)
+            != {
+                "path",
+                "sha256",
+                "role",
+                "disposition",
+                "reason",
+            }
             or not _relative_path(artifact.get("path"))
             or not _digest(artifact.get("sha256"))
             or not isinstance(artifact.get("role"), str)
             or artifact.get("role") not in SYSTEM_ARTIFACT_ROLES
+            or artifact.get("disposition")
+            not in SYSTEM_ARTIFACT_DISPOSITIONS
+            or not _line(artifact.get("reason"), 2_000)
             or (artifact.get("path"), artifact.get("role")) in seen
         ):
             issues.append(
                 _issue(
                     "DESIGN_SYSTEM_ARTIFACT_INVALID",
                     path,
-                    "System artifacts require a unique repository path, current digest, and closed role.",
+                    "System artifacts require a unique current source binding plus an explicit retain, adapt, replace, or not-applicable disposition.",
                 )
             )
             continue
@@ -623,6 +652,24 @@ def _validate_system_context(
             "project:"
             f"{artifact['path']}#sha256={artifact['sha256']}"
         )
+        artifact_ref = (
+            "project:"
+            f"{artifact['path']}#sha256={artifact['sha256']}"
+        )
+        previous_disposition = artifact_dispositions.get(artifact_ref)
+        if (
+            previous_disposition is not None
+            and previous_disposition != artifact["disposition"]
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_SYSTEM_ARTIFACT_DISPOSITION_CONFLICT",
+                    path,
+                    "One source artifact cannot carry conflicting dispositions across roles.",
+                )
+            )
+        else:
+            artifact_dispositions[artifact_ref] = artifact["disposition"]
     inventory = value["inventory"]
     if (
         not isinstance(inventory, list)
@@ -685,6 +732,11 @@ def _validate_system_context(
             or item["artifact_sha256"]
             != artifact_digests.get(artifact_path)
             or expected_role not in artifact_roles.get(artifact_path, set())
+            or artifact_dispositions.get(
+                "project:"
+                f"{artifact_path}#sha256={item['artifact_sha256']}"
+            )
+            not in {"retain", "adapt"}
         ):
             issues.append(
                 _issue(
@@ -716,6 +768,31 @@ def _validate_system_context(
                 "Compact assurance requires an existing design system to inherit.",
             )
         )
+    if mode == "compact" and any(
+        disposition != "retain"
+        for disposition in artifact_dispositions.values()
+    ):
+        issues.append(
+            _issue(
+                "DESIGN_COMPACT_ARTIFACT_DISPOSITION_INVALID",
+                "system_context.artifacts",
+                "Compact assurance may only retain the existing system artifacts it inherits.",
+            )
+        )
+    if (
+        isinstance(change_kind, str)
+        and change_kind in {"page", "flow", "system"}
+        and isinstance(value["status"], str)
+        and value["status"] in {"existing", "partial"}
+        and "layout" not in artifact_refs_by_role
+    ):
+        issues.append(
+            _issue(
+                "DESIGN_CURRENT_STRUCTURE_EVIDENCE_REQUIRED",
+                "system_context.artifacts",
+                "Page, flow, and system work must bind and disposition the current layout source before choosing a new structure.",
+            )
+        )
     if mode == "compact" and not {"tokens", "components"}.issubset(
         {
             role
@@ -741,7 +818,7 @@ def _validate_system_context(
                 "Compact reuse requires referenced token and component symbols in the bound inventory.",
             )
         )
-    return symbols, artifact_refs_by_role
+    return symbols, artifact_refs_by_role, artifact_dispositions
 
 
 def _validate_compact_eligibility(
@@ -998,6 +1075,298 @@ def _validate_research(
     return set()
 
 
+def _validate_direction_context(
+    value: Any,
+    *,
+    mode: str | None,
+    scope: Any,
+    repo: Path,
+    guide_ids: set[str],
+    research_claim_ids: set[str],
+    system_artifact_refs: dict[str, set[str]],
+    issues: list[dict[str, str]],
+) -> None:
+    fields = {
+        "problem",
+        "user_tasks",
+        "decision_criteria",
+        "uncertainty",
+        "selection_character",
+        "settled_reason",
+        "alternatives",
+        "selected_alternative_id",
+        "selection_authority",
+        "selection_refs",
+    }
+    if not _exact(value, fields, "direction_context", issues):
+        return
+    if (
+        not _line(value["problem"], 2_000)
+        or not _unique_lines(
+            value["user_tasks"],
+            maximum=16,
+            nonempty=True,
+        )
+        or not _unique_lines(
+            value["decision_criteria"],
+            maximum=16,
+            nonempty=True,
+        )
+    ):
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_FRAME_INVALID",
+                "direction_context",
+                "Direction work must begin from one bounded problem, representative user tasks, and explicit decision criteria.",
+            )
+        )
+    uncertainty = value["uncertainty"]
+    selection_character = value["selection_character"]
+    selection_authority = value["selection_authority"]
+    if uncertainty not in DIRECTION_UNCERTAINTY:
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_UNCERTAINTY_INVALID",
+                "direction_context.uncertainty",
+                "Direction uncertainty must be settled or material.",
+            )
+        )
+    if selection_character not in DIRECTION_SELECTION_CHARACTERS:
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_CHARACTER_INVALID",
+                "direction_context.selection_character",
+                "Direction selection must be evidence-dominant or preference-sensitive.",
+            )
+        )
+    if selection_authority not in DIRECTION_SELECTION_AUTHORITIES:
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_AUTHORITY_INVALID",
+                "direction_context.selection_authority",
+                "Direction authority must be not-required, evidence, or owner.",
+            )
+        )
+    selection_refs = value["selection_refs"]
+    if not _unique_lines(selection_refs, maximum=16, nonempty=True):
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_SELECTION_REFS_INVALID",
+                "direction_context.selection_refs",
+                "The direction state and selection require bounded current evidence references.",
+            )
+        )
+        selection_refs = []
+    elif any(
+        not _basis_ref_valid(
+            ref,
+            repo=repo,
+            guide_ids=guide_ids,
+            research_claim_ids=research_claim_ids,
+        )
+        for ref in selection_refs
+    ):
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_SELECTION_REF_UNRESOLVED",
+                "direction_context.selection_refs",
+                "Direction references must resolve to current project, Guide, research, owner, or measurement evidence.",
+            )
+        )
+
+    alternatives = value["alternatives"]
+    if not isinstance(alternatives, list) or len(alternatives) > 4:
+        issues.append(
+            _issue(
+                "DESIGN_DIRECTION_ALTERNATIVES_INVALID",
+                "direction_context.alternatives",
+                "Direction alternatives must be a bounded list of at most four materially distinct options.",
+            )
+        )
+        alternatives = []
+    alternative_ids: set[str] = set()
+    alternative_fields = {
+        "alternative_id",
+        "summary",
+        "material_differences",
+        "tradeoffs",
+        "basis_refs",
+    }
+    for index, alternative in enumerate(alternatives):
+        path = f"direction_context.alternatives[{index}]"
+        if not _exact(alternative, alternative_fields, path, issues):
+            continue
+        alternative_id = alternative["alternative_id"]
+        if not _id(alternative_id) or alternative_id in alternative_ids:
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_ALTERNATIVE_ID_INVALID",
+                    f"{path}.alternative_id",
+                    "Alternative IDs must be unique kebab-case identifiers.",
+                )
+            )
+        else:
+            alternative_ids.add(alternative_id)
+        basis_refs = alternative["basis_refs"]
+        if (
+            not _line(alternative["summary"], 2_000)
+            or not _unique_lines(
+                alternative["material_differences"],
+                maximum=12,
+                nonempty=True,
+            )
+            or not _unique_lines(
+                alternative["tradeoffs"],
+                maximum=12,
+                nonempty=True,
+            )
+            or not _unique_lines(
+                basis_refs,
+                maximum=16,
+                nonempty=True,
+            )
+            or any(
+                not _basis_ref_valid(
+                    ref,
+                    repo=repo,
+                    guide_ids=guide_ids,
+                    research_claim_ids=research_claim_ids,
+                )
+                for ref in basis_refs
+            )
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_ALTERNATIVE_INVALID",
+                    path,
+                    "Each alternative requires material differences, trade-offs, and resolvable local or research evidence.",
+                )
+            )
+
+    selected_alternative_id = value["selected_alternative_id"]
+    settled_reason = value["settled_reason"]
+    scope_value = scope if isinstance(scope, dict) else {}
+    scope_change_kind = scope_value.get("change_kind")
+    scope_system_mode = scope_value.get("system_mode")
+    structural_scope = (
+        (
+            isinstance(scope_change_kind, str)
+            and scope_change_kind in {"page", "flow", "system"}
+        )
+        or (
+            isinstance(scope_system_mode, str)
+            and scope_system_mode in {"extend", "establish"}
+        )
+    )
+    if uncertainty == "settled":
+        if (
+            alternatives
+            or selected_alternative_id is not None
+            or selection_authority != "not-required"
+            or not _line(settled_reason, 2_000)
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_SETTLED_DIRECTION_INVALID",
+                    "direction_context",
+                    "Settled work carries no open alternatives or selection authority and must explain why the direction is already fixed.",
+                )
+            )
+        settled_authority_refs = set(
+            system_artifact_refs.get("documentation", set())
+        )
+        if (
+            structural_scope
+            and mode in {"standard", "system"}
+            and not any(
+                ref.startswith(("owner:", "convention:"))
+                or ref in settled_authority_refs
+                for ref in selection_refs
+            )
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_PREMATURELY_SETTLED",
+                    "direction_context.selection_refs",
+                    "A page, flow, or system direction is settled only by an explicit owner/Convention decision or a digest-bound product-direction document, not by the inherited interface alone.",
+                )
+            )
+        if (
+            selection_character == "preference-sensitive"
+            and not any(ref.startswith("owner:") for ref in selection_refs)
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_OWNER_EVIDENCE_REQUIRED",
+                    "direction_context.selection_refs",
+                    "A settled preference-sensitive direction must bind the owner's explicit decision.",
+                )
+            )
+    elif uncertainty == "material":
+        if mode == "compact":
+            issues.append(
+                _issue(
+                    "DESIGN_COMPACT_DIRECTION_INVALID",
+                    "direction_context.uncertainty",
+                    "Compact assurance is allowed only when the product direction is already settled.",
+                )
+            )
+        if (
+            settled_reason is not None
+            or len(alternatives) < 2
+            or not _id(selected_alternative_id)
+            or selected_alternative_id not in alternative_ids
+            or selection_authority not in {"evidence", "owner"}
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_MATERIAL_DIRECTION_INVALID",
+                    "direction_context",
+                    "Material uncertainty requires two to four alternatives, one selected alternative, and explicit evidence or owner authority.",
+                )
+            )
+        if (
+            selection_character == "preference-sensitive"
+            and selection_authority != "owner"
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_OWNER_SELECTION_REQUIRED",
+                    "direction_context.selection_authority",
+                    "Balanced preference-sensitive alternatives remain an owner decision.",
+                )
+            )
+        if selection_authority == "owner" and not any(
+            ref.startswith("owner:") for ref in selection_refs
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_OWNER_EVIDENCE_REQUIRED",
+                    "direction_context.selection_refs",
+                    "Owner-selected direction requires an exact content-addressed owner decision.",
+                )
+            )
+        if selection_authority == "evidence" and (
+            not any(
+                ref.startswith("research-claim:")
+                for ref in selection_refs
+            )
+            or not any(
+                ref.startswith(
+                    ("project:", "convention:", "measurement:")
+                )
+                for ref in selection_refs
+            )
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_DIRECTION_EVIDENCE_INSUFFICIENT",
+                    "direction_context.selection_refs",
+                    "Evidence-selected direction must combine the bound reference research with current project or measured task evidence.",
+                )
+            )
+
+
 def _validate_render_path(value: Any, plan_id: str) -> bool:
     if not _relative_path(value):
         return False
@@ -1019,10 +1388,16 @@ def _validate_packet_body(
     mode = assurance_mode(plan)
     guide_ids = _product_design_guides(repo)
     _validate_scope(packet["scope"], mode=mode, issues=issues)
-    system_symbols, system_artifact_refs = _validate_system_context(
+    scope = packet["scope"] if isinstance(packet["scope"], dict) else {}
+    (
+        system_symbols,
+        system_artifact_refs,
+        system_artifact_dispositions,
+    ) = _validate_system_context(
         packet["system_context"],
         repo=repo,
         mode=mode,
+        change_kind=scope.get("change_kind"),
         issues=issues,
     )
     _validate_compact_eligibility(
@@ -1039,6 +1414,16 @@ def _validate_packet_body(
         plan=plan,
         research_bundle=research_bundle,
         repo=repo,
+        issues=issues,
+    )
+    _validate_direction_context(
+        packet["direction_context"],
+        mode=mode,
+        scope=packet["scope"],
+        repo=repo,
+        guide_ids=guide_ids,
+        research_claim_ids=research_claim_ids,
+        system_artifact_refs=system_artifact_refs,
         issues=issues,
     )
     decisions = packet["decisions"]
@@ -1161,6 +1546,21 @@ def _validate_packet_body(
                     "Decision basis references must resolve to current project, Guide, research, owner, or measurement evidence.",
                 )
             )
+        if (
+            authority == "project-system"
+            and any(
+                system_artifact_dispositions.get(ref)
+                in {"replace", "not-applicable"}
+                for ref in basis_refs
+            )
+        ):
+            issues.append(
+                _issue(
+                    "DESIGN_REPLACED_SYSTEM_AUTHORITY_INVALID",
+                    f"{path}.basis_refs",
+                    "An artifact marked replace or not-applicable cannot silently remain the authority for the new design decision.",
+                )
+            )
         authority_prefixes = {
             "standard": ("guide:", "research-claim:"),
             "project-system": ("project:", "convention:"),
@@ -1266,6 +1666,28 @@ def _validate_packet_body(
                         "Existing token and component lineages must resolve in the digest-bound system inventory.",
                     )
                 )
+            if (
+                isinstance(kind, str)
+                and kind in {"existing-token", "component-contract"}
+                and isinstance(lineage.get("ref"), str)
+                and lineage.get("ref") in system_symbols
+            ):
+                symbol = system_symbols[lineage["ref"]]
+                symbol_artifact_ref = (
+                    "project:"
+                    f"{symbol['artifact_path']}#sha256="
+                    f"{symbol['artifact_sha256']}"
+                )
+                if system_artifact_dispositions.get(
+                    symbol_artifact_ref
+                ) not in {"retain", "adapt"}:
+                    issues.append(
+                        _issue(
+                            "DESIGN_REPLACED_SYSTEM_LINEAGE_INVALID",
+                            f"{path}.value_lineage.ref",
+                            "An inherited token or component lineage must come from an artifact explicitly retained or adapted.",
+                        )
+                    )
             if (
                 isinstance(kind, str)
                 and kind in {"owner-preference", "derived-local-value"}
@@ -1625,6 +2047,7 @@ def validate_design_decision_packet(
         "assurance",
         "scope",
         "system_context",
+        "direction_context",
         "compact_eligibility",
         "research",
         "surface_checks",
@@ -1746,6 +2169,7 @@ def build_design_decision_packet(
     expected_draft_fields = {
         "scope",
         "system_context",
+        "direction_context",
         "compact_eligibility",
         "surface_checks",
         "decisions",
@@ -1794,6 +2218,7 @@ def build_design_decision_packet(
         "assurance": copy.deepcopy(plan["design_assurance"]),
         "scope": copy.deepcopy(draft["scope"]),
         "system_context": copy.deepcopy(draft["system_context"]),
+        "direction_context": copy.deepcopy(draft["direction_context"]),
         "compact_eligibility": copy.deepcopy(
             draft["compact_eligibility"]
         ),

@@ -157,10 +157,19 @@ product-design·marketing·software-qa는 검증된 전용 Specialist 분할을 
 
 - goal·plan·Registry·base revision
 - 모든 Specialist packet digest
+- 사용자 문제, 원하는 결과, 판단 기준, 제약과 남은 unknown
 - 채택 constraint·decision, 충돌과 미해결 질문
 - technical feasibility
 - research gate
 - 구현 허용 path와 금지 변경
+
+각 accepted decision은 방향이 이미 고정된 `settled`인지, 실질적으로 다른
+해결책이 남은 `material`인지 명시한다. `settled`는 대안 의식을 강요하지 않는다.
+`material`은 2–4개 대안의 실제 차이·트레이드오프·근거와 선택된 대안 및 선택
+권위를 보존한다. 근거 우위의 되돌릴 수 있는 판단은 `evidence`로 닫을 수 있지만,
+균형적인 preference-sensitive 판단은 projected `owner_decision` 없이는 닫히지
+않는다. 기존 구현이 있다는 사실이나 일부 scaffolding을 먼저 작성했다는 사실은
+방향을 `settled`로 만드는 권위가 아니다.
 
 blocking question, feasibility fail, open research gate에서는 `status=blocked`다.
 

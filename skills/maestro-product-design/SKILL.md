@@ -23,7 +23,9 @@ The Pack does not expand those boundaries or authorize another writer.
 Require the product outcome, target roles and situations, representative tasks
 and states, current object and content inventory, platform and locale, known
 constraints, available research, current design system, and rendered or
-prototype evidence. Mark unsupported assumptions as unknown.
+prototype evidence. Mark unsupported assumptions as unknown. Treat the current
+interface and its Conventions as evidence to classify, not as an automatically
+accepted target direction.
 
 For a route with `design_assurance`, also require the exact assurance
 requirement, selected Pack digest, bound ResearchBundle where required, and a
@@ -98,23 +100,39 @@ When the route contains `design_assurance`, use this sequence in order:
    eligibility fact is missing, choose `standard`.
 2. Frame the user, task, state, consequence, content, and action priority.
 3. Audit the project's current tokens, components, conventions, consumers, and
-   lifecycle before proposing values or shapes.
+   lifecycle before proposing values or shapes. Give every inspected system
+   artifact one explicit `retain`, `adapt`, `replace`, or `not-applicable`
+   disposition with a reason.
 4. Complete required research and bind the exact ResearchBundle. Separate
    applicable standards, project facts, transferable reference decisions,
    counterexamples, and rejected transfers.
-5. Scan all fourteen design surfaces from
+5. Classify product direction as `settled` or `material`. A direction is
+   settled only when the requested outcome and structure are already fixed by
+   current project or owner evidence. When structural uncertainty is material,
+   compare two to four locally applicable alternatives by their real hierarchy,
+   task flow, information density, and trade-offs before selecting one. Existing
+   UI resemblance is not evidence that the direction is settled.
+   Evidence-dominant, reversible choices may be selected from project and
+   research evidence. Balanced preference-sensitive choices remain an owner
+   decision. Do not implement a provisional alternative while this gate is
+   open.
+6. Scan all fourteen design surfaces from
    `design-system-and-components`; mark each covered or not applicable with
    evidence.
-6. Build and validate the Design Decision Packet. Give every material decision
+7. Build and validate the Design Decision Packet. Give every material decision
    a semantic role, authority, basis, value or token lineage, affected states,
-   and rendered scenarios. This is per decision family, not per CSS line.
-7. Only then may the single owning writer implement. Reuse stable components
+   and rendered scenarios. The packet also binds the problem, user tasks,
+   decision criteria, current-system dispositions, alternatives, and direction
+   selection authority. This is per decision family, not per CSS line.
+8. Only then may the single owning writer implement. Reuse stable components
    and semantic tokens before extending them. No silent raw values.
-8. Render every declared scenario in the actual consuming page or an equivalent
+9. Render every declared scenario in the actual consuming page or an equivalent
    state fixture. Return exact file/artifact mappings for every decision.
-9. A read-only verifier checks the bound renders, behavior, accessibility,
+10. A read-only verifier checks the bound renders, behavior, accessibility,
    localization, responsive states, visual changes, and task/design contract.
-   Completion requires all declared scenarios to pass.
+   Completion requires all declared scenarios to pass. If the rendered result
+   disproves the chosen hierarchy or task fit, reopen the direction decision
+   instead of treating structure as frozen and limiting the repair to detail.
 
 The Pack's prose never substitutes for the typed assurance gate. Current-Host
 fallback may investigate or stop, but it cannot attest a successful assured
@@ -124,10 +142,12 @@ writer or verifier; completion requires owned-Host packet receipts.
 
 - `compact` keeps the packet small: unchanged semantics, a stable existing
   component and token lineage, affected states, one bounded decision, and a
-  real local render. It does not waive verification.
+  real local render. Its direction is already settled and its inspected
+  artifacts are retained. It does not waive verification.
 - `standard` is the default for a new element, section, page, or material
-  redesign: system audit, contextual research, alternatives where uncertain,
-  material decision records, and representative rendered states.
+  redesign: system audit with dispositions, contextual research, alternatives
+  for material uncertainty, material decision records, and representative
+  rendered states.
 - `system` is for a new visual language or reusable foundation: foundations,
   semantic roles, component taxonomy and lifecycle, provenance, representative
   fixtures, held-out evaluation, and bounded adoption.
@@ -165,6 +185,8 @@ verdict:
 ## Guardrails
 
 - Do not report an unrendered screen or unobserved interaction as verified.
+- Do not let partial cleanup, scaffolding, or an inherited layout become the
+  accepted direction merely because implementation has already touched it.
 - Do not choose a component's type, size, spacing, color, shape, state, or
   placement from “appropriate,” “modern,” or model taste without a recorded
   semantic and value lineage.

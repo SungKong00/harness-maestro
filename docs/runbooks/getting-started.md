@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro를 설치하고 프로젝트를 초기화해 일반 작업과 선택적 관리 흐름을 실행하는 운용 절차.
 scope: [setup, cli, skills, adapter, governance, expertise]
-last_verified: 2026-07-28
+last_verified: 2026-07-30
 supersedes: []
 sensitivity: internal
 ---
@@ -420,7 +420,10 @@ maestro validate-decision --plan "$maestro_decision" \
 ```
 
 모든 유효 packet을 합성하고 기술 타당성을 확인한 뒤
-`maestro_decision_bundle_v1`을 만든다. 구현이 원래 요청에 포함된 low·medium
+사용자 문제·원하는 결과·판단 기준과 각 결정의 `settled | material` 상태를 묶은
+`maestro_decision_bundle_v2`를 만든다. `material` 결정은 2–4개 대안과 선택
+권위를 포함하고 preference-sensitive 선택은 owner 결정을 요구한다. 구현이 원래
+요청에 포함된 low·medium
 risk 작업은 다음과 같이 실행 계획으로 전환할 수 있다.
 
 ```bash

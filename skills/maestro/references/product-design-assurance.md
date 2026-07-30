@@ -44,23 +44,33 @@ unavailable, use `standard`.
    constraints, and unknowns.
 2. Inventory the current project's semantic tokens, foundations, stable and
    local components, variants, states, consumers, exceptions, and applicable
-   Conventions.
+   Conventions. Treat them as current evidence rather than a target direction.
+   Bind each inspected artifact and classify it as `retain`, `adapt`, `replace`,
+   or `not-applicable` with a reason.
 3. Satisfy the route's research gate. `standard` and `system` require the exact
    bound ResearchBundle. Research must distinguish standards, project facts,
    observed shipped states, transferable decisions, counterexamples, rejected
    universal rules, and owner preferences.
-4. Scan all fourteen required surfaces from the assurance requirement. Mark
+4. Classify direction uncertainty as `settled` or `material`. `settled` means
+   current project documentation, a Convention, or an owner decision already
+   fixes the relevant structure; the mere existence of an inherited UI does
+   not. For `material`, compare two to four alternatives with different local
+   hierarchy or task-flow consequences and record their material differences,
+   trade-offs, and basis. Evidence-dominant reversible choices may proceed from
+   current project plus research evidence. Preference-sensitive balanced
+   choices require an owner decision.
+5. Scan all fourteen required surfaces from the assurance requirement. Mark
    each `covered` or `not_applicable` with a reason and evidence. This discovers
    omissions; it does not force every surface to change.
-5. Draft material decisions. A material decision changes meaning, task
+6. Draft material decisions. A material decision changes meaning, task
    hierarchy, token family, component anatomy or variant, reachable behavior,
    content/localization contract, responsive transformation, or an explicit
    out-of-system value. Do not create a record for every inherited CSS line.
-6. Give each material decision a semantic role, authority, basis references,
+7. Give each material decision a semantic role, authority, basis references,
    value or token lineage, affected states, rationale, and exact rendered
    scenario IDs. Existing semantic tokens and stable component contracts are
    legitimate lineage. “Looks appropriate” is not.
-7. Build and validate:
+8. Build and validate:
 
 ```text
 maestro design-assurance build --repo <repo> --plan <plan.json> \
@@ -72,14 +82,14 @@ maestro design-assurance validate --repo <repo> --plan <plan.json> \
   [--research-evidence <research-bundle.json>] --json
 ```
 
-8. Only after `PASS`, project and execute the one owning writer with the exact
+9. Only after `PASS`, project and execute the one owning writer with the exact
    `--design-decision` sidecar. An assured writer or verifier may complete only
    through the owned Host's packet-validation receipt; current-Host fallback
    may investigate or stop, but cannot attest a successful design mutation.
-9. The writer maps every exact decision to implementation references and every
+10. The writer maps every exact decision to implementation references and every
    scenario to a fully decoded PNG render under the plan-bound design-assurance
    state directory.
-10. A read-only verifier checks the exact packet and writer-result digests,
+11. A read-only verifier checks the exact packet and writer-result digests,
     browser states, interactions, keyboard and focus, responsive and localized
     content, applicable accessibility constraints, visual regression, and the
     human task/design contract. All scenarios must pass.
@@ -122,6 +132,13 @@ Stop before mutation when:
 
 - the plan's research gate is not satisfied;
 - a required surface is absent or falsely marked not applicable;
+- a current-system artifact has no retain/adapt/replace/not-applicable
+  disposition;
+- a page, flow, or system direction is declared settled only because the
+  inherited implementation exists;
+- material structural uncertainty has fewer than two alternatives, no selected
+  alternative, insufficient selection evidence, or an unresolved
+  preference-sensitive owner choice;
 - a material decision lacks authority, value lineage, or a render scenario;
 - an out-of-system raw value lacks scope, reason, and verification;
 - the packet contains unresolved decisions;

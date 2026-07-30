@@ -34,7 +34,7 @@ from .util import (
 
 DECISION_PLAN_VERSION = "maestro_decision_plan_v1"
 FINDING_PACKET_VERSION = "maestro_specialist_finding_packet_v1"
-DECISION_BUNDLE_VERSION = "maestro_decision_bundle_v1"
+DECISION_BUNDLE_VERSION = "maestro_decision_bundle_v2"
 EXECUTION_PLAN_VERSION = "maestro_execution_plan_v1"
 EXECUTION_PLAN_FIELDS = {
     "schema_version",
@@ -2758,6 +2758,296 @@ def validate_specialist_packet(
     }
 
 
+def _bounded_string_list(
+    value: Any,
+    *,
+    maximum: int,
+    nonempty: bool = False,
+) -> bool:
+    return (
+        _valid_string_list(value, nonempty=nonempty)
+        and isinstance(value, list)
+        and len(value) <= maximum
+    )
+
+
+def _validate_decision_frame(
+    value: Any,
+    issues: list[dict[str, str]],
+) -> None:
+    fields = {
+        "problem",
+        "desired_outcome",
+        "decision_criteria",
+        "known_constraints",
+        "unknowns",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        issues.append(
+            _error(
+                "DECISION_FRAME_INVALID",
+                "decision_frame",
+                "DecisionBundle requires an exact problem, desired outcome, criteria, constraints, and unknowns frame.",
+            )
+        )
+        return
+    if (
+        not isinstance(value["problem"], str)
+        or not value["problem"].strip()
+        or not isinstance(value["desired_outcome"], str)
+        or not value["desired_outcome"].strip()
+        or not _bounded_string_list(
+            value["decision_criteria"],
+            maximum=16,
+            nonempty=True,
+        )
+        or not _bounded_string_list(
+            value["known_constraints"],
+            maximum=16,
+        )
+        or not _bounded_string_list(
+            value["unknowns"],
+            maximum=16,
+        )
+    ):
+        issues.append(
+            _error(
+                "DECISION_FRAME_INVALID",
+                "decision_frame",
+                "Decision framing must preserve the user problem and outcome plus bounded criteria, constraints, and unknowns.",
+            )
+        )
+
+
+def _validate_accepted_decisions(
+    value: Any,
+    issues: list[dict[str, str]],
+) -> None:
+    if not isinstance(value, list) or not value or len(value) > 32:
+        issues.append(
+            _error(
+                "ACCEPTED_DECISIONS_INVALID",
+                "accepted_decisions",
+                "DecisionBundle requires one to 32 bounded accepted decisions.",
+            )
+        )
+        return
+    decision_fields = {
+        "decision_id",
+        "decision",
+        "rationale",
+        "evidence_refs",
+        "uncertainty",
+        "decision_character",
+        "alternatives",
+        "selected_alternative_id",
+        "selection_authority",
+    }
+    alternative_fields = {
+        "alternative_id",
+        "summary",
+        "material_differences",
+        "tradeoffs",
+        "evidence_refs",
+    }
+    decision_ids: set[str] = set()
+    for index, decision in enumerate(value):
+        path = f"accepted_decisions[{index}]"
+        if not isinstance(decision, dict) or set(decision) != decision_fields:
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_INVALID",
+                    path,
+                    "Accepted decisions must declare identity, evidence, uncertainty, alternatives, and selection authority.",
+                )
+            )
+            continue
+        decision_id = decision["decision_id"]
+        if (
+            not isinstance(decision_id, str)
+            or ID_PATTERN.fullmatch(decision_id) is None
+            or decision_id in decision_ids
+        ):
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_ID_INVALID",
+                    f"{path}.decision_id",
+                    "Accepted decision IDs must be unique kebab-case identifiers.",
+                )
+            )
+        else:
+            decision_ids.add(decision_id)
+        evidence_refs = decision["evidence_refs"]
+        if (
+            not isinstance(decision["decision"], str)
+            or not decision["decision"].strip()
+            or not isinstance(decision["rationale"], str)
+            or not decision["rationale"].strip()
+            or not _bounded_string_list(
+                evidence_refs,
+                maximum=16,
+                nonempty=True,
+            )
+        ):
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_CONTENT_INVALID",
+                    path,
+                    "Every accepted decision requires a bounded statement, rationale, and evidence references.",
+                )
+            )
+            evidence_refs = []
+        uncertainty = decision["uncertainty"]
+        character = decision["decision_character"]
+        authority = decision["selection_authority"]
+        if uncertainty not in {"settled", "material"}:
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_UNCERTAINTY_INVALID",
+                    f"{path}.uncertainty",
+                    "Decision uncertainty must be settled or material.",
+                )
+            )
+        if character not in {
+            "evidence-dominant",
+            "preference-sensitive",
+        }:
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_CHARACTER_INVALID",
+                    f"{path}.decision_character",
+                    "Decision character must be evidence-dominant or preference-sensitive.",
+                )
+            )
+        if authority not in {"not-required", "evidence", "owner"}:
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_AUTHORITY_INVALID",
+                    f"{path}.selection_authority",
+                    "Selection authority must be not-required, evidence, or owner.",
+                )
+            )
+
+        alternatives = decision["alternatives"]
+        if not isinstance(alternatives, list) or len(alternatives) > 4:
+            issues.append(
+                _error(
+                    "ACCEPTED_DECISION_ALTERNATIVES_INVALID",
+                    f"{path}.alternatives",
+                    "Alternatives must be a bounded list of at most four materially different options.",
+                )
+            )
+            alternatives = []
+        alternative_ids: set[str] = set()
+        for alternative_index, alternative in enumerate(alternatives):
+            alternative_path = (
+                f"{path}.alternatives[{alternative_index}]"
+            )
+            if (
+                not isinstance(alternative, dict)
+                or set(alternative) != alternative_fields
+            ):
+                issues.append(
+                    _error(
+                        "ACCEPTED_DECISION_ALTERNATIVE_INVALID",
+                        alternative_path,
+                        "Alternatives must declare identity, material differences, trade-offs, and evidence.",
+                    )
+                )
+                continue
+            alternative_id = alternative["alternative_id"]
+            if (
+                not isinstance(alternative_id, str)
+                or ID_PATTERN.fullmatch(alternative_id) is None
+                or alternative_id in alternative_ids
+                or not isinstance(alternative["summary"], str)
+                or not alternative["summary"].strip()
+                or not _bounded_string_list(
+                    alternative["material_differences"],
+                    maximum=12,
+                    nonempty=True,
+                )
+                or not _bounded_string_list(
+                    alternative["tradeoffs"],
+                    maximum=12,
+                    nonempty=True,
+                )
+                or not _bounded_string_list(
+                    alternative["evidence_refs"],
+                    maximum=16,
+                    nonempty=True,
+                )
+            ):
+                issues.append(
+                    _error(
+                        "ACCEPTED_DECISION_ALTERNATIVE_INVALID",
+                        alternative_path,
+                        "Each alternative requires a unique ID, material differences, trade-offs, and evidence.",
+                    )
+                )
+            else:
+                alternative_ids.add(alternative_id)
+
+        selected = decision["selected_alternative_id"]
+        if uncertainty == "settled":
+            if (
+                alternatives
+                or selected is not None
+                or authority != "not-required"
+            ):
+                issues.append(
+                    _error(
+                        "SETTLED_DECISION_INVALID",
+                        path,
+                        "A settled decision carries no open alternatives or selection authority.",
+                    )
+                )
+            if character == "preference-sensitive" and not any(
+                ref.startswith("owner_decision:")
+                for ref in evidence_refs
+            ):
+                issues.append(
+                    _error(
+                        "DECISION_OWNER_EVIDENCE_REQUIRED",
+                        f"{path}.evidence_refs",
+                        "A settled preference-sensitive decision must bind the owner's explicit decision.",
+                    )
+                )
+        elif uncertainty == "material":
+            if (
+                len(alternatives) < 2
+                or not isinstance(selected, str)
+                or selected not in alternative_ids
+                or authority not in {"evidence", "owner"}
+            ):
+                issues.append(
+                    _error(
+                        "MATERIAL_DECISION_ALTERNATIVES_REQUIRED",
+                        path,
+                        "Material uncertainty requires two to four alternatives, a selected option, and explicit evidence or owner authority.",
+                    )
+                )
+            if character == "preference-sensitive" and authority != "owner":
+                issues.append(
+                    _error(
+                        "DECISION_OWNER_SELECTION_REQUIRED",
+                        f"{path}.selection_authority",
+                        "Balanced preference-sensitive alternatives remain an owner decision.",
+                    )
+                )
+            if authority == "owner" and not any(
+                ref.startswith("owner_decision:")
+                for ref in evidence_refs
+            ):
+                issues.append(
+                    _error(
+                        "DECISION_OWNER_EVIDENCE_REQUIRED",
+                        f"{path}.evidence_refs",
+                        "Owner selection requires a projected owner_decision reference.",
+                    )
+                )
+
+
 def validate_decision_bundle(
     bundle: Any,
     plan: dict[str, Any],
@@ -2802,6 +3092,7 @@ def validate_decision_bundle(
         "expertise",
         "expertise_work",
         "source_packet_digests",
+        "decision_frame",
         "accepted_constraints",
         "accepted_decisions",
         "conflicts",
@@ -2968,6 +3259,22 @@ def validate_decision_bundle(
         "request_contract",
         issues,
     )
+    _validate_decision_frame(bundle.get("decision_frame"), issues)
+    _validate_accepted_decisions(
+        bundle.get("accepted_decisions"),
+        issues,
+    )
+    if not _bounded_string_list(
+        bundle.get("accepted_constraints"),
+        maximum=32,
+    ):
+        issues.append(
+            _error(
+                "ACCEPTED_CONSTRAINTS_INVALID",
+                "accepted_constraints",
+                "Accepted constraints must be a bounded unique list.",
+            )
+        )
     technical_feasibility = bundle.get("technical_feasibility")
     if (
         not isinstance(technical_feasibility, str)

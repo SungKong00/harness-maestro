@@ -326,10 +326,21 @@ class RoutingContractTests(unittest.TestCase):
         )
 
     def test_explicit_intent_overrides_ambiguous_wording(self) -> None:
+        with self.assertRaises(MaestroError) as staged:
+            route_goal(
+                "Research alternatives before the requested change",
+                "medium",
+                intent="implementation",
+            )
+        self.assertEqual(
+            "DECISION_WORKFLOW_REQUIRED",
+            staged.exception.code,
+        )
         route = route_goal(
             "Research alternatives before the requested change",
             "medium",
             intent="implementation",
+            decision_authorized=True,
         )
 
         self.assertEqual("implementation", route["intent"])

@@ -124,7 +124,9 @@
       "required": [
         "path",
         "sha256",
-        "role"
+        "role",
+        "disposition",
+        "reason"
       ],
       "properties": {
         "path": {
@@ -142,6 +144,17 @@
             "theme",
             "documentation"
           ]
+        },
+        "disposition": {
+          "enum": [
+            "retain",
+            "adapt",
+            "replace",
+            "not-applicable"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/longLine"
         }
       }
     },
@@ -271,6 +284,146 @@
         },
         "affected_contexts_known": {
           "$ref": "#/$defs/compactEvidence"
+        }
+      }
+    },
+    "directionAlternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alternative_id",
+        "summary",
+        "material_differences",
+        "tradeoffs",
+        "basis_refs"
+      ],
+      "properties": {
+        "alternative_id": {
+          "$ref": "#/$defs/id"
+        },
+        "summary": {
+          "$ref": "#/$defs/longLine"
+        },
+        "material_differences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "tradeoffs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "basis_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "directionContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem",
+        "user_tasks",
+        "decision_criteria",
+        "uncertainty",
+        "selection_character",
+        "settled_reason",
+        "alternatives",
+        "selected_alternative_id",
+        "selection_authority",
+        "selection_refs"
+      ],
+      "properties": {
+        "problem": {
+          "$ref": "#/$defs/longLine"
+        },
+        "user_tasks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "decision_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "uncertainty": {
+          "enum": [
+            "settled",
+            "material"
+          ]
+        },
+        "selection_character": {
+          "enum": [
+            "evidence-dominant",
+            "preference-sensitive"
+          ]
+        },
+        "settled_reason": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/longLine"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/directionAlternative"
+          }
+        },
+        "selected_alternative_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selection_authority": {
+          "enum": [
+            "not-required",
+            "evidence",
+            "owner"
+          ]
+        },
+        "selection_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
         }
       }
     },
@@ -625,6 +778,7 @@
         "assurance",
         "scope",
         "system_context",
+        "direction_context",
         "compact_eligibility",
         "research",
         "surface_checks",
@@ -635,7 +789,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "maestro_product_design_decision_packet_v2"
+          "const": "maestro_product_design_decision_packet_v3"
         },
         "packet_id": {
           "$ref": "#/$defs/digest"
@@ -660,6 +814,9 @@
         },
         "system_context": {
           "$ref": "#/$defs/systemContext"
+        },
+        "direction_context": {
+          "$ref": "#/$defs/directionContext"
         },
         "compact_eligibility": {
           "$ref": "#/$defs/compactEligibility"
@@ -730,6 +887,38 @@
                 "properties": {
                   "status": {
                     "const": "existing"
+                  },
+                  "artifacts": {
+                    "items": {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/systemArtifact"
+                        },
+                        {
+                          "properties": {
+                            "disposition": {
+                              "const": "retain"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "direction_context": {
+                "properties": {
+                  "uncertainty": {
+                    "const": "settled"
+                  },
+                  "alternatives": {
+                    "maxItems": 0
+                  },
+                  "selected_alternative_id": {
+                    "type": "null"
+                  },
+                  "selection_authority": {
+                    "const": "not-required"
                   }
                 }
               },

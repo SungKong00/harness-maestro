@@ -135,12 +135,32 @@ def _bundle(
         "expertise": plan["expertise"],
         "expertise_work": expertise_work,
         "source_packet_digests": packet_digests,
+        "decision_frame": {
+            "problem": "Choose a bounded implementation direction.",
+            "desired_outcome": (
+                "Preserve every specialist constraint in one executable scope."
+            ),
+            "decision_criteria": [
+                "Satisfy the evidence-backed constraints.",
+                "Keep the implementation reversible and bounded.",
+            ],
+            "known_constraints": [
+                "Only the declared repository paths may change."
+            ],
+            "unknowns": [],
+        },
         "accepted_constraints": ["Preserve the evidence-backed priority."],
         "accepted_decisions": [
             {
+                "decision_id": "bounded-direction",
                 "decision": "Use the synthesized bounded direction.",
                 "rationale": "It satisfies the specialist constraints.",
                 "evidence_refs": sorted(packet_digests),
+                "uncertainty": "settled",
+                "decision_character": "evidence-dominant",
+                "alternatives": [],
+                "selected_alternative_id": None,
+                "selection_authority": "not-required",
             }
         ],
         "conflicts": [],
@@ -283,6 +303,32 @@ class RequestBoundaryTests(unittest.TestCase):
             )
 
         self.assertEqual("DECISION_WORKFLOW_REQUIRED", raised.exception.code)
+
+    def test_reference_research_first_request_is_staged(self) -> None:
+        for goal in (
+            "레퍼런스 탐색부터 시작해서 디자인 리모델링을 진행해줘",
+            "Research current references first, then redesign the dashboard.",
+        ):
+            with self.subTest(goal=goal):
+                contract = resolve_request_contract(
+                    goal,
+                    "implementation",
+                )
+                self.assertEqual("staged", contract["decision_mode"])
+                self.assertEqual(
+                    "after_decision",
+                    contract["side_effect_policy"],
+                )
+                with self.assertRaises(MaestroError) as raised:
+                    route_goal(
+                        goal,
+                        "medium",
+                        intent="implementation",
+                    )
+                self.assertEqual(
+                    "DECISION_WORKFLOW_REQUIRED",
+                    raised.exception.code,
+                )
 
 
 class DecisionPlanTests(unittest.TestCase):
@@ -808,6 +854,99 @@ class DecisionEnactmentTests(unittest.TestCase):
                 execution,
                 repo_path=ROOT,
             )["status"],
+        )
+
+    def test_material_decision_requires_real_alternatives_and_authority(
+        self,
+    ) -> None:
+        plan = build_decision_plan(
+            ROOT,
+            "웹 화면 디자인 방향을 판단한 후 구현해줘",
+            "medium",
+        )
+        packets = _packets(plan)
+        bundle = _bundle(plan, packets)
+        decision = bundle["accepted_decisions"][0]
+        decision.update(
+            {
+                "uncertainty": "material",
+                "decision_character": "evidence-dominant",
+                "alternatives": [
+                    {
+                        "alternative_id": "task-led-layout",
+                        "summary": "Organize the surface around the primary task.",
+                        "material_differences": [
+                            "Primary workflow replaces summary-card hierarchy."
+                        ],
+                        "tradeoffs": [
+                            "Improves task scanning but reduces at-a-glance totals."
+                        ],
+                        "evidence_refs": decision["evidence_refs"],
+                    },
+                    {
+                        "alternative_id": "overview-led-layout",
+                        "summary": "Keep the overview as the primary hierarchy.",
+                        "material_differences": [
+                            "Summary and trend context remain above the workflow."
+                        ],
+                        "tradeoffs": [
+                            "Preserves overview speed but delays workflow inspection."
+                        ],
+                        "evidence_refs": decision["evidence_refs"],
+                    },
+                ],
+                "selected_alternative_id": "task-led-layout",
+                "selection_authority": "evidence",
+            }
+        )
+        payload = copy.deepcopy(bundle)
+        payload.pop("bundle_digest")
+        bundle["bundle_digest"] = sha256_text(canonical_json(payload))
+
+        accepted = validate_decision_bundle(
+            bundle,
+            plan,
+            packets,
+            ROOT,
+        )
+        self.assertEqual("PASS", accepted["status"])
+
+        missing_alternatives = copy.deepcopy(bundle)
+        missing_alternatives["accepted_decisions"][0]["alternatives"] = []
+        payload = copy.deepcopy(missing_alternatives)
+        payload.pop("bundle_digest")
+        missing_alternatives["bundle_digest"] = sha256_text(
+            canonical_json(payload)
+        )
+        rejected = validate_decision_bundle(
+            missing_alternatives,
+            plan,
+            packets,
+            ROOT,
+        )
+        self.assertIn(
+            "MATERIAL_DECISION_ALTERNATIVES_REQUIRED",
+            {issue["code"] for issue in rejected["issues"]},
+        )
+
+        preference = copy.deepcopy(bundle)
+        preference["accepted_decisions"][0][
+            "decision_character"
+        ] = "preference-sensitive"
+        payload = copy.deepcopy(preference)
+        payload.pop("bundle_digest")
+        preference["bundle_digest"] = sha256_text(
+            canonical_json(payload)
+        )
+        preference_result = validate_decision_bundle(
+            preference,
+            plan,
+            packets,
+            ROOT,
+        )
+        self.assertIn(
+            "DECISION_OWNER_SELECTION_REQUIRED",
+            {issue["code"] for issue in preference_result["issues"]},
         )
 
     def test_execution_wrapper_cannot_self_attest_decision_evidence(

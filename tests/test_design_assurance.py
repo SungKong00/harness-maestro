@@ -14,6 +14,7 @@ from tests.support import (
     write_json,
 )
 from tests.test_assignment_contracts import baseline_for
+from tests.test_research_workflow import _bundle as research_bundle
 
 from maestro.assignment_contracts import (
     TERMINAL_PACKET_VERSION,
@@ -81,11 +82,15 @@ def compact_draft(repo: Path, plan: dict[str, Any]) -> dict[str, Any]:
                     "path": "design-system.json",
                     "sha256": system_digest,
                     "role": "tokens",
+                    "disposition": "retain",
+                    "reason": "The stable token contract remains authoritative.",
                 },
                 {
                     "path": "design-system.json",
                     "sha256": system_digest,
                     "role": "components",
+                    "disposition": "retain",
+                    "reason": "The stable component contract remains authoritative.",
                 }
             ],
             "inventory": [
@@ -103,6 +108,27 @@ def compact_draft(repo: Path, plan: dict[str, Any]) -> dict[str, Any]:
                 },
             ],
             **SYSTEM_POLICY,
+        },
+        "direction_context": {
+            "problem": (
+                "Reuse the stable primary-action contract without changing "
+                "the control's meaning or hierarchy."
+            ),
+            "user_tasks": ["Trigger the primary reversible action."],
+            "decision_criteria": [
+                "Preserve the current action semantics and states.",
+                "Avoid a new visual primitive when the system already covers it.",
+            ],
+            "uncertainty": "settled",
+            "selection_character": "evidence-dominant",
+            "settled_reason": (
+                "The existing digest-bound token and component already own "
+                "the requested unchanged semantic role."
+            ),
+            "alternatives": [],
+            "selected_alternative_id": None,
+            "selection_authority": "not-required",
+            "selection_refs": [system_ref],
         },
         "compact_eligibility": {
             field: {
@@ -391,6 +417,12 @@ class ProductDesignAssuranceTests(unittest.TestCase):
             )
             schema = assignment_output_schema(projection)
             self.assertIn("design_assurance_result", schema["required"])
+            self.assertEqual(
+                ["README.md"],
+                schema["$defs"]["designDecisionDisposition"][
+                    "properties"
+                ]["implementation_refs"]["items"]["enum"],
+            )
 
             incomplete = copy.deepcopy(packet)
             incomplete["surface_checks"] = incomplete["surface_checks"][:-1]
@@ -741,6 +773,212 @@ class ProductDesignAssuranceTests(unittest.TestCase):
                         },
                     )
 
+    def test_direction_and_inherited_system_cannot_be_silently_assumed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            repo, plan = self._repo_and_plan(Path(temp))
+
+            undispositioned = compact_draft(repo, plan)
+            undispositioned["system_context"]["artifacts"][0].pop(
+                "disposition"
+            )
+            with self.assertRaises(MaestroError) as missing_disposition:
+                build_design_decision_packet(
+                    repo,
+                    plan,
+                    undispositioned,
+                )
+            self.assertIn(
+                missing_disposition.exception.code,
+                {
+                    "DESIGN_COMPACT_ELIGIBILITY_SYSTEM_EVIDENCE_REQUIRED",
+                    "DESIGN_COMPACT_INVENTORY_REQUIRED",
+                    "DESIGN_COMPACT_SYSTEM_EVIDENCE_REQUIRED",
+                    "DESIGN_SYSTEM_ARTIFACT_INVALID",
+                },
+            )
+
+            premature = compact_draft(repo, plan)
+            premature["direction_context"].update(
+                {
+                    "uncertainty": "material",
+                    "settled_reason": None,
+                    "alternatives": [],
+                    "selected_alternative_id": None,
+                    "selection_authority": "evidence",
+                }
+            )
+            with self.assertRaises(MaestroError) as missing_alternatives:
+                build_design_decision_packet(repo, plan, premature)
+            self.assertIn(
+                missing_alternatives.exception.code,
+                {
+                    "DESIGN_COMPACT_DIRECTION_INVALID",
+                    "DESIGN_MATERIAL_DIRECTION_INVALID",
+                },
+            )
+
+            owner_sensitive = compact_draft(repo, plan)
+            owner_sensitive["direction_context"][
+                "selection_character"
+            ] = "preference-sensitive"
+            with self.assertRaises(MaestroError) as missing_owner:
+                build_design_decision_packet(
+                    repo,
+                    plan,
+                    owner_sensitive,
+                )
+            self.assertEqual(
+                "DESIGN_DIRECTION_OWNER_EVIDENCE_REQUIRED",
+                missing_owner.exception.code,
+            )
+
+    def test_material_page_direction_can_close_from_local_and_research_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            repo, _ = self._repo_and_plan(Path(temp))
+            goal = (
+                "Find current references for a dashboard UI design and "
+                "compare materially different page structures before "
+                "implementation"
+            )
+            research = research_bundle(goal)
+            plan = route_goal_v2(
+                goal,
+                "medium",
+                intent="implementation",
+                research_evidence=research,
+                route_hints=normalize_route_hints(
+                    work_kinds=["user-interface"],
+                    design_assurance_mode="standard",
+                ),
+                repo_path=repo,
+            )
+            draft = compact_draft(repo, plan)
+            layout_digest = file_sha256(repo / "README.md")
+            layout_ref = (
+                "project:README.md#sha256=" + layout_digest
+            )
+            draft["scope"] = {
+                "change_kind": "page",
+                "target_refs": ["operations-dashboard"],
+                "system_mode": "extend",
+            }
+            draft["system_context"]["artifacts"].append(
+                {
+                    "path": "README.md",
+                    "sha256": layout_digest,
+                    "role": "layout",
+                    "disposition": "adapt",
+                    "reason": (
+                        "Retain the product content contract while replacing "
+                        "the inherited summary-card hierarchy."
+                    ),
+                }
+            )
+            draft["direction_context"] = {
+                "problem": (
+                    "Operators need to inspect work flow and evidence before "
+                    "summary metrics."
+                ),
+                "user_tasks": [
+                    "Trace one request through its stages.",
+                    "Inspect the evidence that changed a stage decision.",
+                ],
+                "decision_criteria": [
+                    "Make request flow the first scannable structure.",
+                    "Keep Pack context adjacent to its actual use.",
+                ],
+                "uncertainty": "material",
+                "selection_character": "evidence-dominant",
+                "settled_reason": None,
+                "alternatives": [
+                    {
+                        "alternative_id": "flow-first",
+                        "summary": (
+                            "Lead with request flow and reveal evidence in "
+                            "stage context."
+                        ),
+                        "material_differences": [
+                            "Stage sequence replaces summary cards as the primary hierarchy."
+                        ],
+                        "tradeoffs": [
+                            "Improves traceability but makes aggregate totals secondary."
+                        ],
+                        "basis_refs": [
+                            "research-claim:claim-layout",
+                            layout_ref,
+                        ],
+                    },
+                    {
+                        "alternative_id": "overview-first",
+                        "summary": (
+                            "Lead with aggregate status and place flow below "
+                            "the overview."
+                        ),
+                        "material_differences": [
+                            "Metrics remain the primary hierarchy above stage detail."
+                        ],
+                        "tradeoffs": [
+                            "Speeds aggregate scanning but delays causal inspection."
+                        ],
+                        "basis_refs": [
+                            "research-claim:claim-layout",
+                            layout_ref,
+                        ],
+                    },
+                ],
+                "selected_alternative_id": "flow-first",
+                "selection_authority": "evidence",
+                "selection_refs": [
+                    "research-claim:claim-layout",
+                    layout_ref,
+                ],
+            }
+            decision = draft["decisions"][0]
+            decision["authority_class"] = "research"
+            decision["basis_refs"] = [
+                "research-claim:claim-layout",
+                layout_ref,
+            ]
+            second_scenario = copy.deepcopy(
+                draft["verification_scenarios"][0]
+            )
+            second_scenario["scenario_id"] = "primary-action-compact"
+            second_scenario["viewport"] = {
+                "name": "compact",
+                "width": 390,
+                "height": 844,
+            }
+            second_scenario["artifact_path"] = (
+                ".maestro/state/design-assurance/"
+                f"{plan['plan_id']}/primary-action-compact.png"
+            )
+            draft["verification_scenarios"].append(second_scenario)
+            decision["verification_scenario_ids"].append(
+                "primary-action-compact"
+            )
+
+            packet = build_design_decision_packet(
+                repo,
+                plan,
+                draft,
+                research_bundle=research,
+            )
+
+            self.assertEqual(
+                "material",
+                packet["direction_context"]["uncertainty"],
+            )
+            self.assertEqual(
+                "flow-first",
+                packet["direction_context"][
+                    "selected_alternative_id"
+                ],
+            )
+
     def test_assured_completion_rejects_current_host_attestation(
         self,
     ) -> None:
@@ -807,6 +1045,7 @@ class ProductDesignAssuranceTests(unittest.TestCase):
         definitions = design_schema["$defs"]
         for name in (
             "systemContext",
+            "directionContext",
             "compactEligibility",
             "research",
             "surfaceCheck",
@@ -816,7 +1055,7 @@ class ProductDesignAssuranceTests(unittest.TestCase):
             self.assertFalse(definitions[name]["additionalProperties"])
             self.assertTrue(definitions[name]["required"])
         self.assertEqual(
-            "maestro_product_design_decision_packet_v2",
+            "maestro_product_design_decision_packet_v3",
             definitions["packet"]["properties"]["schema_version"]["const"],
         )
 
@@ -856,6 +1095,7 @@ class ProductDesignAssuranceTests(unittest.TestCase):
             "Implement one backend scheduler behavior",
             "low",
             intent="implementation",
+            repo_path=Path(__file__).resolve().parents[1],
         )
         projection = project_assignment_input(
             Path(__file__).resolve().parents[1],

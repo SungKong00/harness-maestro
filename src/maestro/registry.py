@@ -986,12 +986,15 @@ REMOTE_WRITE_TERMS = (
 )
 STAGED_REQUEST_PATTERNS = (
     r"\b(?:review|assess|analy[sz]e|design|plan)\b.{0,40}\b(?:then|before)\b.{0,40}\b(?:implement|change|modify|build)\b",
+    r"\b(?:research|investigate|explore|look\s+up)\b.{0,80}\b(?:first|then|before)\b.{0,80}\b(?:implement|change|modify|build|redesign)\b",
     r"\b(?:implement|change|modify|build)\b.{0,40}\bafter\b.{0,40}\b(?:review|assessment|analysis|design|plan)\b",
     r"\b(?:choose|select|decide)\b.{0,80}\b(?:between|from)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
     r"\b(?:compare|evaluate)\b.{0,80}\b(?:options?|alternatives?)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
     r"\b(?:implement|change|modify|build|apply)\b.{0,80}\b(?:winner|chosen|selected)\b",
     r"(?:검토|판단|분석|설계|기획|확정)\s*(?:한|한\s*뒤|후|뒤|하고\s*나서).{0,40}(?:구현|개발|수정|변경)",
     r"(?:먼저|우선).{0,40}(?:검토|판단|분석|설계|기획).{0,40}(?:그\s*후|이후|다음|나서).{0,40}(?:구현|개발|수정|변경)",
+    r"(?:레퍼런스|자료|사례|방향).{0,30}(?:리서치|조사|탐색).{0,30}(?:부터|먼저|우선|후|뒤|다음).{0,80}(?:구현|개발|수정|변경|리모델링|개편)",
+    r"(?:리서치|조사|탐색).{0,30}(?:부터|먼저|우선|후|뒤|다음).{0,80}(?:구현|개발|수정|변경|리모델링|개편)",
     r"(?:비교|검토|판단).{0,80}(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
     r"(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
 )

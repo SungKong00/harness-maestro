@@ -61,6 +61,16 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
    - Unknown `auto` wording defaults to read-only review.
    - A request that says to review, design, decide, or plan **before**
      implementation is staged. Do not create or run a mutation Assignment yet.
+   - Before choosing direct versus staged for any non-trivial implementation,
+     classify the solution direction as `settled` or `material` and preserve
+     the basis in the working plan. `settled` means the request or current
+     project authority already fixes the material outcome and acceptance
+     direction; a bounded bug fix or exact compatibility repair can qualify.
+     `material` means two plausible solutions differ in architecture, product
+     structure, technology, behavior contract, or owner preference. The
+     existence of inherited code, UI, or an early cleanup does not settle that
+     choice. Route material uncertainty through `decide` before any mutation;
+     keep small settled work direct.
    - For a non-trivial implementation request in an initialized project, start
      one run observation now, before routing. Use a concise task label in the
      user's language. In Codex Desktop, allowlist the public request
@@ -142,15 +152,22 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
      foundation, and `compact` is allowed only when every documented
      settled-system condition is evidenced. Do not infer `compact` merely from
      a small diff.
-     For design, architecture, technology choice, material trade-offs, or
-     “decide before build,” run `maestro decide --repo <repo> --goal "<goal>"
+     For material design, architecture, technology choice, behavior or product
+     structure trade-offs, preference-sensitive alternatives, or “decide
+     before build,” run `maestro decide --repo <repo> --goal "<goal>"
      --risk <risk> --intent implementation --host <host>
      [--coverage <coverage.json>] --json`. Review-only
      requests never call `enact`; `DECISION_WORKFLOW_REQUIRED` switches to
      decide, and capacity failure never drops a named concern.
    - A decision plan is read-only. Validate isolated Specialist packets,
      synthesize conflicts, run technical feasibility, and build the
-     DecisionBundle. Enact only a valid, current bundle: low/medium risk may
+     DecisionBundle. Frame the user problem, desired outcome, criteria,
+     constraints, and unknowns before accepting decisions. Every accepted
+     decision declares `settled` or `material`; material uncertainty compares
+     two to four materially different alternatives. Evidence-dominant,
+     reversible choices may use evidence authority, while balanced
+     preference-sensitive choices require `owner_decision` evidence. Enact only
+     a valid, current bundle: low/medium risk may
      use a prior explicit implementation request; high/critical requires an
      explicit user authorization. Enact returns the one-writer execution
      contract but performs no write. `authorization_source` is an operator
