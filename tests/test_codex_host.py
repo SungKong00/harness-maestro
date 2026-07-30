@@ -27,6 +27,7 @@ from maestro.assignment_contracts import (
 from maestro.codex_host import (
     _AppServer,
     _assert_scoped_repository_changes,
+    _codex_error_identifier,
     _codex_runtime_binding,
     _host_assignment_lease,
     _host_contract,
@@ -42,6 +43,7 @@ from maestro.codex_host import (
 )
 from maestro.decisions import build_decision_plan, build_execution_plan
 from maestro.errors import MaestroError
+from maestro.evaluation_attestation import projected_evaluation_evidence_refs
 from maestro.governance import _app_server_binding_error, finalize_run
 from maestro.observations import (
     observation_receipt_fields,
@@ -368,6 +370,50 @@ for line in sys.stdin:
 
 
 class CodexHostTests(unittest.TestCase):
+    def test_evaluation_refs_only_come_from_completion_evidence(self) -> None:
+        accepted = f"candidate-subject:{'a' * 64}"
+        ignored = f"candidate-cases:{'b' * 64}"
+        projection = {
+            "task_contract": {"objective": ignored},
+            "engineering_baseline": [
+                {
+                    "check_id": "behavior-contract",
+                    "note": ignored,
+                },
+                {
+                    "check_id": "completion-evidence",
+                    "note": f"Bind {accepted}.",
+                },
+            ],
+        }
+        self.assertEqual(
+            [accepted],
+            projected_evaluation_evidence_refs(projection),
+        )
+
+    def test_codex_error_identifier_prefers_stable_host_metadata(self) -> None:
+        self.assertEqual(
+            "usageLimitExceeded",
+            _codex_error_identifier(
+                {
+                    "message": "Account-specific detail must not be persisted.",
+                    "codexErrorInfo": "usageLimitExceeded",
+                }
+            ),
+        )
+        self.assertEqual(
+            "-32000",
+            _codex_error_identifier({"code": -32000}),
+        )
+        self.assertEqual(
+            "legacy-error",
+            _codex_error_identifier("legacy-error"),
+        )
+        self.assertEqual(
+            "unclassified",
+            _codex_error_identifier({"message": "message only"}),
+        )
+
     def _project(self, root: Path) -> tuple[Path, Path, Path]:
         repo = root / "repo"
         repo.mkdir()
@@ -1812,6 +1858,98 @@ for line in sys.stdin:
             self.assertEqual(
                 "CODEX_HOST_ASSIGNMENT_INPUT_MISMATCH",
                 raised.exception.code,
+            )
+
+    def test_read_only_evaluation_binds_projected_lifecycle_refs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _, server = self._project(root)
+            plan = route_goal_v2(
+                "Review the README contract",
+                "medium",
+                ["contract"],
+                intent="review",
+                repo_path=repo,
+            )
+            plan_path = root / "evaluation-plan.json"
+            write_json(plan_path, plan)
+            baseline = baseline_for(plan)
+            expected_refs = [
+                f"candidate-subject:{'a' * 64}",
+                f"candidate-cases:{'b' * 64}",
+                f"candidate-quality:{'c' * 64}",
+            ]
+            completion_check = next(
+                check
+                for check in baseline["checks"]
+                if check["check_id"] == "completion-evidence"
+            )
+            completion_check["note"] = (
+                "Bind the exact frozen evaluation inputs and result: "
+                + ", ".join(expected_refs)
+            )
+            baseline_path = root / "evaluation-baseline.json"
+            write_json(baseline_path, baseline)
+            projection = project_assignment_input(
+                repo,
+                plan,
+                "review",
+                baseline,
+            )
+            self.assertEqual("PASS", projection["status"])
+            projection_path = root / "evaluation-projection.json"
+            write_json(projection_path, projection)
+            packet_path = root / "evaluation-packet.json"
+            write_json(packet_path, finding_packet(plan, "review"))
+            parent = start_run_observation(
+                repo,
+                run_id="detached-evaluation",
+                request_key="detached-evaluation",
+                task_label="Frozen candidate evaluation",
+                plan_path=plan_path,
+                execution_binding={
+                    "schema_version": "maestro_execution_binding_v1",
+                    "mode": "desktop_request",
+                },
+            )
+
+            result = run_codex_host(
+                repo,
+                run_id="detached-evaluation",
+                task_label="Frozen candidate evaluation",
+                plan_path=plan_path,
+                assignment_id="review",
+                projection_path=projection_path,
+                baseline_path=baseline_path,
+                observation_id=parent["observation_id"],
+                timeout_seconds=5,
+                command=[
+                    sys.executable,
+                    str(server),
+                    "success",
+                    str(packet_path),
+                ],
+            )
+
+            self.assertEqual("completed", result["status"])
+            observation = observation_receipt_fields(
+                repo,
+                observation_id=parent["observation_id"],
+                run_id="detached-evaluation",
+            )
+            recorded_refs = observation["stage_results"][0][
+                "evidence_refs"
+            ]
+            self.assertEqual(6, len(recorded_refs))
+            self.assertTrue(recorded_refs[0].startswith("codex-app-server:"))
+            self.assertTrue(recorded_refs[1].startswith("assignment-input:"))
+            self.assertTrue(recorded_refs[2].startswith("assignment-packet:"))
+            self.assertEqual(expected_refs, recorded_refs[3:])
+            self.assertEqual(
+                "codex_app_server",
+                observation["stage_results"][0]["evidence_source"],
             )
 
     def test_assignment_rejects_model_and_reasoning_request_conflicts(

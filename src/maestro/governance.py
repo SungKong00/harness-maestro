@@ -1062,7 +1062,7 @@ def _valid_stage_results(
             )
             or not _valid_token_summary(result.get("tokens"))
             or not isinstance(evidence_refs, list)
-            or len(evidence_refs) > 3
+            or len(evidence_refs) > 6
             or not all(
                 isinstance(item, str) and bool(item.strip())
                 for item in evidence_refs

@@ -28,6 +28,7 @@ from .assignment_contracts import (
 )
 from .authorization import resolve_authorized_write_roots
 from .errors import MaestroError
+from .evaluation_attestation import projected_evaluation_evidence_refs
 from .execution_contracts import normalize_execution_contract
 from .execution_units import (
     build_execution_attempt,
@@ -1503,6 +1504,24 @@ def _enrich_child_finish_action(
     }
 
 
+def _codex_error_identifier(value: Any) -> str:
+    """Return a bounded, non-message identifier for one Host error."""
+
+    if isinstance(value, dict):
+        for field in ("code", "codexErrorInfo", "type"):
+            candidate = value.get(field)
+            if (
+                isinstance(candidate, (str, int))
+                and not isinstance(candidate, bool)
+                and str(candidate).strip()
+            ):
+                return str(candidate).strip()[:80]
+        return "unclassified"
+    if isinstance(value, str) and value.strip():
+        return value.strip()[:80]
+    return "unclassified"
+
+
 def _process_notification(
     value: dict[str, Any],
     state: dict[str, Any],
@@ -1538,13 +1557,7 @@ def _process_notification(
     if method == "error":
         if params.get("turnId") not in {None, state["turn_id"]}:
             return
-        error = params.get("error")
-        code = (
-            error.get("code")
-            if isinstance(error, dict)
-            and isinstance(error.get("code"), (str, int))
-            else "unclassified"
-        )
+        code = _codex_error_identifier(params.get("error"))
         state["error_count"] += 1
         state["last_error"] = f"Codex App Server error ({str(code)[:80]})"
         return
@@ -3648,6 +3661,7 @@ def _run_codex_host_locked(
         execution_unit_receipt = None
         packet_error: MaestroError | None = None
         packet: dict[str, Any] | None = None
+        evaluation_refs: list[str] = []
         result_status = completion["status"]
         if contract["assignment_id"] is not None:
             projection_digest = contract["projection"].get(
@@ -3703,6 +3717,15 @@ def _run_codex_host_locked(
                         "verification_assessment"
                     )
                     evidence_refs.append(f"assignment-packet:{packet_digest}")
+                    evaluation_refs = projected_evaluation_evidence_refs(
+                        contract["projection"]
+                    )
+                    if len(evaluation_refs) > 3:
+                        packet_error = MaestroError(
+                            "CODEX_HOST_EVALUATION_EVIDENCE_INVALID",
+                            "A Host-observed evaluation may bind at most three exact lifecycle evidence references.",
+                        )
+                        result_status = "failed"
             if result_status == "completed":
                 execution_unit = contract["execution_unit"]
                 if not isinstance(execution_unit, dict):
@@ -3928,7 +3951,7 @@ def _run_codex_host_locked(
                 assignment_id=contract["assignment_id"],
                 status=result_status,
                 evidence_source="codex_app_server",
-                evidence_refs=evidence_refs,
+                evidence_refs=[*evidence_refs, *evaluation_refs],
                 requested_model=requested_model,
                 requested_reasoning_effort=requested_effort,
                 actual_model=applied_model,

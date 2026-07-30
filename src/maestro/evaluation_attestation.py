@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,42 @@ from .observations import (
     observation_receipt_fields,
 )
 from .registry import load_host_profile
+
+
+_EVALUATION_EVIDENCE_REF_PATTERN = re.compile(
+    r"(?<![a-z0-9-])("
+    r"(?:candidate-(?:subject|cases|quality)"
+    r"|component-(?:definition|cases|results)"
+    r"|convention-(?:candidate|evaluation))"
+    r":[a-f0-9]{64}"
+    r")(?![a-z0-9-])"
+)
+
+
+def projected_evaluation_evidence_refs(value: Any) -> list[str]:
+    """Return lifecycle refs from the projection's completion-evidence check."""
+
+    refs: list[str] = []
+
+    if not isinstance(value, dict):
+        return refs
+    checks = value.get("engineering_baseline")
+    if not isinstance(checks, list):
+        return refs
+    for check in checks:
+        if (
+            not isinstance(check, dict)
+            or check.get("check_id") != "completion-evidence"
+        ):
+            continue
+        note = check.get("note")
+        if not isinstance(note, str):
+            continue
+        for match in _EVALUATION_EVIDENCE_REF_PATTERN.finditer(note):
+            ref = match.group(1)
+            if ref not in refs:
+                refs.append(ref)
+    return refs
 
 
 _STAGE_MINIMUM_PAIRS = {

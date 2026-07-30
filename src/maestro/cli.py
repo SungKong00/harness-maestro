@@ -1431,7 +1431,7 @@ def parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         required=True,
-        help="Bounded evidence reference; repeat up to three times",
+        help="Bounded evidence reference; repeat up to six times",
     )
     observe_stage.add_argument("--duration-ms", type=float)
     observe_stage.add_argument("--json", action="store_true")
