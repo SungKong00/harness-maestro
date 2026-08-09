@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -419,6 +420,10 @@ class CodexHostTests(unittest.TestCase):
         repo.mkdir()
         (repo / "README.md").write_text("# Test\n", encoding="utf-8")
         apply_fresh_init(repo)
+        shutil.copytree(
+            ROOT / "skills" / "maestro-software-engineering",
+            repo / "skills" / "maestro-software-engineering",
+        )
         for relative in ("docs/project.md", "docs/architecture.md"):
             path = repo / relative
             path.write_text(

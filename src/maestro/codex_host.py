@@ -1065,16 +1065,20 @@ class _AppServer:
         ):
             self.filtered_notifications += 1
         if "id" in value and isinstance(value.get("method"), str):
-            self.send(
-                {
-                    "jsonrpc": "2.0",
-                    "id": value["id"],
-                    "error": {
-                        "code": -32601,
-                        "message": "Interactive server requests are not supported.",
-                    },
-                }
-            )
+            try:
+                self.send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": value["id"],
+                        "error": {
+                            "code": -32601,
+                            "message": "Interactive server requests are not supported.",
+                        },
+                    }
+                )
+            except MaestroError as exc:
+                if exc.code != "CODEX_HOST_PROTOCOL_CLOSED":
+                    raise
             raise MaestroError(
                 "CODEX_HOST_INTERACTION_UNSUPPORTED",
                 "The turn requested interactive Host input; no approval or user-input request was accepted.",
