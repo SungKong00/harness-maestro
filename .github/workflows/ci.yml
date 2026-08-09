@@ -55,13 +55,11 @@ jobs:
             python -m venv "$smoke_root/venv"
             "$smoke_root/venv/bin/python" -m pip install --disable-pip-version-check "$artifact"
             mkdir -p "$host_home/.agents/skills"
-            for skill in maestro maestro-adapter-builder maestro-govern \
-              maestro-reference-research maestro-product-design \
-              maestro-expertise-builder maestro-marketing maestro-software-engineering \
-              maestro-software-qa
+            while IFS= read -r skill
             do
               ln -s "$GITHUB_WORKSPACE/skills/$skill" "$host_home/.agents/skills/$skill"
-            done
+            done < <("$smoke_root/venv/bin/python" -c \
+              'from maestro.release import CODEX_SKILLS; print(*CODEX_SKILLS, sep="\n")')
             "$smoke_root/venv/bin/maestro" --help >/dev/null
             "$smoke_root/venv/bin/maestro" init --repo "$smoke_repo" --json >"$smoke_plan"
             "$smoke_root/venv/bin/maestro" init --repo "$smoke_repo" --apply-plan "$smoke_plan" --json >/dev/null

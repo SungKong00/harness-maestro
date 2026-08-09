@@ -162,6 +162,7 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("python -m build", workflow_text)
         self.assertIn("harness_maestro-*.tar.gz", workflow_text)
         self.assertIn("doctor --repo", workflow_text)
+        self.assertIn("from maestro.release import CODEX_SKILLS", workflow_text)
         release_workflow = ROOT / ".github/workflows/release.yml"
         self.assertTrue(release_workflow.is_file())
         release_text = release_workflow.read_text(encoding="utf-8")
