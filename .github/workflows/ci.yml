@@ -57,7 +57,8 @@ jobs:
             mkdir -p "$host_home/.agents/skills"
             for skill in maestro maestro-adapter-builder maestro-govern \
               maestro-reference-research maestro-product-design \
-              maestro-expertise-builder maestro-marketing maestro-software-qa
+              maestro-expertise-builder maestro-marketing maestro-software-engineering \
+              maestro-software-qa
             do
               ln -s "$GITHUB_WORKSPACE/skills/$skill" "$host_home/.agents/skills/$skill"
             done
