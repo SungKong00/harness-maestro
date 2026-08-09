@@ -1,0 +1,6 @@
+interface:
+  display_name: "Mux Streaming Web"
+  short_description: "Apply routed Mux web streaming criteria"
+  default_prompt: "Use $mux-streaming-web with only the Decision Guides selected by the validated Maestro route."
+policy:
+  allow_implicit_invocation: false

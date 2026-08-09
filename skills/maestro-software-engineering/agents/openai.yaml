@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro Software Engineering"
+  short_description: "Apply durable software engineering decision criteria"
+  default_prompt: "Use $maestro-software-engineering with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,407 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-furniture-landing-system.json",
+        "sha256": "771b4fd97e2725daeaf8d033ae0c9c91cf74695d780a24f08e22ed78ba129967"
+      },
+      "case_id": "normal-furniture-landing-system",
+      "criterion_results": [
+        {
+          "criterion": "Researches exact-task shipped states and transfer limits before choosing the visual language",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Defines a proportional foundation, semantic-token, component, and lifecycle contract without inventing unused system layers",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Maps every material landing-page decision to realistic Korean, responsive, and rendered scenarios",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Uses broad style adjectives or one attractive reference as the decision authority",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "observed": false
+        },
+        {
+          "behavior": "Chooses untraceable spacing, typography, radius, color, or imagery values",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "observed": false
+        },
+        {
+          "behavior": "Calls an unrendered landing page coherent or verified",
+          "evidence_ref": "evals/artifacts/normal-furniture-landing-system.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-cinema-data-page.json",
+        "sha256": "ffaac2b26c77ab25703e3d5ae23c31d273d236a8c2a83614890e38e8b42c8dc0"
+      },
+      "case_id": "normal-cinema-data-page",
+      "criterion_results": [
+        {
+          "criterion": "Chooses cards, tables, filters, and visualization encodings from browse, compare, inspect, and decision tasks",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Defines shared component anatomy, variants, states, content extremes, and semantic-token lineage across the feature-rich page",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Verifies realistic dense, empty, loading, partial-failure, narrow, and localized states",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats a card grid as the default representation for every movie datum",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "observed": false
+        },
+        {
+          "behavior": "Styles each feature independently without a shared system contract",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "observed": false
+        },
+        {
+          "behavior": "Uses visual-diff success as the only quality verdict",
+          "evidence_ref": "evals/artifacts/normal-cinema-data-page.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-new-button-decision.json",
+        "sha256": "76985a5f8ce7c2da844784f5d49945ee1322e68bcc5d54400870a8111f710f7a"
+      },
+      "case_id": "edge-new-button-decision",
+      "criterion_results": [
+        {
+          "criterion": "Classifies action, priority, consequence, reversibility, permission, and state before visual treatment",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Derives control dimensions from the project control role, content metrics, target-size constraint, icon gap, and density context",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Checks the consuming page with long Korean content and every relevant interaction and outcome state",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects button pixels, color, radius, or margin because they look appropriate",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "observed": false
+        },
+        {
+          "behavior": "Uses 44 or 48 pixels as a universal WCAG AA button rule",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "observed": false
+        },
+        {
+          "behavior": "Promotes one attractive render directly to a stable reusable primitive",
+          "evidence_ref": "evals/artifacts/edge-new-button-decision.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-compact-existing-button.json",
+        "sha256": "f0e509d154a38bf9f398a2bfa029f64f9bd0cf0c2b465ff90b539e72c1ba6d45"
+      },
+      "case_id": "edge-compact-existing-button",
+      "criterion_results": [
+        {
+          "criterion": "Allows compact execution only after unchanged semantics, hierarchy, states, localization, and accessibility certainty are each backed by current content-addressed project-system evidence",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Binds the referenced stable component and semantic tokens to an exact current inventory and digest rather than accepting eligibility booleans as proof",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Keeps exactly one bounded decision and one render scenario with existing-token or component-contract lineage only",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires a fully decoded PNG whose dimensions match the declared viewport and whose scenario is the real consuming page",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Opens a full design-system research project for proven stable token reuse",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "observed": false
+        },
+        {
+          "behavior": "Accepts self-attested compact eligibility or invented evidence references",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "observed": false
+        },
+        {
+          "behavior": "Introduces a raw local value, owner preference, derived local value, or new variant under compact mode",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "observed": false
+        },
+        {
+          "behavior": "Accepts a signature-only, non-decodable, or viewport-mismatched image as rendered verification",
+          "evidence_ref": "evals/artifacts/edge-compact-existing-button.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-form-recovery.json",
+        "sha256": "90ff26cf77f6d8bbc8c4cf90ea2383667d9966ec7eafa013bd0705896a2e9865"
+      },
+      "case_id": "normal-form-recovery",
+      "criterion_results": [
+        {
+          "criterion": "Defines labels, constraints, prevention, validation timing, input preservation, textual errors, correction, announcement, focus, confirmation, and recovery",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Binds input and action variants to existing semantic tokens and relevant state contracts",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Verifies keyboard, zoom, autofill, paste, long localized content, failure, and recovery in context",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats field border styling as a complete form design",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "observed": false
+        },
+        {
+          "behavior": "Makes live validation the default without user evidence",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "observed": false
+        },
+        {
+          "behavior": "Drops entered data or hides recovery after an error",
+          "evidence_ref": "evals/artifacts/normal-form-recovery.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-korean-typography.json",
+        "sha256": "bb30a83b5484970d025d46c139b20d9f3a1fc11dfc13f9739ecd86ee14ee7d4c"
+      },
+      "case_id": "edge-korean-typography",
+      "criterion_results": [
+        {
+          "criterion": "Classifies text by product job and intended reading order before choosing size, weight, line height, measure, or family",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Uses a real corpus spanning Hangul, Latin, numerals, units, symbols, punctuation, errors, long labels, weights, and narrow widths",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Derives semantic type tokens from actual font metrics and rendered content with fallback and loading evidence",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Copies a foreign type scale as universal Korean UI values",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "observed": false
+        },
+        {
+          "behavior": "Creates hierarchy primarily by accumulating arbitrary sizes, weights, colors, and families",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "observed": false
+        },
+        {
+          "behavior": "Approves typography from a font-family declaration without browser renders",
+          "evidence_ref": "evals/artifacts/edge-korean-typography.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-new-visual-language.json",
+        "sha256": "5dc3c9127d4dbe5aae705e90877ce102bba454982d6ba7478ac3a38cf95978b6"
+      },
+      "case_id": "normal-new-visual-language",
+      "criterion_results": [
+        {
+          "criterion": "Uses system scope with complete foundations, semantic roles, component taxonomy, lifecycle, provenance, representative fixtures, and held-out evaluation",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Introduces component tokens only where a distinct reusable component decision requires them",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Records adopted and rejected reference transfers and a bounded adoption or migration path",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Uses compact mode for a new visual language or token family",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "observed": false
+        },
+        {
+          "behavior": "Builds unused token tiers and component abstractions for completeness",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "observed": false
+        },
+        {
+          "behavior": "Treats DTCG format conformance as proof that the token values are good design",
+          "evidence_ref": "evals/artifacts/normal-new-visual-language.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-backend-scheduler.json",
+        "sha256": "7b6be8918404e2a8e2437662c99c119b742ed4b057eddcd0a052c72c19c74f52"
+      },
+      "case_id": "non-trigger-backend-scheduler",
+      "criterion_results": [
+        {
+          "criterion": "Keeps backend scheduling and recovery semantics outside Product Design assurance",
+          "evidence_ref": "evals/artifacts/non-trigger-backend-scheduler.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Selects Product Design because the backend request contains state or flow concepts",
+          "evidence_ref": "evals/artifacts/non-trigger-backend-scheduler.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/overlap-scroll-motion.json",
+        "sha256": "baae63656e395234f6c12dc0a29ed7079531db6a3103efafcc1fcadef24aed54"
+      },
+      "case_id": "overlap-scroll-motion",
+      "criterion_results": [
+        {
+          "criterion": "Leaves detailed scroll-linked choreography and runtime mechanics to interactive-web-motion",
+          "evidence_ref": "evals/artifacts/overlap-scroll-motion.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Uses Product Design assurance as a substitute for motion mechanism and performance expertise",
+          "evidence_ref": "evals/artifacts/overlap-scroll-motion.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-operational-workflow.json",
+        "sha256": "5565ed9df92c0a9e2b6c124b933f8da89bddb09e03c873e31eabd60918f5fdc2"
+      },
+      "case_id": "normal-operational-workflow",
+      "criterion_results": [
+        {
+          "criterion": "Preserves raw typed relations and execution provenance while testing any reduced display projection",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Uses dependency waves and contextual detail to support operator investigation without inventing measured facts",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Verifies dense forks, joins, selection, focus, reflow, localization, natural scrolling, and a linear alternative",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Loads the operational Guide from generic backend graph vocabulary alone",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "observed": false
+        },
+        {
+          "behavior": "Presents requested model, token, or timing settings as observed facts",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "observed": false
+        },
+        {
+          "behavior": "Uses a wide canvas as the only chronology representation",
+          "evidence_ref": "evals/artifacts/normal-operational-workflow.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    }
+  ],
+  "evaluated_on": "2026-07-30",
+  "evaluator": {
+    "authoring_run_ref": "run-20260730-product-design-v7-r4-author",
+    "evaluation_run_ref": "run-20260730-product-design-v7-r6-evaluator",
+    "kind": "fresh-context",
+    "observation_id": "84092191589040582c8d0ba7498da661"
+  },
+  "expertise_pack_id": "product-design",
+  "schema_version": "maestro_expertise_quality_eval_v2",
+  "subject": {
+    "candidate_digest": "96639dc9428f176d666b16e913eaf57904b2dac5082f90a7818e8ddfb8850764",
+    "cases_sha256": "751bf96765f9406015cf420dff2ed0a99513e7d5f4655ec5ded79e5a26873f67"
+  }
+}

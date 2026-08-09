@@ -1,0 +1,165 @@
+{
+  "default_guides": [
+    "playback-integration"
+  ],
+  "dominance_triggers": [
+    "mux streaming",
+    "mux playback",
+    "mux player integration",
+    "mux live",
+    "mux webhook",
+    "mux data",
+    "signed playback",
+    "playback token",
+    "Mux 스트리밍",
+    "Mux 재생",
+    "Mux 플레이어 연동",
+    "Mux 라이브",
+    "Mux 웹훅",
+    "Mux 데이터",
+    "서명 재생",
+    "재생 토큰"
+  ],
+  "evaluation_suite": "evals/cases.json",
+  "expertise_pack_id": "mux-streaming-web",
+  "guides": [
+    {
+      "freshness": "versioned",
+      "guide_id": "playback-integration",
+      "summary": "Integrate Mux Player through a typed playback boundary and preserve metadata, stream type, media assets, recovery, and accessible controls.",
+      "triggers": [
+        "mux streaming",
+        "mux video playback",
+        "mux playback",
+        "mux player integration",
+        "playback id",
+        "stream type",
+        "Mux 스트리밍",
+        "Mux 비디오 재생",
+        "Mux 재생",
+        "Mux 플레이어 연동",
+        "재생 ID",
+        "스트림 타입"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "secure-playback",
+      "summary": "Choose public, signed, or DRM playback deliberately and keep token issuance, purpose, expiry, refresh, and signing credentials within protected boundaries.",
+      "triggers": [
+        "signed playback",
+        "playback token",
+        "token refresh",
+        "expired token",
+        "drm token",
+        "서명 재생",
+        "재생 토큰",
+        "토큰 갱신",
+        "만료 토큰",
+        "DRM 토큰"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "live-lifecycle",
+      "summary": "Map Mux Live events to viewer states, protect stream keys, recover missed transitions, and preserve the live-stream-to-recording-assets relationship.",
+      "triggers": [
+        "mux live",
+        "live stream state",
+        "stream key",
+        "active asset",
+        "live recording",
+        "Mux 라이브",
+        "라이브 상태",
+        "스트림 키",
+        "활성 에셋",
+        "라이브 녹화"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "webhook-state-sync",
+      "summary": "Authenticate Mux webhooks and process duplicate, retried, delayed, and reordered events through idempotent durable state transitions.",
+      "triggers": [
+        "mux webhook",
+        "webhook signature",
+        "webhook retry",
+        "duplicate webhook",
+        "idempotent webhook",
+        "Mux 웹훅",
+        "웹훅 서명",
+        "웹훅 재시도",
+        "중복 웹훅",
+        "멱등 웹훅"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "playback-observability",
+      "summary": "Instrument Mux Data metadata and distinguish startup, playback failure, rebuffering, and delivery health from application business outcomes.",
+      "triggers": [
+        "mux data",
+        "playback startup",
+        "rebuffering",
+        "playback failure",
+        "playback success",
+        "Mux 데이터",
+        "재생 시작 시간",
+        "리버퍼링",
+        "재생 실패",
+        "재생 성공"
+      ]
+    }
+  ],
+  "kind": "expertise-pack",
+  "portability": "global",
+  "research_policy": {
+    "contextualize_triggers": [
+      "latest mux docs",
+      "current mux sdk",
+      "mux react compatibility",
+      "mux next.js integration",
+      "mux drm requirements",
+      "최신 Mux 문서",
+      "현재 Mux SDK",
+      "Mux React 호환성",
+      "Mux Next.js 연동",
+      "Mux DRM 요구사항"
+    ],
+    "default_mode": "reuse",
+    "refresh_triggers": [
+      "refresh mux expertise",
+      "update mux sources",
+      "refresh mux pack",
+      "Mux 전문성 갱신",
+      "Mux 출처 갱신",
+      "Mux 팩 업데이트"
+    ]
+  },
+  "schema_version": "maestro_expertise_pack_v1",
+  "skill_id": "maestro-mux-streaming-web",
+  "source_manifest": "evidence/sources.json",
+  "status": "pilot",
+  "summary": "Mux-specific web streaming implementation criteria for player integration, signed playback, live lifecycle, webhook state synchronization, and playback observability.",
+  "triggers": [
+    "mux streaming",
+    "mux video playback",
+    "mux playback",
+    "mux player integration",
+    "mux live",
+    "mux webhook",
+    "mux data",
+    "signed playback",
+    "playback token",
+    "Mux 스트리밍",
+    "Mux 비디오 재생",
+    "Mux 재생",
+    "Mux 플레이어 연동",
+    "Mux 라이브",
+    "Mux 웹훅",
+    "Mux 데이터",
+    "서명 재생",
+    "재생 토큰"
+  ],
+  "version": 1
+}

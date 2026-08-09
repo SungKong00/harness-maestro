@@ -1,0 +1,176 @@
+{
+  "expertise_pack_id": "software-engineering",
+  "schema_version": "maestro_expertise_sources_v1",
+  "sources": [
+    {
+      "authority": "ISO/IEC/IEEE 42010:2022 — Software, systems and enterprise — Architecture description",
+      "freshness": "stable",
+      "source_id": "iso-42010-2022",
+      "supports": [
+        "Choose responsibility, state, and dependency boundaries from explicit quality trade-offs and reversible seams."
+      ],
+      "tier": 1,
+      "url": "https://www.iso.org/standard/74393.html",
+      "used_by": [
+        "architecture-boundaries-and-tradeoffs"
+      ]
+    },
+    {
+      "authority": "The Architecture Tradeoff Analysis Method",
+      "freshness": "stable",
+      "source_id": "sei-atam-1998",
+      "supports": [
+        "Choose responsibility, state, and dependency boundaries from explicit quality trade-offs and reversible seams."
+      ],
+      "tier": 2,
+      "url": "https://www.sei.cmu.edu/library/the-architecture-tradeoff-analysis-method/",
+      "used_by": [
+        "architecture-boundaries-and-tradeoffs"
+      ]
+    },
+    {
+      "authority": "RFC 2119 / BCP 14 — Key words for use in RFCs to Indicate Requirement Levels",
+      "freshness": "stable",
+      "source_id": "rfc-2119",
+      "supports": [
+        "Define caller obligations, provider guarantees, stable-state invariants, errors, and evidence for public or internal behavior."
+      ],
+      "tier": 1,
+      "url": "https://www.rfc-editor.org/info/rfc2119/",
+      "used_by": [
+        "contracts-and-invariants"
+      ]
+    },
+    {
+      "authority": "RFC 8174 / BCP 14 — Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words",
+      "freshness": "stable",
+      "source_id": "rfc-8174",
+      "supports": [
+        "Define caller obligations, provider guarantees, stable-state invariants, errors, and evidence for public or internal behavior."
+      ],
+      "tier": 1,
+      "url": "https://www.rfc-editor.org/info/rfc8174/",
+      "used_by": [
+        "contracts-and-invariants"
+      ]
+    },
+    {
+      "authority": "Eiffel — Design by Contract and Assertions",
+      "freshness": "stable",
+      "source_id": "eiffel-design-by-contract",
+      "supports": [
+        "Define caller obligations, provider guarantees, stable-state invariants, errors, and evidence for public or internal behavior."
+      ],
+      "tier": 2,
+      "url": "https://www.eiffel.org/doc/eiffel/I2E-_Design_by_Contract_and_Assertions",
+      "used_by": [
+        "contracts-and-invariants"
+      ]
+    },
+    {
+      "authority": "PostgreSQL 18 Documentation — Transaction Isolation",
+      "freshness": "volatile",
+      "source_id": "postgresql-18-isolation",
+      "supports": [
+        "Choose coordination, isolation, and idempotency from state invariants, competing operations, and retry semantics."
+      ],
+      "tier": 1,
+      "url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+      "used_by": [
+        "state-concurrency-and-idempotency"
+      ]
+    },
+    {
+      "authority": "RFC 9110 — HTTP Semantics, Section 9.2.2 Idempotent Methods",
+      "freshness": "versioned",
+      "source_id": "rfc-9110-idempotency",
+      "supports": [
+        "Choose coordination, isolation, and idempotency from state invariants, competing operations, and retry semantics."
+      ],
+      "tier": 1,
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods",
+      "used_by": [
+        "state-concurrency-and-idempotency"
+      ]
+    },
+    {
+      "authority": "Amazon Builders' Library — Making retries safe with idempotent APIs",
+      "freshness": "versioned",
+      "source_id": "aws-idempotent-apis",
+      "supports": [
+        "Choose coordination, isolation, and idempotency from state invariants, competing operations, and retry semantics."
+      ],
+      "tier": 2,
+      "url": "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/",
+      "used_by": [
+        "state-concurrency-and-idempotency"
+      ]
+    },
+    {
+      "authority": "Amazon Builders' Library — Timeouts, retries, and backoff with jitter",
+      "freshness": "versioned",
+      "source_id": "aws-timeouts-retries-jitter",
+      "supports": [
+        "Define timeout, cancellation, retry, degradation, compensation, and recovery behavior without amplifying failures."
+      ],
+      "tier": 2,
+      "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/",
+      "used_by": [
+        "failure-semantics-and-recovery"
+      ]
+    },
+    {
+      "authority": "Google SRE Book — Addressing Cascading Failures",
+      "freshness": "versioned",
+      "source_id": "google-sre-cascading-failures",
+      "supports": [
+        "Define timeout, cancellation, retry, degradation, compensation, and recovery behavior without amplifying failures."
+      ],
+      "tier": 2,
+      "url": "https://sre.google/sre-book/addressing-cascading-failures/",
+      "used_by": [
+        "failure-semantics-and-recovery"
+      ]
+    },
+    {
+      "authority": "Semantic Versioning 2.0.0",
+      "freshness": "stable",
+      "source_id": "semver-2",
+      "supports": [
+        "Plan source, wire, semantic, and persisted compatibility with staged migration, deprecation, and recovery."
+      ],
+      "tier": 1,
+      "url": "https://semver.org/",
+      "used_by": [
+        "compatibility-and-change"
+      ]
+    },
+    {
+      "authority": "Google AIP-180 — Backwards compatibility",
+      "freshness": "versioned",
+      "source_id": "google-aip-180",
+      "supports": [
+        "Plan source, wire, semantic, and persisted compatibility with staged migration, deprecation, and recovery."
+      ],
+      "tier": 2,
+      "url": "https://google.aip.dev/180",
+      "used_by": [
+        "compatibility-and-change"
+      ]
+    },
+    {
+      "authority": "Martin Fowler — Parallel Change",
+      "freshness": "stable",
+      "source_id": "fowler-parallel-change",
+      "supports": [
+        "Plan source, wire, semantic, and persisted compatibility with staged migration, deprecation, and recovery."
+      ],
+      "tier": 2,
+      "url": "https://martinfowler.com/bliki/ParallelChange.html",
+      "used_by": [
+        "compatibility-and-change"
+      ]
+    }
+  ],
+  "verified_on": "2026-07-27"
+}

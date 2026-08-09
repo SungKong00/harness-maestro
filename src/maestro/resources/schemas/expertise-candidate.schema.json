@@ -1,0 +1,680 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-candidate.schema.json",
+  "title": "Harness Maestro Project-local Expertise Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "expertise_pack_id",
+    "status",
+    "portability",
+    "owner",
+    "review_after",
+    "problem",
+    "reusable_when",
+    "not_for",
+    "existing_coverage",
+    "evidence_refs",
+    "proposed_guides",
+    "evaluation"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "maestro_expertise_candidate_v1",
+        "maestro_expertise_candidate_v2"
+      ]
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "expertise_pack_id": {
+      "$ref": "#/$defs/id"
+    },
+    "status": {
+      "const": "candidate"
+    },
+    "portability": {
+      "enum": [
+        "global",
+        "profile",
+        "project"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_after": {
+      "type": "string",
+      "format": "date"
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reusable_when": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "not_for": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "existing_coverage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "proposed_guides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guide_id",
+          "failure_prevented",
+          "decision_checks",
+          "freshness"
+        ],
+        "properties": {
+          "guide_id": {
+            "$ref": "#/$defs/id"
+          },
+          "failure_prevented": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision_checks": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 12,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "freshness": {
+            "enum": [
+              "stable",
+              "versioned",
+              "volatile"
+            ]
+          }
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "cases_path",
+        "quality_path",
+        "pass_criteria",
+        "regression_criteria"
+      ],
+      "properties": {
+        "baseline": {
+          "enum": [
+            "no-pack",
+            "persona-only",
+            "existing-pack"
+          ]
+        },
+        "cases_path": {
+          "$ref": "#/$defs/safeRelativePath"
+        },
+        "quality_path": {
+          "const": "evals/quality.json"
+        },
+        "pass_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "regression_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "signal_fingerprint"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "automatic",
+            "user-requested",
+            "task-gap"
+          ]
+        },
+        "signal_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{24}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "automatic",
+                  "task-gap"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signal_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "signal_fingerprint": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "adaptation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "coverage_ref",
+        "plan_ref",
+        "source_route_ref",
+        "source_admission_ref",
+        "unit_id",
+        "authoring_research_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_task_gap_adaptation_v1"
+        },
+        "coverage_ref": {
+          "$ref": "#/$defs/coverageRef"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/adaptationPlanRef"
+        },
+        "source_route_ref": {
+          "$ref": "#/$defs/sourceRouteRef"
+        },
+        "source_admission_ref": {
+          "$ref": "#/$defs/sourceAdmissionRef"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "authoring_research_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/researchBundleRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_map_path",
+        "discovery_complete",
+        "allocation_complete"
+      ],
+      "properties": {
+        "decision_map_path": {
+          "const": "evidence/decision-map.json"
+        },
+        "discovery_complete": {
+          "const": true
+        },
+        "allocation_complete": {
+          "const": true
+        }
+      }
+    },
+    "component_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target_guide_id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "new-pack",
+            "pack-revision",
+            "pack-merge",
+            "pack-extraction",
+            "pack-split",
+            "guide-addition",
+            "guide-revision",
+            "guide-deprecation",
+            "guide-move",
+            "guide-copy",
+            "trigger-adjustment",
+            "source-refresh",
+            "evaluation-extension"
+          ]
+        },
+        "target_guide_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "source_pack_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "target_pack_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "change_set_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_role": {
+          "enum": [
+            "source",
+            "target",
+            "result"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "guide-addition",
+                  "guide-revision",
+                  "guide-deprecation",
+                  "guide-move",
+                  "guide-copy"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_guide_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "target_guide_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pack-merge",
+                  "pack-extraction"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_pack_ids"
+            ],
+            "properties": {
+              "source_pack_ids": {
+                "minItems": 2,
+                "maxItems": 4
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "pack-split",
+                    "guide-move",
+                    "guide-copy"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "source_pack_ids"
+              ],
+              "properties": {
+                "source_pack_ids": {
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "source_pack_ids": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "pack-split"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "target_pack_ids"
+            ],
+            "properties": {
+              "target_pack_ids": {
+                "minItems": 2,
+                "maxItems": 4
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "guide-move",
+                    "guide-copy"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "target_pack_ids": {
+                  "maxItems": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "target_pack_ids": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "maestro_expertise_candidate_v2"
+          }
+        },
+        "required": [
+          "schema_version"
+        ]
+      },
+      "then": {
+        "required": [
+          "coverage"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "coverage"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "generation": {
+            "properties": {
+              "mode": {
+                "const": "task-gap"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "generation"
+        ]
+      },
+      "then": {
+        "required": [
+          "adaptation",
+          "component_change"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "maestro_expertise_candidate_v2"
+          },
+          "component_change": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "pack-merge",
+                        "pack-extraction",
+                        "pack-split",
+                        "guide-move",
+                        "guide-copy"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "change_set_id",
+                    "operation_id",
+                    "operation_role"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "adaptation"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!\\.)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "coverageRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/task-coverage.json"
+            }
+          }
+        }
+      ]
+    },
+    "adaptationPlanRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/adaptation-plan.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceRouteRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-route.json"
+            }
+          }
+        }
+      ]
+    },
+    "sourceAdmissionRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/source-admission.json"
+            }
+          }
+        }
+      ]
+    },
+    "researchBundleRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/research-bundle.json"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

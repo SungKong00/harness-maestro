@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro v0의 활성 문서와 읽는 순서를 안내하는 단일 문서 지도.
 scope: [docs]
-last_verified: 2026-07-24
+last_verified: 2026-07-26
 supersedes: []
 sensitivity: internal
 ---
@@ -25,8 +25,21 @@ sensitivity: internal
 3. [Maestro v0 구조](architecture/maestro-v0.md) — 현재 구현 범위와 명령 흐름
 4. [Lens·Executor 모델](architecture/lens-executor-model.md) — 관점과 실행 주체를
    분리하는 이유
-5. [v0.2 활성 계획](plans/active/v0.md) — 릴리스 범위와 완료 조건
-
+5. [Typed Assignment Plan](architecture/typed-assignment-plan.md) — route v1 호환
+   Assignment DAG, 실행 전 검증과 HTML·resume의 단계적 도입 조건
+6. [Expertise Pack](architecture/expertise-packs.md) — 선택형 전문가 기준,
+   조건부 reference research와 project-local 후보 수명주기
+7. [Decision Workflow](architecture/decision-workflow.md) — 판단과 구현 분리,
+   Specialist 역할 경계, DecisionBundle과 실행 승인
+8. [통합 운영 뷰어](architecture/operations-viewer.md) — 작업 흐름, 측정값,
+   Expertise 근거와 검토 신호를 한 localhost 페이지에서 읽는 최소 관측 구조
+9. [요청 계보](architecture/request-lineage.md) — 한 사용자 요청과 여러 불변
+   RunReceipt를 원자적으로 연결하는 계약과 legacy 마이그레이션 경계
+10. [최소 Expertise 라우팅 개선 계획](plans/active/minimal-expertise-routing.md) —
+    top-1 Pack 계약을 유지하면서 자연어 누락을 작업 종류·상대 경로·명시 선택으로
+    보완하는 단계별 체크리스트
+11. [v0.3 릴리스 계획](plans/active/v0.3-release.md) — 아직 끝나지 않은
+   릴리스·실사용 Pilot TODO만 관리
 ## 거버넌스
 
 - [문서 생명주기](governance/document-lifecycle.md) — Markdown 권위, metadata,
@@ -36,11 +49,24 @@ sensitivity: internal
 - [제외·보류 목록](governance/deferred-and-excluded.md) — 의도적으로 넣지 않은
   기능과 재검토 조건
 
+## 완료된 계획
+
+- [이름 있는 작업 히스토리 구현](plans/completed/named-goal-history.md) — 기존
+  JSONL을 보존하며 완료한 목표만 이름 있는 bundle로 묶은 historical plan
+- [대시보드 UI 개편 계획](plans/completed/dashboard-ui-roadmap.md) — 작업 중심 GUI,
+  회사형 단계 표현과 데이터·증거 경계를 구현·검증하고 종료한 로드맵
+
 ## 설계 근거
 
 - [설계 근거와 참고 자료](research/design-foundations.md) — 멀티에이전트 숙의,
   컨텍스트 절약, orchestration, 자가개선과 문서 구조에 참고한 원 논문·공식 저장소·
   공학 자료, 실제 채택 범위와 아직 검증하지 않은 주장
+- [Codex 실행 관측 근거](research/codex-runtime-observability.md) — App Server,
+  SDK, exec JSONL과 trusted Hooks를 작업 그래프에 연결할 때의 공식 수집 경로,
+  버전·완전성·모델·시간·개인정보 경계
+- [Product Design 실무 근거](research/product-design-practice-foundations.md) —
+  문제 정의, 정보 구조, 위계, 한국어 타이포그래피, 상호작용·접근성, 레퍼런스
+  전이와 운영 워크플로 UI를 판단 질문·산출물·검증·31개 출처 경계로 정리한 연구
 
 ## 릴리스 검사
 
@@ -56,6 +82,12 @@ sensitivity: internal
 - [ADR-0003: 증거 우선 숙의](decisions/0003-evidence-first-deliberation.md)
 - [ADR-0004: 주제별 단일 문서 권위](decisions/0004-single-document-authority.md)
 - [ADR-0005: 프로젝트 로컬 개선과 사용자 문서 Adapter 경계](decisions/0005-project-local-extension-boundary.md)
+- [ADR-0006: 증거를 선택형 전문성 팩으로 컴파일](decisions/0006-evidence-compiled-expertise.md)
+- [ADR-0007: 판단과 실행 승인을 분리](decisions/0007-separate-decision-and-execution.md)
+- [ADR-0008: CLI·Registry·Skill의 콘텐츠 기반 릴리스 결합](decisions/0008-content-addressed-release.md)
+- [ADR-0009: 내부 리서치와 평가된 전문성 경계](decisions/0009-internal-research-and-expertise-boundary.md)
+- [ADR-0010: 프로젝트 로컬 Expertise 활성화](decisions/0010-project-local-expertise-activation.md)
+- [ADR-0011: 근거 기반 Product Design assurance](decisions/0011-evidence-backed-product-design-assurance.md)
 
 ## 역사 자료
 
@@ -73,3 +105,9 @@ sensitivity: internal
   검색어를 이용해 필요한 문서만 고른다. 본문 전체를 한 번에 컨텍스트에 넣지 않는다.
 - 문서 구조를 바꾼 뒤에는 `maestro doctor --repo . --json`으로 metadata,
   중복 활성 ID와 상대 링크를 검사한다.
+
+<!-- MAESTRO:CONVENTIONS:BEGIN -->
+## Project Conventions
+
+- [frontend-dashboard-ui](conventions/frontend-dashboard-ui.md)
+<!-- MAESTRO:CONVENTIONS:END -->

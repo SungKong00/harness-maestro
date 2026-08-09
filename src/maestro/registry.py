@@ -3,14 +3,27 @@ from __future__ import annotations
 import json
 import re
 from importlib import resources
+from pathlib import Path
 from typing import Any, Iterable
 
 from .errors import MaestroError
 from .matching import searchable_terms, term_matches
+from .model_policy import (
+    build_stage_model_route,
+    default_stage_kind,
+    is_deterministic_command,
+)
 from .util import canonical_json, sha256_text
 
 LENS_FORBIDDEN = {"model", "models", "tools", "permissions", "capabilities", "context_policy"}
-EXECUTOR_FORBIDDEN = {"questions", "reject_when", "required_evidence", "trigger"}
+EXECUTOR_FORBIDDEN = {
+    "questions",
+    "reject_when",
+    "required_evidence",
+    "trigger",
+    "non_exhaustive",
+    "escalate_when",
+}
 LENS_ALLOWED = {
     "schema_version",
     "kind",
@@ -22,6 +35,8 @@ LENS_ALLOWED = {
     "questions",
     "required_evidence",
     "reject_when",
+    "non_exhaustive",
+    "escalate_when",
     "finding_limits",
     "output",
 }
@@ -56,6 +71,42 @@ ADAPTER_ALLOWED = {
     "authority_policy",
     "writes",
 }
+EXPERTISE_PACK_REQUIRED = {
+    "schema_version",
+    "kind",
+    "expertise_pack_id",
+    "summary",
+    "status",
+    "portability",
+    "version",
+    "triggers",
+    "skill_id",
+    "default_guides",
+    "guides",
+    "research_policy",
+    "source_manifest",
+    "evaluation_suite",
+}
+EXPERTISE_PACK_ALLOWED = EXPERTISE_PACK_REQUIRED | {
+    "dominance_triggers",
+    "extends",
+}
+EXPERTISE_EXTENDS_ALLOWED = {
+    "expertise_pack_id",
+    "version",
+    "digest",
+}
+EXPERTISE_GUIDE_ALLOWED = {
+    "guide_id",
+    "summary",
+    "triggers",
+    "freshness",
+}
+EXPERTISE_RESEARCH_POLICY_ALLOWED = {
+    "default_mode",
+    "contextualize_triggers",
+    "refresh_triggers",
+}
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REGISTRY_FORMAT_VERSION = 1
 MODEL_CLASSES = ("economy", "balanced", "frontier")
@@ -89,6 +140,10 @@ def load_registry() -> dict[str, list[dict[str, Any]]]:
         "executors": [_load_file(item) for item in _json_files("registry/executors")],
         "departments": [_load_file(item) for item in _json_files("registry/departments")],
         "adapters": [_load_file(item) for item in _json_files("registry/adapters")],
+        "expertise_packs": [
+            _load_file(item)
+            for item in _json_files("registry/expertise-packs")
+        ],
     }
 
 
@@ -187,6 +242,10 @@ def definition_digest_maps() -> dict[str, dict[str, str]]:
             item["executor_id"]: sha256_text(canonical_json(item))
             for item in registry["executors"]
         },
+        "expertise_packs": {
+            item["expertise_pack_id"]: sha256_text(canonical_json(item))
+            for item in registry["expertise_packs"]
+        },
     }
 
 
@@ -220,8 +279,15 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
     executor_ids: set[str] = set()
     department_ids: set[str] = set()
     adapter_ids: set[str] = set()
+    expertise_pack_ids: set[str] = set()
 
-    required_groups = {"lenses", "executors", "departments", "adapters"}
+    required_groups = {
+        "lenses",
+        "executors",
+        "departments",
+        "adapters",
+        "expertise_packs",
+    }
     missing_groups = sorted(required_groups - set(registry))
     extra_groups = sorted(set(registry) - required_groups)
     if missing_groups:
@@ -265,7 +331,21 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         errors.extend(
             _required(
                 lens,
-                ("schema_version", "kind", "lens_id", "domain", "summary", "triggers", "questions"),
+                (
+                    "schema_version",
+                    "kind",
+                    "lens_id",
+                    "domain",
+                    "summary",
+                    "triggers",
+                    "questions",
+                    "required_evidence",
+                    "reject_when",
+                    "non_exhaustive",
+                    "escalate_when",
+                    "finding_limits",
+                    "output",
+                ),
                 "lens",
             )
         )
@@ -296,13 +376,23 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
             errors.append(
                 f"lens {lens_id or '?'} references missing domain: {lens.get('domain')!r}"
             )
-        for field in ("triggers", "questions", "required_evidence", "reject_when"):
+        for field in (
+            "triggers",
+            "questions",
+            "required_evidence",
+            "reject_when",
+            "escalate_when",
+        ):
             if not _string_list(lens.get(field), nonempty=True):
                 errors.append(f"lens {lens_id or '?'} {field} must be a non-empty string list")
         if not _unique_string_list(lens.get("triggers"), nonempty=True):
             errors.append(f"lens {lens_id or '?'} triggers must be unique")
         if lens.get("output") != "FindingPacket":
             errors.append(f"lens {lens_id or '?'} output must be FindingPacket")
+        if lens.get("non_exhaustive") is not True:
+            errors.append(
+                f"lens {lens_id or '?'} non_exhaustive must be true"
+            )
         if not isinstance(lens.get("priority"), int) or isinstance(lens.get("priority"), bool):
             errors.append(f"lens {lens_id or '?'} priority must be an integer")
         limits = lens.get("finding_limits", {})
@@ -665,6 +755,178 @@ def validate_registry(registry: dict[str, list[dict[str, Any]]] | None = None) -
         ):
             errors.append(f"adapter {adapter_id or '?'} write policy is unsafe")
 
+    for pack in registry["expertise_packs"]:
+        if not isinstance(pack, dict):
+            errors.append("expertise pack entries must be objects")
+            continue
+        errors.extend(
+            _required(
+                pack,
+                tuple(sorted(EXPERTISE_PACK_REQUIRED)),
+                "expertise pack",
+            )
+        )
+        pack_id = pack.get("expertise_pack_id")
+        if pack.get("kind") != "expertise-pack":
+            errors.append(
+                f"expertise pack {pack_id or '?'} has kind={pack.get('kind')!r}"
+            )
+        if pack.get("schema_version") != "maestro_expertise_pack_v1":
+            errors.append(
+                f"expertise pack {pack_id or '?'} has unsupported schema_version"
+            )
+        unexpected = sorted(set(pack) - EXPERTISE_PACK_ALLOWED)
+        if unexpected:
+            errors.append(
+                f"expertise pack {pack_id or '?'} has unsupported fields: "
+                f"{', '.join(unexpected)}"
+            )
+        if not _valid_id(pack_id):
+            errors.append(f"expertise pack {pack_id or '?'} ID is invalid")
+        else:
+            if pack_id in expertise_pack_ids:
+                errors.append(f"duplicate expertise_pack_id: {pack_id}")
+            expertise_pack_ids.add(pack_id)
+        if not isinstance(pack.get("summary"), str) or not pack["summary"].strip():
+            errors.append(
+                f"expertise pack {pack_id or '?'} summary must be a non-empty string"
+            )
+        if pack.get("status") not in {
+            "candidate",
+            "pilot",
+            "active",
+            "deprecated",
+            "retired",
+        }:
+            errors.append(f"expertise pack {pack_id or '?'} status is invalid")
+        if pack.get("portability") not in {"global", "profile", "project"}:
+            errors.append(
+                f"expertise pack {pack_id or '?'} portability is invalid"
+            )
+        version = pack.get("version")
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version < 1
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} version must be a positive integer"
+            )
+        extends = pack.get("extends")
+        if extends is not None and (
+            not isinstance(extends, dict)
+            or set(extends) != EXPERTISE_EXTENDS_ALLOWED
+            or not _valid_id(extends.get("expertise_pack_id"))
+            or extends.get("expertise_pack_id") == pack_id
+            or not isinstance(extends.get("version"), int)
+            or isinstance(extends.get("version"), bool)
+            or extends.get("version") < 1
+            or not isinstance(extends.get("digest"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", extends["digest"]) is None
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} extends contract is invalid"
+            )
+        if not _unique_string_list(pack.get("triggers"), nonempty=True):
+            errors.append(
+                f"expertise pack {pack_id or '?'} triggers must be unique"
+            )
+        if not _unique_string_list(pack.get("dominance_triggers", [])):
+            errors.append(
+                f"expertise pack {pack_id or '?'} dominance_triggers must be unique strings"
+            )
+        if not _valid_id(pack.get("skill_id")):
+            errors.append(f"expertise pack {pack_id or '?'} skill_id is invalid")
+        for field in ("source_manifest", "evaluation_suite"):
+            value = pack.get(field)
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or value.startswith(("/", "."))
+                or ".." in value.split("/")
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} {field} must be a safe relative path"
+                )
+
+        guides = pack.get("guides")
+        guide_ids: set[str] = set()
+        if not isinstance(guides, list) or not guides:
+            errors.append(
+                f"expertise pack {pack_id or '?'} guides must be a non-empty list"
+            )
+            guides = []
+        for guide in guides:
+            if not isinstance(guide, dict):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide entries must be objects"
+                )
+                continue
+            if set(guide) != EXPERTISE_GUIDE_ALLOWED:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide fields are invalid"
+                )
+            guide_id = guide.get("guide_id")
+            if not _valid_id(guide_id):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide_id is invalid"
+                )
+            elif guide_id in guide_ids:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} has duplicate guide: {guide_id}"
+                )
+            else:
+                guide_ids.add(guide_id)
+            if (
+                not isinstance(guide.get("summary"), str)
+                or not guide["summary"].strip()
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide summary is invalid"
+                )
+            if not _unique_string_list(guide.get("triggers"), nonempty=True):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide triggers must be unique"
+                )
+            if guide.get("freshness") not in {
+                "stable",
+                "versioned",
+                "volatile",
+            }:
+                errors.append(
+                    f"expertise pack {pack_id or '?'} guide freshness is invalid"
+                )
+        default_guides = pack.get("default_guides")
+        if (
+            not _unique_string_list(default_guides, nonempty=True)
+            or not set(default_guides).issubset(guide_ids)
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} default_guides must reference guides"
+            )
+
+        research_policy = pack.get("research_policy")
+        if (
+            not isinstance(research_policy, dict)
+            or set(research_policy) != EXPERTISE_RESEARCH_POLICY_ALLOWED
+        ):
+            errors.append(
+                f"expertise pack {pack_id or '?'} research_policy fields are invalid"
+            )
+            research_policy = {}
+        if research_policy.get("default_mode") != "reuse":
+            errors.append(
+                f"expertise pack {pack_id or '?'} default research mode must be reuse"
+            )
+        for field in ("contextualize_triggers", "refresh_triggers"):
+            if not _unique_string_list(
+                research_policy.get(field),
+                nonempty=True,
+            ):
+                errors.append(
+                    f"expertise pack {pack_id or '?'} {field} must be unique"
+                )
+
     return errors
 
 
@@ -680,11 +942,239 @@ def _goal_has(goal: str, terms: Iterable[str]) -> bool:
     return any(_trigger_matches(term, goal_terms) for term in terms)
 
 
+EXPLICIT_LOCAL_READ_ONLY_REQUEST_PATTERNS = (
+    r"\b(?:do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b[^.!?;\n]{0,32}\b(?:code|files?|project|repository)\b",
+    r"\b(?:code|files?|project|repository)\b[^.!?;\n]{0,32}\b(?:must\s+not|should\s+not|do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b",
+    r"(?:코드|파일|프로젝트|저장소)[^.!?;\n]{0,24}(?:작업|변경|수정|구현)\s*(?:은|는|을|를)?\s*(?:하지\s*마|하지\s*말|없이)",
+)
+GENERIC_READ_ONLY_REQUEST_PATTERNS = (
+    r"\b(?:do not|don't|dont)\s+(?:change|edit|implement|modify|write)\b",
+    r"\bwithout\s+(?:any\s+)?(?:code\s+)?changes?\b",
+    r"\bno\s+(?:code\s+)?changes?\b",
+    r"\b(?:analysis|assessment|review)\s+only\b",
+    r"(?:코드\s*)?(?:작업|변경|수정|구현)\s*(?:은|는|을|를)?\s*(?:하지\s*마|하지\s*말|없이)",
+    r"(?:판단|검토|분석|평가)\s*만",
+)
+EXPLICIT_REVIEW_ONLY_PATTERNS = (
+    r"\b(?:analysis|assessment|review)\s+only\b",
+    r"(?:판단|검토|분석|평가)\s*만",
+)
+NEGATIVE_EFFECT_MARKERS = (
+    r"\b(?:do not|don't|dont|without|no)\b",
+    r"(?:하지\s*마|하지\s*말|하지\s*않|금지|없이)",
+)
+GIT_COMMIT_TERMS = (
+    "commit",
+    "git commit",
+    "커밋",
+)
+REMOTE_WRITE_TERMS = (
+    "push",
+    "remote change",
+    "remote changes",
+    "pull request",
+    "publish",
+    "release",
+    "deploy",
+    "푸시",
+    "원격 변경",
+    "원격 작업",
+    "풀 리퀘스트",
+    "배포",
+    "게시",
+    "릴리스",
+)
+STAGED_REQUEST_PATTERNS = (
+    r"\b(?:review|assess|analy[sz]e|design|plan)\b.{0,40}\b(?:then|before)\b.{0,40}\b(?:implement|change|modify|build)\b",
+    r"\b(?:research|investigate|explore|look\s+up)\b.{0,80}\b(?:first|then|before)\b.{0,80}\b(?:implement|change|modify|build|redesign)\b",
+    r"\b(?:implement|change|modify|build)\b.{0,40}\bafter\b.{0,40}\b(?:review|assessment|analysis|design|plan)\b",
+    r"\b(?:choose|select|decide)\b.{0,80}\b(?:between|from)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
+    r"\b(?:compare|evaluate)\b.{0,80}\b(?:options?|alternatives?)\b.{0,80}\b(?:implement|change|modify|build|apply)\b",
+    r"\b(?:implement|change|modify|build|apply)\b.{0,80}\b(?:winner|chosen|selected)\b",
+    r"(?:검토|판단|분석|설계|기획|확정)\s*(?:한|한\s*뒤|후|뒤|하고\s*나서).{0,40}(?:구현|개발|수정|변경)",
+    r"(?:먼저|우선).{0,40}(?:검토|판단|분석|설계|기획).{0,40}(?:그\s*후|이후|다음|나서).{0,40}(?:구현|개발|수정|변경)",
+    r"(?:레퍼런스|자료|사례|방향).{0,30}(?:리서치|조사|탐색).{0,30}(?:부터|먼저|우선|후|뒤|다음).{0,80}(?:구현|개발|수정|변경|리모델링|개편)",
+    r"(?:리서치|조사|탐색).{0,30}(?:부터|먼저|우선|후|뒤|다음).{0,80}(?:구현|개발|수정|변경|리모델링|개편)",
+    r"(?:비교|검토|판단).{0,80}(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
+    r"(?:선택|결정|확정|골라).{0,80}(?:구현|개발|수정|변경|적용)",
+)
+
+
+def _matches_any_pattern(goal: str, patterns: Iterable[str]) -> bool:
+    folded = goal.casefold()
+    return any(re.search(pattern, folded) is not None for pattern in patterns)
+
+
+def _effect_clauses(goal: str) -> list[str]:
+    """Split contrastive phrases so one effect's negation cannot bind another."""
+
+    return [
+        clause.strip()
+        for clause in re.split(
+            r"[.!?;\n]+|\bbut\b|\bhowever\b|(?:하되|하지만|그러나|다만)",
+            goal,
+            flags=re.IGNORECASE,
+        )
+        if clause.strip()
+    ]
+
+
+def _forbidden_external_side_effects(goal: str) -> list[str]:
+    """Return explicit external-effect prohibitions without changing local write scope."""
+
+    clauses = _effect_clauses(goal)
+
+    def explicitly_forbidden(terms: Iterable[str]) -> bool:
+        return any(
+            _matches_any_pattern(clause, NEGATIVE_EFFECT_MARKERS)
+            and _goal_has(clause, terms)
+            for clause in clauses
+        )
+
+    forbidden: list[str] = []
+    if explicitly_forbidden(GIT_COMMIT_TERMS):
+        forbidden.append("git_commit")
+    if explicitly_forbidden(REMOTE_WRITE_TERMS):
+        forbidden.append("remote_write")
+    return forbidden
+
+
+def resolve_request_contract(
+    goal: str,
+    intent: str = "auto",
+) -> dict[str, Any]:
+    """Classify whether a request may reach a mutation owner.
+
+    Local repository mutation and external effects are separate axes. A
+    prohibition on commits, pushes, releases, or other remote writes does not
+    revoke an otherwise explicit authorization to edit project files.
+    """
+
+    if intent not in {"auto", "implementation", "review", "research"}:
+        raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
+
+    forbidden_side_effects = _forbidden_external_side_effects(goal)
+    effect_clauses = _effect_clauses(goal)
+    local_write_forbidden = (
+        any(
+            _matches_any_pattern(
+                clause,
+                EXPLICIT_LOCAL_READ_ONLY_REQUEST_PATTERNS,
+            )
+            for clause in effect_clauses
+        )
+        or _matches_any_pattern(goal, EXPLICIT_REVIEW_ONLY_PATTERNS)
+        or (
+            not forbidden_side_effects
+            and any(
+                _matches_any_pattern(
+                    clause,
+                    GENERIC_READ_ONLY_REQUEST_PATTERNS,
+                )
+                for clause in effect_clauses
+            )
+        )
+    )
+    if local_write_forbidden:
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "forbidden",
+            "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
+        }
+    if intent in {"review", "research"}:
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "forbidden",
+            "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
+        }
+    if _matches_any_pattern(goal, STAGED_REQUEST_PATTERNS):
+        return {
+            "decision_mode": "staged",
+            "side_effect_policy": "after_decision",
+            "authorization_source": (
+                "explicit_cli" if intent == "implementation" else None
+            ),
+            "forbidden_side_effects": forbidden_side_effects,
+        }
+    if intent == "implementation":
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "direct",
+            "authorization_source": "explicit_cli",
+            "forbidden_side_effects": forbidden_side_effects,
+        }
+
+    if _goal_has(
+        goal,
+        (
+            "add",
+            "change",
+            "delete",
+            "fix",
+            "implement",
+            "migrate",
+            "modify",
+            "remove",
+            "rename",
+            "format",
+            "sort",
+            "extract metadata",
+            "update",
+            "추가",
+            "변경",
+            "삭제",
+            "수정",
+            "구현",
+            "마이그레이션",
+            "이름 변경",
+            "포맷",
+            "정렬",
+            "메타데이터 추출",
+        ),
+    ):
+        return {
+            "decision_mode": "direct",
+            "side_effect_policy": "direct",
+            "authorization_source": None,
+            "forbidden_side_effects": forbidden_side_effects,
+        }
+    return {
+        "decision_mode": "direct",
+        "side_effect_policy": "forbidden",
+        "authorization_source": None,
+        "forbidden_side_effects": forbidden_side_effects,
+    }
+
+
 def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
     if intent not in {"auto", "implementation", "review", "research"}:
         raise MaestroError("INTENT_INVALID", f"Unsupported intent: {intent}")
     if intent != "auto":
         return intent, "explicit"
+
+    request_contract = resolve_request_contract(goal, intent)
+    if request_contract["side_effect_policy"] == "forbidden":
+        if _goal_has(
+            goal,
+            (
+                "research",
+                "survey",
+                "look up",
+                "sources",
+                "리서치",
+                "조사",
+                "자료 조사",
+                "찾아봐",
+            ),
+        ):
+            return "research", "inferred"
+        return "review", "inferred"
+    if request_contract["side_effect_policy"] == "after_decision":
+        return "implementation", "inferred"
+    if request_contract["side_effect_policy"] == "direct":
+        return "implementation", "inferred"
 
     mutation_intent = _goal_has(
         goal,
@@ -697,6 +1187,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
             "migrate",
             "modify",
             "remove",
+            "extract metadata",
             "update",
             "추가",
             "변경",
@@ -704,6 +1195,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
             "수정",
             "구현",
             "마이그레이션",
+            "메타데이터 추출",
         ),
     )
     if mutation_intent:
@@ -742,7 +1234,7 @@ def _resolve_intent(goal: str, intent: str) -> tuple[str, str]:
         ),
     ):
         return "review", "inferred"
-    return "implementation", "inferred"
+    return "review", "inferred"
 
 
 def _risk_warnings(
@@ -750,10 +1242,43 @@ def _risk_warnings(
     risk: str,
     lens_ids: list[str],
 ) -> list[dict[str, str]]:
-    if risk != "low":
-        return []
-
     warnings: list[dict[str, str]] = []
+    if (
+        risk == "high"
+        and not lens_ids
+        and _goal_has(
+            goal,
+            (
+                "architecture",
+                "security",
+                "research",
+                "trade-off",
+                "tradeoff",
+                "compare",
+                "evaluation",
+                "아키텍처",
+                "보안",
+                "리서치",
+                "연구",
+                "비교",
+                "평가",
+                "트레이드오프",
+            ),
+        )
+    ):
+        warnings.append(
+            {
+                "code": "HIGH_RISK_LENS_GAP",
+                "message": (
+                    "This high-risk judgment route selected no evidence Lens; "
+                    "select an explicit Lens or record why direct execution is sufficient."
+                ),
+                "suggested_action": "review_lens_selection",
+            }
+        )
+    if risk != "low":
+        return warnings
+
     if _goal_has(
         goal,
         (
@@ -826,151 +1351,25 @@ def _classify_model_task(
     risk: str,
     lens_ids: list[str],
 ) -> tuple[str, str, str]:
-    folded = goal.casefold()
-    mutation_intent = _goal_has(
-        goal,
-        (
-            "add",
-            "change",
-            "delete",
-            "fix",
-            "implement",
-            "migrate",
-            "modify",
-            "remove",
-            "update",
-            "추가",
-            "변경",
-            "삭제",
-            "수정",
-            "구현",
-            "마이그레이션",
-        ),
+    executor = next(
+        item
+        for item in load_registry()["executors"]
+        if item["executor_id"] == "implementation-engineer"
     )
-    deterministic_command = (
-        re.search(
-            r"\b(?:run|execute)\b.*\b(?:tests?|lint|build|schema checks?)\b",
-            folded,
-        )
-        is not None
-        or any(
-            phrase in folded
-            for phrase in (
-                "테스트 실행",
-                "린트 실행",
-                "빌드 실행",
-                "스키마 검사",
-            )
-        )
+    route = build_stage_model_route(
+        goal=goal,
+        risk=risk,
+        lens_ids=lens_ids,
+        executor=executor,
+        host_id="codex",
+        host_profile=load_host_profile("codex"),
+        execution_unit_id="classification-preview",
+        stage_kind="implementation",
     )
-    if deterministic_command and not mutation_intent:
-        return (
-            "deterministic-verification",
-            "none",
-            "Deterministic project commands, not model judgment, decide the result.",
-        )
-    high_impact_terms = (
-        "auth",
-        "authentication",
-        "authorization",
-        "permission",
-        "security",
-        "migration",
-        "transaction",
-        "data integrity",
-        "data loss",
-        "irreversible",
-        "tenant",
-        "material conflict",
-        "important conflict",
-        "architecture conflict",
-        "인증",
-        "인가",
-        "권한",
-        "보안",
-        "마이그레이션",
-        "트랜잭션",
-        "데이터 무결성",
-        "데이터 손실",
-        "비가역",
-        "중대한 충돌",
-        "중요한 충돌",
-    )
-    high_impact_lenses = {
-        "auth-boundary",
-        "data-integrity",
-        "transaction-concurrency",
-    }
-    if (
-        _goal_has(goal, high_impact_terms)
-        or bool(high_impact_lenses.intersection(lens_ids))
-        or risk == "critical"
-    ):
-        return (
-            "high-impact-judgment",
-            "frontier",
-            "Security, data, transaction, migration, irreversible, or material-conflict risk raises failure cost.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "metadata",
-            "frontmatter",
-            "extract metadata",
-            "classify files",
-            "format conversion",
-            "메타데이터",
-            "분류",
-            "형식 변환",
-        ),
-    ):
-        return (
-            "metadata-extraction",
-            "economy",
-            "The task is bounded, mechanical, and directly verifiable.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "rename",
-            "format",
-            "sort",
-            "generated fixtures",
-            "mechanical",
-            "이름 변경",
-            "포맷",
-            "정렬",
-        ),
-    ):
-        return (
-            "mechanical-change",
-            "economy",
-            "The change is repetitive and has a deterministic verification path.",
-        )
-    if _goal_has(
-        goal,
-        (
-            "review",
-            "analyze",
-            "research",
-            "architecture",
-            "compare",
-            "검토",
-            "분석",
-            "리서치",
-            "아키텍처",
-            "비교",
-        ),
-    ):
-        return (
-            "general-analysis",
-            "balanced",
-            "The task needs ordinary repository reasoning without a high-impact boundary.",
-        )
     return (
-        "general-implementation",
-        "default",
-        "General implementation uses the Executor default and deterministic verification.",
+        route["task_class"],
+        route["selected_class"] or "none",
+        route["selection_reason"],
     )
 
 
@@ -980,77 +1379,33 @@ def _model_route(
     lens_ids: list[str],
     executor: dict[str, Any],
     host_id: str,
+    *,
+    execution_unit_id: str | None = None,
+    stage_kind: str | None = None,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
+    model_policy_authority: dict[str, str] | None = None,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    task_class, selected_class, selection_reason = _classify_model_task(
-        goal,
-        risk,
-        lens_ids,
-    )
-    policy = executor["model_policy"]
     host_profile = load_host_profile(host_id)
-    if selected_class == "none":
-        return {
-            "executor": executor["executor_id"],
-            "task_class": task_class,
-            "risk": risk,
-            "host": host_id,
-            "selected_class": None,
-            "selected_model": None,
-            "reasoning_effort": None,
-            "selection_reason": selection_reason,
-            "escalation_allowed": False,
-            "fallback": "Use the actual command result.",
-        }
-    if selected_class == "default":
-        selected_class = policy["default_class"]
-        selection_reason = (
-            f"{selection_reason} Executor {executor['executor_id']} defaults to "
-            f"{selected_class}."
-        )
-
-    allowed_classes = policy["allowed_classes"]
-    if selected_class not in allowed_classes:
-        raise MaestroError(
-            "MODEL_CLASS_UNAVAILABLE",
-            f"Executor {executor['executor_id']} does not allow {selected_class}.",
-        )
-    config = host_profile["classes"][selected_class]
-    reasoning_effort = (
-        policy["default_reasoning_effort"]
-        if selected_class == policy["default_class"]
-        else config["reasoning_effort"]
+    resolved_stage = stage_kind or default_stage_kind(
+        executor_id=executor["executor_id"],
+        goal=goal,
     )
-    if (
-        _goal_has(
-            goal,
-            (
-                "material conflict",
-                "important conflict",
-                "architecture conflict",
-                "중대한 충돌",
-                "중요한 충돌",
-            ),
-        )
-        and selected_class == "frontier"
-        and risk == "critical"
-        and policy["maximum_auto_reasoning_effort"] == "xhigh"
-    ):
-        reasoning_effort = "xhigh"
-    return {
-        "executor": executor["executor_id"],
-        "task_class": task_class,
-        "risk": risk,
-        "host": host_id,
-        "selected_class": selected_class,
-        "selected_model": config["model"],
-        "reasoning_effort": reasoning_effort,
-        "selection_reason": selection_reason,
-        "escalation_allowed": (
-            policy["automatic_escalations"] == 1
-            and selected_class != "frontier"
+    return build_stage_model_route(
+        goal=goal,
+        risk=risk,
+        lens_ids=lens_ids,
+        executor=executor,
+        host_id=host_id,
+        host_profile=host_profile,
+        execution_unit_id=(
+            execution_unit_id or executor["executor_id"]
         ),
-        "fallback": config["fallback"],
-    }
+        stage_kind=resolved_stage,
+        model_policy_overlays=model_policy_overlays,
+        model_policy_authority=model_policy_authority,
+        repo_path=repo_path,
+    )
 
 
 def route_goal(
@@ -1061,6 +1416,10 @@ def route_goal(
     conflict_evidence: str | None = None,
     host_id: str = "codex",
     intent: str = "auto",
+    decision_authorized: bool = False,
+    model_policy_overlays: list[dict[str, Any]] | None = None,
+    model_policy_authority: dict[str, str] | None = None,
+    repo_path: str | Path | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     errors = validate_registry(registry)
@@ -1074,6 +1433,31 @@ def route_goal(
     if department_id not in departments:
         raise MaestroError("DEPARTMENT_UNKNOWN", f"Unknown department: {department_id}")
     department = departments[department_id]
+    request_contract = resolve_request_contract(goal, intent)
+    if (
+        intent == "implementation"
+        and request_contract["side_effect_policy"] == "forbidden"
+    ):
+        raise MaestroError(
+            "SIDE_EFFECT_POLICY_CONFLICT",
+            (
+                "The request explicitly forbids project changes. "
+                "Use review intent and do not create a mutation plan."
+            ),
+        )
+    if (
+        request_contract["side_effect_policy"] == "after_decision"
+        and intent in {"auto", "implementation"}
+        and not decision_authorized
+    ):
+        raise MaestroError(
+            "DECISION_WORKFLOW_REQUIRED",
+            (
+                "This request requires a read-only decision before implementation. "
+                "Run maestro decide, synthesize a valid decision bundle, then use "
+                "maestro enact."
+            ),
+        )
     resolved_intent, intent_source = _resolve_intent(goal, intent)
     material_conflict = _goal_has(
         goal,
@@ -1222,6 +1606,18 @@ def route_goal(
         lens_ids,
         bound_executor,
         host_id,
+        execution_unit_id="route",
+        stage_kind=(
+            "deterministic-verification"
+            if is_deterministic_command(goal)
+            else default_stage_kind(
+                executor_id=bound_executor["executor_id"],
+                goal=goal,
+            )
+        ),
+        model_policy_overlays=model_policy_overlays,
+        model_policy_authority=model_policy_authority,
+        repo_path=repo_path,
     )
     handoff_contract = (
         {
@@ -1292,6 +1688,15 @@ def route_goal(
         "binding": binding,
         "handoff_contract": handoff_contract,
         "model_route": model_route,
+        **(
+            {
+                "model_policy_overlays": list(
+                    model_policy_overlays or []
+                )
+            }
+            if model_policy_overlays
+            else {}
+        ),
         "deliberation": {
             "mode": deliberation,
             **department["deliberation"],

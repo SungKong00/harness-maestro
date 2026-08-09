@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-decision-map.schema.json",
+  "title": "Harness Maestro Expertise Decision Map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "decision_areas"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_decision_map_v1"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "decision_areas": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "area_id",
+          "decision",
+          "failure_if_omitted",
+          "materiality",
+          "evidence_types",
+          "evidence_refs",
+          "disposition"
+        ],
+        "properties": {
+          "area_id": {
+            "$ref": "#/$defs/id"
+          },
+          "decision": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "failure_if_omitted": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "materiality": {
+            "enum": [
+              "blocking",
+              "important",
+              "supporting"
+            ]
+          },
+          "evidence_types": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "project-fact",
+                "external-current",
+                "external-stable",
+                "owner-preference",
+                "runtime-verification"
+              ]
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          },
+          "disposition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "target_id",
+              "rationale"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "proposed-guide",
+                  "existing-guide",
+                  "checker",
+                  "convention",
+                  "out-of-scope-explicit"
+                ]
+              },
+              "target_id": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "rationale": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/surface-classification.schema.json",
+  "title": "Harness Maestro component surface classification",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/result"
+    }
+  ],
+  "$defs": {
+    "surface": {
+      "enum": [
+        "none",
+        "checker-schema-test",
+        "convention",
+        "decision-guide",
+        "expertise-pack",
+        "lens",
+        "standalone-skill",
+        "executor-agent",
+        "department",
+        "adapter",
+        "research-lane",
+        "specialist-contract",
+        "packet-contract"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "request_id",
+        "signals",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_surface_signal_v1"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "signals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "durable",
+            "machine_checkable",
+            "project_specific_rule",
+            "existing_pack_id",
+            "existing_guide_id",
+            "same_decision_family",
+            "related_guide_count",
+            "domain_workflow",
+            "cross_task_failure_boundary",
+            "verdict_impact",
+            "procedural_only",
+            "expertise_routed",
+            "execution_boundaries",
+            "department_routing_change",
+            "integration_boundary",
+            "research_lane_boundary",
+            "specialist_contract_boundary",
+            "typed_handoff_gap",
+            "existing_packet_sufficient"
+          ],
+          "properties": {
+            "durable": {
+              "type": "boolean"
+            },
+            "machine_checkable": {
+              "type": "boolean"
+            },
+            "project_specific_rule": {
+              "type": "boolean"
+            },
+            "existing_pack_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "existing_guide_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "same_decision_family": {
+              "type": "boolean"
+            },
+            "related_guide_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            },
+            "domain_workflow": {
+              "type": "boolean"
+            },
+            "cross_task_failure_boundary": {
+              "type": "boolean"
+            },
+            "verdict_impact": {
+              "type": "boolean"
+            },
+            "procedural_only": {
+              "type": "boolean"
+            },
+            "expertise_routed": {
+              "type": "boolean"
+            },
+            "execution_boundaries": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 6,
+              "items": {
+                "enum": [
+                  "tools",
+                  "permissions",
+                  "model",
+                  "sandbox",
+                  "context",
+                  "approval"
+                ]
+              }
+            },
+            "department_routing_change": {
+              "type": "boolean"
+            },
+            "integration_boundary": {
+              "type": "boolean"
+            },
+            "research_lane_boundary": {
+              "type": "boolean"
+            },
+            "specialist_contract_boundary": {
+              "type": "boolean"
+            },
+            "typed_handoff_gap": {
+              "type": "boolean"
+            },
+            "existing_packet_sufficient": {
+              "type": "boolean"
+            },
+            "overlapping_pack_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "pack_merge_boundary": {
+              "type": "boolean"
+            }
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "status",
+        "request_id",
+        "proposed_surface",
+        "rejected_surfaces",
+        "existing_component_to_extend",
+        "pack_integration_assessment",
+        "distinct_failure_or_decision_boundary",
+        "evidence_requirement",
+        "candidate_builder",
+        "promotion_boundary",
+        "classification_confidence",
+        "blocker",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_surface_classification_v1"
+        },
+        "status": {
+          "enum": [
+            "classified",
+            "blocked"
+          ]
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposed_surface": {
+          "$ref": "#/$defs/surface"
+        },
+        "rejected_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "surface",
+              "reason"
+            ],
+            "properties": {
+              "surface": {
+                "$ref": "#/$defs/surface"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "existing_component_to_extend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pack_integration_assessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "considered",
+            "recommended",
+            "source_pack_ids",
+            "reason"
+          ],
+          "properties": {
+            "considered": {
+              "type": "boolean"
+            },
+            "recommended": {
+              "type": "boolean"
+            },
+            "source_pack_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "distinct_failure_or_decision_boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "details",
+            "verdict_impact"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "details": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "verdict_impact": {
+              "type": "boolean"
+            }
+          }
+        },
+        "evidence_requirement": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "candidate_builder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "promotion_boundary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification_confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "blocked"
+          ]
+        },
+        "blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "writes_performed": {
+          "const": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,987 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/route-v2.schema.json",
+  "title": "Harness Maestro Route v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "source_route_version",
+    "source_route_digest",
+    "registry_digest",
+    "goal",
+    "intent",
+    "intent_source",
+    "department",
+    "risk",
+    "warnings",
+    "depth",
+    "selected_lenses",
+    "selected_domains",
+    "lens_cards",
+    "selection_reasons",
+    "selection_trace",
+    "binding",
+    "handoff_contract",
+    "model_route",
+    "deliberation",
+    "task_contract",
+    "assignments",
+    "entry_assignments",
+    "terminal_assignments",
+    "mutation_owner_assignment_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_route_v2"
+    },
+    "plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_route_version": {
+      "const": "maestro_route_v1"
+    },
+    "source_route_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "registry_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "enum": [
+        "implementation",
+        "review",
+        "research"
+      ]
+    },
+    "intent_source": {
+      "enum": [
+        "explicit",
+        "inferred"
+      ]
+    },
+    "department": {
+      "$ref": "#/$defs/id"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "depth": {
+      "enum": [
+        "fast",
+        "standard",
+        "deep"
+      ]
+    },
+    "selected_lenses": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "selected_domains": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "lens_cards": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object"
+      }
+    },
+    "selection_reasons": {
+      "type": "object"
+    },
+    "selection_trace": {
+      "type": "object"
+    },
+    "binding": {
+      "type": "object"
+    },
+    "handoff_contract": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "model_route": {
+      "$ref": "#/$defs/compatibleModelRoute"
+    },
+    "model_policy_overlays": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "model-feedback.schema.json#/$defs/modelPolicyOverlay"
+      }
+    },
+    "deliberation": {
+      "type": "object"
+    },
+    "task_contract": {
+      "$ref": "#/$defs/taskContract"
+    },
+    "assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/assignment"
+      }
+    },
+    "entry_assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "terminal_assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "mutation_owner_assignment_id": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expertise": {
+      "$ref": "#/$defs/expertiseSelection"
+    },
+    "coverage_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "coverage_id",
+        "goal_digest",
+        "required_for_mutation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_task_coverage_binding_v1"
+        },
+        "coverage_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "required_for_mutation": {
+          "const": true
+        }
+      }
+    },
+    "design_assurance": {
+      "$ref": "#/$defs/designAssuranceRequirement"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "designAssuranceRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "mode",
+        "activation",
+        "mutation_gate",
+        "verification_gate"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_product_design_assurance_requirement_v1"
+        },
+        "profile_id": {
+          "const": "product-design-evidence-v1"
+        },
+        "mode": {
+          "enum": [
+            "compact",
+            "standard",
+            "system"
+          ]
+        },
+        "activation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "work_kind",
+            "expertise_pack_id"
+          ],
+          "properties": {
+            "work_kind": {
+              "const": "user-interface"
+            },
+            "expertise_pack_id": {
+              "const": "product-design"
+            }
+          }
+        },
+        "mutation_gate": {
+          "const": "design-decision-packet"
+        },
+        "verification_gate": {
+          "const": "rendered-verification-pass"
+        }
+      }
+    },
+    "expertiseSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "selected_pack_ids",
+        "selected_guide_ids",
+        "pack_definition_digests",
+        "pack_cards",
+        "research_requirement",
+        "warnings",
+        "selection_trace"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_expertise_selection_v1"
+        },
+        "selected_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "selected_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "pack_definition_digests": {
+          "type": "object",
+          "maxProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "pack_cards": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "object"
+          }
+        },
+        "research_requirement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "gate",
+            "reasons",
+            "evidence_digest"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "reuse",
+                "contextualize",
+                "refresh",
+                "discover"
+              ]
+            },
+            "gate": {
+              "enum": [
+                "not-required",
+                "open",
+                "satisfied",
+                "in-plan"
+              ]
+            },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "evidence_digest": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "selection_trace": {
+          "type": "object"
+        },
+        "route_hints": {
+          "$ref": "#/$defs/expertiseRouteHints"
+        }
+      }
+    },
+    "expertiseRouteHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "policy_id",
+        "policy_digest",
+        "work_kinds",
+        "affected_paths",
+        "path_policy",
+        "explicit_pack_id",
+        "route_attempt",
+        "prior_plan_id",
+        "prior_source_route_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_expertise_route_hints_v1"
+        },
+        "policy_id": {
+          "const": "expertise-route-hints-v1"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "work_kinds": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "content-claim",
+              "data-change",
+              "delivery-operation",
+              "quality-verification",
+              "security-sensitive",
+              "software-structure",
+              "user-interface"
+            ]
+          }
+        },
+        "affected_paths": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "path_policy": {
+          "const": "audit-only"
+        },
+        "explicit_pack_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route_attempt": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "prior_plan_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prior_source_route_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "design_assurance_mode": {
+          "enum": [
+            "compact",
+            "standard",
+            "system"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "route_attempt": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "prior_plan_id": {
+                "type": "null"
+              },
+              "prior_source_route_digest": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "prior_plan_id": {
+                "$ref": "#/$defs/digest"
+              },
+              "prior_source_route_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "work_kinds": {
+                "contains": {
+                  "const": "user-interface"
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "design_assurance_mode"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "design_assurance_mode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "modelRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "model_route_id",
+        "execution_unit_id",
+        "stage_kind",
+        "execution_kind",
+        "quality_profile",
+        "executor",
+        "task_class",
+        "risk",
+        "host",
+        "selected_class",
+        "selected_model",
+        "reasoning_effort",
+        "selection_reason",
+        "quality_floor",
+        "escalation_allowed",
+        "fallback",
+        "fallback_route"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_stage_model_route_v1"
+        },
+        "model_route_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "execution_unit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "stage_kind": {
+          "enum": [
+            "implementation",
+            "semantic-review",
+            "research",
+            "semantic-verification",
+            "deterministic-verification",
+            "specialist-review",
+            "intermediate-synthesis",
+            "technical-feasibility",
+            "final-synthesis",
+            "expertise-review"
+          ]
+        },
+        "execution_kind": {
+          "enum": [
+            "model",
+            "deterministic"
+          ]
+        },
+        "quality_profile": {
+          "const": "pro-quality"
+        },
+        "executor": {
+          "$ref": "#/$defs/id"
+        },
+        "task_class": {
+          "$ref": "#/$defs/id"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "host": {
+          "$ref": "#/$defs/id"
+        },
+        "selected_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selected_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quality_floor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "acceptable_routes",
+            "failure_action"
+          ],
+          "properties": {
+            "acceptable_routes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selected_class",
+                  "reasoning_effort"
+                ],
+                "properties": {
+                  "selected_class": {
+                    "enum": [
+                      null,
+                      "economy",
+                      "balanced",
+                      "frontier"
+                    ]
+                  },
+                  "reasoning_effort": {
+                    "enum": [
+                      null,
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ]
+                  }
+                }
+              }
+            },
+            "failure_action": {
+              "const": "reject-or-reroute"
+            }
+          }
+        },
+        "escalation_allowed": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallback_route": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "selected_class",
+                "selected_model",
+                "reasoning_effort",
+                "trigger"
+              ],
+              "properties": {
+                "selected_class": {
+                  "enum": [
+                    "economy",
+                    "balanced",
+                    "frontier"
+                  ]
+                },
+                "selected_model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reasoning_effort": {
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
+                "trigger": {
+                  "const": "selected-model-unavailable"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "legacyModelRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executor",
+        "task_class",
+        "risk",
+        "host",
+        "selected_class",
+        "selected_model",
+        "reasoning_effort",
+        "selection_reason",
+        "escalation_allowed",
+        "fallback"
+      ],
+      "properties": {
+        "executor": {
+          "$ref": "#/$defs/id"
+        },
+        "task_class": {
+          "$ref": "#/$defs/id"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "host": {
+          "$ref": "#/$defs/id"
+        },
+        "selected_class": {
+          "enum": [
+            null,
+            "economy",
+            "balanced",
+            "frontier"
+          ]
+        },
+        "selected_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "escalation_allowed": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "compatibleModelRoute": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/modelRoute"
+        },
+        {
+          "$ref": "#/$defs/legacyModelRoute"
+        }
+      ]
+    },
+    "taskContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objective",
+        "allowed_side_effects",
+        "forbidden_side_effects",
+        "terminal_condition",
+        "stop_conditions",
+        "limits"
+      ],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_side_effects": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "repository_write"
+          }
+        },
+        "forbidden_side_effects": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "git_commit",
+              "remote_write"
+            ]
+          }
+        },
+        "terminal_condition": {
+          "const": "all_terminal_assignments_complete"
+        },
+        "stop_conditions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "required_gate_failed",
+              "user_decision_required",
+              "budget_exhausted"
+            ]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_assignments",
+            "max_lenses",
+            "max_rebuttal_rounds",
+            "max_model_escalations_per_assignment"
+          ],
+          "properties": {
+            "max_assignments": {
+              "const": 5
+            },
+            "max_lenses": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "max_rebuttal_rounds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_model_escalations_per_assignment": {
+              "const": 1
+            }
+          }
+        }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_id",
+        "kind",
+        "executor_id",
+        "lens_ids",
+        "depends_on",
+        "input_packets",
+        "output_packet",
+        "read_only",
+        "mutation_owner",
+        "allowed_side_effects",
+        "model_route",
+        "may_spawn",
+        "max_children",
+        "max_rounds"
+      ],
+      "properties": {
+        "assignment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "implementation",
+            "research",
+            "review",
+            "verification"
+          ]
+        },
+        "executor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "lens_ids": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "input_packets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "output_packet": {
+          "type": "string",
+          "minLength": 1
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "mutation_owner": {
+          "type": "boolean"
+        },
+        "allowed_side_effects": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "repository_write"
+          }
+        },
+        "model_route": {
+          "$ref": "#/$defs/compatibleModelRoute"
+        },
+        "may_spawn": {
+          "const": false
+        },
+        "max_children": {
+          "const": 0
+        },
+        "max_rounds": {
+          "const": 1
+        },
+        "expertise_pack_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "decision_guide_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    }
+  }
+}

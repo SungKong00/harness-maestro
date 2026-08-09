@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/task-coverage.schema.json",
+  "title": "Harness Maestro Task Coverage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "coverage_id",
+    "goal",
+    "goal_digest",
+    "registry_digest",
+    "base_revision",
+    "mode",
+    "assurance",
+    "discovery_status",
+    "allocation_status",
+    "items",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_task_coverage_v1"
+    },
+    "coverage_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "goal": {
+      "$ref": "#/$defs/goalString"
+    },
+    "goal_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "registry_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "base_revision": {
+      "$ref": "#/$defs/revision"
+    },
+    "mode": {
+      "const": "shadow"
+    },
+    "assurance": {
+      "const": "declared-inventory-only"
+    },
+    "discovery_status": {
+      "enum": [
+        "complete",
+        "incomplete"
+      ]
+    },
+    "allocation_status": {
+      "enum": [
+        "complete",
+        "incomplete"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "writes_performed": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "goalString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "itemText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "boundedRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "revision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "head",
+            "state_digest",
+            "dirty_path_count"
+          ],
+          "properties": {
+            "kind": {
+              "const": "git"
+            },
+            "head": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "state_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "dirty_path_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "head",
+            "state_digest",
+            "dirty_path_count"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unavailable"
+            },
+            "head": {
+              "type": "null"
+            },
+            "state_digest": {
+              "type": "null"
+            },
+            "dirty_path_count": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "allocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target_ref",
+        "evidence_types",
+        "rationale"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "project-fact",
+            "expertise-guide",
+            "lens",
+            "research",
+            "owner-decision",
+            "runtime-verification",
+            "checker",
+            "convention",
+            "deferred-explicit",
+            "out-of-scope-explicit",
+            "unresolved"
+          ]
+        },
+        "target_ref": {
+          "$ref": "#/$defs/boundedRef"
+        },
+        "evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidenceType"
+          }
+        },
+        "rationale": {
+          "$ref": "#/$defs/itemText"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "project-fact"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^project:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "expertise-guide"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^guide:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "lens"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^lens:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "research"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^research:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "owner-decision"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^owner:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "runtime-verification"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^verification:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "checker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^checker:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "convention"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^convention:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "deferred-explicit"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^deferred:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "out-of-scope-explicit"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^out-of-scope:.+"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "unresolved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "target_ref": {
+                "pattern": "^unresolved:.+"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidenceType": {
+      "enum": [
+        "project-fact",
+        "external-current",
+        "external-stable",
+        "owner-preference",
+        "runtime-verification"
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "kind",
+        "summary",
+        "failure_if_omitted",
+        "materiality",
+        "evidence_types",
+        "source_refs",
+        "depends_on",
+        "allocations"
+      ],
+      "properties": {
+        "item_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "outcome",
+            "decision",
+            "constraint",
+            "prohibition",
+            "verification",
+            "learning"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/itemText"
+        },
+        "failure_if_omitted": {
+          "$ref": "#/$defs/itemText"
+        },
+        "materiality": {
+          "enum": [
+            "blocking",
+            "important",
+            "supporting"
+          ]
+        },
+        "evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidenceType"
+          }
+        },
+        "source_refs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/boundedRef"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "allocations": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/allocation"
+          }
+        }
+      }
+    }
+  }
+}

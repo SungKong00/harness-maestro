@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-change-set-manifest.schema.json",
+  "title": "Harness Maestro Expertise ChangeSet manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "change_set_id",
+    "operation",
+    "coverage_id",
+    "adaptation_plan_id",
+    "members",
+    "sources",
+    "guide_mappings",
+    "default_guides",
+    "source_retirement",
+    "rollback_summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_change_set_manifest_v1"
+    },
+    "change_set_id": {
+      "$ref": "#/$defs/id"
+    },
+    "operation": {
+      "enum": [
+        "pack-merge",
+        "pack-extraction",
+        "pack-split",
+        "guide-move",
+        "guide-copy"
+      ]
+    },
+    "coverage_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "adaptation_plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "operation_id",
+          "role",
+          "candidate_digest"
+        ],
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/$defs/id"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/id"
+          },
+          "role": {
+            "enum": [
+              "source",
+              "target",
+              "result"
+            ]
+          },
+          "candidate_digest": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pack_id",
+          "definition_digest"
+        ],
+        "properties": {
+          "pack_id": {
+            "$ref": "#/$defs/id"
+          },
+          "definition_digest": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "guide_mappings": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guide_id",
+          "source_pack_id",
+          "target_pack_ids",
+          "mode"
+        ],
+        "properties": {
+          "guide_id": {
+            "$ref": "#/$defs/id"
+          },
+          "source_pack_id": {
+            "$ref": "#/$defs/id"
+          },
+          "target_pack_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "mode": {
+            "enum": [
+              "move",
+              "copy",
+              "consolidate"
+            ]
+          }
+        }
+      }
+    },
+    "default_guides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pack_id",
+          "guide_ids"
+        ],
+        "properties": {
+          "pack_id": {
+            "$ref": "#/$defs/id"
+          },
+          "guide_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 24,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        }
+      }
+    },
+    "source_retirement": {
+      "enum": [
+        "not-applicable",
+        "deferred-owner-action",
+        "represented-by-members"
+      ]
+    },
+    "rollback_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-cwv-rendering",
+  "baseline_observation": "Existing product and motion coverage could inspect layout or animation symptoms but did not join rendered search directives, canonical selection, field Web Vitals, and search verification.",
+  "candidate_observation": "The actual candidate route selected four Guides for rendered directives, canonical state, page experience, and verification, requiring labeled field and laboratory performance evidence.",
+  "evidence_refs": [
+    "research-bundle:sha256:ec06727a69752b6591fe17abd1350480b40230f8cde4949a7d5b8ca3903b7107",
+    "route-replay:technical-seo:edge-cwv-rendering"
+  ]
+}

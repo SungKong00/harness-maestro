@@ -1,0 +1,114 @@
+{
+  "candidate_id": "devops-sre",
+  "component_change": {
+    "kind": "new-pack",
+    "target_guide_id": null
+  },
+  "evaluation": {
+    "baseline": "no-pack",
+    "cases_path": "evals/cases.json",
+    "pass_criteria": [
+      "Selects the candidate only for its independent decision family",
+      "Loads no more than four directly relevant Guides",
+      "Changes a named decision or catches a declared failure",
+      "Preserves advisory, evidence, and implementation-authority boundaries"
+    ],
+    "quality_path": "evals/quality.json",
+    "regression_criteria": [
+      "Does not hijack product-design, marketing, or software-qa requests",
+      "Does not claim evidence, execution, or policy authority it lacks"
+    ]
+  },
+  "evidence_refs": [
+    "research-bundle:sha256:487c96f345ace0f5a06df748236e73d1c212e8409b1570e28f5a3ee5dbaaf27f",
+    "baseline-route:devops-sre:2026-07-27",
+    "govern-classification:devops-sre:expertise-pack",
+    "owner-request:four-general-engineering-packs"
+  ],
+  "existing_coverage": "The rollback-observability Lens checks whether failure is visible and recoverable; software-qa owns regression and release evidence. No existing Pack owns production operations design choices.",
+  "expertise_pack_id": "devops-sre",
+  "not_for": [
+    "Application-level code architecture or transaction design",
+    "Regression selection and release-quality proof",
+    "Executing deployments, incidents, failovers, or external changes"
+  ],
+  "owner": "harness-maestro",
+  "portability": "global",
+  "problem": "Baseline reliability routes fell back to software-qa even when the requested decision concerned SLOs, telemetry topology, deployment control, recovery, capacity, and operational ownership.",
+  "proposed_guides": [
+    {
+      "decision_checks": [
+        "Define the service, user journey, good event, valid population, and measurement window.",
+        "Choose an SLI that reflects user-visible behavior and expose sampling or aggregation bias.",
+        "Set an SLO from product and operational risk rather than copying a universal number.",
+        "Define error-budget consumption, alerting, exception, and change-control actions with owners."
+      ],
+      "failure_prevented": "Define user-centered service indicators, objectives, windows, measurement limits, and error-budget actions.",
+      "freshness": "stable",
+      "guide_id": "service-objectives-and-error-budgets"
+    },
+    {
+      "decision_checks": [
+        "Start from concrete detection, diagnosis, capacity, and audit questions.",
+        "Map each question to traces, metrics, logs, profiles, or events with stable identity and correlation.",
+        "Choose semantic conventions, collection topology, buffering, sampling, retention, and cardinality limits.",
+        "Define sensitive-data handling, cost ownership, and behavior when the telemetry pipeline degrades."
+      ],
+      "failure_prevented": "Choose signals, correlation, semantic conventions, collection topology, sampling, cardinality, cost, and telemetry-failure behavior from operational questions.",
+      "freshness": "volatile",
+      "guide_id": "telemetry-architecture"
+    },
+    {
+      "decision_checks": [
+        "Classify blast radius, reversibility, state compatibility, dependency skew, and delayed failure modes.",
+        "Choose rolling, canary, blue-green, feature control, or another mechanism from the actual boundary.",
+        "Define step population, duration, readiness, health, business guardrails, promotion, and automatic or manual stop criteria.",
+        "Name the last rollback-safe point and the roll-forward plan after irreversible state change."
+      ],
+      "failure_prevented": "Choose rollout mechanism, step size, readiness, promotion, stop, rollback, and irreversible-change controls from change risk.",
+      "freshness": "volatile",
+      "guide_id": "progressive-delivery-and-change-control"
+    },
+    {
+      "decision_checks": [
+        "Define service and data recovery scope, RTO, RPO, allowed degradation, and dependency order.",
+        "Map failure classes to failover, restore, rebuild, rollback, roll-forward, or manual reconciliation.",
+        "Keep recovery credentials, metadata, and backups isolated from the primary failure domain.",
+        "Specify restore order, data validation, traffic reintroduction, communication, and rehearsal cadence."
+      ],
+      "failure_prevented": "Choose RTO, RPO, degradation, failover, restore, rebuild, rollback or roll-forward, backup isolation, sequencing, and rehearsal.",
+      "freshness": "stable",
+      "guide_id": "recovery-and-continuity"
+    },
+    {
+      "decision_checks": [
+        "Segment workload classes and map them to limiting resources and dependency costs.",
+        "Forecast normal, growth, event, and failure demand across provisioning lead time.",
+        "Derive headroom from availability and degradation goals; validate the resource-to-capacity model.",
+        "Choose scaling, concurrency, queue, quota, admission, shedding, degradation, and retry behavior before saturation."
+      ],
+      "failure_prevented": "Model limiting resources, demand, headroom, lead time, scaling, admission, queueing, quotas, load shedding, degradation, and bounded retry.",
+      "freshness": "stable",
+      "guide_id": "capacity-and-overload"
+    },
+    {
+      "decision_checks": [
+        "Collect rather than re-decide the selected SLO, telemetry, rollout, recovery, and capacity contracts.",
+        "Expose dependency, version-skew, access, break-glass, support, and escalation assumptions.",
+        "Name operator, service, incident, data, security, and decision owners plus troubleshooting entry points.",
+        "Record manual toil, maintenance, decommission, open gaps, waivers, and review conditions."
+      ],
+      "failure_prevented": "Assemble service objectives, telemetry, delivery, recovery, capacity, dependencies, runbooks, ownership, toil, and lifecycle into a risk-scaled readiness handoff.",
+      "freshness": "stable",
+      "guide_id": "production-readiness-and-ownership"
+    }
+  ],
+  "reusable_when": [
+    "Defining SLI, SLO, error-budget, telemetry, rollout, or recovery contracts",
+    "Designing overload, capacity, production-readiness, and operational ownership",
+    "Choosing reversible delivery and continuity mechanisms"
+  ],
+  "review_after": "2026-10-27",
+  "schema_version": "maestro_expertise_candidate_v1",
+  "status": "candidate"
+}

@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harness-maestro"
-version = "0.2.2"
+version = "0.3.0"
 description = "A small, evidence-first harness control layer for project adapters, documentation, and review lenses."
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -24,4 +24,10 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-maestro = ["resources/**/*.json", "resources/**/*.md"]
+maestro = [
+  "resources/**/*.json",
+  "resources/**/*.md",
+  "resources/**/*.html",
+  "resources/**/*.css",
+  "resources/**/*.js",
+]

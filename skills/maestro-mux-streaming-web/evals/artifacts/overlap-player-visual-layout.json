@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "overlap-player-visual-layout",
+  "baseline_observation": "The request changes only visual hierarchy around an existing player, which is already owned by product-design.",
+  "candidate_observation": "The frozen route selected product-design and did not allow the vendor noun Mux to override the explicit visual decision family.",
+  "evidence_refs": [
+    "route-replay:overlap-player-visual-layout",
+    "registry:product-design"
+  ]
+}

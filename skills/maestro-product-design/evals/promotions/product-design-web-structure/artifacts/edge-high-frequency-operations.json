@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-high-frequency-operations",
+  "baseline_observation": "The existing brief and hierarchy criteria do not explicitly reject one universal page pattern when novice comprehension and expert high-frequency comparison or batch work require different structure.",
+  "candidate_observation": "The candidate makes task frequency, experience, switching, comparison, batch behavior, reachable failure and recovery states, and consequential disclosure explicit decision inputs.",
+  "evidence_refs": [
+    "source:govuk-role-context",
+    "evaluation:edge-high-frequency-operations"
+  ]
+}

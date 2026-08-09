@@ -1,0 +1,9 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "non-trigger-backend-orchestration",
+  "baseline_observation": "Backend queue retry and idempotency are outside the product-design domain even though they use flow and state vocabulary.",
+  "candidate_observation": "The candidate's triggers and not-for boundary keep backend orchestration outside the Pack and return no local Guides.",
+  "evidence_refs": [
+    "evaluation:non-trigger-backend-orchestration"
+  ]
+}

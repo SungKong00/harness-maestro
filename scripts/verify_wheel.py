@@ -23,7 +23,14 @@ def _runtime_resources(source_root: Path) -> set[str]:
         for item in resource_root.rglob("*")
         if item.is_file()
         and "__pycache__" not in item.parts
-        and item.suffix in {".json", ".md", ".py"}
+        and item.suffix in {
+            ".json",
+            ".md",
+            ".py",
+            ".html",
+            ".css",
+            ".js",
+        }
     }
 
 

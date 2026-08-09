@@ -1,0 +1,76 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "product-design",
+  "results": [
+    {
+      "case_id": "normal-furniture-landing-system",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["reference-selection", "design-brief", "design-system-and-components", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-cinema-data-page",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["design-system-and-components", "information-architecture-and-user-flow", "design-brief", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-new-button-decision",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["design-brief", "design-system-and-components", "typography-korean", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-compact-existing-button",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": ["design-system-and-components", "visual-hierarchy-layout", "design-brief", "interaction-responsive-accessibility"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-form-recovery",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["interaction-responsive-accessibility", "design-system-and-components", "design-brief", "visual-hierarchy-layout"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-korean-typography",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["typography-korean", "visual-hierarchy-layout", "design-brief", "design-system-and-components"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-new-visual-language",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["design-brief", "design-system-and-components", "visual-hierarchy-layout", "interaction-responsive-accessibility"],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-scheduler",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-scroll-motion",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-operational-workflow",
+      "observed_pack_id": "product-design",
+      "observed_mode": "contextualize",
+      "observed_guides": ["reference-selection", "information-architecture-and-user-flow", "operational-workflow-interface", "design-brief"],
+      "verdict": "pass"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/task-coverage-admission.schema.json",
+  "title": "Harness Maestro Task Coverage admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "admission_id",
+    "coverage_id",
+    "plan_id",
+    "goal_digest",
+    "status",
+    "resolutions",
+    "projected_item_ids",
+    "coverage_projection_id",
+    "expertise_work_plan_id",
+    "expertise_closure_id",
+    "compiled_candidate_ids",
+    "compiled_item_ids",
+    "gaps",
+    "issues",
+    "execution_authority",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_task_coverage_admission_v1"
+    },
+    "admission_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "coverage_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plan_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "goal_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "status": {
+      "enum": [
+        "READY",
+        "GAPS",
+        "PROJECTION_REQUIRED",
+        "INVALID"
+      ]
+    },
+    "resolutions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "projected_item_ids": {
+      "$ref": "#/$defs/idList"
+    },
+    "coverage_projection_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expertise_work_plan_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expertise_closure_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "compiled_candidate_ids": {
+      "$ref": "#/$defs/idList"
+    },
+    "compiled_item_ids": {
+      "$ref": "#/$defs/idList"
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object"
+      }
+    },
+    "execution_authority": {
+      "const": "NONE"
+    },
+    "writes_performed": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "idList": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/convention-draft-plan.schema.json",
+  "title": "Harness Maestro Convention Draft Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "repo_realpath",
+    "operation",
+    "warnings",
+    "plan_id",
+    "plan_digest",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_convention_draft_plan_v1"
+    },
+    "command": {
+      "const": "convention-draft"
+    },
+    "repo_realpath": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "path",
+        "before_sha256",
+        "after_sha256",
+        "content"
+      ],
+      "properties": {
+        "op": {
+          "const": "create"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^docs/conventions/[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"
+        },
+        "before_sha256": {
+          "type": "null"
+        },
+        "after_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{20}$"
+    },
+    "plan_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "writes_performed": {
+      "const": false
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-candidate-origin.schema.json",
+  "title": "Harness Maestro candidate origin receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "origin_id",
+    "namespace",
+    "candidate_id",
+    "candidate_schema_version",
+    "subject_ref",
+    "mode",
+    "signal_fingerprint",
+    "goal_digest",
+    "adaptation_plan_id",
+    "source_admission_id",
+    "unit_id",
+    "change_set_id",
+    "authorization_ref",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_candidate_origin_v1"
+    },
+    "origin_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "namespace": {
+      "enum": [
+        "expertise",
+        "components"
+      ]
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "candidate_schema_version": {
+      "enum": [
+        "maestro_expertise_candidate_v2",
+        "maestro_registry_component_candidate_v2"
+      ]
+    },
+    "subject_ref": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 512
+    },
+    "mode": {
+      "enum": [
+        "task-gap",
+        "user-requested",
+        "automatic"
+      ]
+    },
+    "signal_fingerprint": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{24}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "goal_digest": {
+      "$ref": "#/$defs/nullableDigest"
+    },
+    "adaptation_plan_id": {
+      "$ref": "#/$defs/nullableDigest"
+    },
+    "source_admission_id": {
+      "$ref": "#/$defs/nullableDigest"
+    },
+    "unit_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "change_set_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "authorization_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "writes_performed": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableDigest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-adaptation-plan.schema.json",
+  "title": "Harness Maestro Expertise adaptation plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "coverage_id",
+    "goal_digest",
+    "source_route_plan_id",
+    "source_route_digest",
+    "source_admission_id",
+    "signal_fingerprint",
+    "units",
+    "parallel_groups",
+    "max_corrected_routes",
+    "execution_authority",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_adaptation_plan_v1"
+    },
+    "plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "coverage_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "goal_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_route_plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_route_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_admission_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "signal_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{24}$"
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/unit"
+      }
+    },
+    "parallel_groups": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "max_corrected_routes": {
+      "const": 1
+    },
+    "execution_authority": {
+      "const": "NONE"
+    },
+    "writes_performed": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "stringList": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_id",
+        "coverage_item_ids",
+        "surface",
+        "change_kind",
+        "target_ref",
+        "depends_on",
+        "change_set_id",
+        "evidence_refs",
+        "candidate_builder",
+        "research_required",
+        "same_task_eligible"
+      ],
+      "properties": {
+        "unit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "coverage_item_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "surface": {
+          "enum": [
+            "none",
+            "checker-schema-test",
+            "convention",
+            "decision-guide",
+            "expertise-pack",
+            "lens",
+            "standalone-skill",
+            "executor-agent",
+            "department",
+            "adapter",
+            "research-lane",
+            "specialist-contract",
+            "packet-contract"
+          ]
+        },
+        "change_kind": {
+          "enum": [
+            "no-change",
+            "checker-change",
+            "convention-change",
+            "guide-addition",
+            "guide-revision",
+            "guide-deprecation",
+            "guide-move",
+            "guide-copy",
+            "new-pack",
+            "pack-revision",
+            "pack-merge",
+            "pack-extraction",
+            "pack-split",
+            "lens-candidate",
+            "standalone-skill-candidate",
+            "registry-candidate"
+          ]
+        },
+        "target_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "depends_on": {
+          "$ref": "#/$defs/stringList"
+        },
+        "change_set_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "candidate_builder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "research_required": {
+          "type": "boolean"
+        },
+        "same_task_eligible": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

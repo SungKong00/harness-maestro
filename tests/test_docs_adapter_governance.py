@@ -22,6 +22,60 @@ from maestro.project import checkout_id, inspect_adapter
 
 
 class DocumentSelectionTests(unittest.TestCase):
+    def test_evidence_is_optional_until_the_task_opens_research(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            docs = repo / "docs"
+            docs.mkdir()
+            (docs / "README.md").write_text(
+                canonical_document(
+                    "doc-map",
+                    summary="Documentation map.",
+                    body="# Documentation map\n",
+                ).replace("type: convention", "type: map"),
+                encoding="utf-8",
+            )
+            evidence = docs / "research/design-foundations.md"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text(
+                canonical_document(
+                    "design-foundations",
+                    summary="Documentation governance research evidence.",
+                    body=(
+                        "# Documentation governance\n\n"
+                        + ("documentation governance evidence " * 1200)
+                    ),
+                ).replace("type: convention", "type: evidence"),
+                encoding="utf-8",
+            )
+
+            routine = select_documents(
+                repo,
+                "문서 링크를 기계적으로 검사",
+                ["documentation-governance"],
+            )
+            research = select_documents(
+                repo,
+                "문서 거버넌스 근거와 출처를 리서치",
+                ["documentation-governance"],
+            )
+
+            routine_paths = [item["path"] for item in routine["documents"]]
+            optional_paths = [
+                item["path"] for item in routine["optional_documents"]
+            ]
+            research_paths = [item["path"] for item in research["documents"]]
+            self.assertNotIn("docs/research/design-foundations.md", routine_paths)
+            self.assertIn("docs/research/design-foundations.md", optional_paths)
+            self.assertIn("docs/research/design-foundations.md", research_paths)
+            self.assertEqual(routine["documents"], routine["required_documents"])
+            self.assertEqual("sufficient", routine["evidence_status"])
+            self.assertLess(
+                routine["selection_trace"]["required_document_bytes"],
+                research["selection_trace"]["required_document_bytes"],
+            )
+
     def test_selection_uses_active_matches_and_never_loads_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
@@ -65,6 +119,158 @@ class DocumentSelectionTests(unittest.TestCase):
                 result["excluded_summary"]["archive_documents"],
             )
             self.assertEqual(0, result["selection_trace"]["full_document_bodies_returned"])
+
+    def test_exact_plan_and_convention_targets_are_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            for name in ("project.md", "architecture.md"):
+                path = repo / "docs" / name
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
+            plan = repo / "docs/plans/active/direct-plan.md"
+            plan.parent.mkdir(parents=True)
+            plan.write_text(
+                canonical_document(
+                    "direct-plan",
+                    summary="Exact active implementation plan.",
+                    body="# Direct plan\n\nManage the requested work.\n",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+            convention = repo / "docs/conventions/exact-rule.md"
+            convention.parent.mkdir(parents=True, exist_ok=True)
+            convention.write_text(
+                canonical_document(
+                    "exact-rule",
+                    summary="A Convention with an unrelated code scope.",
+                    body="# Exact rule\n\nApply only when directly requested.\n",
+                ).replace("scope: [test]", "scope: [path:src/other/**]"),
+                encoding="utf-8",
+            )
+
+            result = select_documents(
+                repo,
+                "Read the exact requested governance artifacts",
+                [],
+                target_paths=[
+                    "docs/plans/active/direct-plan.md",
+                    "docs/conventions/exact-rule.md",
+                ],
+            )
+
+            paths = [item["path"] for item in result["documents"]]
+            self.assertEqual(
+                [
+                    "docs/conventions/exact-rule.md",
+                    "docs/plans/active/direct-plan.md",
+                ],
+                paths[:2],
+            )
+            self.assertEqual("sufficient", result["evidence_status"])
+            self.assertIn(
+                "docs/conventions/exact-rule.md",
+                result["selected_conventions"],
+            )
+
+    def test_exact_completed_plan_is_available_without_loading_inactive_corpus(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            for name in ("project.md", "architecture.md"):
+                path = repo / "docs" / name
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
+            completed = repo / "docs/plans/completed/requested-history.md"
+            completed.parent.mkdir(parents=True)
+            completed.write_text(
+                canonical_document(
+                    "requested-history",
+                    summary="Requested completed plan history.",
+                    body="# Requested history\n\nThe plan is complete.\n",
+                    status="archived",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+            other = repo / "docs/plans/completed/other-history.md"
+            other.write_text(
+                canonical_document(
+                    "other-history",
+                    summary="Unrequested completed plan history.",
+                    status="archived",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+            invalid_active = (
+                repo / "docs/plans/completed/active-in-completed.md"
+            )
+            invalid_active.write_text(
+                canonical_document(
+                    "active-in-completed",
+                    summary="Requested completed plan history.",
+                    body="# Invalid history\n\nThis lifecycle is invalid.\n",
+                ).replace("type: convention", "type: plan"),
+                encoding="utf-8",
+            )
+
+            result = select_documents(
+                repo,
+                "Inspect the exact completed plan",
+                [],
+                target_paths=["docs/plans/completed/requested-history.md"],
+            )
+
+            paths = [item["path"] for item in result["documents"]]
+            self.assertIn(
+                "docs/plans/completed/requested-history.md",
+                paths,
+            )
+            self.assertNotIn(
+                "docs/plans/completed/other-history.md",
+                paths,
+            )
+            self.assertNotIn(
+                "docs/plans/completed/active-in-completed.md",
+                paths,
+            )
+            self.assertEqual("sufficient", result["evidence_status"])
+            self.assertTrue(
+                result["excluded_summary"]["inactive_documents_not_loaded"]
+            )
+
+    def test_omitted_exact_document_target_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            missing = select_documents(
+                repo,
+                "Inspect one exact plan",
+                [],
+                target_paths=["docs/plans/active/missing.md"],
+            )
+            self.assertEqual("insufficient", missing["evidence_status"])
+            self.assertTrue(
+                any(
+                    "docs/plans/active/missing.md" in item
+                    for item in missing["missing_evidence"]
+                )
+            )
 
     def test_broad_task_terms_do_not_select_every_active_document(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -139,15 +345,6 @@ class DocumentSelectionTests(unittest.TestCase):
             self.assertEqual(
                 ["docs/README.md"],
                 [item["path"] for item in result["documents"]],
-            )
-            frontmatter_keys = select_documents(
-                repo,
-                "Audit status type maestro_doc",
-                [],
-            )
-            self.assertEqual(
-                ["docs/README.md"],
-                [item["path"] for item in frontmatter_keys["documents"]],
             )
             self.assertGreater(
                 result["selection_trace"]["selected_document_bytes"],
@@ -322,6 +519,15 @@ class DocumentSelectionTests(unittest.TestCase):
             repo = Path(temporary) / "repo"
             repo.mkdir()
             apply_fresh_init(repo)
+            for relative_path in ("docs/project.md", "docs/architecture.md"):
+                path = repo / relative_path
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
             conventions = repo / "docs/conventions"
             conventions.mkdir(parents=True)
             for index in range(3):
@@ -330,6 +536,9 @@ class DocumentSelectionTests(unittest.TestCase):
                         f"budget-{index}",
                         summary="Budget token guidance.",
                         body="# Budget\n\n" + ("budget token " * 30),
+                    ).replace(
+                        "summary: Budget token guidance.",
+                        "summary: Budget token guidance.\nscope: [src/budget]",
                     ),
                     encoding="utf-8",
                 )
@@ -339,7 +548,12 @@ class DocumentSelectionTests(unittest.TestCase):
                 "maestro.documents.MAX_SELECTED_DOCUMENT_BYTES",
                 index_bytes + 500,
             ):
-                result = select_documents(repo, "budget token", [])
+                result = select_documents(
+                    repo,
+                    "budget token",
+                    [],
+                    ["src/budget/item.py"],
+                )
 
             trace = result["selection_trace"]
             self.assertLessEqual(
@@ -351,7 +565,7 @@ class DocumentSelectionTests(unittest.TestCase):
             self.assertEqual("insufficient", result["evidence_status"])
             self.assertTrue(
                 any(
-                    "selection byte budget" in item
+                    "Matched active Convention" in item
                     for item in result["missing_evidence"]
                 )
             )
@@ -494,6 +708,9 @@ class DocumentSelectionTests(unittest.TestCase):
                     "handles-convention",
                     summary="Public handle persistence rule.",
                     body="# Handles\n\nNormalize before persistence.\n",
+                ).replace(
+                    "summary: Public handle persistence rule.",
+                    "summary: Public handle persistence rule.\nscope: [src/handles]",
                 ),
                 encoding="utf-8",
             )
@@ -502,21 +719,68 @@ class DocumentSelectionTests(unittest.TestCase):
                 repo,
                 "Implement public handle normalization",
                 [],
+                ["src/handles/model.py"],
             )
 
             self.assertIn(
                 "docs/conventions/handles.md",
                 result["selected_conventions"],
             )
-            self.assertTrue(
+            self.assertFalse(
                 result["selection_trace"]["selection_limit_truncated"],
             )
             self.assertEqual("insufficient", result["evidence_status"])
-            self.assertTrue(
+            self.assertFalse(
                 any(
                     "document-count limit" in item
                     for item in result["missing_evidence"]
                 )
+            )
+
+    def test_corpus_wide_korean_terms_do_not_expand_document_context(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            architecture = repo / "docs/architecture"
+            architecture.mkdir(parents=True)
+            for index in range(8):
+                (architecture / f"common-{index}.md").write_text(
+                    canonical_document(
+                        f"common-{index}",
+                        summary="목록 상태 선택 안내.",
+                        body="# 안내\n\n목록 상태 선택 방법.\n",
+                    ).replace("type: convention", "type: architecture"),
+                    encoding="utf-8",
+                )
+            convention = repo / "docs/conventions/common-status.md"
+            convention.parent.mkdir(parents=True)
+            convention.write_text(
+                canonical_document(
+                    "common-status",
+                    summary="목록 상태 선택 안내.",
+                    body="# 안내\n\n목록 상태 선택 방법.\n",
+                ),
+                encoding="utf-8",
+            )
+
+            result = select_documents(repo, "목록 상태 선택", [])
+
+            self.assertEqual(
+                ["docs/README.md"],
+                [item["path"] for item in result["documents"]],
+            )
+            self.assertEqual([], result["selected_conventions"])
+            self.assertEqual(
+                ["목록", "상태", "선택"],
+                result["selection_trace"]["ignored_common_terms"],
+            )
+            self.assertEqual("insufficient", result["evidence_status"])
+            self.assertIn(
+                "corpus-wide",
+                result["missing_evidence"][0],
             )
 
     def test_no_matching_convention_is_explicit_and_not_a_scan_failure(self) -> None:
@@ -983,6 +1247,8 @@ class GovernanceReportTests(unittest.TestCase):
                     tokens=None,
                 ),
             ]
+            matching[0]["agent_calls"] = 2
+            matching[1]["agent_calls"] = 1
             foreign = [
                 event(
                     "another-project",
@@ -1022,6 +1288,9 @@ class GovernanceReportTests(unittest.TestCase):
             self.assertEqual(1, report["token_summary"]["measured_events"])
             self.assertEqual(7, report["token_summary"]["total"])
             self.assertFalse(report["token_summary"]["estimated"])
+            self.assertEqual(3, report["agent_call_summary"]["measured_events"])
+            self.assertEqual(3, report["agent_call_summary"]["total"])
+            self.assertFalse(report["agent_call_summary"]["estimated"])
             self.assertFalse(report["writes_performed"])
             self.assertFalse(report["promotion_supported"])
 
@@ -1122,6 +1391,60 @@ class GovernanceReportTests(unittest.TestCase):
 
             self.assertEqual(0, report["events_considered"])
             self.assertEqual(1, report["invalid_records"])
+            self.assertFalse(
+                report["model_feedback"]["source"]["scan_complete"]
+            )
+
+    def test_unreadable_event_file_disables_feedback_policy_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            events_dir = repo / project["state_root"] / "events"
+            events_dir.mkdir(parents=True)
+            event_path = events_dir / "events.jsonl"
+            event_path.write_text(
+                json.dumps(
+                    event(
+                        project["project_id"],
+                        checkout_id(repo),
+                        "unreadable-run",
+                        "unreadable-gap",
+                    ),
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            original_open = Path.open
+
+            def guarded_open(
+                path: Path,
+                *args: object,
+                **kwargs: object,
+            ):
+                if (
+                    path.name == event_path.name
+                    and path.parent.name == "events"
+                ):
+                    raise OSError("fixture unreadable")
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", guarded_open):
+                report = govern_report(repo, window=20, threshold=2)
+
+            self.assertTrue(report["scan_truncated"])
+            self.assertEqual(1, report["skipped_event_files"])
+            self.assertFalse(
+                report["model_feedback"]["source"]["scan_complete"]
+            )
 
     def test_window_uses_newest_run_timestamps_not_file_order(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1195,6 +1518,50 @@ class GovernanceReportTests(unittest.TestCase):
 
             self.assertEqual(0, report["events_considered"])
             self.assertEqual(1, report["excluded_definition_records"])
+
+    def test_prior_release_event_is_reused_when_selected_definitions_match(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            project = json.loads(
+                (repo / ".maestro/project.json").read_text(encoding="utf-8")
+            )
+            events_dir = repo / project["state_root"] / "events"
+            events_dir.mkdir(parents=True)
+            record = event(
+                project["project_id"],
+                checkout_id(repo),
+                "prior-release-run",
+                "compatible-gap",
+            )
+            record["framework_version"] = "0.2.2"
+            record["registry_digest"] = "f" * 64
+            (events_dir / "events.jsonl").write_text(
+                json.dumps(record, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            report = govern_report(repo, window=20, threshold=2)
+
+            self.assertEqual(1, report["events_considered"])
+            self.assertEqual(1, report["included_compatible_records"])
+            self.assertEqual(0, report["excluded_version_records"])
+            self.assertEqual(
+                0,
+                report["model_feedback"]["source"]["events_received"],
+            )
+            self.assertIsNone(
+                report["model_feedback"]["authority"][
+                    "framework_version"
+                ]
+            )
+            self.assertEqual(
+                [{"fingerprint": "compatible-gap", "occurrences": 1}],
+                report["observations"],
+            )
 
     def test_nonfinite_duration_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

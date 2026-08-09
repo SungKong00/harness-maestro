@@ -1,0 +1,11 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-live-webhook",
+  "baseline_observation": "The bundled route had no Mux Live transition, recording-asset, webhook signature, retry, or idempotency criteria.",
+  "candidate_observation": "The frozen candidate route selected live-lifecycle, webhook-state-sync, and playback-integration for authoritative server state and viewer fallback.",
+  "evidence_refs": [
+    "route-replay:normal-live-webhook",
+    "research-claim:mux-live-lifecycle",
+    "research-claim:mux-webhook-delivery"
+  ]
+}

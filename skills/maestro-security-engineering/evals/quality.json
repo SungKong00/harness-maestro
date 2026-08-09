@@ -1,0 +1,137 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-tenant-authorization.json",
+        "sha256": "b44949b313acde6fcd054572b94b6cfe35a508ab0c70ad27527c59e08a489916"
+      },
+      "case_id": "normal-tenant-authorization",
+      "criterion_results": [
+        {
+          "criterion": "Selects threat and tenant-authorization Guides",
+          "evidence_ref": "evals/artifacts/normal-tenant-authorization.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires server-bound tenant context across data paths",
+          "evidence_ref": "evals/artifacts/normal-tenant-authorization.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats client-supplied tenant IDs as trusted policy context",
+          "evidence_ref": "evals/artifacts/normal-tenant-authorization.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-session-secrets.json",
+        "sha256": "43c3525d12c5d622568f744f7e11d0ee04e3990269c6914ca1ef2745c5ed2fcc"
+      },
+      "case_id": "normal-session-secrets",
+      "criterion_results": [
+        {
+          "criterion": "Selects session and secret lifecycle Guides",
+          "evidence_ref": "evals/artifacts/normal-session-secrets.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires current protocol and secret-store evidence",
+          "evidence_ref": "evals/artifacts/normal-session-secrets.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats authentication as authorization proof",
+          "evidence_ref": "evals/artifacts/normal-session-secrets.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-untrusted-upload.json",
+        "sha256": "d837d56a2d2e83d1cfeaf1b3f1b3399d26838664b8f200d53b3a7b1d59e6fd8c"
+      },
+      "case_id": "edge-untrusted-upload",
+      "criterion_results": [
+        {
+          "criterion": "Selects threat and untrusted-data Guides",
+          "evidence_ref": "evals/artifacts/edge-untrusted-upload.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Names parser, sink, size, recursion, and resource limits",
+          "evidence_ref": "evals/artifacts/edge-untrusted-upload.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Presents a denylist as universal input protection",
+          "evidence_ref": "evals/artifacts/edge-untrusted-upload.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-visual-design.json",
+        "sha256": "597c1ea80b3cbc316d9f617ffdc49767c3bf342febfa864401bbdc566d793248"
+      },
+      "case_id": "non-trigger-visual-design",
+      "criterion_results": [
+        {
+          "criterion": "Does not select the security-engineering Pack for product design",
+          "evidence_ref": "evals/artifacts/non-trigger-visual-design.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks product-design routing",
+          "evidence_ref": "evals/artifacts/non-trigger-visual-design.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/overlap-security-test-plan.json",
+        "sha256": "3624418728a5fe0fe9db8764e14350d5c835a7e2afbdeb80fbc06500013e4bb4"
+      },
+      "case_id": "overlap-security-test-plan",
+      "criterion_results": [
+        {
+          "criterion": "Does not select the security-engineering Pack when test strategy is the dominant request",
+          "evidence_ref": "evals/artifacts/overlap-security-test-plan.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks software-qa routing for test planning",
+          "evidence_ref": "evals/artifacts/overlap-security-test-plan.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "authoring_run_ref": "desktop:expertise-four-packs-20260727:security-engineering",
+    "evaluation_run_ref": "subagent:accept-security:2026-07-27",
+    "kind": "fresh-context"
+  },
+  "expertise_pack_id": "security-engineering",
+  "schema_version": "maestro_expertise_quality_eval_v1"
+}

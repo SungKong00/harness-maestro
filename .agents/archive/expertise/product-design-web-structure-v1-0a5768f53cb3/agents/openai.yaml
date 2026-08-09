@@ -1,0 +1,6 @@
+interface:
+  display_name: "Product Design Web Structure"
+  short_description: "Route web structure and user-flow decisions"
+  default_prompt: "Use $product-design-web-structure with only the Decision Guides selected by the validated Maestro route."
+policy:
+  allow_implicit_invocation: false

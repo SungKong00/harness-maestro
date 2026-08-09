@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-current-react-api",
+  "baseline_observation": "Static bundled expertise could not establish current Mux React SDK compatibility.",
+  "candidate_observation": "The frozen candidate route selected playback-integration and opened contextual research instead of claiming current compatibility from static guidance.",
+  "evidence_refs": [
+    "route-replay:edge-current-react-api",
+    "research-bundle:.maestro/state/work/mux-streaming-web/research-bundle.json"
+  ]
+}

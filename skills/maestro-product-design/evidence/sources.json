@@ -1,0 +1,439 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "product-design",
+  "verified_on": "2026-07-30",
+  "sources": [
+    {
+      "source_id": "w3c-wcag-reflow",
+      "tier": 1,
+      "authority": "W3C WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/reflow",
+      "supports": ["Reflow without lost information or functionality and bounded necessary two-dimensional exceptions"],
+      "used_by": ["visual-hierarchy-layout", "interaction-responsive-accessibility", "information-architecture-and-user-flow", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-focus-order",
+      "tier": 1,
+      "authority": "W3C WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html",
+      "supports": ["Sequential focus order that preserves meaning and operability"],
+      "used_by": ["visual-hierarchy-layout", "interaction-responsive-accessibility", "information-architecture-and-user-flow", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-apg-disclosure",
+      "tier": 1,
+      "authority": "W3C WAI-ARIA Authoring Practices",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/",
+      "supports": ["Disclosure button semantics, keyboard activation, and expanded state"],
+      "used_by": ["interaction-responsive-accessibility", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-klreq",
+      "tier": 1,
+      "authority": "W3C Internationalization Working Group Note Draft",
+      "url": "https://www.w3.org/TR/klreq/",
+      "supports": ["Hangul spacing, line adjustment, mixed-script layout, and line-height considerations"],
+      "used_by": ["typography-korean"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-user-needs",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/user-research/start-by-learning-user-needs",
+      "supports": ["Outcome and context based user needs and traceability into acceptance criteria"],
+      "used_by": ["design-brief", "information-architecture-and-user-flow"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-whole-journey",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/design/map-a-users-whole-problem",
+      "supports": ["End-to-end journey mapping and detection of dead ends, duplication, and discontinuity"],
+      "used_by": ["design-brief", "information-architecture-and-user-flow"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-internal-users",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/design/services-for-government-users",
+      "supports": ["High-frequency internal-user comparison, switching, realistic data, and limits of one-thing-per-page"],
+      "used_by": ["visual-hierarchy-layout", "information-architecture-and-user-flow"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-prototyping",
+      "tier": 1,
+      "authority": "GOV.UK Prototype Kit documentation",
+      "url": "https://prototype-kit.service.gov.uk/docs/prototyping",
+      "supports": ["Question-matched prototype fidelity and separation of prototype from production code"],
+      "used_by": ["design-brief", "reference-selection"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-patterns",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/design/using-adapting-and-creating-patterns",
+      "supports": ["Evidence-based pattern reuse, adaptation, and research requirement for new patterns"],
+      "used_by": ["reference-selection"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "uswds-principles",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/design-principles/",
+      "supports": ["Real user needs, prototype testing, documented findings, accessibility, and continued validation"],
+      "used_by": ["design-brief", "reference-selection", "information-architecture-and-user-flow"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "uswds-card",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/components/card/",
+      "supports": ["Cards as modular summaries rather than table or sequential-prose substitutes"],
+      "used_by": ["visual-hierarchy-layout", "information-architecture-and-user-flow"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "atlassian-typography",
+      "tier": 1,
+      "authority": "Atlassian Design System",
+      "url": "https://atlassian.design/foundations/typography/applying-typography",
+      "supports": ["Relative typography tokens, semantic roles, heading hierarchy, and restrained metric emphasis"],
+      "used_by": ["typography-korean", "visual-hierarchy-layout"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "atlassian-spacing",
+      "tier": 1,
+      "authority": "Atlassian Design System",
+      "url": "https://atlassian.design/foundations/grid-beta/applying-grid",
+      "supports": ["Limited spacing system for grouping, hierarchy, rhythm, and responsive density"],
+      "used_by": ["visual-hierarchy-layout", "operational-workflow-interface"],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "primer-card",
+      "tier": 1,
+      "authority": "GitHub Primer",
+      "url": "https://primer.style/product/components/card/",
+      "supports": ["Compact card density through spacing and reduced decoration while preserving information roles"],
+      "used_by": ["visual-hierarchy-layout"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "primer-progressive-disclosure",
+      "tier": 1,
+      "authority": "GitHub Primer",
+      "url": "https://primer.style/product/ui-patterns/progressive-disclosure/",
+      "supports": ["Sparing contextual disclosure with understandable labelled affordances"],
+      "used_by": ["interaction-responsive-accessibility", "information-architecture-and-user-flow", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "material-canonical-layouts",
+      "tier": 1,
+      "authority": "Material Design 3",
+      "url": "https://m3.material.io/foundations/layout/canonical-examples/overview",
+      "supports": ["Feed, list-detail, and supporting-pane patterns chosen by task"],
+      "used_by": ["visual-hierarchy-layout", "information-architecture-and-user-flow"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "mdn-css-font-loading",
+      "tier": 1,
+      "authority": "MDN documentation linked to the CSS Font Loading specification",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/CSS_Font_Loading_API",
+      "supports": ["Browser-observable font loading status, FontFaceSet checks, and document.fonts readiness"],
+      "used_by": ["typography-korean"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-status-messages",
+      "tier": 1,
+      "authority": "W3C WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+      "supports": ["Programmatic exposure of status messages without moving focus"],
+      "used_by": ["interaction-responsive-accessibility"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-focus-not-obscured",
+      "tier": 1,
+      "authority": "W3C WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum",
+      "supports": ["Focused controls remain visible despite sticky, overlay, or user-opened content"],
+      "used_by": ["interaction-responsive-accessibility", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-animation-from-interactions",
+      "tier": 1,
+      "authority": "W3C WCAG 2.2 Understanding guidance",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html",
+      "supports": ["Motion triggered by interaction needs a disablement path unless essential"],
+      "used_by": ["interaction-responsive-accessibility", "information-architecture-and-user-flow"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-plan-user-research",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/user-research/plan-user-research-for-your-service",
+      "supports": ["Question-led proportional research planning and durable shared research outputs"],
+      "used_by": ["design-brief", "reference-selection"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-analyse-research",
+      "tier": 1,
+      "authority": "United Kingdom Government Service Manual",
+      "url": "https://www.gov.uk/service-manual/user-research/analyse-a-research-session",
+      "supports": ["Separation of observations, findings, and resulting product or research actions"],
+      "used_by": ["design-brief", "reference-selection"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "github-actions-visualization",
+      "tier": 1,
+      "authority": "GitHub official documentation for its own product",
+      "url": "https://docs.github.com/en/actions/how-tos/monitor-workflows/use-the-visualization-graph",
+      "supports": ["GitHub Actions uses a dependency graph as a run-oriented index with job status and log navigation"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "github-actions-logs",
+      "tier": 1,
+      "authority": "GitHub official documentation for its own product",
+      "url": "https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs",
+      "supports": ["Selected job and step logs, failure expansion, and duration are contextual run details"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "argo-dag",
+      "tier": 1,
+      "authority": "Argo Workflows official documentation",
+      "url": "https://argoproj.github.io/argo-workflows/walk-through/dag/",
+      "supports": ["Explicit one-to-many parallel fork and many-to-one dependency join semantics"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "airflow-ui",
+      "tier": 1,
+      "authority": "Apache Airflow official documentation for its own UI",
+      "url": "https://airflow.apache.org/docs/apache-airflow/stable/ui.html",
+      "supports": ["Airflow separates graph, grid, metrics, history, and selected-task detail views by task"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "langsmith-trace",
+      "tier": 1,
+      "authority": "LangSmith official documentation for its own product",
+      "url": "https://docs.langchain.com/langsmith/manage-trace",
+      "supports": ["Context-preserving transition from trace detail to server logs filtered by Trace ID"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "elk-layered",
+      "tier": 1,
+      "authority": "Eclipse Layout Kernel algorithm reference",
+      "url": "https://eclipse.dev/elk/reference/algorithms/org-eclipse-elk-layered.html",
+      "supports": ["Directional layered layout, ports, crossing minimization, spacing, and orthogonal routing capabilities"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-keyboard-interface",
+      "tier": 1,
+      "authority": "W3C WAI-ARIA Authoring Practices",
+      "url": "https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/",
+      "supports": ["Predictable component navigation, discernible focus, and separation of focus from selection"],
+      "used_by": ["interaction-responsive-accessibility", "operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-treeview",
+      "tier": 1,
+      "authority": "W3C WAI-ARIA Authoring Practices",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/treeview/",
+      "supports": ["Treeview defines hierarchical parent-child semantics and its keyboard interaction contract; avoiding tree semantics for a joining DAG is a derived inference from combined tree and DAG evidence"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "codex-app-server",
+      "tier": 1,
+      "authority": "OpenAI official developer documentation",
+      "url": "https://developers.openai.com/codex/app-server/",
+      "supports": ["Version-matched App Server schema is the contract boundary for observed model, reroute, usage, and terminal events"],
+      "used_by": ["operational-workflow-interface"],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "dtcg-token-format-2025",
+      "tier": 1,
+      "authority": "Design Tokens Community Group Final Community Group Report 2025.10",
+      "url": "https://www.designtokens.org/tr/2025.10/format/",
+      "supports": ["Typed design-token interchange, aliases, descriptions, deprecation, and reference cycle or type validation; not selection of good design values"],
+      "used_by": ["design-system-and-components"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-wcag-22",
+      "tier": 1,
+      "authority": "W3C Recommendation",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "supports": ["Accessibility constraints for relationships, sequence, color, contrast, resize, reflow, text spacing, keyboard, focus, target size, labels, errors, prevention, and status messages"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility", "typography-korean", "visual-hierarchy-layout"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-apg-button",
+      "tier": 1,
+      "authority": "W3C WAI-ARIA Authoring Practices Guide",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/button/",
+      "supports": ["Action and toggle button semantics, accessible naming, keyboard activation, pressed state, and focus outcome guidance"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-korean-script-resources",
+      "tier": 1,
+      "authority": "W3C Internationalization Working Group Draft Note",
+      "url": "https://www.w3.org/TR/kore-lreq/",
+      "supports": ["Korean-script verification surfaces for fonts, shaping, boundaries, punctuation, breaking, spacing, mixed script, baselines, line height, tables, and forms"],
+      "used_by": ["typography-korean", "design-system-and-components"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "uswds-design-tokens",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/design-tokens/",
+      "supports": ["Curated token choices, token keys rather than raw values in components, and separation of system, theme, and state roles"],
+      "used_by": ["design-system-and-components", "visual-hierarchy-layout"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "uswds-typesetting",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/design-tokens/typesetting/overview/",
+      "supports": ["Typeface-metric-aware token output and composed family, size, line-height, and semantic type roles"],
+      "used_by": ["typography-korean", "design-system-and-components"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "carbon-color-tokens",
+      "tier": 1,
+      "authority": "IBM Carbon Design System",
+      "url": "https://carbondesignsystem.com/elements/color/overview/",
+      "supports": ["Role-based color tokens, theme-independent semantic names, contextual layers, states, and bounded component-only tokens"],
+      "used_by": ["design-system-and-components", "visual-hierarchy-layout"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "carbon-type-sets",
+      "tier": 1,
+      "authority": "IBM Carbon Design System",
+      "url": "https://carbondesignsystem.com/elements/typography/type-sets/",
+      "supports": ["Role-based label, helper, legal, code, body, heading, dense productive, and expressive type examples"],
+      "used_by": ["typography-korean", "design-system-and-components"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-contribution-criteria",
+      "tier": 1,
+      "authority": "GOV.UK Design System",
+      "url": "https://design-system.service.gov.uk/community/contribution-criteria/",
+      "supports": ["Useful, unique, usable, consistent, versatile, documented, and representative-user-tested criteria for shared components"],
+      "used_by": ["design-system-and-components"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "uswds-lifecycle",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/components/lifecycle/",
+      "supports": ["Explicit component proposal, development, experimental, stable, caution, deprecated, and retired confidence states"],
+      "used_by": ["design-system-and-components"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "govuk-component-modification",
+      "tier": 1,
+      "authority": "GOV.UK Design System",
+      "url": "https://design-system.service.gov.uk/get-started/extending-and-modifying-components/",
+      "supports": ["Begin with existing components, isolate bounded modifiers, assess maintenance and accessibility risk, and fork only for material semantic or markup changes"],
+      "used_by": ["design-system-and-components"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-button",
+      "tier": 1,
+      "authority": "GOV.UK Design System",
+      "url": "https://design-system.service.gov.uk/components/button/",
+      "supports": ["Action priority, destructive consequence, disabled-state caution, and double-submission guidance illustrated by a mature component"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "govuk-validation",
+      "tier": 1,
+      "authority": "GOV.UK Design System",
+      "url": "https://design-system.service.gov.uk/patterns/validation/",
+      "supports": ["Accept input variation, retain values, connect summary and field errors, guide correction, and use live validation only with research evidence"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "stable"
+    },
+    {
+      "source_id": "uswds-validation",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/components/validation/",
+      "supports": ["Documented accessibility and usability risks in one live-validation component and an evidence-backed deprecation decision"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "uswds-accessibility-process",
+      "tier": 1,
+      "authority": "United States Web Design System",
+      "url": "https://designsystem.digital.gov/documentation/accessibility/",
+      "supports": ["Consuming products must test their own implementations across keyboard, screen reader, zoom, touch, browser, automated, specialist, and page-level contexts"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "storybook-ui-testing",
+      "tier": 1,
+      "authority": "Storybook official documentation",
+      "url": "https://storybook.js.org/docs/writing-tests",
+      "supports": ["Rendered component-state stories, browser component tests, interactions, smoke tests, and visual comparisons"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility"],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "playwright-visual-comparisons",
+      "tier": 1,
+      "authority": "Playwright official documentation",
+      "url": "https://playwright.dev/docs/test-snapshots",
+      "supports": ["Deterministic screenshot baselines and diffs plus viewport, device, touch, locale, timezone, and color-scheme emulation"],
+      "used_by": ["design-system-and-components", "interaction-responsive-accessibility", "typography-korean", "visual-hierarchy-layout"],
+      "freshness": "volatile"
+    }
+  ]
+}

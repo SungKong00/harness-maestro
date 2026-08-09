@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: Harness Maestro의 숙의, 컨텍스트, 오케스트레이션, 자가개선과 문서 구조에 영향을 준 연구·공학 자료와 실제 채택 범위.
 scope: [routing, research, docs, skills, self-improvement]
-last_verified: 2026-07-24
+last_verified: 2026-07-28
 supersedes: []
 sensitivity: internal
 ---
@@ -270,6 +270,254 @@ architecture, decision, convention 권위 모델로 축소했다.
 없는 `CITATION.cff`, 전체 문서 복사본인 `llms-full` 파일은 채택하지 않는다. 이런
 파일은 성숙함의 표시가 아니라 실제 독자·소유권·배포 요구가 생겼을 때만 추가한다.
 
+## 7. 그래프 엔지니어링에서 가져온 검증 경계
+
+### 확인한 구현
+
+- [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)는
+  노드·엣지를 선언한 뒤 compile 단계에서 구조를 검증하고, checkpoint는 필요한
+  실행에 선택적으로 붙인다.
+- [Microsoft Agent Framework Workflows](https://learn.microsoft.com/en-us/agent-framework/workflows/workflows)는
+  workflow builder가 실행 전에 시작점, 연결과 도달 가능성을 검사하고 구체적인
+  validation 오류를 반환한다.
+- [Pydantic Graph](https://pydantic.dev/docs/ai/graph/graph/)는 노드의 반환 타입에서 가능한
+  경로를 만들고 실행 전에 graph를 구성한다. 실행 중 사용자 결정은
+  [deferred tools](https://ai.pydantic.dev/deferred-tools/)처럼 명시적인 승인 경계로
+  분리한다.
+- [PocketFlow](https://github.com/The-Pocket/PocketFlow)는 작은 Node·Flow 추상화만
+  제공한다. 모든 작업을 복잡한 그래프로 만들지 않아도 되며, 실제 전이가 필요한
+  곳만 명시하는 최소 구현의 반례로 참고했다.
+- [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final)는 특정 runtime을
+  처방하지 않고 기존 SDLC에 통합할 고수준 practice와 evidence를 제시한다.
+- [SEI QAW](https://sei.cmu.edu/library/quality-attribute-workshops-qaws-third-edition/)와
+  [ATAM](https://www.sei.cmu.edu/library/architecture-tradeoff-analysis-method-collection/)은
+  우선순위 scenario를 architecture risk·trade-off·evidence와 연결한다.
+- [JSON Schema 2020-12](https://json-schema.org/specification)는 process 경계의
+  JSON instance를 선언된 wire shape에 대해 검증하는 표준이다. 구조 통과가 진실성,
+  권한과 evidence 품질을 증명하지는 않는다.
+- [Codex App Server](https://developers.openai.com/codex/app-server/)는
+  `turn/start`의 요청 모델, `model/rerouted`, `thread/tokenUsage/updated`,
+  `turn/completed` 이벤트와 `thread_id`·`turn_id` 상관 경계를 제공한다. 이는
+  App Server 실행과 이벤트 구독을 직접 소유한 Host의 관측 근거이며, 이미 열린
+  Desktop 채팅을 Skill이 소급해서 읽을 수 있다는 의미는 아니다.
+- [Hermes delegation](https://github.com/NousResearch/hermes-agent/blob/eb52760564dbba2e5971fa54bd67384e281cd3b8/website/docs/user-guide/features/delegation.md)은
+  child에 goal과 bounded context만 전달하고 final summary만 되돌리는 fresh child
+  패턴을 제공한다. Hermes의 background Kanban/runtime 전체는 채택하지 않았다.
+- [Chain-of-Verification](https://arxiv.org/abs/2309.11495)과
+  [CRITIC](https://arxiv.org/abs/2305.11738)은 최초 draft와 verification 질문을
+  분리하고 외부 도구 feedback으로 수정하는 task별 연구 근거다. 이를 production
+  correctness 보장으로 확대하지 않는다.
+
+### Maestro에 채택한 범위
+
+Maestro는 이 저장소들처럼 실행 경계에서 오류를 일찍 발견하되 자체 그래프 런타임은
+만들지 않는다. 구체적으로 다음만 채택했다.
+
+- route v1의 선택 의미를 유지하면서 최대 5개 Assignment의 v2 계획으로
+  정규화한다. 별도 범용 Node·Edge hierarchy 대신 `depends_on`으로 필요한 DAG만
+  표현한다.
+- Assignment의 Executor·Lens·Packet·model route와 한 명 writer를 실행 전에
+  검사하며, machine-readable diagnostic code를 외부 framework 문구와 분리한다.
+- Standard·Deep context 경계에는 실제 artifact path와 lifecycle scenario만 가진
+  작은 Engineering Baseline을 두고, Assignment마다 허용된 Lens·Guide·reference와
+  validated dependency Packet만 투영한다.
+- FindingPacket v2를 plan·Assignment·전체 Lens set에 결합하고, Lens 밖의 중요한
+  공백은 최대 2개의 evidence-backed coverage gap으로 표현한다.
+- `status`는 저장된 `ready` 플래그 대신 핵심 문서 상태와 검증 명령 승인 여부에서
+  현재 준비도를 계산한다.
+- 감지한 검증 명령 후보와 사용자가 승인한 `verification_commands`를 분리한다.
+  후보는 자동 실행 권한이 아니다.
+- RunReceipt 기록 전에 risk-depth, executor, verifier와 검증 artifact의 관계를
+  검사하고 고칠 수 있는 오류를 반환한다.
+- Viewer에서는 메인 요청 모델, 완전한 Host event 구간이 증명한 실제 적용 모델과
+  Route 권고 모델을 분리한다. 요청만 알거나 event 구간이 불완전하면 적용 모델은
+  `null`이고, 비공개 session 파일을 보조 근거로 사용하지 않는다.
+- 판단이 필요한 high-risk 요청인데 Lens가 하나도 선택되지 않은 경우에만 경고한다.
+  단순하거나 결정론적인 high-risk 작업까지 강제로 다중 Lens로 보내지는 않는다.
+- host conformance 결과는 작은 JSON artifact로 남길 수 있지만 scheduler,
+  checkpoint DB, 분산 worker와 전체 실행 transcript는 현재 범위에 넣지 않는다.
+
+2026-07-26 재검토에서 LangGraph는 public 문서상 compile의 기본 구조 검사만
+보장하고, Microsoft Agent Framework는 type compatibility·connectivity·Executor
+binding·edge validation을 구체적으로 명시했으며, Pydantic GraphBuilder는 build와
+실행을 분리하지만 내부 validator 전체를 public compatibility 계약으로 보장하지
+않는다는 차이를 확인했다. 따라서 공통되는 구조·참조·계약 검사만 채택하고, 외부
+exception text나 내부 함수 동작은 Maestro 규칙으로 복사하지 않았다.
+
+이 경계는 그래프 제품의 기능을 복제하기 위한 것이 아니라 Maestro의 실패 비용이 큰
+전이만 검증하기 위한 것이다. 장기 재개, 병렬 fan-out 복구와 분산 실행이 실제 요구가
+될 때에만 persistence나 전용 runtime을 다시 평가한다.
+
+구현 범위와 HTML Inspector의 도입 게이트는
+[Typed Assignment Plan](../architecture/typed-assignment-plan.md)에 고정한다.
+
+## 8. 전문가 역할은 persona가 아니라 선택형 판단 기준으로 만든다
+
+### 확인한 형식과 저장소
+
+- [Agent Skills specification](https://agentskills.io/specification)은 최소
+  `SKILL.md`, 필요할 때 읽는 `references/`와 progressive disclosure를 정의하고,
+  긴 세부 자료를 분리해 작은 reference를 on-demand로 읽도록 권한다.
+- Agent Skills의
+  [client implementation guide](https://agentskills.io/client-implementation/adding-skills-support)는
+  발견 단계의 metadata와 활성화 단계의 전체 `SKILL.md` 전달을 구분하고,
+  reference·resource는 필요할 때 추가로 읽는 흐름을 설명한다. 따라서 Skill ID가
+  선택됐다는 사실만으로 실제 지침이 모델 컨텍스트에 들어갔다고 볼 수 없다.
+- [Anthropic Skills](https://github.com/anthropics/skills)은 self-contained Skill
+  package가 반복 가능한 specialized workflow를 제공하되 실제 환경에서 충분히
+  평가해야 한다고 명시한다.
+- [gstack Skill guide](https://github.com/garrytan/gstack/blob/main/docs/skills.md)는
+  planning, design review, engineering review, QA처럼 작업별 전문 절차를 별도
+  Skill로 제공한다. 특히 design review는 정보 구조, interaction state, user
+  journey, design system, responsive·accessibility를 구체적인 pass로 나눠
+  generic persona보다 omission 경계가 분명하다.
+- 같은 gstack의 project learning은 source와 referenced file을 가진 compact
+  learning과 stale pruning 사례를 제공한다.
+- [Superpowers](https://github.com/obra/superpowers)는 composable Skill과 단계별
+  workflow, skill 작성·평가 절차를 함께 제공한다.
+
+### Maestro에 반영한 동작
+
+- `Expertise Pack`은 반복 가능한 전문가 절차이고, `Decision Guide`는 typography,
+  hierarchy, transaction isolation처럼 한 종류의 판단 기준이다.
+- Pack은 Lens가 아니다. Lens는 finding과 reject 조건을 소유하고, Pack은 작업자가
+  적용할 재사용 절차를 제공한다.
+- Pack은 Executor도 아니다. 선택된 Guide가 늘어도 모델·도구·권한·agent 수를
+  자동으로 늘리지 않는다.
+- route는 pack 최대 한 개와 guide 최대 네 개만 반환하고, source manifest와 eval은
+  정상 작업에서 열지 않는다.
+- AssignmentInput은 선택한 Skill과 Guide resource path, Skill tree digest를
+  전달한다. 실제 Host load 증거는 별도 attestation이며, 없으면 `unavailable`이다.
+- Pack은 독립적인 쓰기 권한을 만들지 않는다. read-only Assignment에서는 조언만
+  반환하고, 이미 승인된 mutation owner만 같은 Assignment 경계 안에서 기준을
+  구현에 적용한다.
+- stable·versioned 기준은 재사용하고, volatile한 현재 사례나 없는 전문 분야만
+  research gate로 조사한다.
+- candidate는 프로젝트 state에 격리하고 no-pack, persona-only, pack,
+  pack+conditional-research frozen comparison 뒤에만 승격을 검토한다.
+- JSON Schema는 source·evaluation wire shape를 고정하고 CLI의 application-level
+  validator는 Guide 연결과 artifact digest를 교차 검사한다. 이 검사는 출처의
+  진실성이나 산출물 품질을 대신하지 않으므로 frozen route test와 domain artifact
+  평가를 별도로 유지한다.
+
+### 차용하지 않은 부분
+
+gstack의 구체적인 persona, 0–10 rating, 모든 UI 작업의 고정 review chain, 자동
+session learning 재주입을 그대로 복사하지 않는다. 이런 선택은 gstack의 제품
+workflow에는 맞을 수 있지만 Maestro의 다양한 프로젝트와 최소 경로 원칙에서는
+불필요한 호출과 project-specific preference를 만들 수 있다.
+
+파일럿 팩과 내부 research gate 계약은
+[Expertise Pack](../architecture/expertise-packs.md),
+저장소 결정은 [ADR-0006](../decisions/0006-evidence-compiled-expertise.md)과
+[ADR-0009](../decisions/0009-internal-research-and-expertise-boundary.md)에 있다.
+
+## 9. 판단과 실행 권한은 다른 artifact로 연결한다
+
+### 확인한 공식 자료와 저장소
+
+- [OpenAI Agents SDK orchestration](https://openai.github.io/openai-agents-python/multi_agent/)은
+  한 manager가 최종 통제를 유지하며 specialist를 tool처럼 호출하는
+  manager-as-tools와, 통제 자체를 넘기는 handoff를 구분한다. Maestro의 bounded
+  specialist 판단에는 전자가 더 가깝다.
+- [OpenAI Agents SDK guardrails](https://openai.github.io/openai-agents-python/guardrails/)은
+  tool guardrail을 function call 단위에 적용하고, blocking input guardrail이
+  실패하면 agent·tool 실행 전에 중단할 수 있는 경계를 제공한다.
+- [LangGraph workflow 문서](https://docs.langchain.com/oss/python/langgraph/workflows-agents)는
+  미리 정한 workflow, orchestrator-worker와 explicit state를 구분하며,
+  [LangChain human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)는
+  민감한 tool 실행을 pause한 뒤 approve·edit·reject하는 상태 경계를 설명한다.
+- [OWASP LLM06 Excessive Agency](https://owasp.org/www-project-top-10-for-large-language-model-applications/2_0_vulns/LLM06_ExcessiveAgency.html)는
+  tool·permission·autonomy를 필요한 최소로 줄이고 downstream authorization과
+  human approval을 함께 쓰라고 권한다.
+- [OWASP Agentic AI security guidance](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)는
+  agent 사이 구조화된 output, least privilege, decision과 execution의 분리,
+  multi-agent chaining 자체의 검증을 강조한다.
+- gstack의
+  [plan-design-review Skill](https://github.com/garrytan/gstack/blob/main/plan-design-review/SKILL.md)은
+  계획 검토 단계에서 코드를 작성하지 않는 경계를 명시하고,
+  [Superpowers executing-plans](https://github.com/obra/superpowers/tree/main/skills/executing-plans)는
+  승인된 설계·계획과 실행 절차를 별도 Skill로 나누는 공개 구현 사례다.
+
+### Maestro에 반영한 동작
+
+- “검토만”과 “검토 후 구현”을 같은 implementation route로 처리하지 않는다.
+  `RequestContract`가 `forbidden`, `after_decision`, `direct`를 먼저 결정한다.
+- DecisionPlan의 Specialist는 영구 agent가 아니라 manager가 통제하는 read-only
+  role contract다. 각 역할은 소유 concern, 허용 claim과 input만 받는다.
+- 최초 visual·UX 판단은 서로의 결론을 보지 않고, synthesis가 공통점과 충돌만
+  추출한 뒤 technical feasibility를 호출한다.
+- Specialist packet은 구조화하고 역할 밖 문제를 typed escalation으로 제한한다.
+  구현 명령이나 write permission은 packet과 DecisionPlan에서 거부한다.
+- 구현은 별도 `enact` 전이에서만 열린다. 이 전이는 DecisionBundle과 packet digest,
+  research gate, Registry와 Git checkout, blocker, feasibility, 허용 path와 사용자
+  권한을 함께 검사한다.
+- CLI의 계약만으로 실제 Host tool denial을 증명하지 않는다. Host가 reviewer의
+  write call을 거부한 결과는 conformance에서 별도로 확인한다.
+
+### 차용하지 않은 부분
+
+LangGraph checkpoint DB, 범용 graph runtime, 모든 tool call의 영구 approval UI,
+role마다 별도 permanent agent와 모든 packet의 LLM semantic judge는 도입하지 않았다.
+현재 고정 DAG는 최대 다섯 단계이고 기존 route writer를 재사용하므로, typed artifact와
+Git freshness check만으로 먼저 평가한다. 실제 오염이나 중단·재개 요구가 반복될 때만
+Host Adapter나 runtime 확장을 검토한다.
+
+구현 권위는
+[ADR-0007](../decisions/0007-separate-decision-and-execution.md)과
+[Decision Workflow](../architecture/decision-workflow.md)에 있다.
+
+## 10. 권한·관측·검색·기록 기준선을 하나의 성공 조건으로 묶지 않는다
+
+### 확인한 공식 자료와 유사 구현 원칙
+
+- [MCP tool specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)은
+  `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`를 독립
+  annotation으로 둔다. [공식 annotation 해설](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/)도
+  이 값들이 서로 다른 위험 차원이며 신뢰할 수 없는 server의 annotation만으로
+  권한을 결정하지 말아야 한다고 설명한다.
+- [Codex App Server](https://developers.openai.com/codex/app-server/)는 client가
+  terminal event까지 stream을 계속 읽고, 필요하면
+  `optOutNotificationMethods`로 정확한 고빈도 notification만 줄이는 계약을
+  제공한다. approval과 사용자 입력은 별도 server request이므로 같은 event count
+  필터로 처리하지 않는다.
+- [Lucene BM25Similarity](https://lucene.apache.org/core/9_10_0/core/org/apache/lucene/search/similarities/BM25Similarity.html)와
+  [OpenSearch keyword search](https://docs.opensearch.org/latest/search-plugins/keyword-search/)는
+  문서 집합 전반에 자주 나오는 term의 IDF 가중치를 낮춘다. 이는 “상태”, “목록”
+  같은 일반 단어가 많은 문서를 동시에 끌어오는 문제를 줄이는 전례다.
+- [Azure Event Sourcing pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing)은
+  append-only event를 사실의 기록으로 보존하고 현재 조회 모델은 별도 projection으로
+  만든다. [OpenTelemetry Logs SDK](https://opentelemetry.io/docs/specs/otel/logs/sdk/)도
+  로그 emit 경로가 호출자를 오래 막지 않도록 batching과 bounded queue를
+  분리한다.
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)는
+  재실행될 수 있는 경계 앞의 side effect를 idempotent하게 만들거나 별도 node로
+  분리할 것을 권한다. 영수증 append와 Registry upgrade를 한 재시도 단위로 묶지
+  않는 설계에 참고했다.
+
+### Maestro에 반영한 동작
+
+- 프로젝트 파일 쓰기와 commit·push·배포 금지를 별도 필드로 라우팅한다. 따라서
+  외부 작업 금지가 로컬 구현 승인을 취소하지 않고, Host는 두 경계를 모두 검사한다.
+- App Server의 compact observation 한도는 보존할 telemetry의 한도이지 live
+  protocol 완료 한도가 아니다. 고빈도 delta는 협상으로 줄이고, 필요한 event만
+  buffer하며, raw transport hard limit과 전체 timeout은 별도 안전장치로 유지한다.
+- 문서 선택은 active corpus의 document frequency로 일반 task term을 제거한 뒤
+  점수화한다. core 문서는 항상 별도 검사하고, active Convention은 일반 body
+  공통어가 아니라 path scope·Lens·구별 가능한 metadata로 결속한다. 그렇게 매칭된
+  Convention이 context 경계에서 빠지면 mutation은 fail-closed한다.
+- RunReceipt는 검증 후 append하는 사실이고, 최신 Registry로 반복 신호를 계산하는
+  management check는 projection이다. lock이 stale이어도 사실은 한 번 기록하고
+  projection만 보류한다. `upgrade`는 별도의 reviewed transaction으로 남긴다.
+
+### 의도적으로 채택하지 않은 부분
+
+범용 검색 엔진, message broker, OpenTelemetry backend, event replay database와
+background upgrade daemon은 도입하지 않았다. 현재 문제는 작은 active Markdown
+corpus와 로컬 JSONL이므로 document frequency, protocol filtering, append-first
+경계만으로 해결한다. 실제 부하와 복구 요구가 이 한계를 넘을 때만 외부 runtime을
+다시 평가한다.
+
 ## 세부 동작과 근거 연결표
 
 | 실제 동작 | 주 근거 | 저장소 권위 |
@@ -282,6 +530,12 @@ architecture, decision, convention 권위 모델로 축소했다.
 | RunReceipt → candidate → Pilot → active | Reflexion, Hermes Skills, harness feedback loop | [구성요소 생명주기](../governance/component-lifecycle.md) |
 | Markdown 기본 권위와 주제별 단일 원본 | ADR, repository system of record, Diátaxis의 목적 분리 | [ADR-0004](../decisions/0004-single-document-authority.md) |
 | custom Adapter는 handoff만 하고 임의 명령은 실행하지 않음 | 최소 커널과 프로젝트 권한 경계 | [ADR-0005](../decisions/0005-project-local-extension-boundary.md) |
+| 파생 readiness, 승인된 검증 명령과 RunReceipt 의미 검증 | LangGraph, Microsoft Agent Framework, Pydantic Graph, PocketFlow | [시작 및 운용 가이드](../runbooks/getting-started.md) |
+| v1 호환 Assignment DAG와 실행 전 의미 검증 | LangGraph compile, Microsoft Workflow validation, Pydantic GraphBuilder | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
+| bounded surface·AssignmentInput·FindingPacket v2 | NIST SSDF, SEI QAW/ATAM, JSON Schema, Hermes delegation, CoVe·CRITIC | [Typed Assignment Plan](../architecture/typed-assignment-plan.md) |
+| 선택형 Expertise Pack, Decision Guide와 조건부 research gate | Agent Skills spec, Anthropic Skills, gstack, Superpowers | [ADR-0006](../decisions/0006-evidence-compiled-expertise.md) |
+| read-only DecisionPlan, 역할 제한 packet, digest-bound enactment | OpenAI orchestration·guardrails, OWASP least privilege, LangGraph HITL, gstack·Superpowers 단계 분리 | [ADR-0007](../decisions/0007-separate-decision-and-execution.md) |
+| 독립 side-effect 축, event-stream 종료, corpus 공통어 억제, append-first receipt | MCP tool annotations, Codex App Server, BM25 IDF, Event Sourcing·OpenTelemetry | [Decision Workflow](../architecture/decision-workflow.md), [Host conformance](../runbooks/codex-host-conformance.md), [운영 뷰어](../architecture/operations-viewer.md) |
 
 ## 아직 검증하지 않았거나 주장하지 않는 것
 

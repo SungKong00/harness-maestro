@@ -1,0 +1,10 @@
+{
+  "action": "activate",
+  "approval_ref": "owner_decision:dashboard:interactive-web-motion",
+  "candidate_digest": "74a01d19eeb68c6ad49cb61b28f838556e0330806ecb139f6986ed018ffd0cc6",
+  "candidate_id": "interactive-web-motion",
+  "pack_version": 1,
+  "previous_definition_digest": null,
+  "schema_version": "maestro_expertise_publication_v1",
+  "source_candidate_path": ".maestro/state/candidates/expertise/interactive-web-motion"
+}

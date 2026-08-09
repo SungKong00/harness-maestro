@@ -1,0 +1,217 @@
+{
+  "schema_version": "maestro_surface_classification_eval_v1",
+  "cases": [
+    {
+      "case_id": "seo-content-strategy-guide",
+      "description": "SEO content strategy belongs to the active Marketing decision family.",
+      "signals": {
+        "existing_pack_id": "marketing",
+        "same_decision_family": true,
+        "domain_workflow": true
+      },
+      "expected_surface": "decision-guide",
+      "forbidden_surfaces": [
+        "expertise-pack",
+        "executor-agent"
+      ]
+    },
+    {
+      "case_id": "technical-seo-pack",
+      "description": "Several technical SEO procedures form a new domain when no Pack owns them.",
+      "signals": {
+        "related_guide_count": 3,
+        "domain_workflow": true,
+        "expertise_routed": true
+      },
+      "expected_surface": "expertise-pack",
+      "forbidden_surfaces": [
+        "executor-agent",
+        "department"
+      ]
+    },
+    {
+      "case_id": "indexability-lens",
+      "description": "Indexability destruction is an independent cross-task rejection boundary.",
+      "signals": {
+        "cross_task_failure_boundary": true,
+        "verdict_impact": true
+      },
+      "expected_surface": "lens",
+      "forbidden_surfaces": [
+        "decision-guide",
+        "executor-agent"
+      ]
+    },
+    {
+      "case_id": "canonical-url-convention",
+      "description": "One project's canonical URL policy is project authority.",
+      "signals": {
+        "project_specific_rule": true
+      },
+      "expected_surface": "convention",
+      "forbidden_surfaces": [
+        "decision-guide",
+        "lens"
+      ]
+    },
+    {
+      "case_id": "sitemap-checker",
+      "description": "Sitemap XML validity is mechanically decidable.",
+      "signals": {
+        "machine_checkable": true
+      },
+      "expected_surface": "checker-schema-test",
+      "forbidden_surfaces": [
+        "decision-guide",
+        "lens"
+      ]
+    },
+    {
+      "case_id": "search-console-executor",
+      "description": "Search Console authentication and tools require an execution boundary.",
+      "signals": {
+        "execution_boundaries": [
+          "tools",
+          "approval"
+        ]
+      },
+      "expected_surface": "executor-agent",
+      "forbidden_surfaces": [
+        "decision-guide",
+        "expertise-pack"
+      ]
+    },
+    {
+      "case_id": "same-guide-revision",
+      "description": "The same trigger and decision family revise an existing Guide.",
+      "signals": {
+        "existing_pack_id": "marketing",
+        "existing_guide_id": "positioning-message-hierarchy",
+        "same_decision_family": true,
+        "domain_workflow": true
+      },
+      "expected_surface": "decision-guide",
+      "forbidden_surfaces": [
+        "expertise-pack",
+        "standalone-skill"
+      ]
+    },
+    {
+      "case_id": "one-off-research",
+      "description": "A one-off investigation creates no durable component.",
+      "signals": {
+        "durable": false,
+        "research_lane_boundary": true
+      },
+      "expected_surface": "none",
+      "forbidden_surfaces": [
+        "research-lane",
+        "expertise-pack"
+      ]
+    },
+    {
+      "case_id": "persona-only-rejected",
+      "description": "An expert-sounding persona without a boundary is not a component.",
+      "signals": {},
+      "expected_surface": "none",
+      "expected_status": "blocked",
+      "forbidden_surfaces": [
+        "executor-agent",
+        "expertise-pack"
+      ]
+    },
+    {
+      "case_id": "cross-pack-failure-lens",
+      "description": "A common severe failure across Packs is a Lens.",
+      "signals": {
+        "cross_task_failure_boundary": true,
+        "verdict_impact": true,
+        "expertise_routed": true
+      },
+      "expected_surface": "lens",
+      "forbidden_surfaces": [
+        "decision-guide",
+        "expertise-pack"
+      ]
+    },
+    {
+      "case_id": "inside-pack-detail-guide",
+      "description": "A detailed judgment inside one Pack stays a Guide.",
+      "signals": {
+        "existing_pack_id": "product-design",
+        "same_decision_family": true,
+        "domain_workflow": true,
+        "related_guide_count": 1,
+        "expertise_routed": true
+      },
+      "expected_surface": "decision-guide",
+      "forbidden_surfaces": [
+        "lens",
+        "expertise-pack"
+      ]
+    },
+    {
+      "case_id": "existing-packet-sufficient",
+      "description": "A handoff expressible by an existing Packet creates no new contract.",
+      "signals": {
+        "typed_handoff_gap": true,
+        "existing_packet_sufficient": true
+      },
+      "expected_surface": "none",
+      "expected_status": "blocked",
+      "forbidden_surfaces": [
+        "packet-contract"
+      ]
+    },
+    {
+      "case_id": "new-packet-contract",
+      "description": "A repeated incompatible typed handoff needs a Packet candidate.",
+      "signals": {
+        "typed_handoff_gap": true,
+        "existing_packet_sufficient": false
+      },
+      "expected_surface": "packet-contract",
+      "forbidden_surfaces": [
+        "executor-agent",
+        "department"
+      ]
+    },
+    {
+      "case_id": "procedure-only-skill",
+      "description": "A reusable procedure outside Expertise routing is a standalone Skill.",
+      "signals": {
+        "procedural_only": true,
+        "expertise_routed": false
+      },
+      "expected_surface": "standalone-skill",
+      "forbidden_surfaces": [
+        "executor-agent",
+        "decision-guide"
+      ]
+    },
+    {
+      "case_id": "department-route-change",
+      "description": "A task class requiring a different Lens set changes a Department.",
+      "signals": {
+        "department_routing_change": true
+      },
+      "expected_surface": "department",
+      "forbidden_surfaces": [
+        "lens",
+        "executor-agent"
+      ]
+    },
+    {
+      "case_id": "document-authority-adapter",
+      "description": "A new external document authority boundary is an Adapter.",
+      "signals": {
+        "integration_boundary": true
+      },
+      "expected_surface": "adapter",
+      "forbidden_surfaces": [
+        "standalone-skill",
+        "department"
+      ]
+    }
+  ]
+}

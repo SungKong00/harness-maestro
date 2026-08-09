@@ -1,0 +1,47 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "product-design-web-structure",
+  "results": [
+    {
+      "case_id": "normal-role-aware-onboarding",
+      "observed_pack_id": "product-design-web-structure",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-decision-support-page",
+      "observed_pack_id": "product-design-web-structure",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-high-frequency-operations",
+      "observed_pack_id": "product-design-web-structure",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "information-architecture-and-user-flow"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-backend-orchestration",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-scroll-storytelling",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

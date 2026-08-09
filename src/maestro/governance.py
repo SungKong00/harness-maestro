@@ -13,8 +13,40 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .conventions import validate_held_out_evaluation
 from .errors import MaestroError
+from .execution_units import (
+    observation_identity,
+    validate_execution_unit,
+    validate_plan_execution_units,
+    validate_stage_execution_receipts,
+)
+from .expertise import expertise_definition_map, load_expertise_catalog
+from .expertise_health import expertise_component_health
+from .expertise_lifecycle import expertise_inventory
+from .expertise_routing import (
+    valid_expertise_routing_summary,
+    valid_route_correction_summary,
+)
+from .model_feedback import (
+    DEFAULT_EVIDENCE_WINDOW,
+    build_model_feedback_report,
+    current_model_policy_authority,
+    validate_verification_assessment,
+)
+from .observations import (
+    _valid_execution_binding,
+    _valid_host_observation,
+    complete_run_observation,
+    observation_id_for_run,
+    observation_receipt_fields,
+)
 from .project import checkout_id
+from .request_lineage import (
+    load_request_alias_bindings,
+    resolve_request_identity,
+    validate_request_lineage,
+)
 from .registry import definition_digest_maps, registry_digest
 from .util import (
     canonical_json,
@@ -23,6 +55,15 @@ from .util import (
     read_json,
     safe_target,
     sha256_text,
+)
+from .work import (
+    is_managed_completion_policy,
+    observation_write_lock,
+    receipt_intent_digest,
+    validate_completion_closure,
+    validate_completion_policy,
+    validate_execution_measurements,
+    validate_work_spans,
 )
 
 MAX_GOVERN_WINDOW = 1_000
@@ -33,6 +74,7 @@ MAX_EVENT_FILE_BYTES = 2_000_000
 MAX_EVENT_TOTAL_BYTES = 64_000_000
 MAX_EVENT_RECORDS = 200_000
 MAX_EVENT_LINE_BYTES = 1_000_000
+MAX_RECENT_GUIDE_RUN_IDS = 3
 RUN_RECEIPT_ALLOWED_FIELDS = {
     "run_id",
     "kind",
@@ -41,12 +83,17 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "risk",
     "route_depth",
     "selected_lenses",
+    "selected_expertise_packs",
+    "selected_decision_guides",
+    "expertise_research_mode",
+    "expertise_research_gate",
     "executor_runs",
     "primary_executor_id",
     "executor_ids",
     "outcome",
     "evidence_refs",
     "duration_ms",
+    "planning_duration_ms",
     "tokens",
     "experiment_id",
     "experiment_arm",
@@ -61,7 +108,92 @@ RUN_RECEIPT_ALLOWED_FIELDS = {
     "project_convention_basis",
     "project_convention_path",
     "project_convention_evidence",
+    "convention_usage",
+    "task_label",
+    "plan_summary",
+    "stage_results",
+    "work_spans",
+    "expertise_observations",
+    "host_observation",
+    "execution_binding",
+    "execution_measurements",
+    "completion_policy",
+    "completion_closure",
+    "request_lineage",
 }
+
+
+def _valid_convention_usage(
+    repo: Path | None,
+    value: Any,
+    *,
+    outcome: Any,
+) -> bool:
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value) != {
+            "schema_version",
+            "selection_digest",
+            "items",
+        }
+        or value.get("schema_version") != "maestro_convention_usage_v1"
+        or not isinstance(value.get("selection_digest"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", value["selection_digest"]) is None
+        or not isinstance(value.get("items"), list)
+        or len(value["items"]) > 8
+    ):
+        return False
+    seen: set[str] = set()
+    for item in value["items"]:
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "path",
+                "sha256",
+                "disposition",
+                "reason",
+                "approval_ref",
+            }
+            or not isinstance(item.get("path"), str)
+            or not item["path"].startswith("docs/conventions/")
+            or Path(item["path"]).is_absolute()
+            or ".." in Path(item["path"]).parts
+            or item["path"] in seen
+            or not isinstance(item.get("sha256"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", item["sha256"]) is None
+            or item.get("disposition")
+            not in {"applied", "not_applicable", "waived", "conflict"}
+            or not isinstance(item.get("reason"), str)
+            or not item["reason"].strip()
+            or len(item["reason"]) > 500
+            or any(character in item["reason"] for character in "\r\n\x00")
+        ):
+            return False
+        if repo is not None:
+            target = safe_target(repo, item["path"])
+            if (
+                target.is_symlink()
+                or file_sha256(target) != item["sha256"]
+            ):
+                return False
+        seen.add(item["path"])
+        approval_ref = item.get("approval_ref")
+        if item["disposition"] == "waived":
+            if (
+                not isinstance(approval_ref, str)
+                or not approval_ref.startswith("owner_decision:")
+                or len(approval_ref) > 500
+                or any(character in approval_ref for character in "\r\n\x00")
+            ):
+                return False
+        elif approval_ref is not None:
+            return False
+        if item["disposition"] == "conflict" and outcome == "completed":
+            return False
+    return True
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -166,9 +298,1168 @@ def _idempotency_digest(event: dict[str, Any]) -> str:
     )
 
 
+def _run_receipt_lock_id(*, checkout: str, run_id: str) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                "checkout_id": checkout,
+                "run_id": run_id,
+            }
+        )
+    )[:32]
+
+
+def _persist_run_receipt(
+    repo: Path,
+    *,
+    events_directory: Path,
+    state_root: str,
+    checkout: str,
+    event: dict[str, Any],
+) -> tuple[dict[str, Any], str, bool]:
+    """Serialize idempotency proof and append for one semantic run."""
+
+    run_lock_id = _run_receipt_lock_id(
+        checkout=checkout,
+        run_id=event["run_id"],
+    )
+    receipt_lock_target = safe_target(
+        repo,
+        f"{state_root}/events/{run_lock_id}.run-receipt",
+    )
+    with observation_write_lock(receipt_lock_target):
+        existing = _existing_run_receipt(
+            repo,
+            events_directory,
+            project_id=event["project_id"],
+            checkout=checkout,
+            run_id=event["run_id"],
+        )
+        if existing is not None:
+            existing_event, existing_path = existing
+            if _idempotency_digest(existing_event) != _idempotency_digest(event):
+                raise MaestroError(
+                    "RUN_ID_CONFLICT",
+                    (
+                        f"Run ID {event['run_id']} is already recorded "
+                        "with different content."
+                    ),
+                )
+            return existing_event, existing_path, False
+
+        relative_path = (
+            f"{state_root}/events/{event['timestamp'][:10]}.jsonl"
+        )
+        event_path = safe_target(repo, relative_path)
+        event_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = (canonical_json(event) + "\n").encode("utf-8")
+        if len(payload) > MAX_EVENT_LINE_BYTES:
+            raise MaestroError(
+                "RUN_RECEIPT_TOO_LARGE",
+                f"RunReceipt exceeds {MAX_EVENT_LINE_BYTES} bytes.",
+            )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(event_path, flags, 0o600)
+            with os.fdopen(descriptor, "ab", closefd=True) as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except OSError as exc:
+            raise MaestroError(
+                "EVENT_WRITE_FAILED",
+                f"Could not append RunReceipt: {exc}",
+            ) from exc
+        return event, relative_path, True
+
+
+def _run_semantic_error(value: dict[str, Any]) -> str | None:
+    risk = value.get("risk")
+    route_depth = value.get("route_depth")
+    expected_depth = {
+        "low": "fast",
+        "medium": "standard",
+        "high": "deep",
+        "critical": "deep",
+    }.get(risk)
+    if expected_depth is not None and route_depth != expected_depth:
+        return (
+            f"risk={risk!r} requires route_depth={expected_depth!r}; "
+            f"received {route_depth!r}."
+        )
+
+    selected_lenses = value.get("selected_lenses")
+    maximum_lenses = {
+        "fast": 1,
+        "standard": 2,
+        "deep": 3,
+    }.get(route_depth)
+    if (
+        isinstance(selected_lenses, list)
+        and maximum_lenses is not None
+        and len(selected_lenses) > maximum_lenses
+    ):
+        return (
+            f"route_depth={route_depth!r} permits at most "
+            f"{maximum_lenses} selected_lenses."
+        )
+
+    executor_ids = value.get("executor_ids")
+    executor_runs = value.get("executor_runs")
+    primary_executor_id = value.get("primary_executor_id")
+    if (
+        not isinstance(executor_runs, int)
+        or isinstance(executor_runs, bool)
+        or executor_runs < 1
+    ):
+        return "executor_runs must be an integer of at least 1."
+    if isinstance(executor_ids, list):
+        if primary_executor_id not in executor_ids:
+            return "primary_executor_id must be present in executor_ids."
+        if executor_runs < len(executor_ids):
+            return "executor_runs cannot be smaller than the number of executor_ids."
+
+    verifier_result = value.get("verifier_result")
+    if (
+        verifier_result in {"passed", "failed"}
+        and isinstance(executor_ids, list)
+        and "verifier" not in executor_ids
+    ):
+        return (
+            f"verifier_result={verifier_result!r} requires 'verifier' "
+            "in executor_ids."
+        )
+
+    high_risk_implementation_completion = (
+        risk in {"high", "critical"}
+        and primary_executor_id == "implementation-engineer"
+        and value.get("outcome") in {"completed", "corrected"}
+    )
+    if high_risk_implementation_completion:
+        if verifier_result != "passed":
+            return (
+                "High/critical implementation completion requires "
+                "verifier_result='passed'."
+            )
+        command_artifact_ref = value.get("command_artifact_ref")
+        if (
+            not isinstance(command_artifact_ref, str)
+            or not command_artifact_ref.strip()
+        ):
+            return (
+                "High/critical implementation completion requires a non-empty "
+                "command_artifact_ref."
+            )
+    design_assurance = (
+        value.get("plan_summary", {}).get("design_assurance")
+        if isinstance(value.get("plan_summary"), dict)
+        else None
+    )
+    if (
+        isinstance(design_assurance, dict)
+        and design_assurance.get("profile_id")
+        == "product-design-evidence-v1"
+        and value.get("outcome") in {"completed", "corrected"}
+        and verifier_result != "passed"
+    ):
+        return (
+            "Product Design assurance completion requires "
+            "verifier_result='passed'."
+        )
+    return None
+
+
+def _valid_task_label(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and len(value) <= 160
+        and not any(character in value for character in "\r\n\x00")
+    )
+
+
+def _valid_token_summary(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, dict) or "total" not in value:
+        return False
+    if set(value) - {
+        "input",
+        "output",
+        "cached",
+        "reasoning",
+        "total",
+        "parent_context_total",
+        "total_system",
+    }:
+        return False
+    return all(
+        item is None
+        or (
+            isinstance(item, int)
+            and not isinstance(item, bool)
+            and item >= 0
+        )
+        for item in value.values()
+    )
+
+
+def _valid_execution_contract_summary(value: Any) -> bool:
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "kind",
+            "execution_plan_id",
+            "decision_plan_id",
+            "decision_bundle_digest",
+        }
+        or value.get("kind")
+        not in {"direct-route", "decision-enactment"}
+    ):
+        return False
+    bindings = [
+        value.get("execution_plan_id"),
+        value.get("decision_plan_id"),
+        value.get("decision_bundle_digest"),
+    ]
+    if value["kind"] == "direct-route":
+        return all(binding is None for binding in bindings)
+    return all(
+        isinstance(binding, str)
+        and len(binding) == 64
+        and all(
+            character in "0123456789abcdef"
+            for character in binding
+        )
+        for binding in bindings
+    )
+
+
+_PLAN_MODEL_ROUTE_FIELDS = {
+    "model_route_id",
+    "execution_unit_id",
+    "stage_kind",
+    "execution_kind",
+    "quality_profile",
+    "selected_class",
+    "quality_floor",
+    "fallback_route",
+}
+
+
+def _valid_plan_model_route(assignment: dict[str, Any]) -> bool:
+    present = _PLAN_MODEL_ROUTE_FIELDS & set(assignment)
+    if not present:
+        return (
+            isinstance(assignment.get("planned_model"), str)
+            and bool(assignment["planned_model"])
+            and len(assignment["planned_model"]) <= 128
+            and assignment.get("reasoning_effort")
+            in {"low", "medium", "high", "xhigh", "max", "ultra"}
+        )
+    if present != _PLAN_MODEL_ROUTE_FIELDS:
+        return False
+    route_id = assignment.get("model_route_id")
+    execution_unit_id = assignment.get("execution_unit_id")
+    quality_floor = assignment.get("quality_floor")
+    acceptable = (
+        quality_floor.get("acceptable_routes")
+        if isinstance(quality_floor, dict)
+        else None
+    )
+    selected_pair = {
+        "selected_class": assignment.get("selected_class"),
+        "reasoning_effort": assignment.get("reasoning_effort"),
+    }
+    if (
+        not isinstance(route_id, str)
+        or re.fullmatch(r"[a-f0-9]{64}", route_id) is None
+        or not isinstance(execution_unit_id, str)
+        or not execution_unit_id
+        or len(execution_unit_id) > 96
+        or not isinstance(assignment.get("stage_kind"), str)
+        or not assignment["stage_kind"]
+        or assignment.get("execution_kind")
+        not in {"model", "deterministic"}
+        or assignment.get("quality_profile") != "pro-quality"
+        or not isinstance(quality_floor, dict)
+        or set(quality_floor) != {"acceptable_routes", "failure_action"}
+        or quality_floor.get("failure_action") != "reject-or-reroute"
+        or not isinstance(acceptable, list)
+        or not acceptable
+        or len(acceptable) > 8
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"selected_class", "reasoning_effort"}
+            or item.get("selected_class")
+            not in {None, "economy", "balanced", "frontier"}
+            or item.get("reasoning_effort")
+            not in {None, "low", "medium", "high", "xhigh"}
+            for item in acceptable
+        )
+        or selected_pair not in acceptable
+    ):
+        return False
+    fallback = assignment.get("fallback_route")
+    if fallback is not None and (
+        not isinstance(fallback, dict)
+        or set(fallback)
+        != {
+            "selected_class",
+            "selected_model",
+            "reasoning_effort",
+            "trigger",
+        }
+        or fallback.get("trigger") != "selected-model-unavailable"
+        or not isinstance(fallback.get("selected_class"), str)
+        or not isinstance(fallback.get("selected_model"), str)
+        or not isinstance(fallback.get("reasoning_effort"), str)
+        or {
+            "selected_class": fallback["selected_class"],
+            "reasoning_effort": fallback["reasoning_effort"],
+        }
+        not in acceptable
+    ):
+        return False
+    if assignment["execution_kind"] == "deterministic":
+        return (
+            assignment.get("selected_class") is None
+            and assignment.get("planned_model") is None
+            and assignment.get("reasoning_effort") is None
+            and fallback is None
+        )
+    return (
+        isinstance(assignment.get("selected_class"), str)
+        and bool(assignment["selected_class"])
+        and isinstance(assignment.get("planned_model"), str)
+        and bool(assignment["planned_model"])
+        and len(assignment["planned_model"]) <= 128
+        and isinstance(assignment.get("reasoning_effort"), str)
+        and bool(assignment["reasoning_effort"])
+    )
+
+
+def _valid_plan_summary(value: Any) -> bool:
+    if value is None:
+        return True
+    required_fields = {
+        "schema_version",
+        "plan_id",
+        "intent",
+        "department",
+        "assignments",
+        "research",
+    }
+    optional_fields = {
+        "risk",
+        "depth",
+        "selected_lenses",
+        "expertise_routing",
+        "route_correction",
+        "execution_contract",
+        "execution_receipts_required",
+        "design_assurance",
+    }
+    if (
+        not isinstance(value, dict)
+        or not required_fields.issubset(value)
+        or set(value) - required_fields - optional_fields
+    ):
+        return False
+    if (
+        value.get("schema_version") != "maestro_plan_summary_v1"
+        or not isinstance(value.get("plan_id"), str)
+        or len(value["plan_id"]) != 64
+        or any(character not in "0123456789abcdef" for character in value["plan_id"])
+        or not isinstance(value.get("intent"), str)
+        or not value["intent"]
+        or not isinstance(value.get("department"), str)
+        or not value["department"]
+        or (
+            value.get("risk") is not None
+            and value.get("risk") not in {"low", "medium", "high", "critical"}
+        )
+        or (
+            value.get("depth") is not None
+            and value.get("depth") not in {"fast", "standard", "deep"}
+        )
+        or not _valid_execution_contract_summary(
+            value.get("execution_contract")
+        )
+        or value.get("execution_receipts_required") not in {None, True}
+        or not validate_plan_execution_units(value)
+    ):
+        return False
+    design_assurance = value.get("design_assurance")
+    if design_assurance is not None and (
+        not isinstance(design_assurance, dict)
+        or set(design_assurance)
+        != {
+            "profile_id",
+            "mode",
+            "mutation_gate",
+            "verification_gate",
+        }
+        or design_assurance.get("profile_id")
+        != "product-design-evidence-v1"
+        or design_assurance.get("mode")
+        not in {"compact", "standard", "system"}
+        or design_assurance.get("mutation_gate")
+        != "design-decision-packet"
+        or design_assurance.get("verification_gate")
+        != "rendered-verification-pass"
+    ):
+        return False
+    selected_lenses = value.get("selected_lenses")
+    if selected_lenses is not None and (
+        not isinstance(selected_lenses, list)
+        or len(selected_lenses) > 3
+        or len(set(selected_lenses)) != len(selected_lenses)
+        or not all(isinstance(item, str) and item for item in selected_lenses)
+    ):
+        return False
+    assignments = value.get("assignments")
+    if not isinstance(assignments, list) or len(assignments) > 5:
+        return False
+    assignment_ids: set[str] = set()
+    for assignment in assignments:
+        assignment_required = {
+            "assignment_id",
+            "kind",
+            "executor_id",
+            "depends_on",
+            "planned_model",
+            "reasoning_effort",
+            "expertise_pack_ids",
+            "decision_guide_ids",
+        }
+        if (
+            not isinstance(assignment, dict)
+            or not assignment_required.issubset(assignment)
+            or set(assignment)
+            - assignment_required
+            - {
+                "lens_ids",
+                "mutation_owner",
+                "read_only",
+                "may_spawn",
+                "max_children",
+                "task_class",
+                "execution_unit",
+                *_PLAN_MODEL_ROUTE_FIELDS,
+            }
+        ):
+            return False
+        assignment_id = assignment.get("assignment_id")
+        if (
+            not isinstance(assignment_id, str)
+            or not assignment_id
+            or assignment_id in assignment_ids
+            or not isinstance(assignment.get("kind"), str)
+            or not assignment["kind"]
+            or not isinstance(assignment.get("executor_id"), str)
+            or not assignment["executor_id"]
+            or not _valid_plan_model_route(assignment)
+            or (
+                assignment.get("task_class") is not None
+                and (
+                    not isinstance(assignment.get("task_class"), str)
+                    or not assignment["task_class"]
+                    or len(assignment["task_class"]) > 96
+                )
+            )
+            or (
+                assignment.get("execution_unit") is not None
+                and (
+                    not validate_execution_unit(
+                        assignment["execution_unit"]
+                    )
+                    or assignment["execution_unit"].get(
+                        "local_unit_id"
+                    )
+                    != assignment_id
+                    or assignment["execution_unit"].get(
+                        "model_route",
+                        {},
+                    ).get("model_route_id")
+                    != assignment.get("model_route_id")
+                )
+            )
+            or (
+                assignment.get("mutation_owner") is not None
+                and not isinstance(assignment.get("mutation_owner"), bool)
+            )
+            or (
+                assignment.get("read_only") is not None
+                and not isinstance(assignment.get("read_only"), bool)
+            )
+            or (
+                assignment.get("may_spawn") is not None
+                and not isinstance(assignment.get("may_spawn"), bool)
+            )
+            or (
+                assignment.get("max_children") is not None
+                and (
+                    not isinstance(assignment.get("max_children"), int)
+                    or isinstance(assignment.get("max_children"), bool)
+                    or assignment["max_children"] < 0
+                    or assignment["max_children"] > 63
+                )
+            )
+            or (
+                ("may_spawn" in assignment)
+                != ("max_children" in assignment)
+            )
+            or (
+                assignment.get("may_spawn") is False
+                and assignment.get("max_children") != 0
+            )
+            or (
+                assignment.get("may_spawn") is True
+                and assignment.get("max_children", 0) < 1
+            )
+        ):
+            return False
+        assignment_ids.add(assignment_id)
+        for field, maximum in (
+            ("depends_on", 5),
+            ("lens_ids", 3),
+            ("expertise_pack_ids", 1),
+            ("decision_guide_ids", 4),
+        ):
+            items = assignment.get(field, [])
+            if (
+                not isinstance(items, list)
+                or len(items) > maximum
+                or len(set(items)) != len(items)
+                or not all(isinstance(item, str) and item for item in items)
+            ):
+                return False
+    if any(
+        dependency not in assignment_ids
+        for assignment in assignments
+        for dependency in assignment["depends_on"]
+    ):
+        return False
+    research = value.get("research")
+    research_valid = (
+        isinstance(research, dict)
+        and set(research) == {"mode", "gate"}
+        and research.get("mode")
+        in {"reuse", "contextualize", "refresh", "discover"}
+        and research.get("gate")
+        in {"not-required", "satisfied", "in-plan", "open"}
+    )
+    selected_pack_ids = list(
+        dict.fromkeys(
+            pack_id
+            for assignment in assignments
+            for pack_id in assignment["expertise_pack_ids"]
+        )
+    )
+    routing = value.get("expertise_routing")
+    return (
+        research_valid
+        and valid_expertise_routing_summary(
+            routing,
+            selected_pack_ids=selected_pack_ids,
+        )
+        and valid_route_correction_summary(
+            value.get("route_correction"),
+            route_attempt=(
+                routing.get("route_attempt")
+                if isinstance(routing, dict)
+                else 1
+            ),
+        )
+    )
+
+
+def _valid_stage_results(
+    value: Any,
+    plan_summary: Any,
+    *,
+    require_evidence_source: bool = False,
+    run_id: str | None = None,
+    observation_id: str | None = None,
+    work_spans: Any = None,
+    expected_framework_version: str | None = None,
+) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, list) or len(value) > 5:
+        return False
+    plan_assignments = (
+        {
+            assignment["assignment_id"]: assignment
+            for assignment in plan_summary["assignments"]
+        }
+        if isinstance(plan_summary, dict)
+        and _valid_plan_summary(plan_summary)
+        else {}
+    )
+    plan_ids = set(plan_assignments)
+    seen: set[str] = set()
+    assessment_count = 0
+    for result in value:
+        required_fields = {
+            "assignment_id",
+            "status",
+            "actual_model",
+            "duration_ms",
+            "tokens",
+            "evidence_refs",
+        }
+        if (
+            not isinstance(result, dict)
+            or not required_fields.issubset(result)
+            or set(result)
+            - (
+                required_fields
+                | {
+                    "model_evidence",
+                    "evidence_source",
+                    "observed_at",
+                    "requested_model",
+                    "requested_reasoning_effort",
+                    "reroutes",
+                    "model_route_id",
+                    "execution_unit_id",
+                    "verification_assessment",
+                    "execution_unit_receipt",
+                }
+            )
+        ):
+            return False
+        assignment_id = result.get("assignment_id")
+        actual_model = result.get("actual_model")
+        model_evidence = result.get("model_evidence")
+        duration = result.get("duration_ms")
+        evidence_refs = result.get("evidence_refs")
+        evidence_source = result.get("evidence_source")
+        observed_at = result.get("observed_at")
+        requested_model = result.get("requested_model")
+        requested_effort = result.get("requested_reasoning_effort")
+        reroutes = result.get("reroutes", [])
+        route_identity_present = {
+            "model_route_id",
+            "execution_unit_id",
+        } & set(result)
+        planned_assignment = plan_assignments.get(assignment_id)
+        assessment = result.get("verification_assessment")
+        if (
+            not isinstance(assignment_id, str)
+            or not assignment_id
+            or assignment_id in seen
+            or (plan_ids and assignment_id not in plan_ids)
+            or result.get("status")
+            not in {
+                "completed",
+                "failed",
+                "blocked",
+                "skipped",
+                "interrupted",
+            }
+            or (
+                actual_model is not None
+                and (
+                    not isinstance(actual_model, str)
+                    or not actual_model
+                    or len(actual_model) > 128
+                    or any(character in actual_model for character in "\r\n\x00")
+                )
+            )
+            or model_evidence
+            not in {None, "unavailable", "request_only", "complete"}
+            or (
+                requested_model is not None
+                and (
+                    not isinstance(requested_model, str)
+                    or not requested_model
+                    or len(requested_model) > 128
+                )
+            )
+            or (
+                requested_effort is not None
+                and (
+                    not isinstance(requested_effort, str)
+                    or not requested_effort
+                    or len(requested_effort) > 40
+                )
+            )
+            or not isinstance(reroutes, list)
+            or len(reroutes) > 4
+            or (
+                route_identity_present
+                and route_identity_present
+                != {"model_route_id", "execution_unit_id"}
+            )
+            or (
+                isinstance(planned_assignment, dict)
+                and planned_assignment.get("model_route_id") is not None
+                and (
+                    result.get("model_route_id")
+                    != planned_assignment["model_route_id"]
+                    or result.get("execution_unit_id")
+                    != planned_assignment["execution_unit_id"]
+                )
+            )
+            or (
+                isinstance(planned_assignment, dict)
+                and planned_assignment.get("model_route_id") is None
+                and route_identity_present
+            )
+            or (
+                assessment is not None
+                and not validate_verification_assessment(
+                    assessment,
+                    plan_summary=plan_summary,
+                    verifier_stage=result,
+                )
+            )
+            or (
+                assessment is not None
+                and (
+                    not isinstance(planned_assignment, dict)
+                    or planned_assignment.get("executor_id")
+                    != "verifier"
+                    or result.get("assignment_id")
+                    != assessment.get("verifier_assignment_id")
+                    or result.get("status") != "completed"
+                    or evidence_source != "codex_app_server"
+                )
+            )
+            or (
+                model_evidence == "unavailable"
+                and actual_model is not None
+            )
+            or (
+                model_evidence == "complete"
+                and actual_model is None
+            )
+            or (
+                model_evidence == "request_only"
+                and (
+                    requested_model is None
+                    or actual_model is not None
+                    or reroutes
+                    or duration is None
+                )
+            )
+            or (
+                duration is not None
+                and (
+                    not isinstance(duration, (int, float))
+                    or isinstance(duration, bool)
+                    or not math.isfinite(duration)
+                    or duration < 0
+                )
+            )
+            or not _valid_token_summary(result.get("tokens"))
+            or not isinstance(evidence_refs, list)
+            or len(evidence_refs) > 6
+            or not all(
+                isinstance(item, str) and bool(item.strip())
+                for item in evidence_refs
+            )
+            or (
+                require_evidence_source
+                and evidence_source
+                not in {
+                    "codex_app_server",
+                    "current_host",
+                    "deterministic_command",
+                }
+            )
+            or (
+                evidence_source is not None
+                and evidence_source
+                not in {
+                    "codex_app_server",
+                    "current_host",
+                    "deterministic_command",
+                }
+            )
+            or (
+                require_evidence_source
+                and (
+                    not isinstance(observed_at, str)
+                    or not observed_at
+                )
+            )
+            or (
+                evidence_source in {"current_host", "deterministic_command"}
+                and (
+                    requested_model is not None
+                    or requested_effort is not None
+                    or reroutes
+                    or actual_model is not None
+                    or result.get("tokens") is not None
+                    or model_evidence != "unavailable"
+                )
+            )
+            or (
+                evidence_source == "codex_app_server"
+                and model_evidence == "complete"
+                and (
+                    requested_model is None
+                    or actual_model is None
+                    or duration is None
+                )
+            )
+            or (
+                evidence_source == "codex_app_server"
+                and model_evidence == "unavailable"
+                and (
+                    result.get("status") == "completed"
+                    or requested_model is not None
+                    or requested_effort is not None
+                    or actual_model is not None
+                    or reroutes
+                    or result.get("tokens") is not None
+                )
+            )
+        ):
+            return False
+        assessment_count += assessment is not None
+        seen.add(assignment_id)
+    return (
+        assessment_count <= 1
+        and (
+            not isinstance(plan_summary, dict)
+            or validate_stage_execution_receipts(
+                plan_summary=plan_summary,
+                stage_results=value,
+                run_id=run_id,
+                observation_id=observation_id,
+                work_spans=work_spans,
+                expected_framework_version=expected_framework_version,
+            )["status"]
+            == "PASS"
+        )
+    )
+
+
+def _stage_outcome_consistency_error(
+    plan_summary: Any,
+    stage_results: Any,
+    *,
+    outcome: Any,
+    verifier_result: Any,
+) -> str | None:
+    """Keep the run outcome subordinate to terminal Assignment facts."""
+
+    if not isinstance(plan_summary, dict) or not isinstance(stage_results, list):
+        return None
+    statuses = {
+        item.get("assignment_id"): item.get("status")
+        for item in stage_results
+        if isinstance(item, dict)
+    }
+    assignments = [
+        item
+        for item in plan_summary.get("assignments", [])
+        if isinstance(item, dict)
+    ]
+    assessments = [
+        item["verification_assessment"]
+        for item in stage_results
+        if isinstance(item, dict)
+        and isinstance(item.get("verification_assessment"), dict)
+    ]
+    design_assurance = plan_summary.get("design_assurance")
+    assured_completion = (
+        isinstance(design_assurance, dict)
+        and design_assurance.get("profile_id")
+        == "product-design-evidence-v1"
+        and outcome in {"completed", "corrected"}
+    )
+    if assured_completion:
+        stage_by_id = {
+            item.get("assignment_id"): item
+            for item in stage_results
+            if isinstance(item, dict)
+            and isinstance(item.get("assignment_id"), str)
+        }
+        assured_assignments = [
+            assignment
+            for assignment in assignments
+            if assignment.get("mutation_owner") is True
+            or assignment.get("executor_id") == "verifier"
+        ]
+        if (
+            plan_summary.get("execution_receipts_required") is not True
+            or not assured_assignments
+        ):
+            return (
+                "Product Design assurance completion requires "
+                "Host-owned execution receipts for its writer and verifier."
+            )
+        for assignment in assured_assignments:
+            stage = stage_by_id.get(assignment.get("assignment_id"))
+            if (
+                not isinstance(stage, dict)
+                or stage.get("status") != "completed"
+                or stage.get("evidence_source") != "codex_app_server"
+                or not isinstance(
+                    stage.get("execution_unit_receipt"),
+                    dict,
+                )
+            ):
+                return (
+                    "Product Design assurance cannot complete through "
+                    "current-Host fallback; the owned Host must validate and "
+                    "receipt the exact writer and verifier packets."
+                )
+        verifier_stages = [
+            stage_by_id.get(assignment.get("assignment_id"))
+            for assignment in assured_assignments
+            if assignment.get("executor_id") == "verifier"
+        ]
+        if (
+            len(verifier_stages) != 1
+            or not isinstance(verifier_stages[0], dict)
+            or not isinstance(
+                verifier_stages[0].get("verification_assessment"),
+                dict,
+            )
+            or verifier_stages[0]["verification_assessment"].get("verdict")
+            != "passed"
+            or verifier_result != "passed"
+        ):
+            return (
+                "Product Design assurance completion requires one "
+                "Host-derived passing verification assessment."
+            )
+    if assessments:
+        if len(assessments) != 1:
+            return "A run may contain at most one bounded verification assessment."
+        expected_verifier_result = {
+            "passed": "passed",
+            "failed": "failed",
+            "inconclusive": "not_run",
+        }[assessments[0]["verdict"]]
+        if verifier_result != expected_verifier_result:
+            return (
+                "verifier_result must be derived from the bounded "
+                "VerificationVerdict assessment."
+            )
+    if outcome in {"completed", "corrected"}:
+        unsuccessful = [
+            assignment.get("assignment_id")
+            for assignment in assignments
+            if statuses.get(assignment.get("assignment_id")) != "completed"
+        ]
+        if unsuccessful:
+            return (
+                "A successful run outcome requires every planned Assignment "
+                "to be completed; unsuccessful="
+                + ",".join(str(item) for item in unsuccessful)
+            )
+    if verifier_result == "passed":
+        verifier_assignments = [
+            assignment.get("assignment_id")
+            for assignment in assignments
+            if assignment.get("executor_id") == "verifier"
+        ]
+        if not verifier_assignments or any(
+            statuses.get(assignment_id) != "completed"
+            for assignment_id in verifier_assignments
+        ):
+            return (
+                "verifier_result='passed' requires every planned verifier "
+                "Assignment to be completed."
+            )
+    return None
+
+
+def _app_server_binding_error(
+    execution_binding: Any,
+    stage_results: Any,
+    *,
+    outcome: Any,
+    plan_summary: Any = None,
+) -> str | None:
+    if (
+        not isinstance(execution_binding, dict)
+        or execution_binding.get("mode")
+        != "maestro_owned_codex_app_server"
+    ):
+        return None
+    require_complete_stream = outcome in {"completed", "corrected"}
+    assignments = (
+        {
+            assignment.get("assignment_id"): assignment
+            for assignment in plan_summary.get("assignments", [])
+            if isinstance(assignment, dict)
+        }
+        if isinstance(plan_summary, dict)
+        else {}
+    )
+    def invalid_stage(stage: Any) -> bool:
+        if not isinstance(stage, dict):
+            return True
+        assignment = assignments.get(stage.get("assignment_id"))
+        unit = (
+            assignment.get("execution_unit")
+            if isinstance(assignment, dict)
+            else None
+        )
+        if isinstance(unit, dict) and unit.get("host_executable") is False:
+            return stage.get("evidence_source") != "deterministic_command"
+        return (
+            stage.get("evidence_source") != "codex_app_server"
+            or (
+                require_complete_stream
+                and stage.get("model_evidence")
+                not in {"complete", "request_only"}
+            )
+        )
+    if (
+        not isinstance(stage_results, list)
+        or not stage_results
+        or any(invalid_stage(stage) for stage in stage_results)
+    ):
+        return (
+            "A Maestro-owned App Server binding requires one App Server "
+            "stage result per Assignment and complete streams for a "
+            "successful outcome."
+        )
+    return None
+
+
+def _valid_work_observations(
+    value: Any,
+    plan_summary: Any,
+    *,
+    require_terminal: bool = False,
+) -> bool:
+    if value is None:
+        return True
+    if not validate_work_spans(value):
+        return False
+    assignment_ids = (
+        {
+            assignment["assignment_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        if isinstance(plan_summary, dict)
+        and _valid_plan_summary(plan_summary)
+        else set()
+    )
+    return all(
+        (
+            span["assignment_id"] is None
+            or span["assignment_id"] in assignment_ids
+        )
+        and (not require_terminal or span["status"] != "running")
+        for span in value
+    )
+
+
+def _valid_expertise_observations(
+    value: Any,
+    *,
+    evidence_refs: list[str],
+    catalog: list[dict[str, Any]] | None,
+) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, list) or len(value) > 3:
+        return False
+    guides = (
+        {
+            (pack["expertise_pack_id"], guide["guide_id"])
+            for pack in catalog
+            for guide in pack["guides"]
+        }
+        if catalog is not None
+        else set()
+    )
+    pack_ids = (
+        {pack["expertise_pack_id"] for pack in catalog}
+        if catalog is not None
+        else set()
+    )
+    for observation in value:
+        if not isinstance(observation, dict) or set(observation) != {
+            "kind",
+            "domain",
+            "pack_id",
+            "guide_id",
+            "severity",
+            "reusable",
+            "resolution",
+            "evidence_ref",
+        }:
+            return False
+        pack_id = observation.get("pack_id")
+        guide_id = observation.get("guide_id")
+        evidence_ref = observation.get("evidence_ref")
+        if (
+            observation.get("kind")
+            not in {
+                "missing_pack",
+                "missing_guide",
+                "stale_guide",
+                "trigger_miss",
+                "trigger_false_positive",
+                "guide_not_loaded",
+                "guide_unassigned",
+                "guide_ineffective",
+                "pack_conflict",
+                "unnecessary_research",
+            }
+            or not isinstance(observation.get("domain"), str)
+            or not observation["domain"].strip()
+            or len(observation["domain"]) > 80
+            or any(
+                character in observation["domain"]
+                for character in "\r\n\x00"
+            )
+            or (
+                catalog is not None
+                and pack_id is not None
+                and pack_id not in pack_ids
+            )
+            or (
+                guide_id is not None
+                and (
+                    not isinstance(pack_id, str)
+                    or (
+                        catalog is not None
+                        and (pack_id, guide_id) not in guides
+                    )
+                )
+            )
+            or observation.get("severity")
+            not in {"medium", "high", "critical"}
+            or not isinstance(observation.get("reusable"), bool)
+            or observation.get("resolution")
+            not in {
+                "reuse",
+                "research",
+                "manual_correction",
+                "unresolved",
+                "author_candidate",
+            }
+            or not isinstance(evidence_ref, str)
+            or evidence_ref not in evidence_refs
+        ):
+            return False
+    return True
+
+
 def record_run(
     repo_path: str | Path,
-    receipt_path: str | Path,
+    receipt_path: str | Path | dict[str, Any],
+    *,
+    observation_id: str | None = None,
 ) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     project_path = safe_target(repo, ".maestro/project.json")
@@ -180,17 +1471,146 @@ def record_run(
         )
     project = read_json(project_path)
     lock = read_json(lock_path)
+    baseline_issues: list[str] = []
     if lock.get("framework", {}).get("version") != __version__:
-        raise MaestroError(
-            "PROJECT_STATE_STALE",
-            "Review and apply a fresh upgrade plan before recording.",
-        )
+        baseline_issues.append("framework_version")
     if lock.get("registry", {}).get("sha256") != registry_digest():
-        raise MaestroError(
-            "PROJECT_STATE_STALE",
-            "Registry lock differs from the installed registry.",
+        baseline_issues.append("registry_digest")
+    recording_baseline = {
+        "status": "current" if not baseline_issues else "stale",
+        "issues": baseline_issues,
+        "receipt_recording_allowed": True,
+        "management_projection_allowed": not baseline_issues,
+    }
+    receipt = (
+        dict(receipt_path)
+        if isinstance(receipt_path, dict)
+        else read_json(Path(receipt_path))
+    )
+    caller_execution_evidence = sorted(
+        field
+        for field in (
+            "request_lineage",
+            "execution_measurements",
+            "completion_policy",
+            "completion_closure",
         )
-    receipt = read_json(Path(receipt_path))
+        if receipt.get(field) is not None
+    )
+    if caller_execution_evidence:
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            (
+                "Managed execution evidence is derived only from a bound "
+                "native observation; caller supplied="
+                + ",".join(caller_execution_evidence)
+            ),
+        )
+    observed: dict[str, Any] | None = None
+    receipt_run_id = receipt.get("run_id")
+    if (
+        observation_id is None
+        and isinstance(receipt_run_id, str)
+        and receipt_run_id.strip()
+    ):
+        candidate_observation_id = observation_id_for_run(
+            repo,
+            run_id=receipt_run_id,
+        )
+        candidate_observation_path = safe_target(
+            repo,
+            (
+                ".maestro/state/inflight/"
+                f"{candidate_observation_id}.json"
+            ),
+        )
+        if (
+            candidate_observation_path.exists()
+            or candidate_observation_path.is_symlink()
+        ):
+            observation_id = candidate_observation_id
+    if observation_id is not None:
+        observed = observation_receipt_fields(
+            repo,
+            observation_id=observation_id,
+            run_id=receipt.get("run_id"),
+        )
+        for field in (
+            "task_label",
+            "plan_summary",
+            "planning_duration_ms",
+            "stage_results",
+            "work_spans",
+        ):
+            if field in receipt and receipt[field] != observed[field]:
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    f"RunReceipt {field} differs from the in-flight observation.",
+                )
+            receipt[field] = observed[field]
+        request_lineage = observed.get("request_lineage")
+        if request_lineage is not None:
+            receipt["request_lineage"] = request_lineage
+        if receipt.get("duration_ms") is None:
+            receipt["duration_ms"] = observed["duration_ms"]
+        host_observation = observed.get("host_observation")
+        if host_observation is not None:
+            if (
+                receipt.get("host_observation") is not None
+                and receipt["host_observation"] != host_observation
+            ):
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    "RunReceipt Host telemetry differs from the in-flight observation.",
+                )
+            receipt["host_observation"] = host_observation
+        measurement_summary = observed["execution_measurements"]
+        if (
+            receipt.get("execution_measurements") is not None
+            and receipt["execution_measurements"] != measurement_summary
+        ):
+            raise MaestroError(
+                "RUN_OBSERVATION_CONFLICT",
+                "RunReceipt execution measurements differ from the ledger projection.",
+            )
+        receipt["execution_measurements"] = measurement_summary
+        observed_tokens = measurement_summary["tokens"]["value"]
+        if receipt.get("tokens") is None:
+            receipt["tokens"] = observed_tokens
+        elif (
+            observed_tokens is not None
+            and receipt["tokens"] != observed_tokens
+        ):
+            raise MaestroError(
+                "RUN_OBSERVATION_CONFLICT",
+                "RunReceipt tokens differ from the execution ledger projection.",
+            )
+        execution_binding = observed.get("execution_binding")
+        if execution_binding is not None:
+            if (
+                receipt.get("execution_binding") is not None
+                and receipt["execution_binding"] != execution_binding
+            ):
+                raise MaestroError(
+                    "RUN_OBSERVATION_CONFLICT",
+                    "RunReceipt execution binding differs from the in-flight observation.",
+                )
+            receipt["execution_binding"] = execution_binding
+    if (
+        observed is None
+        and isinstance(receipt.get("host_observation"), dict)
+        and receipt["host_observation"].get("schema_version")
+        == "maestro_host_observation_v2"
+        and receipt["host_observation"].get("source")
+        == "codex-desktop-request-meta"
+    ):
+        raise MaestroError(
+            "HOST_OBSERVATION_TRUST_REQUIRED",
+            (
+                "Trusted Desktop request identity may be recorded only "
+                "through a bound native observation."
+            ),
+        )
     unexpected = sorted(set(receipt) - RUN_RECEIPT_ALLOWED_FIELDS)
     if unexpected:
         raise MaestroError(
@@ -221,6 +1641,7 @@ def record_run(
             f"RunReceipt is missing fields: {missing}",
         )
     definitions = definition_digest_maps()
+    definitions["expertise_packs"] = expertise_definition_map(repo)
     selected_lenses = receipt.get("selected_lenses")
     executor_ids = receipt.get("executor_ids")
     if not isinstance(selected_lenses, list) or not isinstance(executor_ids, list):
@@ -228,12 +1649,313 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "selected_lenses and executor_ids must be lists.",
         )
+    semantic_error = _run_semantic_error(receipt)
+    if semantic_error is not None:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"RunReceipt semantic contract failed: {semantic_error}",
+        )
     unknown_lenses = sorted(set(selected_lenses) - set(definitions["lenses"]))
     unknown_executors = sorted(set(executor_ids) - set(definitions["executors"]))
     if unknown_lenses or unknown_executors:
         raise MaestroError(
             "RUN_RECEIPT_INVALID",
             f"Unknown lenses={unknown_lenses} executors={unknown_executors}",
+        )
+    selected_expertise_packs = receipt.get("selected_expertise_packs", [])
+    selected_decision_guides = receipt.get("selected_decision_guides", [])
+    expertise_research_mode = receipt.get("expertise_research_mode", "reuse")
+    expertise_research_gate = receipt.get(
+        "expertise_research_gate",
+        "not-required",
+    )
+    if (
+        not isinstance(selected_expertise_packs, list)
+        or len(selected_expertise_packs) > 1
+        or len(set(selected_expertise_packs)) != len(selected_expertise_packs)
+        or not all(
+            isinstance(item, str) and item.strip()
+            for item in selected_expertise_packs
+        )
+        or not isinstance(selected_decision_guides, list)
+        or len(selected_decision_guides) > 4
+        or len(set(selected_decision_guides)) != len(selected_decision_guides)
+        or not all(
+            isinstance(item, str) and item.strip()
+            for item in selected_decision_guides
+        )
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise Pack and Decision Guide selections exceed their bounds.",
+        )
+    unknown_packs = sorted(
+        set(selected_expertise_packs) - set(definitions["expertise_packs"])
+    )
+    catalog = load_expertise_catalog(repo, include_candidates=True)
+    guide_ids = {
+        guide["guide_id"]
+        for pack in catalog
+        if pack["expertise_pack_id"] in selected_expertise_packs
+        for guide in pack["guides"]
+    }
+    unknown_guides = sorted(set(selected_decision_guides) - guide_ids)
+    if unknown_packs or unknown_guides:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            f"Unknown expertise packs={unknown_packs} guides={unknown_guides}",
+        )
+    if receipt.get("task_label") is not None and not _valid_task_label(
+        receipt.get("task_label")
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "task_label must be a single non-empty line of at most 160 characters.",
+        )
+    plan_summary = receipt.get("plan_summary")
+    if not _valid_plan_summary(plan_summary):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "plan_summary does not satisfy the compact monitored-plan contract.",
+        )
+    if isinstance(plan_summary, dict):
+        planned_executors = {
+            assignment["executor_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        if not planned_executors.issubset(set(executor_ids)):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "plan_summary Executors must be present in executor_ids.",
+            )
+    if not _valid_stage_results(
+        receipt.get("stage_results"),
+        plan_summary,
+        run_id=receipt.get("run_id"),
+        observation_id=(
+            observed.get("observation_id")
+            if isinstance(observed, dict)
+            else None
+        ),
+        work_spans=receipt.get("work_spans"),
+        expected_framework_version=__version__,
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "stage_results do not satisfy the bounded Host observation contract.",
+        )
+    if not _valid_work_observations(
+        receipt.get("work_spans"),
+        plan_summary,
+        require_terminal=True,
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "work_spans must contain bounded terminal observed work for this plan.",
+        )
+    if isinstance(plan_summary, dict):
+        planned_stage_ids = {
+            assignment["assignment_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        observed_stage_ids = {
+            result["assignment_id"]
+            for result in receipt.get("stage_results", [])
+            if isinstance(result, dict)
+        }
+        if (
+            receipt.get("outcome")
+            in {"completed", "corrected", "failed", "blocked", "no_change"}
+            and observed_stage_ids != planned_stage_ids
+        ):
+            missing_stages = sorted(planned_stage_ids - observed_stage_ids)
+            raise MaestroError(
+                "RUN_STAGE_EVIDENCE_REQUIRED",
+                "A finalized route-v2 run requires one terminal observation "
+                "for every planned Assignment; missing="
+                + ",".join(missing_stages),
+            )
+        if not _valid_stage_results(
+            receipt.get("stage_results"),
+            plan_summary,
+            require_evidence_source=True,
+            run_id=receipt.get("run_id"),
+            observation_id=(
+                observed.get("observation_id")
+                if isinstance(observed, dict)
+                else None
+            ),
+            work_spans=receipt.get("work_spans"),
+            expected_framework_version=__version__,
+        ):
+            raise MaestroError(
+                "RUN_STAGE_EVIDENCE_REQUIRED",
+                "Finalized stage results must come from the bound observation "
+                "with an explicit evidence source.",
+            )
+    stage_outcome_error = _stage_outcome_consistency_error(
+        plan_summary,
+        receipt.get("stage_results"),
+        outcome=receipt.get("outcome"),
+        verifier_result=receipt.get("verifier_result"),
+    )
+    if stage_outcome_error is not None:
+        raise MaestroError(
+            "RUN_STAGE_OUTCOME_CONFLICT",
+            stage_outcome_error,
+        )
+    if not _valid_host_observation(receipt.get("host_observation")):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "host_observation does not satisfy the bounded Host telemetry contract.",
+        )
+    if (
+        receipt.get("execution_measurements") is not None
+        and not validate_execution_measurements(
+            receipt.get("execution_measurements")
+        )
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "execution_measurements must come from the semantic execution ledger.",
+        )
+    completion_policy = receipt.get("completion_policy")
+    completion_closure = receipt.get("completion_closure")
+    if (completion_policy is None) != (completion_closure is None):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "completion_policy and completion_closure must be supplied together.",
+        )
+    if completion_policy is not None and (
+        not validate_completion_policy(completion_policy)
+        or not isinstance(completion_closure, dict)
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Managed completion proof fields are invalid.",
+        )
+    if completion_policy is not None and receipt.get(
+        "execution_measurements"
+    ) is None:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Managed completion proof requires execution_measurements.",
+        )
+    if (
+        observed is None
+        and receipt.get("execution_measurements") is not None
+        and completion_policy is None
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            (
+                "execution_measurements require either the bound execution "
+                "ledger or a validated managed completion proof."
+            ),
+        )
+    execution_binding = receipt.get("execution_binding")
+    if not _valid_execution_binding(execution_binding):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "execution_binding does not satisfy the managed execution contract.",
+        )
+    if (
+        execution_binding is not None
+        and (
+            observed is None
+            or observed.get("execution_binding") != execution_binding
+        )
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            "A RunReceipt execution binding must match the observed execution path.",
+        )
+    if (
+        isinstance(execution_binding, dict)
+        and execution_binding.get("mode")
+        == "maestro_owned_codex_app_server"
+        and isinstance(plan_summary, dict)
+        and plan_summary.get("execution_receipts_required") is not True
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            "A Maestro-owned App Server plan must require exact ExecutionUnit receipts.",
+        )
+    implementation_plan = (
+        isinstance(plan_summary, dict)
+        and plan_summary.get("intent") == "implementation"
+        and any(
+            assignment.get("kind") == "implementation"
+            for assignment in plan_summary.get("assignments", [])
+            if isinstance(assignment, dict)
+        )
+    )
+    if (
+        implementation_plan
+        and receipt.get("outcome") in {"completed", "corrected"}
+        and execution_binding is None
+    ):
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            "A completed implementation plan requires an observed Desktop "
+            "request, a Maestro-owned Codex App Server binding, or explicit "
+            "evidence-bearing fallback.",
+        )
+    app_server_binding_error = _app_server_binding_error(
+        execution_binding,
+        receipt.get("stage_results"),
+        outcome=receipt.get("outcome"),
+        plan_summary=plan_summary,
+    )
+    if app_server_binding_error is not None:
+        raise MaestroError(
+            "RUN_EXECUTION_EVIDENCE_REQUIRED",
+            app_server_binding_error,
+        )
+    if not _valid_expertise_observations(
+        receipt.get("expertise_observations"),
+        evidence_refs=receipt.get("evidence_refs", []),
+        catalog=catalog,
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "expertise_observations are invalid or lack matching evidence.",
+        )
+    if not _valid_convention_usage(
+        repo,
+        receipt.get("convention_usage"),
+        outcome=receipt.get("outcome"),
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "convention_usage is invalid, stale, or contains an unresolved completed conflict.",
+        )
+    if expertise_research_mode not in {
+        "reuse",
+        "contextualize",
+        "refresh",
+        "discover",
+    } or expertise_research_gate not in {
+        "not-required",
+        "satisfied",
+        "in-plan",
+        "open",
+    }:
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise research mode or gate is invalid.",
+        )
+    if (
+        (expertise_research_mode == "reuse")
+        != (expertise_research_gate == "not-required")
+        or (
+            expertise_research_gate == "open"
+            and receipt.get("outcome") not in {"blocked", "no_change"}
+        )
+    ):
+        raise MaestroError(
+            "RUN_RECEIPT_INVALID",
+            "Expertise research mode, gate, and outcome are inconsistent.",
         )
     event_kind = receipt.get("kind", "run_summary")
     finding_severity = receipt.get("finding_severity")
@@ -284,6 +2006,7 @@ def record_run(
         expected_keys = {
             "convention_sha256",
             "kind",
+            "assurance",
             "artifact",
         }
         if convention_basis == "owner_decision":
@@ -297,6 +2020,16 @@ def record_run(
             raise MaestroError(
                 "RUN_RECEIPT_INVALID",
                 "Convention evidence kind must match project_convention_basis.",
+            )
+        expected_assurance = (
+            "owner_attested"
+            if convention_basis == "owner_decision"
+            else "held_out_verified"
+        )
+        if convention_evidence.get("assurance") != expected_assurance:
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "Convention evidence assurance must distinguish owner attestation from held-out verification.",
             )
         convention_sha256 = convention_evidence.get("convention_sha256")
         if (
@@ -350,6 +2083,12 @@ def record_run(
                 "RUN_RECEIPT_INVALID",
                 "Convention evidence artifact is missing, unsafe, or has a digest mismatch.",
             )
+        if convention_basis == "held_out_evaluation":
+            validate_held_out_evaluation(
+                repo,
+                artifact_target,
+                candidate_sha256=convention_sha256,
+            )
         if receipt.get("command_artifact_ref") != artifact_path:
             raise MaestroError(
                 "RUN_RECEIPT_INVALID",
@@ -401,9 +2140,17 @@ def record_run(
             executor_id: definitions["executors"][executor_id]
             for executor_id in executor_ids
         },
+        "expertise_pack_definition_digests": {
+            pack_id: definitions["expertise_packs"][pack_id]
+            for pack_id in selected_expertise_packs
+        },
         "risk": receipt.get("risk"),
         "route_depth": receipt.get("route_depth"),
         "selected_lenses": selected_lenses,
+        "selected_expertise_packs": selected_expertise_packs,
+        "selected_decision_guides": selected_decision_guides,
+        "expertise_research_mode": expertise_research_mode,
+        "expertise_research_gate": expertise_research_gate,
         "executor_runs": receipt.get("executor_runs"),
         "primary_executor_id": receipt.get("primary_executor_id"),
         "executor_ids": executor_ids,
@@ -412,6 +2159,7 @@ def record_run(
         "fingerprint": fingerprint,
         "evidence_refs": receipt.get("evidence_refs"),
         "duration_ms": receipt.get("duration_ms"),
+        "planning_duration_ms": receipt.get("planning_duration_ms"),
         "tokens": receipt.get("tokens"),
         "correction_count": receipt.get("correction_count"),
         "correction_summary": receipt.get("correction_summary", []),
@@ -428,6 +2176,22 @@ def record_run(
         "project_convention_basis": convention_basis,
         "project_convention_path": receipt.get("project_convention_path"),
     }
+    for field in (
+        "task_label",
+        "plan_summary",
+        "stage_results",
+        "work_spans",
+        "expertise_observations",
+        "host_observation",
+        "convention_usage",
+        "execution_binding",
+        "execution_measurements",
+        "completion_policy",
+        "completion_closure",
+        "request_lineage",
+    ):
+        if receipt.get(field) is not None:
+            event[field] = receipt[field]
     if convention_evidence is not None:
         event["project_convention_evidence"] = convention_evidence
     if receipt.get("experiment_id") is not None:
@@ -439,7 +2203,6 @@ def record_run(
             "RUN_RECEIPT_INVALID",
             "RunReceipt does not satisfy the compact event contract.",
         )
-
     state_root = project.get("state_root")
     if state_root != ".maestro/state":
         raise MaestroError(
@@ -447,65 +2210,286 @@ def record_run(
             "state_root must equal '.maestro/state'.",
         )
     events_directory = safe_target(repo, f"{state_root}/events")
-    existing = _existing_run_receipt(
-        repo,
-        events_directory,
-        project_id=event["project_id"],
-        checkout=current_checkout_id,
-        run_id=event["run_id"],
-    )
-    if existing is not None:
-        existing_event, existing_path = existing
-        if _idempotency_digest(existing_event) != _idempotency_digest(event):
-            raise MaestroError(
-                "RUN_ID_CONFLICT",
-                f"Run ID {event['run_id']} is already recorded with different content.",
-            )
-        return {
-            "schema_version": "maestro_command_result_v1",
-            "command": "record",
-            "status": "already_recorded",
-            "repo_root": str(repo),
-            "run_id": event["run_id"],
-            "event_id": existing_event["event_id"],
-            "event_path": existing_path,
-            "writes_performed": False,
-        }
-    date = timestamp[:10]
-    relative_path = f"{state_root}/events/{date}.jsonl"
-    event_path = safe_target(repo, relative_path)
-    event_path.parent.mkdir(parents=True, exist_ok=True)
-    event_path = safe_target(repo, relative_path)
-    payload = (canonical_json(event) + "\n").encode("utf-8")
-    if len(payload) > MAX_EVENT_LINE_BYTES:
-        raise MaestroError(
-            "RUN_RECEIPT_TOO_LARGE",
-            f"RunReceipt exceeds {MAX_EVENT_LINE_BYTES} bytes.",
+    if observed is not None:
+        intent_digest = receipt_intent_digest(event)
+        complete_run_observation(
+            repo,
+            observation_id=observed["observation_id"],
+            run_id=event["run_id"],
+            duration_ms=event["duration_ms"],
+            receipt_intent_digest=intent_digest,
         )
-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(event_path, flags, 0o600)
-        with os.fdopen(descriptor, "ab", closefd=True) as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-    except OSError as exc:
-        raise MaestroError(
-            "EVENT_WRITE_FAILED",
-            f"Could not append RunReceipt: {exc}",
-        ) from exc
+        sealed = observation_receipt_fields(
+            repo,
+            observation_id=observed["observation_id"],
+            run_id=event["run_id"],
+        )
+        event["execution_measurements"] = sealed[
+            "execution_measurements"
+        ]
+        completion_policy = sealed.get("completion_policy")
+        completion_closure = sealed.get("completion_closure")
+        if is_managed_completion_policy(completion_policy):
+            if not validate_completion_closure(
+                completion_closure,
+                policy=completion_policy,
+                plan_summary=sealed.get("plan_summary"),
+                stage_results=sealed.get("stage_results"),
+                work_spans=sealed.get("work_spans"),
+                receipt_intent=intent_digest,
+            ):
+                raise MaestroError(
+                    "RUN_COMPLETION_CLOSURE_INVALID",
+                    "The sealed managed completion closure does not match the receipt intent.",
+                )
+            event["completion_policy"] = completion_policy
+            event["completion_closure"] = completion_closure
+        if receipt_intent_digest(event) != intent_digest:
+            raise MaestroError(
+                "RUN_RECEIPT_INTENT_CONFLICT",
+                "The sealed receipt projection changed deterministic intent.",
+            )
+        sealed_tokens = event["execution_measurements"]["tokens"]["value"]
+        if (
+            sealed_tokens is not None
+            and event.get("tokens") != sealed_tokens
+        ):
+            raise MaestroError(
+                "RUN_OBSERVATION_CONFLICT",
+                "Sealed execution measurements changed the token projection.",
+            )
+        if not _valid_event(event):
+            raise MaestroError(
+                "RUN_RECEIPT_INVALID",
+                "The sealed execution ledger projection is invalid.",
+            )
+    recorded_event, recorded_path, writes_performed = _persist_run_receipt(
+        repo,
+        events_directory=events_directory,
+        state_root=state_root,
+        checkout=current_checkout_id,
+        event=event,
+    )
     return {
         "schema_version": "maestro_command_result_v1",
         "command": "record",
-        "status": "recorded",
+        "status": "recorded" if writes_performed else "already_recorded",
         "repo_root": str(repo),
         "run_id": event["run_id"],
-        "event_id": event_id,
-        "event_path": relative_path,
-        "writes_performed": True,
+        "event_id": recorded_event["event_id"],
+        "event_path": recorded_path,
+        "management_check": _post_record_management_check(
+            repo,
+            recorded_event=recorded_event,
+            recording_baseline=recording_baseline,
+        ),
+        "recording_baseline": recording_baseline,
+        "writes_performed": writes_performed,
     }
+
+
+def finalize_run(
+    repo_path: str | Path,
+    *,
+    run_id: str,
+    outcome: str,
+    evidence_refs: list[str],
+    verifier_result: str,
+    command_artifact_ref: str | None = None,
+    observation_id: str | None = None,
+    correction_count: int = 0,
+    correction_summary: list[str] | None = None,
+    human_fix_required: bool | None = None,
+    decision_changed: bool = False,
+) -> dict[str, Any]:
+    """Build the compact receipt from observed plan and stage facts."""
+
+    repo = ensure_repo(repo_path)
+    resolved_observation_id = observation_id or observation_id_for_run(
+        repo,
+        run_id=run_id,
+    )
+    observed = observation_receipt_fields(
+        repo,
+        observation_id=resolved_observation_id,
+        run_id=run_id,
+    )
+    plan = observed.get("plan_summary")
+    if not isinstance(plan, dict):
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "Finalization requires a validated plan attached to the observation.",
+        )
+    assignments = plan.get("assignments", [])
+    if not assignments:
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "The attached plan contains no Assignments.",
+        )
+    stage_results = observed.get("stage_results", [])
+    work_spans = observed.get("work_spans", [])
+    verification_assessments = [
+        result["verification_assessment"]
+        for result in stage_results
+        if isinstance(result, dict)
+        and isinstance(result.get("verification_assessment"), dict)
+    ]
+    if verification_assessments:
+        if len(verification_assessments) != 1:
+            raise MaestroError(
+                "RUN_VERIFICATION_ASSESSMENT_INVALID",
+                "Finalization requires at most one Host-derived verification assessment.",
+            )
+        derived_verifier_result = {
+            "passed": "passed",
+            "failed": "failed",
+            "inconclusive": "not_run",
+        }[verification_assessments[0]["verdict"]]
+        if verifier_result != derived_verifier_result:
+            raise MaestroError(
+                "RUN_VERIFIER_RESULT_CONFLICT",
+                (
+                    "Caller verifier_result differs from the Host-derived "
+                    f"VerificationVerdict ({derived_verifier_result})."
+                ),
+            )
+    planned_stage_ids = {
+        assignment["assignment_id"]
+        for assignment in assignments
+    }
+    observed_stage_ids = {
+        result["assignment_id"]
+        for result in stage_results
+        if isinstance(result, dict)
+        and isinstance(result.get("assignment_id"), str)
+    }
+    if observed_stage_ids != planned_stage_ids:
+        missing = sorted(planned_stage_ids - observed_stage_ids)
+        raise MaestroError(
+            "RUN_STAGE_EVIDENCE_REQUIRED",
+            "Finalization requires one terminal observation for every "
+            "planned Assignment; missing=" + ",".join(missing),
+        )
+    stage_outcome_error = _stage_outcome_consistency_error(
+        plan,
+        stage_results,
+        outcome=outcome,
+        verifier_result=verifier_result,
+    )
+    if stage_outcome_error is not None:
+        raise MaestroError(
+            "RUN_STAGE_OUTCOME_CONFLICT",
+            stage_outcome_error,
+        )
+    executor_ids = list(
+        dict.fromkeys(
+            assignment["executor_id"]
+            for assignment in assignments
+        )
+    )
+    primary = next(
+        (
+            assignment["executor_id"]
+            for assignment in assignments
+            if assignment.get("mutation_owner")
+        ),
+        assignments[0]["executor_id"],
+    )
+    selected_lenses = list(plan.get("selected_lenses", []))
+    if not selected_lenses:
+        selected_lenses = list(
+            dict.fromkeys(
+                lens_id
+                for assignment in assignments
+                for lens_id in assignment.get("lens_ids", [])
+            )
+        )
+    selected_packs = list(
+        dict.fromkeys(
+            pack_id
+            for assignment in assignments
+            for pack_id in assignment.get("expertise_pack_ids", [])
+        )
+    )
+    selected_guides = list(
+        dict.fromkeys(
+            guide_id
+            for assignment in assignments
+            for guide_id in assignment.get("decision_guide_ids", [])
+        )
+    )
+    research = plan.get(
+        "research",
+        {"mode": "reuse", "gate": "not-required"},
+    )
+    receipt: dict[str, Any] = {
+        "run_id": run_id,
+        "risk": plan.get("risk"),
+        "route_depth": plan.get("depth"),
+        "selected_lenses": selected_lenses,
+        "selected_expertise_packs": selected_packs,
+        "selected_decision_guides": selected_guides,
+        "expertise_research_mode": research.get("mode"),
+        "expertise_research_gate": research.get("gate"),
+        "executor_runs": len(stage_results),
+        "primary_executor_id": primary,
+        "executor_ids": executor_ids,
+        "outcome": outcome,
+        "evidence_refs": list(evidence_refs),
+        "duration_ms": None,
+        "tokens": None,
+        "correction_count": correction_count,
+        "correction_summary": list(correction_summary or []),
+        "agent_calls": sum(
+            span.get("kind") == "delegation"
+            for span in work_spans
+            if isinstance(span, dict)
+        ),
+        "human_fix_required": human_fix_required,
+        "decision_changed": decision_changed,
+        "verifier_result": verifier_result,
+        "command_artifact_ref": command_artifact_ref,
+    }
+    if receipt["risk"] is None or receipt["route_depth"] is None:
+        raise MaestroError(
+            "RUN_FINALIZE_PLAN_REQUIRED",
+            "The observed plan predates typed risk/depth finalization metadata.",
+        )
+    return record_run(
+        repo,
+        receipt,
+        observation_id=resolved_observation_id,
+    )
+
+
+def _valid_completion_measurement_binding(
+    closure: Any,
+    measurements: Any,
+) -> bool:
+    """Bind pre-seal closure metadata to the post-seal projection."""
+
+    if not isinstance(closure, dict) or not isinstance(measurements, dict):
+        return False
+    pre_seal = closure.get("pre_seal_ledger")
+    producers = measurements.get("producer_coverage")
+    if not isinstance(pre_seal, dict) or not isinstance(producers, list):
+        return False
+    pre_seal_revision = pre_seal.get("revision")
+    pre_seal_event_count = pre_seal.get("event_count")
+    if (
+        not isinstance(pre_seal_revision, int)
+        or isinstance(pre_seal_revision, bool)
+        or not isinstance(pre_seal_event_count, int)
+        or isinstance(pre_seal_event_count, bool)
+    ):
+        return False
+    return (
+        measurements.get("ledger_revision") == pre_seal_revision + 1
+        and measurements.get("ledger_event_count")
+        == pre_seal_event_count + 1
+        and len(producers) <= pre_seal_event_count
+        and measurements.get("ledger_digest") != pre_seal.get("digest")
+    )
 
 
 def _valid_event(event: dict[str, Any]) -> bool:
@@ -520,9 +2504,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "registry_digest",
         "lens_definition_digests",
         "executor_definition_digests",
+        "expertise_pack_definition_digests",
         "risk",
         "route_depth",
         "selected_lenses",
+        "selected_expertise_packs",
+        "selected_decision_guides",
+        "expertise_research_mode",
+        "expertise_research_gate",
         "executor_runs",
         "primary_executor_id",
         "executor_ids",
@@ -531,6 +2520,7 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "fingerprint",
         "evidence_refs",
         "duration_ms",
+        "planning_duration_ms",
         "tokens",
         "experiment_id",
         "experiment_arm",
@@ -546,6 +2536,18 @@ def _valid_event(event: dict[str, Any]) -> bool:
         "project_convention_basis",
         "project_convention_path",
         "project_convention_evidence",
+        "task_label",
+        "plan_summary",
+        "stage_results",
+        "work_spans",
+        "expertise_observations",
+        "host_observation",
+        "convention_usage",
+        "execution_binding",
+        "execution_measurements",
+        "completion_policy",
+        "completion_closure",
+        "request_lineage",
     }
     if set(event) - allowed_fields:
         return False
@@ -596,6 +2598,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
     )
     if event.get("schema_version") != "maestro_event_v1":
         return False
+    if (
+        event.get("request_lineage") is not None
+        and not validate_request_lineage(
+            event.get("request_lineage"),
+            current_run_id=event.get("run_id"),
+        )
+    ):
+        return False
     if any(not isinstance(event.get(field), str) or not event[field] for field in required_strings):
         return False
     if _parse_timestamp(event.get("timestamp")) is None:
@@ -607,8 +2617,14 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or any(character not in "0123456789abcdef" for character in registry_digest)
     ):
         return False
-    for field in ("lens_definition_digests", "executor_definition_digests"):
+    for field in (
+        "lens_definition_digests",
+        "executor_definition_digests",
+        "expertise_pack_definition_digests",
+    ):
         digests = event.get(field)
+        if digests is None and field == "expertise_pack_definition_digests":
+            continue
         if not isinstance(digests, dict) or not all(
             isinstance(key, str)
             and isinstance(value, str)
@@ -632,6 +2648,42 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or len(set(selected_lenses)) != len(selected_lenses)
     ):
         return False
+    selected_expertise_packs = event.get("selected_expertise_packs", [])
+    selected_decision_guides = event.get("selected_decision_guides", [])
+    expertise_research_mode = event.get("expertise_research_mode", "reuse")
+    expertise_research_gate = event.get(
+        "expertise_research_gate",
+        "not-required",
+    )
+    if (
+        not isinstance(selected_expertise_packs, list)
+        or len(selected_expertise_packs) > 1
+        or len(set(selected_expertise_packs)) != len(selected_expertise_packs)
+        or not all(
+            isinstance(item, str) and bool(item.strip())
+            for item in selected_expertise_packs
+        )
+        or not isinstance(selected_decision_guides, list)
+        or len(selected_decision_guides) > 4
+        or len(set(selected_decision_guides)) != len(selected_decision_guides)
+        or not all(
+            isinstance(item, str) and bool(item.strip())
+            for item in selected_decision_guides
+        )
+        or expertise_research_mode
+        not in {"reuse", "contextualize", "refresh", "discover"}
+        or expertise_research_gate
+        not in {"not-required", "satisfied", "in-plan", "open"}
+        or (
+            (expertise_research_mode == "reuse")
+            != (expertise_research_gate == "not-required")
+        )
+        or (
+            expertise_research_gate == "open"
+            and event.get("outcome") not in {"blocked", "no_change"}
+        )
+    ):
+        return False
     executor_runs = event.get("executor_runs")
     if (
         not isinstance(executor_runs, int)
@@ -653,10 +2705,116 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or executor_runs < len(executor_ids)
     ):
         return False
+    if _run_semantic_error(event) is not None:
+        return False
     evidence_refs = event.get("evidence_refs")
     if not isinstance(evidence_refs, list) or not all(
         isinstance(item, str) and bool(item.strip())
         for item in evidence_refs
+    ):
+        return False
+    task_label = event.get("task_label")
+    if task_label is not None and not _valid_task_label(task_label):
+        return False
+    plan_summary = event.get("plan_summary")
+    if not _valid_plan_summary(plan_summary):
+        return False
+    if isinstance(plan_summary, dict):
+        planned_executors = {
+            assignment["executor_id"]
+            for assignment in plan_summary["assignments"]
+        }
+        if not planned_executors.issubset(set(executor_ids)):
+            return False
+    if not _valid_stage_results(
+        event.get("stage_results"),
+        plan_summary,
+        run_id=event.get("run_id"),
+        observation_id=observation_identity(
+            project_id=event.get("project_id", ""),
+            checkout_id=event.get("checkout_id", ""),
+            run_id=event.get("run_id", ""),
+        ),
+        work_spans=event.get("work_spans"),
+        expected_framework_version=event.get("framework_version"),
+    ):
+        return False
+    if (
+        _stage_outcome_consistency_error(
+            plan_summary,
+            event.get("stage_results"),
+            outcome=event.get("outcome"),
+            verifier_result=event.get("verifier_result"),
+        )
+        is not None
+    ):
+        return False
+    if not _valid_work_observations(
+        event.get("work_spans"),
+        plan_summary,
+        require_terminal=True,
+    ):
+        return False
+    if not _valid_host_observation(event.get("host_observation")):
+        return False
+    if not _valid_execution_binding(event.get("execution_binding")):
+        return False
+    if (
+        isinstance(event.get("execution_binding"), dict)
+        and event["execution_binding"].get("mode")
+        == "maestro_owned_codex_app_server"
+        and isinstance(plan_summary, dict)
+        and plan_summary.get("execution_receipts_required") is not True
+    ):
+        return False
+    if (
+        event.get("execution_measurements") is not None
+        and not validate_execution_measurements(
+            event.get("execution_measurements")
+        )
+    ):
+        return False
+    completion_policy = event.get("completion_policy")
+    completion_closure = event.get("completion_closure")
+    if (completion_policy is None) != (completion_closure is None):
+        return False
+    if completion_policy is not None and (
+        not validate_completion_policy(completion_policy)
+        or event.get("execution_measurements") is None
+        or not validate_completion_closure(
+            completion_closure,
+            policy=completion_policy,
+            plan_summary=event.get("plan_summary"),
+            stage_results=event.get("stage_results"),
+            work_spans=event.get("work_spans"),
+            receipt_intent=receipt_intent_digest(event),
+        )
+        or not _valid_completion_measurement_binding(
+            completion_closure,
+            event.get("execution_measurements"),
+        )
+    ):
+        return False
+    if (
+        _app_server_binding_error(
+            event.get("execution_binding"),
+            event.get("stage_results"),
+            outcome=event.get("outcome"),
+            plan_summary=plan_summary,
+        )
+        is not None
+    ):
+        return False
+    if not _valid_expertise_observations(
+        event.get("expertise_observations"),
+        evidence_refs=evidence_refs,
+        catalog=None,
+    ):
+        return False
+    if not _valid_convention_usage(
+        repo=None,
+        value=event.get("convention_usage"),
+        outcome=event.get("outcome"),
     ):
         return False
     duration = event.get("duration_ms")
@@ -667,29 +2825,17 @@ def _valid_event(event: dict[str, Any]) -> bool:
         or duration < 0
     ):
         return False
+    planning_duration = event.get("planning_duration_ms")
+    if planning_duration is not None and (
+        not isinstance(planning_duration, (int, float))
+        or isinstance(planning_duration, bool)
+        or not math.isfinite(planning_duration)
+        or planning_duration < 0
+    ):
+        return False
     tokens = event.get("tokens")
-    if tokens is not None:
-        if not isinstance(tokens, dict):
-            return False
-        if set(tokens) - {
-            "input",
-            "output",
-            "cached",
-            "reasoning",
-            "total",
-            "parent_context_total",
-            "total_system",
-        }:
-            return False
-        if "total" not in tokens:
-            return False
-        for token_value in tokens.values():
-            if token_value is not None and (
-                not isinstance(token_value, int)
-                or isinstance(token_value, bool)
-                or token_value < 0
-            ):
-                return False
+    if not _valid_token_summary(tokens):
+        return False
     correction_count = event.get("correction_count", 0)
     if (
         not isinstance(correction_count, int)
@@ -797,12 +2943,23 @@ def _valid_event(event: dict[str, Any]) -> bool:
     if project_convention_evidence is not None:
         if not isinstance(project_convention_evidence, dict):
             return False
-        expected_keys = {"convention_sha256", "kind", "artifact"}
+        expected_keys = {
+            "convention_sha256",
+            "kind",
+            "assurance",
+            "artifact",
+        }
         if convention_basis == "owner_decision":
             expected_keys.add("decision_summary")
         if (
             set(project_convention_evidence) != expected_keys
             or project_convention_evidence.get("kind") != convention_basis
+            or project_convention_evidence.get("assurance")
+            != (
+                "owner_attested"
+                if convention_basis == "owner_decision"
+                else "held_out_verified"
+            )
         ):
             return False
         digest = project_convention_evidence.get("convention_sha256")
@@ -921,9 +3078,18 @@ def _definition_digests_match(
     executor_definitions = event["executor_definition_digests"]
     if set(executor_definitions) != set(event["executor_ids"]):
         return False
-    return all(
+    if not all(
         expected["executors"].get(executor_id) == digest
         for executor_id, digest in executor_definitions.items()
+    ):
+        return False
+    pack_ids = event.get("selected_expertise_packs", [])
+    pack_definitions = event.get("expertise_pack_definition_digests", {})
+    if set(pack_definitions) != set(pack_ids):
+        return False
+    return all(
+        expected["expertise_packs"].get(pack_id) == digest
+        for pack_id, digest in pack_definitions.items()
     )
 
 
@@ -987,14 +3153,495 @@ def _classify_event(
         return "foreign", None
     if not _valid_event(event):
         return "invalid", None
+    timestamp = _parse_timestamp(event["timestamp"])
+    if timestamp is None:
+        return "invalid", None
+    if not _definition_digests_match(event, expected_definition_digests):
+        return "definition", timestamp
     if (
         event["framework_version"] != framework_version
         or event["registry_digest"] != current_registry_digest
     ):
-        return "version", None
-    if not _definition_digests_match(event, expected_definition_digests):
-        return "definition", None
-    return "eligible", _parse_timestamp(event["timestamp"])
+        return "compatible", timestamp
+    return "eligible", timestamp
+
+
+def recent_run_events(
+    repo_path: str | Path,
+    *,
+    window: int = 20,
+    complete_display_requests: bool = False,
+) -> dict[str, Any]:
+    if (
+        not isinstance(window, int)
+        or isinstance(window, bool)
+        or window < 1
+        or window > 100
+    ):
+        raise MaestroError(
+            "WINDOW_INVALID",
+            "Viewer run window must be an integer from 1 to 100.",
+        )
+    repo = ensure_repo(repo_path)
+    project = read_json(safe_target(repo, ".maestro/project.json"))
+    lock = read_json(safe_target(repo, ".maestro/lock.json"))
+    project_id = project.get("project_id")
+    framework_version = lock.get("framework", {}).get("version")
+    current_registry_digest = lock.get("registry", {}).get("sha256")
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or not isinstance(framework_version, str)
+        or not isinstance(current_registry_digest, str)
+    ):
+        raise MaestroError(
+            "PROJECT_STATE_INVALID",
+            "Project and lock state are required for run history.",
+        )
+    events_directory = safe_target(repo, ".maestro/state/events")
+    if not events_directory.exists():
+        request_alias_bindings = load_request_alias_bindings(repo, [])
+        return {
+            "schema_version": "maestro_run_history_v1",
+            "runs": [],
+            "display_runs": [],
+            "run_evidence": {},
+            "recorded_run_ids": [],
+            "request_alias_bindings": request_alias_bindings,
+            "evidence_status": "empty",
+            "invalid_records": 0,
+            "historical_definition_records": 0,
+            "scan_truncated": False,
+            "writes_performed": False,
+        }
+    if not events_directory.is_dir():
+        raise MaestroError(
+            "EVENT_STATE_INVALID",
+            "The governance events path must be a directory.",
+        )
+    definitions = definition_digest_maps()
+    definitions["expertise_packs"] = expertise_definition_map(repo)
+    paths, overflow, directory_truncated = _event_paths(
+        events_directory
+    )
+    latest: dict[
+        str,
+        tuple[datetime, dict[str, Any], str],
+    ] = {}
+    governance_latest: dict[
+        str,
+        tuple[datetime, dict[str, Any]],
+    ] = {}
+    recorded_run_ids: set[str] = set()
+    invalid_records = 0
+    historical_definition_records = 0
+    scan_truncated = bool(overflow or directory_truncated)
+    total_bytes = 0
+    records_scanned = 0
+    current_checkout = checkout_id(repo)
+    for path, safe in paths:
+        if not safe:
+            invalid_records += 1
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            invalid_records += 1
+            continue
+        if size > MAX_EVENT_FILE_BYTES or total_bytes + size > MAX_EVENT_TOTAL_BYTES:
+            scan_truncated = True
+            continue
+        total_bytes += size
+        try:
+            lines = path.open(encoding="utf-8", errors="replace")
+        except OSError:
+            invalid_records += 1
+            continue
+        with lines:
+            for line in lines:
+                if not line.strip():
+                    continue
+                records_scanned += 1
+                if records_scanned > MAX_EVENT_RECORDS:
+                    scan_truncated = True
+                    break
+                if len(line.encode("utf-8")) > MAX_EVENT_LINE_BYTES:
+                    invalid_records += 1
+                    scan_truncated = True
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    invalid_records += 1
+                    continue
+                if (
+                    isinstance(event, dict)
+                    and event.get("project_id") == project_id
+                    and event.get("checkout_id") == current_checkout
+                    and isinstance(event.get("run_id"), str)
+                    and event["run_id"].strip()
+                    and _valid_event(event)
+                ):
+                    # A definition digest mismatch excludes an old receipt
+                    # from current governance evidence, but it does not make
+                    # the recorded run unfinished. Keep this bounded identity
+                    # projection so the viewer can reconcile legacy
+                    # observations without reusing stale definitions.
+                    recorded_run_ids.add(event["run_id"])
+                status, timestamp = _classify_event(
+                    event,
+                    project_id=project_id,
+                    checkout_id=current_checkout,
+                    framework_version=framework_version,
+                    current_registry_digest=current_registry_digest,
+                    expected_definition_digests=definitions,
+                )
+                if status == "foreign":
+                    continue
+                if status == "invalid" or timestamp is None:
+                    invalid_records += 1
+                    continue
+                if status == "definition":
+                    historical_definition_records += 1
+                elif status not in {"eligible", "compatible"}:
+                    invalid_records += 1
+                    continue
+                existing = latest.get(event["run_id"])
+                if existing is None or timestamp >= existing[0]:
+                    latest[event["run_id"]] = (
+                        timestamp,
+                        event,
+                        status,
+                    )
+                if status in {"eligible", "compatible"}:
+                    governance_existing = governance_latest.get(
+                        event["run_id"]
+                    )
+                    if (
+                        governance_existing is None
+                        or timestamp >= governance_existing[0]
+                    ):
+                        governance_latest[event["run_id"]] = (
+                            timestamp,
+                            event,
+                        )
+        if records_scanned > MAX_EVENT_RECORDS:
+            break
+    all_ordered_entries = sorted(
+        latest.values(),
+        key=lambda item: (item[0], item[1]["run_id"]),
+        reverse=True,
+    )
+    request_alias_bindings = load_request_alias_bindings(
+        repo,
+        [event for _, event, _ in all_ordered_entries],
+    )
+    ordered_entries = all_ordered_entries[:window]
+    if complete_display_requests:
+        anchored_identities = {
+            resolve_request_identity(
+                event,
+                alias=request_alias_bindings.get(event["run_id"]),
+            )["identity"]
+            for _, event, _ in ordered_entries
+        }
+        ordered_entries = [
+            item
+            for item in all_ordered_entries
+            if resolve_request_identity(
+                item[1],
+                alias=request_alias_bindings.get(item[1]["run_id"]),
+            )["identity"]
+            in anchored_identities
+        ]
+    display_ordered = [
+        event for _, event, _ in ordered_entries
+    ]
+    governance_ordered = [
+        event
+        for _, event in sorted(
+            governance_latest.values(),
+            key=lambda item: (item[0], item[1]["run_id"]),
+            reverse=True,
+        )[:window]
+    ]
+    run_evidence = {
+        event["event_id"]: {
+            "classification": status,
+            "history_visibility": "visible",
+            "governance_eligible": status
+            in {"eligible", "compatible"},
+            "definition_status": (
+                "historical" if status == "definition" else "current"
+            ),
+            "reason": (
+                "definition_digest_mismatch"
+                if status == "definition"
+                else None
+            ),
+        }
+        for _, event, status in ordered_entries
+    }
+    displayed_run_ids = {
+        event["run_id"]
+        for event in display_ordered
+    }
+    return {
+        "schema_version": "maestro_run_history_v1",
+        "runs": governance_ordered,
+        "display_runs": display_ordered,
+        "run_evidence": run_evidence,
+        "recorded_run_ids": sorted(recorded_run_ids),
+        "request_alias_bindings": {
+            run_id: binding
+            for run_id, binding in request_alias_bindings.items()
+            if run_id in displayed_run_ids
+        },
+        "evidence_status": "truncated" if scan_truncated else "sufficient",
+        "invalid_records": invalid_records,
+        "historical_definition_records": (
+            historical_definition_records
+        ),
+        "scan_truncated": scan_truncated,
+        "writes_performed": False,
+    }
+
+
+def expertise_management_signals(
+    events: list[dict[str, Any]],
+    *,
+    threshold: int = 3,
+) -> list[dict[str, Any]]:
+    observations: dict[str, dict[str, Any]] = {}
+    for event in events:
+        for item in event.get("expertise_observations", []):
+            if not item.get("reusable"):
+                continue
+            fingerprint = sha256_text(
+                canonical_json(
+                    {
+                        "kind": item["kind"],
+                        "domain": item["domain"].casefold(),
+                        "pack_id": item["pack_id"],
+                        "guide_id": item["guide_id"],
+                    }
+                )
+            )[:24]
+            record = observations.setdefault(
+                fingerprint,
+                {
+                    "fingerprint": fingerprint,
+                    "kind": item["kind"],
+                    "domain": item["domain"],
+                    "pack_id": item["pack_id"],
+                    "guide_id": item["guide_id"],
+                    "severity": item["severity"],
+                    "resolution": item["resolution"],
+                    "run_ids": set(),
+                    "latest_timestamp": event["timestamp"],
+                    "evidence_refs": [],
+                },
+            )
+            record["run_ids"].add(event["run_id"])
+            if event["timestamp"] >= record["latest_timestamp"]:
+                record["latest_timestamp"] = event["timestamp"]
+            severity_order = {"medium": 1, "high": 2, "critical": 3}
+            if severity_order[item["severity"]] > severity_order[record["severity"]]:
+                record["severity"] = item["severity"]
+            if item["resolution"] == "author_candidate":
+                record["resolution"] = "author_candidate"
+            if (
+                item["evidence_ref"] not in record["evidence_refs"]
+                and len(record["evidence_refs"]) < 3
+            ):
+                record["evidence_refs"].append(item["evidence_ref"])
+    signals: list[dict[str, Any]] = []
+    for record in observations.values():
+        occurrences = len(record.pop("run_ids"))
+        immediate_authoring = (
+            record["severity"] == "critical"
+            or record["resolution"] == "author_candidate"
+        )
+        if occurrences < threshold and not immediate_authoring:
+            continue
+        signals.append(
+            {
+                **record,
+                "occurrences": occurrences,
+                "status": "review_recommended",
+                "admission_basis": (
+                    "explicit_clear_missing_expertise"
+                    if record["resolution"] == "author_candidate"
+                    else "critical_signal"
+                    if record["severity"] == "critical"
+                    else "repeated_signal"
+                ),
+                "automatic_candidate_authoring_allowed": True,
+                "automatic_change_allowed": False,
+            }
+        )
+    return sorted(
+        signals,
+        key=lambda item: (
+            {"critical": 3, "high": 2, "medium": 1}[item["severity"]],
+            item["occurrences"],
+            item["latest_timestamp"],
+        ),
+        reverse=True,
+    )
+
+
+def _post_record_management_check(
+    repo: Path,
+    *,
+    recorded_event: dict[str, Any] | None = None,
+    recording_baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if (
+        isinstance(recording_baseline, dict)
+        and recording_baseline.get("status") == "stale"
+    ):
+        return {
+            "schema_version": "maestro_management_check_v1",
+            "status": "deferred",
+            "review_due": False,
+            "expertise_signals": [],
+            "governance_candidate_count": 0,
+            "global_promotion_prompts": [],
+            "owner_prompt_due": False,
+            "automatic_candidate_authoring_allowed": False,
+            "automatic_mutation_allowed": False,
+            "deferred_reason": "project_baseline_stale",
+            "baseline_issues": list(
+                recording_baseline.get("issues", [])
+            ),
+        }
+    try:
+        history = recent_run_events(repo, window=20)
+        expertise_signals = expertise_management_signals(history["runs"])
+        governance = govern_report(repo, window=20, threshold=3)
+        inventory = expertise_inventory(repo)
+        existing_automatic_fingerprints = {
+            candidate["generation"]["signal_fingerprint"]
+            for candidate in inventory.get("candidates", [])
+            if isinstance(candidate, dict)
+            and candidate.get("disposition") is None
+            and isinstance(candidate.get("generation"), dict)
+            and candidate["generation"].get("mode") == "automatic"
+            and isinstance(
+                candidate["generation"].get("signal_fingerprint"),
+                str,
+            )
+        }
+        expertise_signals = [
+            signal
+            for signal in expertise_signals
+            if signal["fingerprint"]
+            not in existing_automatic_fingerprints
+        ]
+        component_health = expertise_component_health(
+            inventory,
+            history["runs"],
+        )
+    except MaestroError as exc:
+        return {
+            "schema_version": "maestro_management_check_v1",
+            "status": "unavailable",
+            "review_due": False,
+            "expertise_signals": [],
+            "governance_candidate_count": 0,
+            "global_promotion_prompts": [],
+            "owner_prompt_due": False,
+            "automatic_candidate_authoring_allowed": False,
+            "automatic_mutation_allowed": False,
+            "error": {"code": exc.code, "message": exc.message},
+        }
+    inventory_candidates = {
+        item.get("candidate_id"): item
+        for item in inventory.get("candidates", [])
+        if isinstance(item.get("candidate_id"), str)
+    }
+    selected_packs = (
+        set(recorded_event.get("selected_expertise_packs", []))
+        if isinstance(recorded_event, dict)
+        else set()
+    )
+    selected_guides = (
+        set(recorded_event.get("selected_decision_guides", []))
+        if isinstance(recorded_event, dict)
+        else set()
+    )
+    recorded_digests = (
+        recorded_event.get("expertise_pack_definition_digests", {})
+        if isinstance(recorded_event, dict)
+        else {}
+    )
+    global_promotion_prompts: list[dict[str, Any]] = []
+    for health in component_health.get("candidates", []):
+        promotion = health.get("global_promotion", {})
+        required_count = promotion.get("required_usage_count")
+        observed_count = promotion.get("observed_usage_count")
+        candidate = inventory_candidates.get(health.get("candidate_id"))
+        pack_id = health.get("pack_id")
+        component_change = health.get("component_change")
+        target_guide_id = (
+            component_change.get("target_guide_id")
+            if isinstance(component_change, dict)
+            else None
+        )
+        if (
+            not promotion.get("owner_prompt_due")
+            or not isinstance(observed_count, int)
+            or not isinstance(required_count, int)
+            or observed_count < required_count
+            or not isinstance(candidate, dict)
+            or not isinstance(pack_id, str)
+            or pack_id not in selected_packs
+            or recorded_digests.get(pack_id)
+            != candidate.get("definition_digest")
+            or (
+                isinstance(target_guide_id, str)
+                and target_guide_id not in selected_guides
+            )
+        ):
+            continue
+        global_promotion_prompts.append(
+            {
+                "candidate_id": health["candidate_id"],
+                "pack_id": pack_id,
+                "observed_usage_count": observed_count,
+                "required_usage_count": required_count,
+                "problem_review_required": promotion.get(
+                    "problem_review_required",
+                    False,
+                ),
+                "question": (
+                    f"{pack_id} 후보가 서로 다른 작업에서 "
+                    f"{observed_count}회 적용이 확인됐습니다. "
+                    "Harness 기본 Pack에 반영할까요?"
+                ),
+            }
+        )
+        break
+    return {
+        "schema_version": "maestro_management_check_v1",
+        "status": "available",
+        "review_due": bool(
+            expertise_signals
+            or governance["candidates_for_review"]
+            or global_promotion_prompts
+        ),
+        "expertise_signals": expertise_signals,
+        "governance_candidate_count": len(
+            governance["candidates_for_review"]
+        ),
+        "global_promotion_prompts": global_promotion_prompts,
+        "owner_prompt_due": bool(global_promotion_prompts),
+        "automatic_candidate_authoring_allowed": bool(
+            expertise_signals
+        ),
+        "automatic_mutation_allowed": False,
+    }
 
 
 def govern_report(
@@ -1002,6 +3649,7 @@ def govern_report(
     *,
     window: int = 20,
     threshold: int = 3,
+    model_feedback_window: int = DEFAULT_EVIDENCE_WINDOW,
 ) -> dict[str, Any]:
     if (
         not isinstance(window, int)
@@ -1023,6 +3671,16 @@ def govern_report(
             "THRESHOLD_INVALID",
             "Governance candidate threshold cannot exceed the run window",
         )
+    if (
+        not isinstance(model_feedback_window, int)
+        or isinstance(model_feedback_window, bool)
+        or model_feedback_window < 1
+        or model_feedback_window > MAX_GOVERN_WINDOW
+    ):
+        raise MaestroError(
+            "MODEL_FEEDBACK_WINDOW_INVALID",
+            f"Model feedback window must be an integer from 1 to {MAX_GOVERN_WINDOW}",
+        )
     repo = ensure_repo(repo_path)
     try:
         project_path = safe_target(repo, ".maestro/project.json")
@@ -1037,8 +3695,14 @@ def govern_report(
             "schema_version": "maestro_govern_report_v1",
             "repo_root": str(repo),
             "evidence_status": "uninitialized",
+            "window": window,
+            "model_feedback_window": model_feedback_window,
             "observations": [],
             "candidates_for_review": [],
+            "model_feedback": build_model_feedback_report(
+                [],
+                evidence_window=model_feedback_window,
+            ),
             "writes_performed": False,
         }
 
@@ -1081,15 +3745,18 @@ def govern_report(
             "The governance events path must be a directory",
         )
     expected_definitions = definition_digest_maps()
+    expected_definitions["expertise_packs"] = expertise_definition_map(repo)
     invalid_records = 0
     excluded_version_records = 0
     excluded_definition_records = 0
+    included_compatible_records = 0
     duplicate_event_records = 0
     truncated_records = 0
     skipped_event_files = 0
     scan_truncated = False
     directory_scan_truncated = False
     selected_run_records: list[dict[str, Any]] = []
+    feedback_unique_runs: list[dict[str, Any]] = []
     selected_event_paths: list[Path] = []
     if not events_directory.exists():
         event_files_available = False
@@ -1109,11 +3776,15 @@ def govern_report(
         for path, safe in discovered_paths:
             if not safe:
                 invalid_records += 1
+                scan_truncated = True
+                skipped_event_files += 1
                 continue
             try:
                 size = path.stat().st_size
             except OSError:
                 invalid_records += 1
+                scan_truncated = True
+                skipped_event_files += 1
                 continue
             if (
                 size > MAX_EVENT_FILE_BYTES
@@ -1132,15 +3803,20 @@ def govern_report(
                     "CREATE TABLE runs ("
                     "run_id TEXT PRIMARY KEY, "
                     "timestamp REAL NOT NULL, "
-                    "latest_event TEXT NOT NULL)"
+                    "latest_event TEXT NOT NULL, "
+                    "classification TEXT NOT NULL)"
                 )
                 records_scanned = 0
                 first_pass_stopped = False
+                unreadable_event_paths: set[Path] = set()
                 for path in selected_event_paths:
                     try:
                         lines = path.open(encoding="utf-8", errors="replace")
                     except OSError:
                         invalid_records += 1
+                        scan_truncated = True
+                        skipped_event_files += 1
+                        unreadable_event_paths.add(path)
                         continue
                     with lines:
                         for line in lines:
@@ -1181,20 +3857,25 @@ def govern_report(
                             if status == "definition":
                                 excluded_definition_records += 1
                                 continue
+                            if status == "compatible":
+                                included_compatible_records += 1
                             if timestamp is None:
                                 invalid_records += 1
                                 continue
                             connection.execute(
-                                "INSERT INTO runs(run_id, timestamp, latest_event) "
-                                "VALUES (?, ?, ?) "
+                                "INSERT INTO runs("
+                                "run_id, timestamp, latest_event, classification"
+                                ") VALUES (?, ?, ?, ?) "
                                 "ON CONFLICT(run_id) DO UPDATE SET "
                                 "timestamp=excluded.timestamp, "
-                                "latest_event=excluded.latest_event "
+                                "latest_event=excluded.latest_event, "
+                                "classification=excluded.classification "
                                 "WHERE excluded.timestamp >= runs.timestamp",
                                 (
                                     event["run_id"],
                                     timestamp.timestamp(),
                                     json.dumps(event, ensure_ascii=False, sort_keys=True),
+                                    status,
                                 ),
                             )
                     if first_pass_stopped:
@@ -1203,7 +3884,7 @@ def govern_report(
                 selected_rows = connection.execute(
                     "SELECT run_id, timestamp, latest_event FROM runs "
                     "ORDER BY timestamp DESC, run_id DESC LIMIT ?",
-                    (window,),
+                    (max(window, model_feedback_window),),
                 ).fetchall()
                 selected_run_records = [
                     {
@@ -1215,6 +3896,16 @@ def govern_report(
                     }
                     for run_id, timestamp, latest_event in selected_rows
                 ]
+                feedback_rows = connection.execute(
+                    "SELECT latest_event FROM runs "
+                    "WHERE classification = 'eligible' "
+                    "ORDER BY timestamp DESC, run_id DESC LIMIT ?",
+                    (model_feedback_window,),
+                ).fetchall()
+                feedback_unique_runs = [
+                    json.loads(latest_event)
+                    for (latest_event,) in feedback_rows
+                ]
                 records_by_run = {
                     record["run_id"]: record for record in selected_run_records
                 }
@@ -1225,9 +3916,13 @@ def govern_report(
                 records_scanned = 0
                 second_pass_stopped = False
                 for path in selected_event_paths:
+                    if path in unreadable_event_paths:
+                        continue
                     try:
                         lines = path.open(encoding="utf-8", errors="replace")
                     except OSError:
+                        scan_truncated = True
+                        skipped_event_files += 1
                         continue
                     with lines:
                         for line in lines:
@@ -1256,7 +3951,10 @@ def govern_report(
                                 current_registry_digest=current_registry_digest,
                                 expected_definition_digests=expected_definitions,
                             )
-                            if status != "eligible" or timestamp is None:
+                            if (
+                                status not in {"eligible", "compatible"}
+                                or timestamp is None
+                            ):
                                 continue
                             inserted = connection.execute(
                                 "INSERT OR IGNORE INTO event_ids(event_id) VALUES (?)",
@@ -1286,6 +3984,7 @@ def govern_report(
             finally:
                 connection.close()
 
+    selected_run_records = selected_run_records[:window]
     considered = [
         event
         for record in selected_run_records
@@ -1304,22 +4003,74 @@ def govern_report(
         for fingerprint, run_ids in fingerprint_runs.items()
     }
     eligible_fingerprint_runs: dict[str, set[str]] = {}
+    eligible_fingerprint_events: dict[str, list[dict[str, Any]]] = {}
     for event in considered:
         if _has_candidate_evidence(event):
             eligible_fingerprint_runs.setdefault(
                 event["fingerprint"],
                 set(),
             ).add(event["run_id"])
-    candidates = [
-        {
-            "fingerprint": fingerprint,
-            "occurrences": len(run_ids),
-            "status": "candidate_for_review",
-            "automatic_change_allowed": False,
-        }
-        for fingerprint, run_ids in sorted(eligible_fingerprint_runs.items())
-        if len(run_ids) >= threshold
-    ]
+            eligible_fingerprint_events.setdefault(
+                event["fingerprint"],
+                [],
+            ).append(event)
+
+    severity_order = {"medium": 1, "high": 2, "critical": 3}
+    candidates: list[dict[str, Any]] = []
+    for fingerprint, run_ids in sorted(eligible_fingerprint_runs.items()):
+        if len(run_ids) < threshold:
+            continue
+        events = sorted(
+            eligible_fingerprint_events[fingerprint],
+            key=lambda item: (
+                _parse_timestamp(item["timestamp"])
+                or datetime.min.replace(tzinfo=timezone.utc),
+                item["run_id"],
+            ),
+            reverse=True,
+        )
+        evidence_refs: list[str] = []
+        command_artifact_refs: list[str] = []
+        for event in events:
+            for evidence_ref in event["evidence_refs"]:
+                if (
+                    evidence_ref not in evidence_refs
+                    and len(evidence_refs) < 3
+                ):
+                    evidence_refs.append(evidence_ref)
+            artifact_ref = event.get("command_artifact_ref")
+            if (
+                isinstance(artifact_ref, str)
+                and artifact_ref not in command_artifact_refs
+                and len(command_artifact_refs) < 3
+            ):
+                command_artifact_refs.append(artifact_ref)
+        severity = max(
+            (
+                event["finding_severity"]
+                for event in events
+                if event["finding_severity"] in severity_order
+            ),
+            key=lambda item: severity_order[item],
+        )
+        latest = events[0]
+        candidates.append(
+            {
+                "fingerprint": fingerprint,
+                "occurrences": len(run_ids),
+                "severity": severity,
+                "latest_run_id": latest["run_id"],
+                "latest_timestamp": latest["timestamp"],
+                "evidence_refs": evidence_refs,
+                "command_artifact_refs": command_artifact_refs,
+                "status": "candidate_for_review",
+                "automatic_change_allowed": False,
+                "next_step": (
+                    "Classify the gap as a deterministic check, project "
+                    "Convention, Expertise Pack, or global Harness candidate."
+                ),
+            }
+        )
     unique_runs = [
         record["latest"]
         for record in selected_run_records
@@ -1337,6 +4088,12 @@ def govern_report(
         if isinstance(event.get("duration_ms"), (int, float))
         and not isinstance(event.get("duration_ms"), bool)
     ]
+    measured_agent_calls = [
+        event["agent_calls"]
+        for event in unique_runs
+        if isinstance(event.get("agent_calls"), int)
+        and not isinstance(event.get("agent_calls"), bool)
+    ]
     experiment_arms = Counter(
         event["experiment_arm"]
         for event in unique_runs
@@ -1346,12 +4103,51 @@ def govern_report(
         event.get("project_convention_action", "none")
         for event in unique_runs
     )
+    expertise_pack_usage = Counter(
+        pack_id
+        for event in unique_runs
+        for pack_id in event.get("selected_expertise_packs", [])
+    )
+    decision_guide_usage: dict[str, dict[str, Any]] = {}
+    ordered_unique_runs = sorted(
+        unique_runs,
+        key=lambda event: (
+            _parse_timestamp(event.get("timestamp"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+            event.get("run_id", ""),
+        ),
+        reverse=True,
+    )
+    for event in ordered_unique_runs:
+        for guide_id in event.get("selected_decision_guides", []):
+            usage = decision_guide_usage.setdefault(
+                guide_id,
+                {
+                    "count": 0,
+                    "last_used_timestamp": event["timestamp"],
+                    "recent_run_ids": [],
+                    "failed_verification_run_count": 0,
+                    "corrected_run_count": 0,
+                },
+            )
+            usage["count"] += 1
+            if event.get("verifier_result") == "failed":
+                usage["failed_verification_run_count"] += 1
+            if event.get("correction_count", 0) > 0:
+                usage["corrected_run_count"] += 1
+            if len(usage["recent_run_ids"]) < MAX_RECENT_GUIDE_RUN_IDS:
+                usage["recent_run_ids"].append(event["run_id"])
+    expertise_research_modes = Counter(
+        event.get("expertise_research_mode", "reuse")
+        for event in unique_runs
+    )
     return {
         "schema_version": "maestro_govern_report_v1",
         "repo_root": str(repo),
         "project_id": project.get("project_id"),
         "checkout_id": expected_checkout_id,
         "window": window,
+        "model_feedback_window": model_feedback_window,
         "events_considered": len(considered),
         "runs_considered": len(unique_runs),
         "duplicate_fingerprint_records": duplicate_fingerprint_records,
@@ -1359,6 +4155,7 @@ def govern_report(
         "invalid_records": invalid_records,
         "excluded_version_records": excluded_version_records,
         "excluded_definition_records": excluded_definition_records,
+        "included_compatible_records": included_compatible_records,
         "truncated_records": truncated_records,
         "skipped_event_files": skipped_event_files,
         "scan_truncated": scan_truncated,
@@ -1391,6 +4188,11 @@ def govern_report(
             "total_ms": sum(measured_durations) if measured_durations else None,
             "estimated": False,
         },
+        "agent_call_summary": {
+            "measured_events": len(measured_agent_calls),
+            "total": sum(measured_agent_calls) if measured_agent_calls else None,
+            "estimated": False,
+        },
         "correction_summary": {
             "total": sum(event.get("correction_count", 0) for event in unique_runs),
             "events_with_corrections": sum(
@@ -1401,8 +4203,30 @@ def govern_report(
         "project_convention_actions": dict(
             sorted(project_convention_actions.items())
         ),
+        "expertise_pack_usage": dict(sorted(expertise_pack_usage.items())),
+        "decision_guide_usage": dict(sorted(decision_guide_usage.items())),
+        "expertise_research_modes": dict(
+            sorted(expertise_research_modes.items())
+        ),
+        "model_feedback": build_model_feedback_report(
+            feedback_unique_runs,
+            evidence_window=model_feedback_window,
+            source_complete=(
+                not scan_truncated
+                and invalid_records == 0
+                and truncated_records == 0
+            ),
+            expected_authority=current_model_policy_authority(repo),
+        ),
         "writes_performed": False,
         "promotion_supported": False,
+        "governance_review_due": bool(candidates),
+        "retention": {
+            "format": "daily-jsonl",
+            "raw_messages_stored": False,
+            "automatic_deletion_supported": False,
+            "review_due": skipped_event_files > 0 or directory_scan_truncated,
+        },
         "scan_limits": {
             "max_window": MAX_GOVERN_WINDOW,
             "max_fingerprints_per_run": MAX_FINGERPRINTS_PER_RUN,

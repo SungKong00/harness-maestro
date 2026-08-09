@@ -11,6 +11,7 @@
     "lock",
     "race",
     "retry",
+    "retries",
     "idempot",
     "idempotent",
     "idempotency",
@@ -18,7 +19,10 @@
     "트랜잭션",
     "락",
     "재시도",
-    "중복"
+    "중복 실행",
+    "중복 전달",
+    "중복 처리",
+    "중복 효과"
   ],
   "questions": [
     "Which operations read or write the state used by this decision?",
@@ -33,6 +37,12 @@
   "reject_when": [
     "only the primary path is coordinated while another writer is unclassified",
     "idempotency is claimed without a stable key or persisted decision"
+  ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
   ],
   "finding_limits": {
     "max_findings": 5,

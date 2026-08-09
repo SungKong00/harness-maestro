@@ -1,0 +1,137 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-architecture-boundary.json",
+        "sha256": "a8cb04816bfc149eb39926a620fd4a595b59e523bfc30bb7753a1eae9c11ab32"
+      },
+      "case_id": "normal-architecture-boundary",
+      "criterion_results": [
+        {
+          "criterion": "Selects the software-engineering Pack and architecture boundary Guide",
+          "evidence_ref": "evals/artifacts/normal-architecture-boundary.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires state ownership and quality trade-off evidence",
+          "evidence_ref": "evals/artifacts/normal-architecture-boundary.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats a fashionable architecture pattern as sufficient proof",
+          "evidence_ref": "evals/artifacts/normal-architecture-boundary.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/normal-compatible-change.json",
+        "sha256": "98dad26014c3caf720e34d53ff18a67ed9882c4d1b0dbaf33ae2e0b1297d5f80"
+      },
+      "case_id": "normal-compatible-change",
+      "criterion_results": [
+        {
+          "criterion": "Selects contract and compatible-change Guides",
+          "evidence_ref": "evals/artifacts/normal-compatible-change.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Separates public behavior from migration and removal evidence",
+          "evidence_ref": "evals/artifacts/normal-compatible-change.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Claims a version bump alone proves compatibility",
+          "evidence_ref": "evals/artifacts/normal-compatible-change.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/edge-ambiguous-retry.json",
+        "sha256": "6e07a1a99413c6e77d5a21e36fb1526c35b4cca940a0ddac25c52d55f9d08875"
+      },
+      "case_id": "edge-ambiguous-retry",
+      "criterion_results": [
+        {
+          "criterion": "Selects state/concurrency and failure-semantics Guides",
+          "evidence_ref": "evals/artifacts/edge-ambiguous-retry.json",
+          "verdict": "pass"
+        },
+        {
+          "criterion": "Requires an atomic durable idempotency decision for ambiguous outcomes",
+          "evidence_ref": "evals/artifacts/edge-ambiguous-retry.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Assumes timeout means the first mutation did not commit",
+          "evidence_ref": "evals/artifacts/edge-ambiguous-retry.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-test-strategy.json",
+        "sha256": "50b30c6f4e4fd5886888775604d6118d70a64216a921a0f566239ddfcd8687e3"
+      },
+      "case_id": "non-trigger-test-strategy",
+      "criterion_results": [
+        {
+          "criterion": "Does not select the software-engineering Pack for a QA-owned request",
+          "evidence_ref": "evals/artifacts/non-trigger-test-strategy.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks software-qa test strategy routing",
+          "evidence_ref": "evals/artifacts/non-trigger-test-strategy.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "artifact": {
+        "path": "evals/artifacts/overlap-product-design.json",
+        "sha256": "1538c23c7a877572018bd7b138dc500f4eff7dcd1206beb56cd3a931e1c4ceb0"
+      },
+      "case_id": "overlap-product-design",
+      "criterion_results": [
+        {
+          "criterion": "Does not select the software-engineering Pack for product design",
+          "evidence_ref": "evals/artifacts/overlap-product-design.json",
+          "verdict": "pass"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks product-design routing because the request says design",
+          "evidence_ref": "evals/artifacts/overlap-product-design.json",
+          "observed": false
+        }
+      ],
+      "verdict": "pass"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluator": {
+    "authoring_run_ref": "desktop:expertise-four-packs-20260727:software-engineering",
+    "evaluation_run_ref": "subagent:accept-software:2026-07-27",
+    "kind": "fresh-context"
+  },
+  "expertise_pack_id": "software-engineering",
+  "schema_version": "maestro_expertise_quality_eval_v1"
+}

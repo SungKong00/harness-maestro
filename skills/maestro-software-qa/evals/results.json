@@ -1,0 +1,61 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "software-qa",
+  "results": [
+    {
+      "case_id": "routine-feature-qa",
+      "observed_pack_id": "software-qa",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "qa-risk-traceability",
+        "qa-test-design",
+        "qa-regression-release"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "transaction-state",
+      "observed_pack_id": "software-qa",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "qa-scenario-state-exploration",
+        "qa-test-design"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "release-evidence",
+      "observed_pack_id": "software-qa",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "qa-regression-release"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "defect-report",
+      "observed_pack_id": "software-qa",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "qa-defect-evidence"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "current-browser-matrix",
+      "observed_pack_id": "software-qa",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "qa-risk-traceability"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "simple-code-nontrigger",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "mux-streaming-web",
+  "results": [
+    {
+      "case_id": "normal-signed-vod",
+      "observed_pack_id": "mux-streaming-web",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "playback-integration",
+        "secure-playback"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-live-webhook",
+      "observed_pack_id": "mux-streaming-web",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "live-lifecycle",
+        "webhook-state-sync",
+        "playback-integration"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-expired-token-duplicate-event",
+      "observed_pack_id": "mux-streaming-web",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "live-lifecycle",
+        "playback-integration",
+        "secure-playback",
+        "webhook-state-sync"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-playback-observability",
+      "observed_pack_id": "mux-streaming-web",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "playback-integration",
+        "playback-observability"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-current-react-api",
+      "observed_pack_id": "mux-streaming-web",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "playback-integration"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-furniture-video",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-player-visual-layout",
+      "observed_pack_id": null,
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

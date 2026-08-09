@@ -31,10 +31,15 @@
     "a public contract changes without an explicit compatibility decision",
     "documentation is treated as proof without executable or source evidence"
   ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
+  ],
   "finding_limits": {
     "max_findings": 5,
     "minimum_severity": "medium"
   },
   "output": "FindingPacket"
 }
-

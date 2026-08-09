@@ -1,0 +1,10 @@
+{
+  "action": "activate",
+  "approval_ref": "owner_decision:dashboard:mux-streaming-web",
+  "candidate_digest": "48315139b63467aee239e5003abf434a140a916459fc5d1673b84a2c6dda99ca",
+  "candidate_id": "mux-streaming-web",
+  "pack_version": 1,
+  "previous_definition_digest": null,
+  "schema_version": "maestro_expertise_publication_v1",
+  "source_candidate_path": ".maestro/state/candidates/expertise/mux-streaming-web"
+}

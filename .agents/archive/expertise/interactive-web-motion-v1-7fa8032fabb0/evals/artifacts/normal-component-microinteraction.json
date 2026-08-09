@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-component-microinteraction",
+  "baseline_observation": "The baseline microinteraction route selected generic product-design Guides without motion intent, input-modality choreography, or authoritative async-state criteria.",
+  "candidate_observation": "The candidate selects interaction feedback and motion intent, covering hover, focus, press, drag alternatives, cancellation, and authoritative state.",
+  "evidence_refs": [
+    "route-replay:normal-component-microinteraction",
+    "baseline:.maestro/state/work/interactive-web-motion/baseline.json"
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "case_id": "normal-stream-semantics",
+      "expected_guides": [
+        "pipeline-execution-model"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "data-engineering",
+      "forbidden_behaviors": [
+        "Assumes every runner implements the same semantics"
+      ],
+      "goal": "스트림 처리 파이프라인의 이벤트 시간, 워터마크, 지연 데이터 처리 모델을 설계해줘",
+      "observable_criteria": [
+        "Selects the data-engineering execution-model Guide",
+        "Requires event-time and runner-capability evidence"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "normal-quality-lineage",
+      "expected_guides": [
+        "analytical-data-quality-gates",
+        "lineage-and-provenance"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "data-engineering",
+      "forbidden_behaviors": [
+        "Uses one universal quality score"
+      ],
+      "goal": "분석 데이터 품질 게이트와 데이터 리니지 수집 전략을 설계해줘",
+      "observable_criteria": [
+        "Selects quality and lineage Guides",
+        "Requires purpose-specific metrics and stable run identity"
+      ],
+      "stratum": "normal"
+    },
+    {
+      "case_id": "edge-backfill-recovery",
+      "expected_guides": [
+        "pipeline-schema-contract-evolution",
+        "backfill-and-historical-correction",
+        "state-recovery-and-delivery-semantics"
+      ],
+      "expected_mode": "reuse",
+      "expected_pack_id": "data-engineering",
+      "forbidden_behaviors": [
+        "Claims physical exactly-once execution"
+      ],
+      "goal": "스키마 변경 후 과거 파티션 백필과 체크포인트 복구, exactly-once 범위를 설계해줘",
+      "observable_criteria": [
+        "Selects schema, backfill, and recovery Guides",
+        "Separates historical correction from crash recovery and external sink guarantees"
+      ],
+      "stratum": "edge"
+    },
+    {
+      "case_id": "non-trigger-oltp-index",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks software-engineering or data-integrity ownership"
+      ],
+      "goal": "사용자 테이블의 OLTP 인덱스와 트랜잭션 구조를 설계해줘",
+      "observable_criteria": [
+        "Does not select data-engineering for ordinary application database design"
+      ],
+      "stratum": "non-trigger"
+    },
+    {
+      "case_id": "overlap-dashboard-design",
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "expected_pack_id": null,
+      "forbidden_behaviors": [
+        "Hijacks product-design routing because the request mentions data"
+      ],
+      "goal": "데이터 대시보드의 시각적 위계와 반응형 레이아웃을 디자인해줘",
+      "observable_criteria": [
+        "Does not select data-engineering for dashboard visual design"
+      ],
+      "stratum": "overlap"
+    }
+  ],
+  "evaluated_on": "2026-07-27",
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "9dc18a2068e25652961f4c072cc604285d0931c9ded1046b9f5de0e3d364c2d8"
+  },
+  "expertise_pack_id": "data-engineering",
+  "schema_version": "maestro_expertise_eval_v2"
+}

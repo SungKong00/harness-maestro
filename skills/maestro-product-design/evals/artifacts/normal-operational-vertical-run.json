@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-operational-vertical-run",
+  "baseline_observation": "A wide rank-by-lane canvas makes chronology secondary and gives a visual graph no equivalent linear dependency contract.",
+  "candidate_observation": "The pilot selects the operational Guide with reference, information-architecture, and accessibility criteria; it requires top-to-bottom waves, contextual detail, focus and reflow checks, and a linear alternative.",
+  "evidence_refs": ["route-replay:aa85806344fb76c1f64b11750eff6496ac5dc7516562628237b8a5598e63f1c1", "candidate:operational-workflow-interface:decision-checks-1-10", "research:github-actions-visualization", "research:airflow-ui", "research:w3c-keyboard-interface", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

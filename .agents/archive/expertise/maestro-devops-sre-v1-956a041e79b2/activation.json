@@ -1,0 +1,10 @@
+{
+  "action": "activate",
+  "approval_ref": "owner_decision:dashboard:devops-sre",
+  "candidate_digest": "07b81769c8ee67b2de753fe021bf10a049f59fb275579088736bba049d3386d8",
+  "candidate_id": "devops-sre",
+  "pack_version": 1,
+  "previous_definition_digest": null,
+  "schema_version": "maestro_expertise_publication_v1",
+  "source_candidate_path": ".maestro/state/candidates/expertise/devops-sre"
+}

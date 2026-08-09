@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/convention-held-out-evaluation.schema.json",
+  "title": "Harness Maestro Convention Held-out Evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_sha256",
+    "suite_sha256",
+    "source_revision",
+    "held_out",
+    "cases",
+    "critical_regressions",
+    "verifier",
+    "conditions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_convention_held_out_evaluation_v2"
+    },
+    "candidate_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "suite_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "held_out": {
+      "const": true
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "category",
+          "assertion",
+          "result",
+          "critical",
+          "evidence_ref"
+        ],
+        "properties": {
+          "case_id": {
+            "$ref": "#/$defs/id"
+          },
+          "category": {
+            "enum": [
+              "positive",
+              "negative_scope",
+              "regression"
+            ]
+          },
+          "assertion": {
+            "$ref": "#/$defs/line"
+          },
+          "result": {
+            "enum": [
+              "passed",
+              "failed"
+            ]
+          },
+          "critical": {
+            "type": "boolean"
+          },
+          "evidence_ref": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "critical_regressions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "exit_code",
+        "executed_at",
+        "kind",
+        "observation_id",
+        "authoring_run_ref",
+        "evaluation_run_ref"
+      ],
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/line"
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "executed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "enum": ["fresh-context", "human"]
+        },
+        "observation_id": {
+          "$ref": "#/$defs/line"
+        },
+        "authoring_run_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "evaluation_run_ref": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "model",
+        "budget"
+      ],
+      "properties": {
+        "tool": {
+          "$ref": "#/$defs/line"
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "budget": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    }
+  }
+}

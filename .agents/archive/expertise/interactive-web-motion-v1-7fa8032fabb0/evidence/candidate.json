@@ -1,0 +1,134 @@
+{
+  "schema_version": "maestro_expertise_candidate_v1",
+  "candidate_id": "interactive-web-motion",
+  "expertise_pack_id": "interactive-web-motion",
+  "status": "candidate",
+  "portability": "project",
+  "owner": "project-owner",
+  "review_after": "2026-10-27",
+  "problem": "Existing Expertise Packs cover generic product hierarchy, responsive interaction, and accessibility, but they do not decide why motion exists, which elements should use triggered versus progress-linked behavior, how scroll storytelling and microinteractions should be orchestrated, or how their UX impact, motion safety, and runtime performance should be verified.",
+  "reusable_when": [
+    "Designing or implementing scroll-triggered reveals and scroll-linked storytelling",
+    "Designing motion systems, page transitions, and component microinteractions",
+    "Reviewing interactive web motion for UX impact, accessibility, and performance",
+    "Choosing between native CSS, Web APIs, and animation libraries for a bounded effect"
+  ],
+  "not_for": [
+    "Generic web layout, typography, visual hierarchy, or responsive composition without a motion decision",
+    "Video playback, game animation, canvas rendering, or 3D scene engineering as the primary decision family",
+    "Brand-only moodboards or visual styling without interactive behavior",
+    "Generic release QA or browser testing strategy already owned by software-qa"
+  ],
+  "existing_coverage": "product-design owns screen briefs, typography, visual hierarchy, generic interaction states, responsive layout, accessibility, and reference selection. It does not own motion purpose, scroll-trigger mechanics, scroll-linked narrative behavior, choreography, motion-specific accessibility controls, or animation runtime evidence.",
+  "evidence_refs": [
+    "classification:.maestro/state/work/interactive-web-motion/surface-signal.json",
+    "research-bundle:.maestro/state/work/interactive-web-motion/research-bundle.json#sha256=e691bb4aef4a5068dcc2d86bf15c701ebd538e5949fb9f6ddeff36d335ebf82e",
+    "baseline:.maestro/state/work/interactive-web-motion/baseline.json",
+    "baseline:scroll-storytelling-selected-no-expertise-pack",
+    "baseline:scrub-pin-parallax-review-selected-no-expertise-pack"
+  ],
+  "proposed_guides": [
+    {
+      "guide_id": "motion-intent-and-ux-impact",
+      "failure_prevented": "Decorative motion consumes attention, delays tasks, or creates disorientation without a named user need or measurable benefit.",
+      "decision_checks": [
+        "Name the motion's job: feedback, continuity, orientation, hierarchy, progressive disclosure, or deliberate emphasis",
+        "Map the effect to a specific element, user moment, and expected behavior change",
+        "Compare a static or lower-motion alternative before accepting the attention and performance cost",
+        "Define task, error, orientation, comfort, and runtime evidence that can confirm or reject the hypothesis"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "motion-system-and-choreography",
+      "failure_prevented": "Independent animations use inconsistent duration, easing, distance, and sequencing, making the interface feel noisy and obscuring hierarchy or state.",
+      "decision_checks": [
+        "Define a small token set for duration, easing, distance, stagger, and reduced motion",
+        "Separate frequent productive motion from rare expressive motion",
+        "Coordinate related elements by hierarchy and causal order rather than animating every child independently",
+        "Define interruption, reversal, re-entry, exit, and route-change cleanup behavior"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "scroll-triggered-reveal",
+      "failure_prevented": "Viewport-entry reveals hide important content, replay unexpectedly, break reading order, or fail when JavaScript, observation, or hydration is unavailable.",
+      "decision_checks": [
+        "Use a triggered reveal only when entry timing adds hierarchy or orientation beyond ordinary document flow",
+        "Define observation threshold, root margin, once-or-repeat behavior, and group stagger",
+        "Keep semantic order and critical content available before enhancement succeeds",
+        "Verify fast scrolling, reverse scrolling, resize, deep links, hydration, and reduced-motion fallback"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "scroll-linked-storytelling",
+      "failure_prevented": "Scrub, pin, parallax, snap, or horizontal scenes hijack scrolling, trap content, separate narration from visuals, or collapse on small screens.",
+      "decision_checks": [
+        "Use progress-linked motion only when scroll position meaningfully represents narrative or spatial progress",
+        "Define scene boundaries, pin duration, progress mapping, focus order, escape path, and content continuity",
+        "Choose native scroll timelines or a library from required capability, support, fallback, and lifecycle evidence",
+        "Verify keyboard, touch, trackpad, reverse scroll, short viewport, zoom, reduced motion, and unsupported-browser behavior"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "interaction-feedback-and-state",
+      "failure_prevented": "Hover-only or gesture-only microinteractions produce inconsistent feedback across mouse, touch, keyboard, and assistive input or display a state that differs from application truth.",
+      "decision_checks": [
+        "Map hover, focus, press, drag, loading, success, error, disabled, and selected motion to authoritative component state",
+        "Match feedback strength and latency to the significance and reversibility of the action",
+        "Provide equivalent cues and activation paths for every supported input modality",
+        "Verify interruption, rapid repetition, focus movement, pointer cancellation, and async state replacement"
+      ],
+      "freshness": "stable"
+    },
+    {
+      "guide_id": "motion-accessibility-and-control",
+      "failure_prevented": "Interaction motion causes vestibular discomfort, distraction, flashing risk, or inaccessible drag and continuous-animation behavior.",
+      "decision_checks": [
+        "Classify essential and non-essential motion and provide a useful reduced or static alternative",
+        "Honor prefers-reduced-motion and add explicit pause, stop, hide, or frequency controls where required",
+        "Keep flashing within WCAG thresholds and avoid large peripheral, zooming, or parallax movement by default",
+        "Give drag interactions a non-drag pointer alternative and preserve keyboard, focus, semantics, and information"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "guide_id": "motion-performance-and-verification",
+      "failure_prevented": "Animation appears correct in code review but drops frames, triggers layout or paint, leaks observers or timelines, or degrades input responsiveness in the real page.",
+      "decision_checks": [
+        "Choose CSS, native Web APIs, or a library by required orchestration rather than habit",
+        "Prefer transform and opacity when they express the effect and isolate unavoidable layout or paint work",
+        "Scope observers and animation instances, batch reads and writes, refresh geometry deliberately, and clean up on route or component teardown",
+        "Record representative runtime traces and rendered behavior across viewport, device, input, and reduced-motion conditions"
+      ],
+      "freshness": "versioned"
+    }
+  ],
+  "evaluation": {
+    "baseline": "existing-pack",
+    "cases_path": "evals/cases.json",
+    "quality_path": "evals/quality.json",
+    "pass_criteria": [
+      "Interactive motion requests select the candidate and no more than four directly relevant Guides",
+      "Scroll-triggered and scroll-linked behavior remain distinct decisions",
+      "Every motion recommendation includes purpose, fallback, motion-safety, and runtime evidence appropriate to its scope",
+      "Compatibility-sensitive browser or library requests open contextual research"
+    ],
+    "regression_criteria": [
+      "Generic layout, typography, and visual-only work remains routed to product-design",
+      "Backend, video-provider, game, canvas, and 3D implementation are not selected from generic motion words",
+      "The Pack never grants repository or external write authority",
+      "Library capability is never treated as proof that an effect benefits UX"
+    ]
+  },
+  "generation": {
+    "mode": "user-requested",
+    "signal_fingerprint": null
+  },
+  "component_change": {
+    "kind": "new-pack",
+    "target_guide_id": null
+  }
+}

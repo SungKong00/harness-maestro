@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import unittest
 from pathlib import Path
@@ -10,6 +11,8 @@ from tests.support import ROOT
 
 from maestro.cli import parser
 from maestro.errors import MaestroError
+from maestro.model_policy import MODEL_ROUTE_FIELDS
+from maestro.model_policy import build_stage_model_route
 from maestro.registry import (
     load_domain_index_document,
     load_registry,
@@ -17,6 +20,7 @@ from maestro.registry import (
     route_goal,
     validate_registry,
 )
+from maestro.util import file_sha256
 
 
 class RegistryContractTests(unittest.TestCase):
@@ -41,6 +45,29 @@ class RegistryContractTests(unittest.TestCase):
 
         self.assertTrue(
             any("mixes executor fields: capabilities" in error for error in errors),
+            errors,
+        )
+
+    def test_lenses_are_non_exhaustive_minimum_checks(self) -> None:
+        registry = load_registry()
+
+        for lens in registry["lenses"]:
+            with self.subTest(lens=lens["lens_id"]):
+                self.assertIs(lens["non_exhaustive"], True)
+                self.assertTrue(lens["questions"])
+                self.assertTrue(lens["reject_when"])
+                self.assertTrue(lens["escalate_when"])
+
+        invalid = copy.deepcopy(registry)
+        invalid["lenses"][0]["non_exhaustive"] = False
+        invalid["lenses"][0]["escalate_when"] = []
+        errors = validate_registry(invalid)
+        self.assertTrue(
+            any("non_exhaustive" in error for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("escalate_when" in error for error in errors),
             errors,
         )
 
@@ -299,10 +326,21 @@ class RoutingContractTests(unittest.TestCase):
         )
 
     def test_explicit_intent_overrides_ambiguous_wording(self) -> None:
+        with self.assertRaises(MaestroError) as staged:
+            route_goal(
+                "Research alternatives before the requested change",
+                "medium",
+                intent="implementation",
+            )
+        self.assertEqual(
+            "DECISION_WORKFLOW_REQUIRED",
+            staged.exception.code,
+        )
         route = route_goal(
             "Research alternatives before the requested change",
             "medium",
             intent="implementation",
+            decision_authorized=True,
         )
 
         self.assertEqual("implementation", route["intent"])
@@ -349,6 +387,27 @@ class RoutingContractTests(unittest.TestCase):
         )
         self.assertEqual([], small["warnings"])
         self.assertEqual([], medium["warnings"])
+
+    def test_high_risk_judgment_without_a_lens_is_explicitly_diagnosed(self) -> None:
+        judgment = route_goal(
+            "Compare competing approaches for an internal coordinator",
+            "high",
+            intent="implementation",
+        )
+        ordinary = route_goal(
+            "Implement a bounded internal helper",
+            "high",
+            intent="implementation",
+        )
+
+        self.assertEqual([], judgment["selected_lenses"])
+        self.assertTrue(
+            any(
+                warning["code"] == "HIGH_RISK_LENS_GAP"
+                for warning in judgment["warnings"]
+            )
+        )
+        self.assertEqual([], ordinary["warnings"])
 
     def test_ascii_triggers_do_not_match_arbitrary_word_prefixes(self) -> None:
         cases = (
@@ -453,6 +512,46 @@ class RoutingContractTests(unittest.TestCase):
             "rollback-observability",
             deployment["selected_lenses"],
         )
+        retries = route_goal(
+            "Implement payment webhook retries",
+            "medium",
+            intent="implementation",
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            retries["selected_lenses"],
+        )
+
+    def test_duplicate_trigger_requires_an_effect_context(self) -> None:
+        document_check = route_goal(
+            "중복 문서 ID와 링크를 검사해줘",
+            "medium",
+        )
+        duplicate_delivery = route_goal(
+            "결제 이벤트 중복 전달과 재시도를 검토해줘",
+            "medium",
+        )
+        duplicate_processing = route_goal(
+            "결제 요청의 중복 처리를 방지해줘",
+            "medium",
+        )
+
+        self.assertNotIn(
+            "transaction-concurrency",
+            document_check["selected_lenses"],
+        )
+        self.assertNotEqual(
+            "frontier",
+            document_check["model_route"]["selected_class"],
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            duplicate_delivery["selected_lenses"],
+        )
+        self.assertIn(
+            "transaction-concurrency",
+            duplicate_processing["selected_lenses"],
+        )
 
     def test_every_route_binding_names_a_registered_executor(self) -> None:
         executor_ids = {
@@ -476,10 +575,62 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("mechanical-change", route["model_route"]["task_class"])
         self.assertEqual("economy", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-luna", route["model_route"]["selected_model"])
-        self.assertIn(
-            route["model_route"]["reasoning_effort"],
-            {"low", "medium"},
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+        self.assertEqual(
+            {
+                "selected_class": "balanced",
+                "selected_model": "gpt-5.6-terra",
+                "reasoning_effort": "medium",
+                "trigger": "selected-model-unavailable",
+            },
+            route["model_route"]["fallback_route"],
         )
+
+    def test_mixed_mechanical_or_classification_work_is_not_economy(
+        self,
+    ) -> None:
+        for goal in (
+            "Rename symbols and implement a new parser feature",
+            "Classify files by metadata and implement a new parser feature",
+        ):
+            with self.subTest(goal=goal):
+                route = route_goal(
+                    goal,
+                    "medium",
+                    intent="implementation",
+                )
+                self.assertEqual(
+                    "general-implementation",
+                    route["model_route"]["task_class"],
+                )
+                self.assertEqual(
+                    "gpt-5.6-terra",
+                    route["model_route"]["selected_model"],
+                )
+                self.assertEqual(
+                    "high",
+                    route["model_route"]["reasoning_effort"],
+                )
+
+    def test_negated_or_unrelated_complexity_does_not_force_frontier(
+        self,
+    ) -> None:
+        for goal in (
+            "This is not a difficult implementation; implement one CRUD field",
+            "Avoid a complex implementation; just rename one field",
+            "Do not use a complex algorithm; rename one generated fixture",
+            "Implement one parser feature; the documentation is complex",
+        ):
+            with self.subTest(goal=goal):
+                route = route_goal(
+                    goal,
+                    "medium",
+                    intent="implementation",
+                )
+                self.assertNotEqual(
+                    "gpt-5.6-sol",
+                    route["model_route"]["selected_model"],
+                )
 
     def test_mechanical_auth_change_does_not_hide_high_impact_boundary(self) -> None:
         route = route_goal(
@@ -512,22 +663,80 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("general-implementation", route["model_route"]["task_class"])
         self.assertEqual("balanced", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-terra", route["model_route"]["selected_model"])
-        self.assertEqual("medium", route["model_route"]["reasoning_effort"])
-        self.assertEqual(
-            {
-                "executor",
-                "task_class",
-                "risk",
-                "host",
-                "selected_class",
-                "selected_model",
-                "reasoning_effort",
-                "selection_reason",
-                "escalation_allowed",
-                "fallback",
-            },
-            set(route["model_route"]),
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+        self.assertEqual(MODEL_ROUTE_FIELDS, set(route["model_route"]))
+
+    def test_stage_context_prevents_classification_keyword_leakage(self) -> None:
+        route = route_goal(
+            "Implement model policy and dashboard support for ambiguous file classification",
+            "medium",
+            intent="implementation",
         )
+
+        self.assertEqual("implementation", route["model_route"]["stage_kind"])
+        self.assertEqual(
+            "general-implementation",
+            route["model_route"]["task_class"],
+        )
+        self.assertEqual("gpt-5.6-terra", route["model_route"]["selected_model"])
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+
+        review = route_goal(
+            "Review frontmatter metadata classification policy",
+            "medium",
+            intent="review",
+        )
+        self.assertEqual("semantic-review", review["model_route"]["stage_kind"])
+        self.assertEqual("semantic-review", review["model_route"]["task_class"])
+        self.assertEqual("gpt-5.6-terra", review["model_route"]["selected_model"])
+
+        authoring = route_goal(
+            "Implement expertise candidate authoring flow",
+            "medium",
+            intent="implementation",
+        )
+        self.assertEqual(
+            "gpt-5.6-terra",
+            authoring["model_route"]["selected_model"],
+        )
+
+    def test_high_risk_semantic_review_can_reach_sol(self) -> None:
+        route = route_goal(
+            "Review the API behavior before release",
+            "high",
+            ["contract"],
+            intent="review",
+        )
+
+        self.assertEqual("semantic-review", route["model_route"]["stage_kind"])
+        self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
+        self.assertEqual("high", route["model_route"]["reasoning_effort"])
+
+    def test_unknown_model_bearing_stage_fails_closed(self) -> None:
+        registry = load_registry()
+        executor = next(
+            item
+            for item in registry["executors"]
+            if item["executor_id"] == "implementation-engineer"
+        )
+        with self.assertRaises(MaestroError) as raised:
+            build_stage_model_route(
+                goal="Implement a CRUD endpoint",
+                risk="medium",
+                lens_ids=[],
+                executor=executor,
+                host_id="codex",
+                host_profile={
+                    "classes": {
+                        "economy": {"model": "luna"},
+                        "balanced": {"model": "terra"},
+                        "frontier": {"model": "sol"},
+                    }
+                },
+                execution_unit_id="writer",
+                stage_kind="unknown-stage",
+            )
+        self.assertEqual("MODEL_STAGE_UNKNOWN", raised.exception.code)
 
     def test_metadata_extraction_uses_economy_model(self) -> None:
         route = route_goal(
@@ -577,7 +786,7 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual("frontier", route["model_route"]["selected_class"])
         self.assertEqual("gpt-5.6-sol", route["model_route"]["selected_model"])
 
-    def test_executor_default_class_and_reasoning_are_authoritative(self) -> None:
+    def test_stage_policy_is_independent_from_executor_defaults(self) -> None:
         registry = load_registry()
         executor = next(
             item
@@ -590,7 +799,7 @@ class RoutingContractTests(unittest.TestCase):
         with patch("maestro.registry.load_registry", return_value=registry):
             route = route_goal("Implement a CRUD endpoint", "medium")
 
-        self.assertEqual("frontier", route["model_route"]["selected_class"])
+        self.assertEqual("balanced", route["model_route"]["selected_class"])
         self.assertEqual("high", route["model_route"]["reasoning_effort"])
 
     def test_material_conflict_routes_only_one_explicit_lane(self) -> None:
@@ -638,6 +847,7 @@ class SkillPackageTests(unittest.TestCase):
         "maestro",
         "maestro-adapter-builder",
         "maestro-govern",
+        "maestro-registry-builder",
     )
 
     def test_each_skill_has_matching_metadata_and_resolvable_references(self) -> None:
@@ -677,6 +887,71 @@ class SkillPackageTests(unittest.TestCase):
                     yaml_text,
                     rf"(?m)^  allow_implicit_invocation: {expected}$",
                 )
+
+    def test_expertise_packs_share_authority_and_evaluation_contracts(
+        self,
+    ) -> None:
+        authority_begin = "<!-- MAESTRO:EXPERTISE-AUTHORITY:BEGIN -->"
+        authority_end = "<!-- MAESTRO:EXPERTISE-AUTHORITY:END -->"
+        pack_by_skill = {
+            pack["skill_id"]: pack
+            for pack in load_registry()["expertise_packs"]
+        }
+        for skill_id in (
+            "maestro-product-design",
+            "maestro-marketing",
+            "maestro-software-qa",
+        ):
+            with self.subTest(skill=skill_id):
+                root = ROOT / "skills" / skill_id
+                skill = (root / "SKILL.md").read_text(encoding="utf-8")
+                self.assertEqual(1, skill.count(authority_begin))
+                self.assertEqual(1, skill.count(authority_end))
+                suite = json.loads(
+                    (root / "evals/cases.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    "maestro_expertise_eval_v2",
+                    suite["schema_version"],
+                )
+                self.assertTrue(
+                    {"normal", "edge", "non-trigger"}.issubset(
+                        {case["stratum"] for case in suite["cases"]}
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        case["observable_criteria"]
+                        and case["forbidden_behaviors"]
+                        for case in suite["cases"]
+                    )
+                )
+                artifact = suite["evaluation_artifact"]
+                self.assertEqual("evals/results.json", artifact["path"])
+                self.assertEqual(
+                    artifact["sha256"],
+                    file_sha256(root / artifact["path"]),
+                )
+                sources = json.loads(
+                    (root / "evidence/sources.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(
+                    "maestro_expertise_sources_v1",
+                    sources["schema_version"],
+                )
+                covered = {
+                    guide_id
+                    for source in sources["sources"]
+                    for guide_id in source["used_by"]
+                }
+                required = {
+                    guide["guide_id"]
+                    for guide in pack_by_skill[skill_id]["guides"]
+                    if guide["freshness"] != "volatile"
+                }
+                self.assertEqual(set(), required - covered)
 
     def test_generic_runtime_and_skills_have_no_project_or_home_path_leakage(
         self,
@@ -722,6 +997,15 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("Do not let same-run evidence activate a Convention", text)
         self.assertIn("global_harness_candidates", text)
         self.assertIn("maestro record", text)
+        self.assertIn("maestro observe desktop", text)
+        self.assertIn("management_check.global_promotion_prompts", text)
+        self.assertIn(
+            "distinct eligible selections are a recommendation to ask",
+            text,
+        )
+        self.assertIn("never\n      promote automatically", text)
+        self.assertIn("default its actual Executor", text)
+        self.assertIn("worker-only total", text)
         self.assertIn("`NEEDS_DECISION` instead of convention-writing", text)
         self.assertIn("$reference-research-team", text)
         self.assertIn("$orchestrated-work-session", text)

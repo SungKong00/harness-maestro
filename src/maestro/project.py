@@ -103,7 +103,7 @@ def _docs_index(core_documents: dict[str, str]) -> str:
     return f"""---
 maestro_doc: 1
 id: project-docs-index
-type: index
+type: map
 status: active
 authority: repository
 owner: project
@@ -128,7 +128,7 @@ Create directories only when the first real document needs them:
 - `research/` — adopted research briefs and source provenance
 - `archive/` — superseded material; excluded from default retrieval
 
-Run `maestro docs --repo . --task "<goal>" --json` to select relevant documents without loading the full tree.
+Run `maestro docs --repo . --task "<goal>" --json` to select relevant documents without loading the full tree. Read `required_documents` by default; open `optional_documents` only when the task enters that research or plan boundary.
 Use returned `selected_conventions` as implementation and verification criteria. No matching convention is not a blocker.
 """
 
@@ -208,6 +208,34 @@ tags: [documentation, governance, lifecycle]
 # Document lifecycle
 
 Keep operational events in JSONL under the configured state root. Promote content to Markdown only when it is reusable, evidence-backed, owned, and not already represented by an active document.
+
+Active Markdown uses this minimum frontmatter:
+
+```yaml
+---
+maestro_doc: 1
+id: project-unique-id
+type: architecture
+status: active
+authority: repository
+owner: project
+summary: One searchable sentence.
+---
+```
+
+Required fields are `id`, `type`, `status`, `authority`, `owner`, and `summary`.
+Convention documents also declare stable `topic`, `scope`, `last_verified`,
+`supersedes`, and `sensitivity` metadata. Use `maestro convention draft` to
+preview a structured inactive draft; applying the reviewed plan never activates it.
+Use `draft` while project facts are incomplete and `active` only after they have
+been checked. Supported status values are `draft`, `active`, `superseded`,
+`deprecated`, and `archived`. Supported authority values are `repository`,
+`external-snapshot`, `generated`, and `historical`.
+
+For an existing Markdown file, keep its body unchanged and add metadata manually.
+Then run `maestro status`, review and apply the reported `maestro upgrade` plan
+so only the user-owned baseline advances, and finish with
+`maestro doctor --strict`.
 
 When `.maestro/project.json` enables `verified-project-conventions`, a reusable project rule may be recorded automatically as a candidate. Same-run implementation success does not activate it. Create or update at most one active Convention only after an explicit owner decision or an accepted held-out evaluation. Security policy, external contracts, data policy, irreversible decisions, and global Harness components require a separate decision or candidate review.
 
@@ -451,6 +479,10 @@ def _project_state(repo: Path, inspection: dict[str, Any]) -> dict[str, Any]:
         "adapters": ["generic-repo"],
         "profiles": inspection["profiles_detected"],
         "commands": inspection["candidate_commands"],
+        "verification_commands": [],
+        "expertise": {
+            "active_pack_paths": [],
+        },
         "approval_required_for": CORE_APPROVAL_GATES,
     }
 
@@ -519,6 +551,11 @@ def _desired_seed_files(
         updated_project["adapters"] = ["generic-repo"]
         updated_project["profiles"] = inspection["profiles_detected"]
         updated_project["commands"] = inspection["candidate_commands"]
+        updated_project.setdefault("verification_commands", [])
+        updated_project.setdefault(
+            "expertise",
+            {"active_pack_paths": []},
+        )
         existing_approval_gates = updated_project.get("approval_required_for")
         if not isinstance(existing_approval_gates, list) or not all(
             isinstance(item, str) and bool(item.strip())
@@ -1049,3 +1086,47 @@ def git_ignored(repo: Path, relative_path: str) -> bool | None:
     if result.returncode == 1:
         return False
     return None
+
+
+def git_indexed_paths(
+    repo: Path,
+    relative_paths: list[str],
+) -> set[str] | None:
+    """Return repository-relative paths present in Git's index.
+
+    ``None`` means the directory is not a Git worktree or Git is unavailable.
+    An empty set means Git is available but none of the requested paths are
+    indexed. Index membership deliberately does not claim that a path has
+    already been committed or pushed.
+    """
+
+    if not relative_paths:
+        return set()
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", *relative_paths],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return {
+        item.decode("utf-8", errors="surrogateescape")
+        for item in result.stdout.split(b"\0")
+        if item
+    }

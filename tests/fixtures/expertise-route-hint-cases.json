@@ -1,0 +1,86 @@
+[
+  {
+    "case_id": "content-claim-with-page-path",
+    "goal": "실제 시공 수치에 맞게 메인 문구를 고쳐줘",
+    "risk": "medium",
+    "work_kinds": ["content-claim"],
+    "affected_paths": ["src/pages/index.astro"],
+    "baseline_pack_id": null,
+    "baseline_failure": "miss",
+    "expected_pack_id": "marketing"
+  },
+  {
+    "case_id": "security-without-security-keywords",
+    "goal": "이 동작을 허용할 사람의 범위를 바꿔줘",
+    "risk": "medium",
+    "work_kinds": ["security-sensitive"],
+    "affected_paths": [],
+    "baseline_pack_id": null,
+    "baseline_failure": "miss",
+    "expected_pack_id": "security-engineering"
+  },
+  {
+    "case_id": "software-structure-without-architecture-keywords",
+    "goal": "두 페이지에서 같은 의미인 부분만 함께 쓰게 정리해줘",
+    "risk": "medium",
+    "work_kinds": ["software-structure"],
+    "affected_paths": ["src/site/page-contracts.ts"],
+    "baseline_pack_id": "product-design",
+    "baseline_failure": "wrong-selection",
+    "expected_pack_id": "software-engineering"
+  },
+  {
+    "case_id": "backend-path-does-not-route",
+    "goal": "내부 이름을 정리해줘",
+    "risk": "medium",
+    "work_kinds": [],
+    "affected_paths": ["src/pages/internal.ts"],
+    "baseline_pack_id": null,
+    "baseline_failure": "none",
+    "expected_pack_id": null
+  },
+  {
+    "case_id": "normal-conflict-warns-and-continues",
+    "goal": "홈 화면을 개선해줘",
+    "risk": "medium",
+    "work_kinds": ["user-interface", "content-claim"],
+    "affected_paths": ["src/pages/index.astro"],
+    "baseline_pack_id": "product-design",
+    "baseline_failure": "conflict-unreported",
+    "expected_pack_id": "product-design",
+    "expected_warning": "EXPERTISE_HINTS_AMBIGUOUS"
+  },
+  {
+    "case_id": "normal-explicit-override-warns-and-wins",
+    "goal": "이 페이지를 검토해줘",
+    "risk": "low",
+    "work_kinds": ["content-claim"],
+    "affected_paths": ["src/pages/index.astro"],
+    "explicit_pack_id": "product-design",
+    "baseline_pack_id": "product-design",
+    "baseline_failure": "override-unreported",
+    "expected_pack_id": "product-design",
+    "expected_warning": "EXPERTISE_OVERRIDE_CONFLICT"
+  },
+  {
+    "case_id": "high-risk-conflict-stops",
+    "goal": "운영 전 홈 화면의 위험한 변경을 검토해줘",
+    "risk": "high",
+    "work_kinds": ["user-interface", "content-claim"],
+    "affected_paths": ["src/pages/index.astro"],
+    "baseline_pack_id": "product-design",
+    "baseline_failure": "high-risk-conflict-unreported",
+    "expected_error": "EXPERTISE_ROUTING_CONFLICT_HIGH_RISK"
+  },
+  {
+    "case_id": "critical-explicit-conflict-stops",
+    "goal": "출시 직전 문구 변경을 검토해줘",
+    "risk": "critical",
+    "work_kinds": ["content-claim"],
+    "affected_paths": [],
+    "explicit_pack_id": "product-design",
+    "baseline_pack_id": null,
+    "baseline_failure": "high-risk-override-conflict-unreported",
+    "expected_error": "EXPERTISE_ROUTING_CONFLICT_HIGH_RISK"
+  }
+]

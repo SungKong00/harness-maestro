@@ -1,0 +1,97 @@
+{
+  "schema_version": "maestro_expertise_eval_v2",
+  "expertise_pack_id": "technical-seo",
+  "evaluated_on": "2026-07-28",
+  "cases": [
+    {
+      "case_id": "normal-crawl-index",
+      "goal": "새로 배포한 상품 상세 페이지가 Google 검색에 잡히지 않는다. robots.txt, noindex, 렌더링, 내부 링크와 sitemap을 포함한 기술 SEO 진단 계획을 만들어줘",
+      "stratum": "normal",
+      "expected_pack_id": "technical-seo",
+      "expected_guides": [
+        "crawlability-and-indexability",
+        "seo-measurement-and-verification"
+      ],
+      "expected_mode": "reuse",
+      "observable_criteria": [
+        "Selects crawlability and SEO verification Guides",
+        "Separates crawl, render, index, and reporting evidence"
+      ],
+      "forbidden_behaviors": [
+        "Treats sitemap submission or a site query as indexing proof"
+      ]
+    },
+    {
+      "case_id": "normal-canonical-appearance",
+      "goal": "필터 파라미터로 중복 URL이 생기는 쇼핑몰에서 canonical, redirect, sitemap, title, meta description과 Product structured data 전략을 설계해줘",
+      "stratum": "normal",
+      "expected_pack_id": "technical-seo",
+      "expected_guides": [
+        "canonical-url-lifecycle",
+        "search-appearance-and-structured-data",
+        "crawlability-and-indexability",
+        "seo-measurement-and-verification"
+      ],
+      "expected_mode": "reuse",
+      "observable_criteria": [
+        "Selects canonical lifecycle and search appearance Guides",
+        "Requires consistent URL signals and visible structured-data truth"
+      ],
+      "forbidden_behaviors": [
+        "Promises an exact snippet, rich result, or ranking"
+      ]
+    },
+    {
+      "case_id": "edge-cwv-rendering",
+      "goal": "JavaScript 렌더링 페이지에서 LCP가 느리고 이미지와 웹폰트 로딩 때 화면이 흔들리며 hydration 후 canonical과 robots 값도 바뀐다. 개선 및 검증 계획을 세워줘",
+      "stratum": "edge",
+      "expected_pack_id": "technical-seo",
+      "expected_guides": [
+        "crawlability-and-indexability",
+        "canonical-url-lifecycle",
+        "web-performance-and-page-experience",
+        "seo-measurement-and-verification"
+      ],
+      "expected_mode": "reuse",
+      "observable_criteria": [
+        "Selects at most four Guides covering rendered directives, canonical state, Core Web Vitals, and verification",
+        "Requires rendered output plus field and lab performance evidence"
+      ],
+      "forbidden_behaviors": [
+        "Treats one Lighthouse score as field Core Web Vitals or ranking proof"
+      ]
+    },
+    {
+      "case_id": "non-trigger-marketing-copy",
+      "goal": "타깃 고객이 검색할 표현을 조사해 랜딩 페이지 키워드와 헤드라인, 전환 카피를 작성해줘",
+      "stratum": "non-trigger",
+      "expected_pack_id": null,
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "observable_criteria": [
+        "Does not select technical-seo for keyword research and conversion copy"
+      ],
+      "forbidden_behaviors": [
+        "Hijacks the marketing decision family"
+      ]
+    },
+    {
+      "case_id": "overlap-motion-performance",
+      "goal": "스크롤 애니메이션의 프레임 드롭과 observer teardown 누수를 진단해줘",
+      "stratum": "overlap",
+      "expected_pack_id": null,
+      "expected_guides": [],
+      "expected_mode": "reuse",
+      "observable_criteria": [
+        "Does not select technical-seo for animation-only runtime work"
+      ],
+      "forbidden_behaviors": [
+        "Replaces interactive-web-motion performance guidance"
+      ]
+    }
+  ],
+  "evaluation_artifact": {
+    "path": "evals/results.json",
+    "sha256": "cca34da449eaeb767243d4d083beb783e57e05c23916682e7259d89f9e3c346f"
+  }
+}

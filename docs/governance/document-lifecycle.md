@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: 활성 Markdown, 외부 원본, 실행 기록과 archive를 분리하는 문서 생명주기.
 scope: [docs, .maestro/state]
-last_verified: 2026-07-24
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -42,9 +42,18 @@ sensitivity: internal
 | 채택된 조사 | `docs/research/` | claim이 필요할 때 |
 | 과거 자료 | `docs/archive/` | 기본 제외 |
 | 실행 이벤트·비용 | `.maestro/state/**/*.jsonl` | 집계 시에만 |
+| 전문성 후보 | `.maestro/state/candidates/expertise/` | 평가·승격 검토 때만 |
+| 활성 전문가 절차 | `skills/<expertise-skill>/SKILL.md` | pack 선택 때만 |
+| 세부 판단 기준 | `skills/<expertise-skill>/references/` | guide 선택 때만 |
+| source·eval | `skills/<expertise-skill>/{evidence,evals}/` | refresh·평가 때만 |
 
 디렉터리는 실제 문서가 처음 생길 때 만든다. 빈 전문 부서나 빈 분류 폴더를 미리
 생성하지 않는다.
+
+Expertise Pack은 프로젝트 사실 문서와 다른 배포 단위다. 정상 작업은 Skill 본문과
+선택된 guide만 열며, source manifest와 evaluation을 항상 prompt에 넣지 않는다.
+runtime candidate와 research artifact는 검증 없이 `docs/`나 active Skill로
+복사하지 않는다.
 
 ## Frontmatter 계약
 
@@ -59,6 +68,7 @@ status: active
 authority: repository
 owner: backend
 summary: API 오류 응답의 현재 규칙.
+topic: api-error-contract
 scope: [server/api]
 last_verified: 2026-07-24
 supersedes: []
@@ -69,8 +79,10 @@ sensitivity: internal
 고정 의미는 다음과 같다.
 
 - `id`: 저장소 안에서 안정적이고 유일한 문서 ID
-- `type`: `map`, `architecture`, `governance`, `decision`, `convention`, `plan`,
-  `runbook`, `analysis`, `evidence`, `external-snapshot` 중 하나
+- `type`: `map`, `project`, `architecture`, `governance`, `decision`,
+  `convention`, `plan`, `runbook`, `analysis`, `evidence`,
+  `external-snapshot` 중 하나. 기존 init의 `index`는 읽기 호환만 유지하고 새 문서는
+  `map`을 사용한다.
 - `status`: `draft`, `active`, `superseded`, `deprecated`, `archived` 중 하나
 - `authority`: `repository`, `external-snapshot`, `generated`, `historical` 중 하나
 
@@ -81,23 +93,42 @@ sensitivity: internal
 `/`가 없는 값은 topic scope로 취급한다.
 - `owner`: 검토·교체 책임
 - `summary`: 문서를 열지 않고도 선택할 수 있는 한 문장
+- `topic`: Convention의 의미상 단일 권위를 판별하는 안정적인 소문자 slug
 - `scope`: 적용 경로 또는 주제
 - `last_verified`: 내용과 실제 상태를 마지막으로 대조한 날짜
 - `supersedes`: 대체한 문서 ID
 - `sensitivity`: 배포·저장 범위 판단용 분류
 
-v0 `doctor`는 활성 문서의 `id`, `type`, `status`, `authority`, `owner`, `summary`,
-중복 활성 ID와 상대 링크를 검사한다. 나머지 enum·날짜·scope 의미 검사는 현재 정책
-계약이며, 완전한 schema 검증은 후속 후보이다. 구현된 검사보다 강한 보장을 주장하지
-않는다.
+v0 `doctor`는 문서의 필수 frontmatter, type·status·authority enum, 중복 활성 ID와
+상대 링크를 검사한다. Convention에는 `topic`, `scope`, `last_verified`,
+`supersedes`, `sensitivity`도 검사한다. 기존 Convention의 새 필드 누락과 형식 문제는
+우선 `WARN`으로 도입하고, 같은 `topic`의 활성 권위 중복과 존재하지 않는
+`supersedes` 대상은 `FAIL`로 처리한다. 규칙이 실제로 좋은지, 행동 가능하고 근거가
+충분한지는 Doctor가 아니라 생성·변경·승격 시의 별도 의미 검토가 담당한다.
+
+계획 문서는 위치와 상태도 검사한다. `docs/plans/active/**`는 `type: plan`,
+`status: active`, `docs/plans/completed/**`는 `type: plan`,
+`status: archived`여야 하며 불일치는 `DOC_PLAN_LIFECYCLE` 실패다. 단계·결정·blocker
+또는 handoff가 현재 작업을 넘어 유지될 때만 계획 문서를 만들고, Assignment 진행률과
+token·시간 같은 실행 상태는 `.maestro/state/`에 둔다.
 
 `init`은 기존 Markdown에 이 계약이 없더라도 본문을 자동 변경하지 않고 누락 필드를
 경고한다. `maestro docs`는 configured project·architecture 문서가 draft, missing,
-untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 문서가
-선택 개수나 byte 예산 때문에 빠진 경우에도 `sufficient`라고 표시하지 않는다. Convention이
+untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고한다. 관련 **필수**
+문서가 선택 개수나 byte 예산 때문에 빠진 경우에도 `sufficient`라고 표시하지 않는다.
+`evidence`와 `plan`은 기본적으로 `optional_documents` metadata로만 반환되며, 작업이
+해당 research·plan 경계를 명시적으로 열었을 때 필수 목록으로 승격한다. 열리지 않은
+선택 후보 자체는 근거 부족으로 세지 않는다. Convention이
 선택되지 않은 `none` 상태 자체는 근거 공백이 아니다. 사용자가 frontmatter를 수동
 추가한 뒤에는 `maestro upgrade` 미리보기에서 검토한 user-owned 문서 기준선만
 변경되는지 확인해 적용하고 strict Doctor를 다시 실행한다.
+
+반복 `--path`로 전달한 정확한 `docs/**/*.md` target은 일반 ranking보다 먼저
+고정한다. 정확히 요청된 Convention 문서는 그 문서 자체의 code scope가 다르더라도
+선택한다. 완료 계획은 정확히 요청됐고 `docs/plans/completed/` 아래
+`type: plan`, `status: archived`일 때만 읽는다. 다른 inactive 문서와
+`docs/archive/`는 계속 제외하며, exact target이 없거나 예산에서 빠지면 근거를
+`insufficient`로 표시한다.
 
 ## 생성부터 아카이브까지
 
@@ -113,6 +144,84 @@ untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고�
    참조 검색, 복구 경로를 확인한 뒤 수행한다.
 
 문서 개수가 임계치를 넘었다는 이유만으로 삭제하거나 규칙을 승격하지 않는다.
+
+Convention은 다음 판단표를 사용한다.
+
+| 상황 | 판단 |
+|---|---|
+| 같은 topic과 같은 authority의 규칙 보정 | typed `convention update`; 기존 `supersedes`와 `sensitivity` 보존 |
+| 새 topic 또는 authority의 실질 변경 | owner 또는 ADR 결정 후 별도 권위와 명시적 supersession |
+| 낡았지만 역사·감사 가치가 있음 | active index에서 제거하고 archive |
+| 일반 중복 | delete보다 supersede/archive 우선 |
+| 비밀·법적 요구·Git history 정리가 필요 | `NEEDS_DECISION`; 파일 삭제가 history purge는 아님 |
+
+전용 Convention supersede·archive·delete·rollback CLI는 현재 보류 상태다. free-form
+편집으로 이를 자동화하지 않는다.
+
+새 Convention은 다음처럼 미리보기 plan을 만든 뒤 같은 plan만 적용할 수 있다.
+
+```bash
+maestro_plan="$(mktemp -t maestro-convention.XXXXXX.json)"
+maestro convention draft --repo . \
+  --topic api-error-contract \
+  --summary "API 오류 응답의 현재 규칙." \
+  --scope src/api --owner backend \
+  --rule "API handler는 문서화된 오류 envelope를 사용한다." \
+  --applies-when "HTTP API handler를 변경할 때" \
+  --does-not-apply "외부 계약이 없는 내부 batch" \
+  --evidence "현재 OpenAPI와 contract test" \
+  --verification "python -m unittest tests.test_api_contract" \
+  --json > "$maestro_plan"
+maestro convention draft --repo . --apply-plan "$maestro_plan" --json
+rm -- "$maestro_plan"
+```
+
+적용 결과는 항상 `draft`이고 활성 선택에서 제외된다. 기존 topic을 자동 덮어쓰거나
+문서 지도에 자동 연결하지 않는다.
+
+별도 작업에서 owner 결정 또는 held-out 평가와 repository-local 검증 artifact가
+준비되면 활성화도 같은 preview/apply 경계를 사용한다.
+
+held-out을 만들 때는 같은 명령에서 `--verification-artifact`를 생략하면 쓰기 없는
+`maestro_convention_evaluation_request_v1`이 반환된다. Host는 여기에 나온 정확한
+`candidate_sha256`, `source_revision`, 필수 사례 종류와 schema 경로로 평가 artifact를
+만든 뒤 아래처럼 다시 preview한다. 따라서 Skill이나 Adapter가 후보 본문 렌더링
+규칙을 재구현할 필요가 없다.
+
+```bash
+maestro_activate="$(mktemp -t maestro-convention-activate.XXXXXX.json)"
+maestro convention activate --repo . \
+  --topic api-error-contract \
+  --basis held_out_evaluation \
+  --approval-ref held_out_evaluation:api-contract-v1 \
+  --verification-artifact docs/evidence/api-contract-v1.json \
+  --json > "$maestro_activate"
+maestro convention activate --repo . \
+  --apply-plan "$maestro_activate" --json
+rm -- "$maestro_activate"
+```
+
+활성화 plan은 draft 본문, 검증 artifact의 경로·digest, 현재 Git 작업상태와 문서
+entrypoint 변경을 함께 고정한다. `owner_decision`을 쓰면
+`--decision-summary`가 필수다. 적용 전 어느 하나라도 바뀌면 stale로 거부한다.
+`.maestro/state/`는 정리 가능한 runtime 상태이므로 활성 권위의 검증 artifact로
+사용하지 않는다. JSON artifact는 문서 검색 대상이 아닌 `docs/evidence/` 같은
+durable repository 경로에 둔다.
+
+`held_out_evaluation`은
+`maestro_convention_held_out_evaluation_v1` 계약을 만족해야 한다. 정확한 후보
+SHA-256, 현재 source revision, case suite SHA-256, `held_out: true`, 비어 있지 않은
+positive·negative_scope·regression 사례, 사례별 assertion·결과·evidence,
+critical regression 수, 성공한 verifier command·시각, tool·model·budget 조건을
+기록한다. 모든 사례가 통과하지 않거나 후보·suite digest가 다르면 preview와 apply가
+모두 실패한다. `owner_decision`은 이 평가를 흉내 내지 않으며
+`owner_attested`, 통과한 held-out 근거는 `held_out_verified`로 구분한다.
+
+활성 topic 수정은 `maestro convention update`에서 현재 authoring 필드를 모두 다시
+제시하고 같은 승인·검증 경계를 거친다. 한 명령은 한 topic만 바꾸며, 기존 scope에
+새 범위를 추가하려면 `--allow-scope-expansion`을 명시해야 한다. 현재 명령은
+supersession을 추론하지 않는다. 새 topic으로 권위를 교체하거나 scope 의미가 크게
+달라지는 경우에는 ADR과 수동 supersede 검토를 먼저 수행한다.
 
 ## Markdown으로 승격할 기준
 
@@ -134,8 +243,11 @@ untyped, inactive 또는 invalid이면 이를 핵심 근거 공백으로 보고�
 positive·negative-scope·regression 사례의 `held_out_evaluation`이 승인된 뒤에만 기존
 권위를 갱신하거나 `docs/conventions/<topic>.md` 하나를 만든다.
 활성 Convention을 기록하는 RunReceipt는 Convention 파일과 repository-local 검증
-산출물의 SHA-256을 함께 저장한다. `owner_decision`은 사용자가 명시한 결정을 짧게
-요약하고, `held_out_evaluation`은 제안 사례와 분리된 평가 산출물을 가리킨다.
+산출물의 SHA-256 및 assurance를 함께 저장한다. `owner_decision`은 사용자가 명시한
+결정을 짧게 요약하고, `held_out_evaluation`은 위 의미 검증을 다시 통과한 평가
+산출물을 가리킨다. 구현 RunReceipt의 선택 digest와 `convention_usage`는 각
+Convention을 `applied`, `not_applicable`, `waived`, `conflict`로 분리해 기록한다.
+`waived`는 owner 결정 ref가 필요하고 열린 `conflict`가 있으면 완료로 기록할 수 없다.
 
 정적 detector가 재현 가능하게 찾은 기술 profile, 고정 상태 필드, manifest command
 후보는 `init`·`upgrade` 계획으로 동기화할 수 있다. 이 경로에는 LLM이 작성한 규칙,

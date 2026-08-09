@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/convention-lifecycle-plan.schema.json",
+  "title": "Harness Maestro Convention Lifecycle Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "repo_realpath",
+    "base_revision",
+    "topic",
+    "basis",
+    "approval_strength",
+    "approval_ref",
+    "decision_summary",
+    "verification_artifact",
+    "operations",
+    "warnings",
+    "writes_performed",
+    "plan_id",
+    "plan_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_convention_lifecycle_plan_v1"
+    },
+    "command": {
+      "enum": [
+        "convention-activate",
+        "convention-update"
+      ]
+    },
+    "repo_realpath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_revision": {
+      "type": "object"
+    },
+    "topic": {
+      "$ref": "#/$defs/id"
+    },
+    "basis": {
+      "enum": [
+        "owner_decision",
+        "held_out_evaluation"
+      ]
+    },
+    "approval_strength": {
+      "enum": [
+        "owner_attested",
+        "held_out_verified"
+      ]
+    },
+    "approval_ref": {
+      "type": "string",
+      "pattern": "^(owner_decision|held_out_evaluation):\\S.+$"
+    },
+    "decision_summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500
+    },
+    "verification_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "op",
+          "path",
+          "before_sha256",
+          "after_sha256",
+          "content"
+        ],
+        "properties": {
+          "op": {
+            "enum": [
+              "create",
+              "replace"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "before_sha256": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/digest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after_sha256": {
+            "$ref": "#/$defs/digest"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "writes_performed": {
+      "const": false
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{20}$"
+    },
+    "plan_digest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "owner_decision"
+          }
+        },
+        "required": [
+          "basis"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approval_strength": {
+            "const": "owner_attested"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "approval_strength": {
+            "const": "held_out_verified"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

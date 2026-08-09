@@ -1,0 +1,13 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "overlap-scroll-motion",
+  "baseline_observation": "Product Design v6 defines the interaction job while handing choreography and runtime mechanics to interactive-web-motion.",
+  "candidate_observation": "Product Design v7 preserves this division and does not use Product Design assurance as motion or performance expertise.",
+  "evidence_refs": [
+    "candidate:candidate.json:not-for",
+    "candidate:SKILL.md:motion-handoff",
+    "candidate:interaction-responsive-accessibility:reduced-motion",
+    "candidate:decision-map:motion",
+    "route-result:overlap-scroll-motion"
+  ]
+}

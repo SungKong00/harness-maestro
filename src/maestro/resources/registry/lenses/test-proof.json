@@ -30,10 +30,15 @@
     "a mock interaction is presented as proof of externally visible behavior",
     "a unit test is presented as proof of framework wiring or production behavior"
   ],
+  "non_exhaustive": true,
+  "escalate_when": [
+    "material evidence identifies a failure outside this Lens concern",
+    "an affected artifact or boundary has no selected Lens owner",
+    "required evidence is unavailable"
+  ],
   "finding_limits": {
     "max_findings": 5,
     "minimum_severity": "medium"
   },
   "output": "FindingPacket"
 }
-

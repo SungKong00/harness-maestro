@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-reduced-motion-performance",
+  "baseline_observation": "The baseline scrub, pin, and parallax review selected no Expertise Pack and no motion-specific accessibility or runtime rubric.",
+  "candidate_observation": "The candidate selects accessibility, runtime verification, and motion intent within the four-Guide route limit.",
+  "evidence_refs": [
+    "route-replay:edge-reduced-motion-performance",
+    "baseline:.maestro/state/work/interactive-web-motion/baseline.json"
+  ]
+}

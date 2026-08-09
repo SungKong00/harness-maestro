@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/expertise-evaluation.schema.json",
+  "title": "Harness Maestro Expertise Evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expertise_pack_id",
+    "evaluated_on",
+    "evaluation_artifact",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_expertise_eval_v2"
+    },
+    "expertise_pack_id": {
+      "$ref": "#/$defs/id"
+    },
+    "evaluated_on": {
+      "type": "string",
+      "format": "date"
+    },
+    "evaluation_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "evals/results.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "stratum",
+          "goal",
+          "expected_pack_id",
+          "expected_mode",
+          "expected_guides",
+          "observable_criteria",
+          "forbidden_behaviors"
+        ],
+        "properties": {
+          "case_id": {
+            "$ref": "#/$defs/id"
+          },
+          "stratum": {
+            "enum": [
+              "normal",
+              "edge",
+              "non-trigger",
+              "overlap"
+            ]
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_pack_id": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_mode": {
+            "enum": [
+              "reuse",
+              "contextualize",
+              "refresh",
+              "discover"
+            ]
+          },
+          "expected_guides": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "observable_criteria": {
+            "$ref": "#/$defs/nonEmptyStrings"
+          },
+          "forbidden_behaviors": {
+            "$ref": "#/$defs/nonEmptyStrings"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

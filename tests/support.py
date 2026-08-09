@@ -28,6 +28,108 @@ def apply_fresh_init(repo: Path) -> dict[str, Any]:
     return apply_plan(plan_path, repo)
 
 
+def record_managed_completion_graph(
+    repo: Path,
+    *,
+    observation_id: str,
+    run_id: str,
+    plan: dict[str, Any],
+    prefix: str = "fixture-completion",
+) -> None:
+    """Close a test observation with Assignment work and one final synthesis."""
+
+    from maestro.observations import (
+        observation_receipt_fields,
+        record_work_finish,
+        record_work_start,
+    )
+
+    assignment_work: dict[str, str] = {}
+    for assignment in plan["assignments"]:
+        assignment_id = assignment["assignment_id"]
+        work_id = f"{prefix}-{assignment_id}"
+        record_work_start(
+            repo,
+            observation_id=observation_id,
+            run_id=run_id,
+            work_id=work_id,
+            assignment_id=assignment_id,
+            kind="synthesis",
+            role="fixture Assignment completion",
+            executor_id=assignment["executor_id"],
+            task_summary=f"{assignment_id} terminal fixture work를 기록합니다.",
+            read_only=assignment["read_only"],
+            source="host_adapter",
+            depends_on_work_ids=[
+                assignment_work[dependency]
+                for dependency in assignment["depends_on"]
+            ],
+        )
+        record_work_finish(
+            repo,
+            observation_id=observation_id,
+            run_id=run_id,
+            work_id=work_id,
+            status="completed",
+            result_summary=f"{assignment_id} fixture work가 완료되었습니다.",
+            evidence_refs=[f"tests:completion:{assignment_id}"],
+        )
+        assignment_work[assignment_id] = work_id
+
+    spans = observation_receipt_fields(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+    )["work_spans"]
+    work_ids = {span["work_id"] for span in spans}
+    non_leaves = {
+        predecessor
+        for span in spans
+        for predecessor in (
+            span["parent_work_id"],
+            span["followup_of_work_id"],
+            *span["depends_on_work_ids"],
+            *span["joins_work_ids"],
+        )
+        if predecessor in work_ids
+    }
+    leaves = sorted(work_ids - non_leaves)
+    final_work_id = f"{prefix}-final"
+    record_work_start(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+        work_id=final_work_id,
+        assignment_id=None,
+        kind="synthesis",
+        role="fixture final synthesis",
+        executor_id="fixture-finalizer",
+        task_summary="모든 실행 leaf를 하나의 최종 결과로 합성합니다.",
+        read_only=True,
+        source="host_adapter",
+        joins_work_ids=leaves,
+        outcome={
+            "finding_summary": None,
+            "conclusion": "모든 fixture 실행 leaf가 소비되었습니다.",
+            "decision": "Fixture execution graph를 종료합니다.",
+            "next_action": "finish",
+            "consumed_work_ids": leaves,
+            "handoff": None,
+            "artifacts": [],
+            "verification": None,
+        },
+    )
+    record_work_finish(
+        repo,
+        observation_id=observation_id,
+        run_id=run_id,
+        work_id=final_work_id,
+        status="completed",
+        result_summary="Fixture final synthesis가 완료되었습니다.",
+        evidence_refs=["tests:completion:final"],
+    )
+
+
 def check_by_id(report: dict[str, Any], check_id: str) -> dict[str, str]:
     return next(item for item in report["checks"] if item["id"] == check_id)
 
@@ -47,7 +149,12 @@ def canonical_document(
         f"status: {status}\n"
         "authority: repository\n"
         "owner: test\n"
+        f"topic: {doc_id}\n"
+        "scope: [test]\n"
         f"summary: {summary}\n"
+        "last_verified: 2026-07-24\n"
+        "supersedes: []\n"
+        "sensitivity: internal\n"
         "---\n\n"
         f"{body}"
     )
@@ -59,6 +166,93 @@ def file_snapshot(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file() and not path.is_symlink()
     }
+
+
+def application_work_span(
+    pack_id: str,
+    guide_ids: list[str],
+    *,
+    work_id: str = "implementation",
+) -> dict[str, object]:
+    from maestro.work import complete_work_span, new_work_span
+
+    load_observation = (
+        {
+            "packs": [
+                {
+                    "expertise_pack_id": pack_id,
+                    "definition_digest": "a" * 64,
+                    "skill_id": f"maestro-{pack_id}",
+                    "skill_definition_digest": "b" * 64,
+                    "guide_ids": guide_ids,
+                    "loaded_guide_refs": [
+                        f"guide:{pack_id}:{guide_id}:" + "c" * 64
+                        for guide_id in guide_ids
+                    ],
+                }
+            ],
+            "load": {
+                "status": "host_loaded",
+                "evidence_refs": ["expertise-load:" + "d" * 64],
+            },
+            "application": {
+                "status": "not_reported",
+                "guide_ids": [],
+                "evidence_refs": [],
+            },
+        }
+        if guide_ids
+        else None
+    )
+    started = new_work_span(
+        work_id=work_id,
+        kind="implementation",
+        role="implementation",
+        executor_id="implementation-engineer",
+        task_summary="Apply selected Expertise criteria.",
+        read_only=False,
+        source="codex_app_server",
+        started_at="2026-07-24T00:00:00Z",
+        timing_evidence="current_host_clock",
+        source_binding={
+            "interface": "codex_app_server",
+            "version": "codex-app-server-test",
+            "schema_digest": "e" * 64,
+            "capability": "full_stream",
+            "correlation_id": f"source-{work_id}",
+            "event_coverage": "partial_stream",
+        },
+        expertise_pack_ids=[pack_id],
+        decision_guide_ids=guide_ids,
+        expertise_evidence=(
+            "host_loaded" if guide_ids else "selection_only"
+        ),
+        expertise_observation=load_observation,
+    )
+    if not guide_ids:
+        started.pop("allocation")
+        started.pop("expertise_observation")
+    return complete_work_span(
+        started,
+        status="completed",
+        result_summary="Applied the selected Expertise criteria.",
+        ended_at="2026-07-24T00:00:01Z",
+        duration_ms=1000,
+        evidence_refs=["tests:expertise-application"],
+        expertise_evidence="application_observed",
+        expertise_observation=(
+            {
+                **started["expertise_observation"],
+                "application": {
+                    "status": "observed",
+                    "guide_ids": guide_ids,
+                    "evidence_refs": ["tests:expertise-application"],
+                },
+            }
+            if guide_ids
+            else None
+        ),
+    )
 
 
 def event(

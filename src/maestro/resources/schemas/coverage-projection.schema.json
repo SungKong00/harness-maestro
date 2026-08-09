@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/coverage-projection.schema.json",
+  "title": "Harness Maestro typed Coverage projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "projection_id",
+    "coverage_id",
+    "plan_id",
+    "goal_digest",
+    "entries",
+    "writes_performed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "maestro_coverage_projection_v1"
+    },
+    "projection_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "coverage_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "plan_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "goal_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "writes_performed": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "allocation_kind",
+        "target_ref",
+        "evidence_kind",
+        "evidence_ref",
+        "evidence_digest",
+        "authority_ref",
+        "reason"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "allocation_kind": {
+          "enum": [
+            "project-fact",
+            "owner-decision",
+            "runtime-verification",
+            "checker",
+            "convention",
+            "deferred-explicit",
+            "out-of-scope-explicit"
+          ]
+        },
+        "target_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_kind": {
+          "enum": [
+            "repository-file",
+            "owner-attestation",
+            "planned-check"
+          ]
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "reason": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    }
+  }
+}

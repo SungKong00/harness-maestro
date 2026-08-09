@@ -1,0 +1,166 @@
+{
+  "default_guides": [
+    "threat-model-and-security-requirements"
+  ],
+  "dominance_triggers": [
+    "security engineering",
+    "threat model",
+    "authorization design",
+    "tenant isolation",
+    "security architecture",
+    "보안 엔지니어링",
+    "위협 모델",
+    "인가 설계",
+    "테넌트 격리",
+    "보안 아키텍처"
+  ],
+  "evaluation_suite": "evals/cases.json",
+  "expertise_pack_id": "security-engineering",
+  "guides": [
+    {
+      "freshness": "volatile",
+      "guide_id": "threat-model-and-security-requirements",
+      "summary": "Turn assets, trust boundaries, attackers, and abuse paths into scoped security requirements and residual-risk decisions.",
+      "triggers": [
+        "threat model",
+        "trust boundary",
+        "abuse case",
+        "security requirement",
+        "security architecture",
+        "위협 모델",
+        "신뢰 경계",
+        "오용 사례",
+        "보안 요구사항",
+        "보안 아키텍처"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "authentication-and-session-lifecycle",
+      "summary": "Choose authentication assurance, recovery, federation, session binding, timeout, reauthentication, and revocation from risk.",
+      "triggers": [
+        "authentication design",
+        "session lifecycle",
+        "oauth security",
+        "account recovery",
+        "인증 설계",
+        "세션 수명주기",
+        "OAuth 보안",
+        "계정 복구",
+        "OAuth 로그인 세션"
+      ]
+    },
+    {
+      "freshness": "volatile",
+      "guide_id": "authorization-and-tenant-isolation",
+      "summary": "Define subject-resource-action policy, ownership, tenant context, enforcement points, isolation, and privileged overrides.",
+      "triggers": [
+        "authorization design",
+        "tenant isolation",
+        "resource ownership",
+        "access control",
+        "인가 설계",
+        "테넌트 격리",
+        "리소스 소유권",
+        "접근 제어"
+      ]
+    },
+    {
+      "freshness": "volatile",
+      "guide_id": "untrusted-data-and-output-controls",
+      "summary": "Choose parsing, canonicalization, schema and semantic validation, parameterization, sanitization, and context-specific encoding at trust boundaries.",
+      "triggers": [
+        "input security",
+        "untrusted data",
+        "output encoding",
+        "file upload security",
+        "입력 보안",
+        "신뢰할 수 없는 데이터",
+        "출력 인코딩",
+        "파일 업로드 보안"
+      ]
+    },
+    {
+      "freshness": "volatile",
+      "guide_id": "secrets-and-key-lifecycle",
+      "summary": "Design secret and key classification, generation, storage, delivery, identity, scope, rotation, revocation, break-glass, and audit.",
+      "triggers": [
+        "secret management",
+        "key lifecycle",
+        "credential rotation",
+        "workload identity",
+        "비밀정보 관리",
+        "키 수명주기",
+        "자격증명 교체",
+        "워크로드 아이덴티티",
+        "비밀정보 교체"
+      ]
+    },
+    {
+      "freshness": "versioned",
+      "guide_id": "dependency-and-build-supply-chain",
+      "summary": "Choose supplier, dependency, integrity, isolated-build, provenance, vulnerability-response, and rollback requirements proportionate to risk.",
+      "triggers": [
+        "software supply chain",
+        "dependency security",
+        "build provenance",
+        "supplier due diligence",
+        "소프트웨어 공급망",
+        "의존성 보안",
+        "빌드 출처",
+        "공급자 실사"
+      ]
+    }
+  ],
+  "kind": "expertise-pack",
+  "portability": "global",
+  "research_policy": {
+    "contextualize_triggers": [
+      "current security advisory",
+      "current identity provider behavior",
+      "current compliance requirement",
+      "current cryptographic guidance",
+      "현재 보안 권고",
+      "현재 아이덴티티 공급자 동작",
+      "현재 규정 요구사항",
+      "현재 암호 지침"
+    ],
+    "default_mode": "reuse",
+    "refresh_triggers": [
+      "refresh security engineering expertise",
+      "update security engineering sources",
+      "보안 엔지니어링 전문성 갱신",
+      "보안 엔지니어링 출처 갱신"
+    ]
+  },
+  "schema_version": "maestro_expertise_pack_v1",
+  "skill_id": "maestro-security-engineering",
+  "source_manifest": "evidence/sources.json",
+  "status": "pilot",
+  "summary": "Evidence-backed security engineering criteria for threat requirements, identity and session lifecycle, authorization and tenant isolation, untrusted data, secrets, and software supply-chain decisions.",
+  "triggers": [
+    "security engineering",
+    "application security",
+    "threat model",
+    "authentication design",
+    "session security",
+    "authorization design",
+    "tenant isolation",
+    "secret management",
+    "input security",
+    "software supply chain",
+    "security architecture",
+    "보안 엔지니어링",
+    "애플리케이션 보안",
+    "위협 모델",
+    "인증 설계",
+    "세션 보안",
+    "인가 설계",
+    "테넌트 격리",
+    "비밀정보 관리",
+    "입력 보안",
+    "소프트웨어 공급망",
+    "보안 아키텍처"
+  ],
+  "version": 1
+}

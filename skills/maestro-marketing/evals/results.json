@@ -1,0 +1,60 @@
+{
+  "schema_version": "maestro_expertise_eval_results_v1",
+  "expertise_pack_id": "marketing",
+  "results": [
+    {
+      "case_id": "routine-positioning",
+      "observed_pack_id": "marketing",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "marketing-brief",
+        "positioning-message",
+        "claim-substantiation"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "unsupported-comparison",
+      "observed_pack_id": "marketing",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "claim-substantiation"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "current-customer-evidence",
+      "observed_pack_id": "marketing",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "customer-market-evidence"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "competitor-analysis",
+      "observed_pack_id": "marketing",
+      "observed_mode": "contextualize",
+      "observed_guides": [
+        "competitor-reference-analysis"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "campaign-measurement",
+      "observed_pack_id": "marketing",
+      "observed_mode": "reuse",
+      "observed_guides": [
+        "measurement-experiment"
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "visual-landing-page-nontrigger",
+      "observed_pack_id": "product-design",
+      "observed_mode": "reuse",
+      "observed_guides": [],
+      "verdict": "pass"
+    }
+  ]
+}

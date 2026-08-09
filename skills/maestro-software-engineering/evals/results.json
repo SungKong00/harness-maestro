@@ -1,0 +1,49 @@
+{
+  "expertise_pack_id": "software-engineering",
+  "results": [
+    {
+      "case_id": "normal-architecture-boundary",
+      "observed_guides": [
+        "architecture-boundaries-and-tradeoffs"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "software-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-compatible-change",
+      "observed_guides": [
+        "contracts-and-invariants",
+        "compatibility-and-change"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "software-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-ambiguous-retry",
+      "observed_guides": [
+        "state-concurrency-and-idempotency",
+        "failure-semantics-and-recovery"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "software-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-test-strategy",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-product-design",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    }
+  ],
+  "schema_version": "maestro_expertise_eval_results_v1"
+}

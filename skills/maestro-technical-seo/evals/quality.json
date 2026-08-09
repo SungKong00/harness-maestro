@@ -1,0 +1,137 @@
+{
+  "schema_version": "maestro_expertise_quality_eval_v1",
+  "expertise_pack_id": "technical-seo",
+  "evaluated_on": "2026-07-28",
+  "evaluator": {
+    "kind": "fresh-context",
+    "authoring_run_ref": "desktop:a339842d-0631-4c07-a860-0ae5b0bbe198:technical-seo",
+    "evaluation_run_ref": "subagent:019fa630-82bc-70f0-8460-acd3cd2723a8"
+  },
+  "cases": [
+    {
+      "case_id": "normal-crawl-index",
+      "artifact": {
+        "path": "evals/artifacts/normal-crawl-index.json",
+        "sha256": "2606edfdd41b7607a85116423b3edb5b6c1c8cef2ea2c13b43550ac0d85a9aad"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects crawlability and SEO verification Guides",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-crawl-index.json"
+        },
+        {
+          "criterion": "Separates crawl, render, index, and reporting evidence",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-crawl-index.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats sitemap submission or a site query as indexing proof",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-crawl-index.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-canonical-appearance",
+      "artifact": {
+        "path": "evals/artifacts/normal-canonical-appearance.json",
+        "sha256": "ddfa94e48655f26bfbda554a8c46b7639bb8b472519b4f74214b16d6e4f66705"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects canonical lifecycle and search appearance Guides",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-canonical-appearance.json"
+        },
+        {
+          "criterion": "Requires consistent URL signals and visible structured-data truth",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/normal-canonical-appearance.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Promises an exact snippet, rich result, or ranking",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/normal-canonical-appearance.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-cwv-rendering",
+      "artifact": {
+        "path": "evals/artifacts/edge-cwv-rendering.json",
+        "sha256": "6b33d8d0148a23877d2df9fe7f79b805a4826511af00f7542b763d649c2e9ae9"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Selects at most four Guides covering rendered directives, canonical state, Core Web Vitals, and verification",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-cwv-rendering.json"
+        },
+        {
+          "criterion": "Requires rendered output plus field and lab performance evidence",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/edge-cwv-rendering.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Treats one Lighthouse score as field Core Web Vitals or ranking proof",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/edge-cwv-rendering.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-marketing-copy",
+      "artifact": {
+        "path": "evals/artifacts/non-trigger-marketing-copy.json",
+        "sha256": "f273015806495fe667ec90cb4491554594753d8d28aae503a5cc2b0a1078081d"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Does not select technical-seo for keyword research and conversion copy",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/non-trigger-marketing-copy.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Hijacks the marketing decision family",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/non-trigger-marketing-copy.json"
+        }
+      ],
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-motion-performance",
+      "artifact": {
+        "path": "evals/artifacts/overlap-motion-performance.json",
+        "sha256": "0d9213fa0a8e6d6184995ae2877c4d91728fb8b9060437b6083cd2652e9770ef"
+      },
+      "criterion_results": [
+        {
+          "criterion": "Does not select technical-seo for animation-only runtime work",
+          "verdict": "pass",
+          "evidence_ref": "evals/artifacts/overlap-motion-performance.json"
+        }
+      ],
+      "forbidden_behavior_results": [
+        {
+          "behavior": "Replaces interactive-web-motion performance guidance",
+          "observed": false,
+          "evidence_ref": "evals/artifacts/overlap-motion-performance.json"
+        }
+      ],
+      "verdict": "pass"
+    }
+  ]
+}

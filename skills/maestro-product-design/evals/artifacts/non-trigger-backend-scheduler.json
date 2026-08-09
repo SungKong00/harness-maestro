@@ -1,0 +1,15 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "non-trigger-backend-scheduler",
+  "baseline_observation": "Product Design v6 correctly keeps backend scheduler semantics outside Product Design.",
+  "candidate_observation": "Product Design v7 preserves that boundary; structured user-interface classification is required for assurance and the non-design projection remains unextended.",
+  "evidence_refs": [
+    "candidate:candidate.json:not-for",
+    "candidate:SKILL.md:authority-boundary",
+    "candidate:operational-workflow-interface:use-when",
+    "runtime:WORK_KIND_TO_PACK_ID",
+    "runtime:product-design-assurance-active",
+    "runtime-test:non-design-projection-unextended",
+    "route-result:non-trigger-backend-scheduler"
+  ]
+}

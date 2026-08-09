@@ -7,7 +7,7 @@ authority: repository
 owner: harness-maestro
 summary: v0에서 부적절하거나 검증되지 않아 제외·격리·보류한 항목과 재검토 조건.
 scope: [harness-maestro-v0]
-last_verified: 2026-07-24
+last_verified: 2026-07-27
 supersedes: []
 sensitivity: internal
 ---
@@ -26,6 +26,9 @@ sensitivity: internal
 | 모든 agent의 자유 토론 | excluded | 동조·anchor와 대화 token이 늘고, 합의가 사실성을 증명하지 않음 | 독립 판단보다 나은 task별 비교 증거 |
 | 다수결·합의율 완료 판정 | excluded | 같은 모델·같은 정보의 상관 오류를 여러 표로 셈 | 외부 oracle을 우선하는 명시적 평가 계약 |
 | Lens마다 agent 한 명 자동 생성 | excluded | Lens는 검토 기준이지 실행 주체가 아니며 Standard 작업 비용이 불필요하게 증가 | 고유 corpus/context 격리가 품질을 바꾼다는 Pilot |
+| Decision Guide마다 agent 한 명 자동 생성 | excluded | Guide는 재사용 지식이고 같은 Executor가 여러 기준을 적용할 수 있음 | 별도 tool·권한·sandbox가 결과를 바꾼다는 Pilot |
+| 모든 전문 작업의 선행 외부 research | excluded | stable 기준도 매번 재수집해 token·지연·결과 편차를 키움 | freshness·현재 맥락이 결정을 바꾸는 명시적 gate |
+| vector·graph 지식 database | excluded | 현재 pack 1개·guide 5개에서 정적 Registry보다 운영·평가 비용이 큼 | 선택 정확도나 규모가 정적 최대 1 pack·4 guide 계약을 실제로 초과 |
 | 동적 “부서”와 빈 specialist 자리 | excluded | 사용 근거 없이 조직과 prompt 표면만 늘어남 | 반복 task와 독립 rubric이 있는 실제 pack |
 | 실행 중 전역 Skill·Agent·Lens·Executor·Adapter 자동 수정·삭제 | excluded | 현재 작업의 bias가 곧 여러 프로젝트 정책이 되고 rollback·감사가 불가능 | 격리 candidate, frozen eval, 사람 승인, version rollback |
 | 기록 개수만으로 자동 승격 | excluded | 반복된 동일 오류나 오염 로그도 횟수는 많을 수 있음 | project/checkout/version namespace와 품질·비용 비교 |
@@ -53,17 +56,48 @@ sensitivity: internal
 
 | 기능 | 판정 | v0에서 보류한 이유 | 도입 게이트 |
 |---|---|---|---|
-| 실제 멀티에이전트 scheduler와 fan-out | deferred | CLI가 아직 capability, cancel, retry, lease를 runtime에서 강제하지 않음 | 상태 기계, packet schema, budget·cancel·writer invariant 검증 |
-| workspace lease와 base-revision gate | deferred | 동시 writer 안전성을 파일 문구만으로 보장할 수 없음 | 격리 worktree 통합 test와 crash recovery |
+| 실제 멀티에이전트 scheduler와 fan-out | deferred | CLI는 같은 Host Assignment의 중복 launch lease만 강제하며 capability, cancel, retry와 전체 scheduling을 소유하지 않음 | 상태 기계, packet schema, budget·cancel·writer invariant 검증 |
+| Assignment 실행 상태 머신·자동 retry·cancel 전파 | deferred | terminal Packet·최종 관측과 crash-recoverable launch lease는 있지만 durable pending/running 전이, resume idempotency와 cancel 전파를 소유하지 않음 | 공개 Host lifecycle/cancel API와 두 프로젝트 이상의 반복 부분 실패 |
+| workspace-wide lease와 base-revision gate | deferred | 현재 lease는 같은 run·Assignment의 App Server 중복 launch만 막고 current-Host·다른 도구·별도 run의 workspace write나 base revision drift까지 직렬화하지 않음 | 격리 worktree 통합 test와 crash recovery |
 | 외부 API 쓰기 capability broker | deferred | idempotency, 승인, read-after-write와 compensation 계약이 없음 | service별 adapter와 명시적 user approval |
 | Notion 양방향 sync·쓰기 | deferred | dual master, freshness, deletion, 민감 정보 문제가 해결되지 않음 | topic별 단일 권위, revision/digest, tombstone, 실패 복구 |
-| 자동 candidate 생성·Pilot·promote | deferred | read-only report를 정책 변경 권한과 합치면 자기강화 오류가 생김 | offline evaluator, 승인자 분리, signed/versioned promotion |
+| expertise candidate 자동 Pilot·promote·원격 배포 | deferred | 반복·critical 신호에서 격리 후보 한 건을 표시해 작성하는 경계까지는 구현했지만, 관찰을 active 정책 변경과 합치면 자기강화 오류가 생김 | offline evaluator, 승인자 분리, signed/versioned promotion |
+| 원격 Expertise 자동 다운로드·활성화 | deferred | 기여 Bundle 추출은 가능하지만 실행 중 새 기준을 조용히 주입하면 현재 route와 검증 기준선이 바뀜 | 서명된 immutable release catalog, 사용자 승인, project version pin, rollback과 clean-host conformance |
+| 비-Expertise component candidate의 activate·promote | deferred | 분류·격리 후보·frozen case 검증은 가능하지만 Lens·Executor·Packet 등은 route와 Host 계약을 바꾸므로 공통 승격 명령이 과도한 권한 표면이 됨 | kind별 held-out route 평가, migration·rollback, release owner 승인과 clean-host conformance |
+| 별도 Convention candidate queue와 자동 병합 | deferred | 현재 compact RunReceipt signal, typed draft·activate·update로 수명주기가 닫히며 또 하나의 장기 저장소는 중복과 정리 비용을 만든다 | 서로 다른 실행에서 rule·scope·예외·owner를 보존하지 못해 draft 품질이 반복 저하되는 측정 사례 |
+| Convention deactivate·archive·rollback 전용 CLI | deferred | activate/update plan이 before/after digest와 Git revision을 보존하고 현재 권위는 Git으로 복구 가능해, 별도 상태 기계를 먼저 만들 이득이 작음 | 두 프로젝트 이상에서 수동 supersede·복구 실수 또는 반복 운영 비용이 관찰됨 |
+| self-improvement run별 update 횟수의 runtime ledger 강제 | deferred | 현재 CLI는 scheduler가 아니며 자동 실행의 신뢰 가능한 run identity를 소유하지 않아, 로컬 counter만 추가하면 우회 가능한 가짜 안전장치가 됨 | Host adapter가 run identity와 lifecycle apply를 함께 소유하고 crash-safe ledger를 검증 |
 | architecture/implementation 순서 자동 최적화 | deferred | 비교 가능한 실제 baseline이 없음 | task stratum별 bounded Pilot과 critical regression 0 |
 | logging·OpenAPI specialist pack | deferred | 현재는 반복 실패와 고유 finding 비율이 측정되지 않음 | checker 대비 추가 가치와 비용을 5회 이상 계측 |
 | 완전한 YAML document schema 검사 | deferred | v0 doctor는 필수 필드·중복 ID·링크까지만 검사 | parser portability와 migration fixture 확보 |
-| research wave 자동 운영 | deferred | 출처 lane 분해와 artifact schema가 아직 runtime에 없음 | 최대 3 lane, stop rule, claim provenance, 합성 forward test |
-| Packet 의미·참조 validator와 전체 계약 catalog | deferred | v0의 Finding·Review·Research schema는 구조 중심이고, 일부 Executor 입출력 이름은 아직 비강제 계약임 | Lens/Executor ID 참조, source ref, tier 채택 규칙과 모든 packet conformance test |
+| research wave 자동 scheduler·fan-out | deferred | lane·artifact 계약과 validator는 구현했지만 CLI가 researcher 실행·cancel·retry를 runtime에서 강제하지 않음 | host capability 계약, bounded cancel, 실제 비용·품질 forward test |
+| 추가 work graph producer: SDK·`codex exec --json`·trusted project Hook·experimental recovery adapter | deferred | Maestro-owned App Server producer와 v2 source·coverage 계약으로 현재 대시보드 요구를 검증했으며, 생산자를 한꺼번에 늘리면 버전·완전성·상관·중복 수집 경계가 넓어짐 | producer별 공식 version/schema pin, complete·partial·recovery fixture, 중복 event 상관 규칙과 개인정보 review |
+| 전체 Packet 의미·참조 validator와 계약 catalog | deferred | FindingPacket v2와 공통 terminal Packet은 plan binding을 검사하지만 Research·Implementation·Verification payload의 도메인 의미 전체를 catalog화하지 않음 | 두 번째 구체 Packet의 미검증 내부 의미가 반복 병목이 되는 실제 사례 |
+| 범용 SurfaceMap ontology·상주 generalist | deferred | 현재 bounded Engineering Baseline이면 artifact·boundary·lifecycle gap을 표현할 수 있고, 더 큰 ontology는 Fast token과 추정 사실을 늘림 | 간단 baseline이 놓친 Lens 밖 defect가 서로 다른 실행에서 반복 |
 | Agent 조직도·추가 Department·Adapter catalog | deferred | 실제 반복 업무와 독립 rubric 없이 조직·provider 표면만 늘어남 | concrete unsupported case, owner, forward test와 비용 비교 |
+
+## 큰 자동화 기능의 재평가
+
+| 기능 | 구현 난이도 | 현재 적합성 | 실제 도입에 필요한 최소 경계 |
+|---|---|---|---|
+| 백그라운드 자동 업데이트 데몬 | 높음 | 낮음 | 서명·rollback 공격 방지 metadata, update lock, 프로세스 수명주기, 네트워크 실패·부분 설치 복구, 사용자 채널·snooze 정책 |
+| 벡터 지식 database | 중간~높음 | 낮음 | 정적 문서 선택이 실패하는 측정 사례, embedding provider·version pin, re-index·삭제·권한·민감 정보 정책, exact/FTS baseline 대비 retrieval eval |
+| 자동 Convention 승격 | 중간 | 낮음 | deterministic 또는 held-out evaluator, counterexample, shadow 기간, 사람 승인과 한 단계 rollback; 단순 반복 횟수는 불충분 |
+| 자동 Skill 승격 | 매우 높음 | 매우 낮음 | trigger recall/precision, 결과 품질과 인접 회귀 eval, source freshness, 권한·tool 경계, clean-session activation, 사람 승인과 버전 배포 |
+
+자동 updater는 단순한 주기적 `git pull`이 아니다. package manager가 소유한 격리
+환경과 immutable tag를 우회하면 현재 release identity 보장을 다시 깨뜨린다.
+현재는 사용자가 `uv tool install <pinned checkout>`을 실행하고 strict Doctor로
+검증하는 경계가 더 작고 복구 가능하다.
+
+벡터 저장소를 쓰기 전에 현재 metadata/keyword selector와 필요하면 SQLite FTS 같은
+로컬 exact-text baseline을 측정한다. 문서와 guide가 수백~수천 개가 되어 같은 의미의
+표현 차이 때문에 실제 누락이 반복될 때만 embedding retrieval Pilot을 연다.
+
+Convention과 Skill의 자동화는 “후보 생성과 평가 실행”까지만 허용할 수 있다.
+active 권위로의 승격은 프로젝트 owner 또는 별도 release owner의 승인 없이는
+수행하지 않는다. 특히 Skill은 여러 프로젝트에 영향을 주므로 Convention보다 더
+강한 eval과 릴리스 결합이 필요하다.
 
 ## 의도적으로 유지한 제한
 

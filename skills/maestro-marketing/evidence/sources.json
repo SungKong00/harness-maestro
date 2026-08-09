@@ -1,0 +1,75 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "marketing",
+  "verified_on": "2026-07-26",
+  "sources": [
+    {
+      "source_id": "ftc-advertising-faq",
+      "tier": 1,
+      "authority": "United States consumer protection regulator guidance",
+      "url": "https://www.ftc.gov/business-guidance/resources/advertising-faqs-guide-small-business",
+      "supports": [
+        "truthful advertising, evidence before dissemination, disclosure, and claim interpretation"
+      ],
+      "used_by": [
+        "claim-substantiation"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "ftc-endorsement-guides",
+      "tier": 1,
+      "authority": "United States consumer protection regulator guidance",
+      "url": "https://www.ftc.gov/business-guidance/resources/ftcs-endorsement-guides-what-people-are-asking",
+      "supports": [
+        "endorsement, testimonial, material connection, and disclosure checks"
+      ],
+      "used_by": [
+        "claim-substantiation",
+        "channel-platform-rules"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "google-people-first-content",
+      "tier": 1,
+      "authority": "search platform owner guidance",
+      "url": "https://developers.google.com/search/docs/fundamentals/creating-helpful-content",
+      "supports": [
+        "audience-first purpose, original value, trust, and responsible automation checks"
+      ],
+      "used_by": [
+        "marketing-brief",
+        "positioning-message",
+        "channel-platform-rules"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-search-spam-policies",
+      "tier": 1,
+      "authority": "search platform owner policy",
+      "url": "https://developers.google.com/search/docs/essentials/spam-policies",
+      "supports": [
+        "current prohibited search manipulation patterns"
+      ],
+      "used_by": [
+        "channel-platform-rules"
+      ],
+      "freshness": "volatile"
+    },
+    {
+      "source_id": "google-ads-experiments",
+      "tier": 1,
+      "authority": "advertising platform owner experiment guidance",
+      "url": "https://support.google.com/google-ads/answer/7281575?hl=en",
+      "supports": [
+        "clear campaign hypotheses, controlled experiment changes, monitoring, and action from results"
+      ],
+      "used_by": [
+        "measurement-experiment"
+      ],
+      "freshness": "volatile"
+    }
+  ]
+}

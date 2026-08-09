@@ -5,14 +5,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.support import apply_fresh_init, canonical_document, write_json
+
 from maestro.governance import govern_report, record_run
+from maestro.conventions import CONVENTION_HELD_OUT_EVALUATION_VERSION
 from maestro.doctor import doctor_report
 from maestro.errors import MaestroError
+from maestro.observations import (
+    record_stage_observation,
+    start_run_observation,
+)
+from maestro.planning import route_goal_v2
 from maestro.project import apply_plan, build_init_plan, build_upgrade_plan
 from maestro.registry import load_host_profile, route_goal
 from maestro.status import status_report
-from maestro.util import file_sha256
-from tests.support import apply_fresh_init, canonical_document, write_json
+from maestro.decisions import repository_revision
+from maestro.util import canonical_json, file_sha256, sha256_text
 
 
 class CoreWorkflowV02Tests(unittest.TestCase):
@@ -37,6 +45,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 project["self_improvement"],
             )
             self.assertEqual("markdown", project["documentation"]["provider"])
+            self.assertEqual([], project["verification_commands"])
             self.assertEqual(
                 {
                     "project": "docs/project.md",
@@ -51,6 +60,12 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             )
             self.assertIn("`owner_decision`", guidance)
             self.assertIn("`held_out_evaluation`", guidance)
+            generated_policy = (
+                repo / "docs/governance/document-lifecycle.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Required fields are `id`, `type`, `status`", generated_policy)
+            self.assertIn("maestro upgrade", generated_policy)
+            self.assertIn("maestro doctor --strict", generated_policy)
 
     def test_init_maps_existing_core_doc_equivalents_without_copying_them(
         self,
@@ -137,6 +152,63 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             self.assertEqual("run_init", report["next_actions"][0]["id"])
             self.assertFalse(report["writes_performed"])
 
+    def test_status_separates_installed_state_from_project_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+
+            report = status_report(repo)
+
+            self.assertTrue(report["initialized"])
+            self.assertEqual("draft", report["readiness"]["state"])
+            self.assertEqual(
+                "complete_core_documents",
+                report["next_actions"][0]["id"],
+            )
+            self.assertEqual(
+                ["docs/project.md", "docs/architecture.md"],
+                report["next_actions"][0]["paths"],
+            )
+            self.assertEqual("PASS", report["doctor"]["status"])
+
+    def test_verified_commands_are_separate_from_detected_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"test": "node --test"}}),
+                encoding="utf-8",
+            )
+            apply_fresh_init(repo)
+            for path in (repo / "docs/project.md", repo / "docs/architecture.md"):
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "status: draft",
+                        "status: active",
+                    ),
+                    encoding="utf-8",
+                )
+            plan = build_upgrade_plan(repo)
+            plan_path = Path(temporary) / "docs-upgrade.json"
+            write_json(plan_path, plan)
+            apply_plan(plan_path, repo, expected_command="upgrade")
+
+            report = status_report(repo)
+
+            self.assertEqual("ready", report["readiness"]["state"])
+            self.assertEqual(
+                {
+                    "candidate_count": 1,
+                    "approved_count": 0,
+                },
+                report["readiness"]["verification_commands"],
+            )
+            self.assertEqual(
+                "review_verification_commands",
+                report["next_actions"][0]["id"],
+            )
+
     def test_upgrade_reuses_the_reviewed_init_plan_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
@@ -206,6 +278,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                     "project_convention_path": "docs/conventions/run-receipts.md",
                     "project_convention_evidence": {
                         "kind": "owner_decision",
+                        "assurance": "owner_attested",
                         "decision_summary": (
                             "The project owner approved one final run receipt."
                         ),
@@ -240,6 +313,103 @@ class CoreWorkflowV02Tests(unittest.TestCase):
             )
             self.assertNotIn("messages", event)
 
+    def test_receipt_semantics_reject_route_and_verifier_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {
+                "run_id": "run-semantic-check",
+                "risk": "high",
+                "route_depth": "standard",
+                "selected_lenses": [],
+                "executor_runs": 1,
+                "primary_executor_id": "implementation-engineer",
+                "executor_ids": ["implementation-engineer"],
+                "outcome": "completed",
+                "evidence_refs": ["tests:semantic"],
+                "duration_ms": 10,
+                "tokens": None,
+                "correction_count": 0,
+                "agent_calls": 1,
+                "verifier_result": "not_run",
+                "command_artifact_ref": None,
+            }
+            write_json(receipt_path, receipt)
+
+            with self.assertRaises(MaestroError) as route_error:
+                record_run(repo, receipt_path)
+            self.assertIn(
+                "risk='high' requires route_depth='deep'",
+                route_error.exception.message,
+            )
+
+            receipt["route_depth"] = "deep"
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as verifier_error:
+                record_run(repo, receipt_path)
+            self.assertIn(
+                "requires verifier_result='passed'",
+                verifier_error.exception.message,
+            )
+
+            receipt["executor_runs"] = 2
+            receipt["executor_ids"].append("verifier")
+            receipt["verifier_result"] = "passed"
+            receipt["command_artifact_ref"] = "tests:semantic"
+            write_json(receipt_path, receipt)
+            self.assertEqual("recorded", record_run(repo, receipt_path)["status"])
+
+    def test_stale_project_baseline_defers_management_but_keeps_audit_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            repo.mkdir()
+            apply_fresh_init(repo)
+            lock_path = repo / ".maestro/lock.json"
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["registry"]["sha256"] = "0" * 64
+            write_json(lock_path, lock)
+            receipt_path = Path(temporary) / "receipt.json"
+            write_json(
+                receipt_path,
+                {
+                    "run_id": "stale-baseline-receipt",
+                    "risk": "low",
+                    "route_depth": "fast",
+                    "selected_lenses": [],
+                    "executor_runs": 2,
+                    "primary_executor_id": "implementation-engineer",
+                    "executor_ids": [
+                        "implementation-engineer",
+                        "verifier",
+                    ],
+                    "outcome": "completed",
+                    "evidence_refs": ["tests:stale-baseline"],
+                    "duration_ms": 25,
+                    "tokens": None,
+                    "correction_count": 0,
+                    "agent_calls": 2,
+                    "verifier_result": "passed",
+                    "command_artifact_ref": "tests:stale-baseline",
+                },
+            )
+
+            result = record_run(repo, receipt_path)
+
+            self.assertEqual("recorded", result["status"])
+            self.assertEqual("stale", result["recording_baseline"]["status"])
+            self.assertEqual(
+                "deferred",
+                result["management_check"]["status"],
+            )
+            self.assertEqual(
+                "project_baseline_stale",
+                result["management_check"]["deferred_reason"],
+            )
+
     def test_active_convention_requires_content_addressed_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
@@ -251,9 +421,139 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 canonical_document("provenance"),
                 encoding="utf-8",
             )
-            artifact = repo / "docs/decisions/provenance-verification.txt"
+            artifact = repo / "docs/decisions/provenance-verification.json"
             artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text("verification: PASS\n", encoding="utf-8")
+            cases = [
+                {
+                    "case_id": "positive-provenance",
+                    "category": "positive",
+                    "assertion": "The Convention applies to provenance changes.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:positive-provenance",
+                },
+                {
+                    "case_id": "negative-unrelated",
+                    "category": "negative_scope",
+                    "assertion": "The Convention does not apply to unrelated work.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:negative-unrelated",
+                },
+                {
+                    "case_id": "regression-digest",
+                    "category": "regression",
+                    "assertion": "Convention provenance remains content addressed.",
+                    "result": "passed",
+                    "critical": True,
+                    "evidence_ref": "case:regression-digest",
+                },
+            ]
+            revision = repository_revision(repo)
+            candidate_sha256 = file_sha256(convention)
+            authoring_run = "run-provenance-authoring"
+            authoring_plan = route_goal_v2(
+                "Author the provenance Convention",
+                "medium",
+                intent="implementation",
+                repo_path=repo,
+            )
+            authoring_plan_path = Path(temporary) / "authoring-plan.json"
+            write_json(authoring_plan_path, authoring_plan)
+            authored = start_run_observation(
+                repo,
+                run_id=authoring_run,
+                request_key=authoring_run,
+                task_label="Author provenance Convention",
+                plan_path=authoring_plan_path,
+            )
+            for assignment in authoring_plan["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=authored["observation_id"],
+                    run_id=authoring_run,
+                    assignment_id=assignment["assignment_id"],
+                    status="completed",
+                    evidence_source="deterministic_command",
+                    evidence_refs=(
+                        [f"convention-candidate:{candidate_sha256}"]
+                        if assignment["mutation_owner"]
+                        else [f"authoring:{assignment['assignment_id']}"]
+                    ),
+                )
+            evaluation_run = "run-provenance-evaluation"
+            evaluation_plan = route_goal_v2(
+                "Evaluate the provenance Convention",
+                "medium",
+                intent="review",
+                repo_path=repo,
+            )
+            evaluation_plan_path = Path(temporary) / "evaluation-plan.json"
+            write_json(evaluation_plan_path, evaluation_plan)
+            evaluated = start_run_observation(
+                repo,
+                run_id=evaluation_run,
+                request_key=evaluation_run,
+                task_label="Evaluate provenance Convention",
+                plan_path=evaluation_plan_path,
+            )
+            write_json(
+                artifact,
+                {
+                    "schema_version": (
+                        CONVENTION_HELD_OUT_EVALUATION_VERSION
+                    ),
+                    "candidate_sha256": candidate_sha256,
+                    "suite_sha256": sha256_text(canonical_json(cases)),
+                    "source_revision": (
+                        revision["head"]
+                        if revision["kind"] == "git"
+                        else "unavailable"
+                    ),
+                    "held_out": True,
+                    "cases": cases,
+                    "critical_regressions": 0,
+                    "verifier": {
+                        "command": "python -m unittest tests.test_provenance",
+                        "exit_code": 0,
+                        "executed_at": "2026-07-27T00:00:00Z",
+                        "kind": "fresh-context",
+                        "observation_id": evaluated["observation_id"],
+                        "authoring_run_ref": authoring_run,
+                        "evaluation_run_ref": evaluation_run,
+                    },
+                    "conditions": {
+                        "tool": "unittest",
+                        "model": None,
+                        "budget": None,
+                    },
+                },
+            )
+            for assignment in evaluation_plan["assignments"]:
+                record_stage_observation(
+                    repo,
+                    observation_id=evaluated["observation_id"],
+                    run_id=evaluation_run,
+                    assignment_id=assignment["assignment_id"],
+                    status="completed",
+                    evidence_source="codex_app_server",
+                    evidence_refs=[
+                        f"convention-candidate:{candidate_sha256}",
+                        f"convention-evaluation:{file_sha256(artifact)}",
+                    ],
+                    requested_model=assignment["model_route"][
+                        "selected_model"
+                    ],
+                    requested_reasoning_effort=assignment["model_route"][
+                        "reasoning_effort"
+                    ],
+                    actual_model=assignment["model_route"][
+                        "selected_model"
+                    ],
+                    model_evidence="complete",
+                    reroutes=[],
+                    duration_ms=1.0,
+                )
             receipt_path = Path(temporary) / "receipt.json"
             receipt = {
                 "run_id": "run-active-provenance",
@@ -271,7 +571,7 @@ class CoreWorkflowV02Tests(unittest.TestCase):
                 "agent_calls": 2,
                 "verifier_result": "passed",
                 "command_artifact_ref": (
-                    "docs/decisions/provenance-verification.txt"
+                    "docs/decisions/provenance-verification.json"
                 ),
                 "project_convention_action": "created",
                 "project_convention_basis": "held_out_evaluation",
@@ -285,9 +585,10 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             receipt["project_convention_evidence"] = {
                 "kind": "held_out_evaluation",
+                "assurance": "held_out_verified",
                 "convention_sha256": file_sha256(convention),
                 "artifact": {
-                    "path": "docs/decisions/provenance-verification.txt",
+                    "path": "docs/decisions/provenance-verification.json",
                     "sha256": "0" * 64,
                 },
             }
@@ -298,6 +599,30 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             receipt["project_convention_evidence"]["artifact"]["sha256"] = (
                 file_sha256(artifact)
+            )
+            receipt["convention_usage"] = {
+                "schema_version": "maestro_convention_usage_v1",
+                "selection_digest": "1" * 64,
+                "items": [
+                    {
+                        "path": "docs/conventions/provenance.md",
+                        "sha256": file_sha256(convention),
+                        "disposition": "conflict",
+                        "reason": "The selected rule still conflicts with the requested change.",
+                        "approval_ref": None,
+                    }
+                ],
+            }
+            write_json(receipt_path, receipt)
+            with self.assertRaises(MaestroError) as conflict:
+                record_run(repo, receipt_path)
+            self.assertEqual("RUN_RECEIPT_INVALID", conflict.exception.code)
+
+            receipt["convention_usage"]["items"][0].update(
+                {
+                    "disposition": "applied",
+                    "reason": "The implementation followed the selected rule.",
+                }
             )
             write_json(receipt_path, receipt)
             result = record_run(repo, receipt_path)
@@ -474,16 +799,37 @@ class CoreWorkflowV02Tests(unittest.TestCase):
 
             report = govern_report(repo, window=20, threshold=3)
 
+            self.assertEqual(1, len(report["candidates_for_review"]))
+            candidate = report["candidates_for_review"][0]
             self.assertEqual(
-                [
-                    {
-                        "fingerprint": "repeated-verification-gap",
-                        "occurrences": 3,
-                        "status": "candidate_for_review",
-                        "automatic_change_allowed": False,
-                    }
-                ],
-                report["candidates_for_review"],
+                {
+                    "fingerprint": "repeated-verification-gap",
+                    "occurrences": 3,
+                    "severity": "high",
+                    "status": "candidate_for_review",
+                    "automatic_change_allowed": False,
+                },
+                {
+                    key: candidate[key]
+                    for key in (
+                        "fingerprint",
+                        "occurrences",
+                        "severity",
+                        "status",
+                        "automatic_change_allowed",
+                    )
+                },
+            )
+            self.assertEqual(3, len(candidate["evidence_refs"]))
+            self.assertEqual(3, len(candidate["command_artifact_refs"]))
+            self.assertIn("Classify the gap", candidate["next_step"])
+            self.assertTrue(report["governance_review_due"])
+
+            status = status_report(repo)
+            self.assertTrue(status["governance"]["review_due"])
+            self.assertEqual(
+                "review_governance_candidates",
+                status["next_actions"][-1]["id"],
             )
 
 

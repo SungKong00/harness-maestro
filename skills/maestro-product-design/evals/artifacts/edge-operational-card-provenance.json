@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-operational-card-provenance",
+  "baseline_observation": "Drawing every typed relation and expanding a report-like inspector creates an unreadable edge mesh, nested scroll, and execution labels that lose measurement scope.",
+  "candidate_observation": "The pilot preserves raw relations, makes display folding conditional on dense-fixture task evidence, keeps selected lineage, and compresses model, effort, token, and elapsed facts without changing actual, requested, or unavailable meaning.",
+  "evidence_refs": ["route-replay:c8c15fd047d42cc64a71c6854f3da7754f1b3dd327623450b3c568a25ea07f75", "candidate:operational-workflow-interface:decision-checks-4-9", "research:argo-dag", "research:codex-app-server", "code-audit:work-graph-display-edge-separation-20260729", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

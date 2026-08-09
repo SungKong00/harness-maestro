@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-form-recovery",
+  "baseline_observation": "Product Design v6 covers generic states, focus, feedback, and recovery but does not provide the complete form prevention, validation, input-preservation, and error contract.",
+  "candidate_observation": "Product Design v7 defines the complete form lifecycle, binds variants to semantic tokens, rejects unevidenced live validation, and requires keyboard, zoom, autofill, paste, localized, failure, and recovery verification.",
+  "evidence_refs": [
+    "candidate:design-system-and-components:inputs-forms-validation",
+    "candidate:interaction-responsive-accessibility:checks-1-10",
+    "research:claim-form-error-contract",
+    "research:claim-live-validation-not-universal",
+    "research:claim-live-validation-targeted-exception",
+    "research:claim-context-verification",
+    "runtime:render-scenario-contract",
+    "route-result:normal-form-recovery"
+  ]
+}

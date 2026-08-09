@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-scroll-storytelling",
+  "baseline_observation": "The baseline scroll-storytelling probe selected no Expertise Pack and supplied no scrub, pin, parallax, fallback, or focus criteria.",
+  "candidate_observation": "The candidate route selects the scroll-linked storytelling Guide and requires a narrative progress model before choosing scene capabilities.",
+  "evidence_refs": [
+    "route-replay:normal-scroll-storytelling",
+    "baseline:.maestro/state/work/interactive-web-motion/baseline.json"
+  ]
+}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -8,10 +10,16 @@ from .documents import (
     REQUIRED_DOCUMENT_FIELDS,
     active_documents,
     broken_links,
+    frontmatter_list,
     frontmatter_fields,
     scan_document_paths,
 )
 from .errors import MaestroError
+from .expertise import (
+    load_expertise_catalog,
+    project_expertise_storage_status,
+)
+from .host import host_installation_checks
 from .project import (
     AGENTS_BEGIN,
     AGENTS_END,
@@ -20,6 +28,7 @@ from .project import (
     GITIGNORE_END,
     MAX_MANAGED_TEXT_BYTES,
     git_ignored,
+    git_indexed_paths,
     inspect_adapter,
 )
 from .registry import (
@@ -36,6 +45,24 @@ from .util import (
     safe_target,
     sha256_text,
 )
+
+CONVENTION_BODY_SECTIONS = (
+    "Rule",
+    "Applies when",
+    "Does not apply",
+    "Evidence",
+    "Verification",
+    "Exceptions",
+)
+
+
+def _nonempty_markdown_section(content: str, heading: str) -> bool:
+    match = re.search(
+        rf"^## {re.escape(heading)}[ \t]*\n(.*?)(?=^## |\Z)",
+        content,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    return match is not None and bool(match.group(1).strip())
 
 
 def _check(
@@ -74,8 +101,10 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
             "adapters",
             "profiles",
             "commands",
+            "verification_commands",
             "approval_required_for",
             "self_improvement",
+            "expertise",
         }
         unexpected = sorted(set(value) - allowed)
         if unexpected:
@@ -152,6 +181,24 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
         for field in ("adapters", "profiles", "commands", "approval_required_for"):
             if not isinstance(value.get(field), list):
                 errors.append(f"{field} must be a list")
+        if not isinstance(value.get("verification_commands", []), list):
+            errors.append("verification_commands must be a list")
+        expertise = value.get(
+            "expertise",
+            {"active_pack_paths": []},
+        )
+        if (
+            not isinstance(expertise, dict)
+            or set(expertise) != {"active_pack_paths"}
+            or not isinstance(expertise.get("active_pack_paths"), list)
+            or any(
+                not isinstance(path, str) or not path.strip()
+                for path in expertise.get("active_pack_paths", [])
+            )
+            or len(expertise.get("active_pack_paths", []))
+            != len(set(expertise.get("active_pack_paths", [])))
+        ):
+            errors.append("expertise active_pack_paths is invalid")
         for field in ("adapters", "profiles", "approval_required_for"):
             items = value.get(field)
             if isinstance(items, list) and not all(
@@ -184,6 +231,25 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
                     or command.get("status") != "candidate"
                 ):
                     errors.append(f"commands[{index}] is invalid")
+        verification_commands = value.get("verification_commands", [])
+        if isinstance(verification_commands, list):
+            seen_verification_names: set[str] = set()
+            for index, command in enumerate(verification_commands):
+                if (
+                    not isinstance(command, dict)
+                    or set(command) != {"name", "command"}
+                    or not isinstance(command.get("name"), str)
+                    or not command["name"].strip()
+                    or not isinstance(command.get("command"), str)
+                    or not command["command"].strip()
+                ):
+                    errors.append(f"verification_commands[{index}] is invalid")
+                    continue
+                if command["name"] in seen_verification_names:
+                    errors.append(
+                        f"verification_commands[{index}].name must be unique"
+                    )
+                seen_verification_names.add(command["name"])
     elif expected_kind == "managed":
         allowed_ownership = {
             "AGENTS.md": {"managed_block"},
@@ -313,7 +379,11 @@ def _state_errors(value: dict[str, Any], expected_kind: str) -> list[str]:
     return errors
 
 
-def doctor_report(repo_path: str | Path) -> dict[str, Any]:
+def doctor_report(
+    repo_path: str | Path,
+    *,
+    host_id: str | None = None,
+) -> dict[str, Any]:
     repo = ensure_repo(repo_path)
     checks: list[dict[str, str]] = []
     required = [
@@ -477,6 +547,153 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
                 else "",
             )
         )
+        try:
+            storage = project_expertise_storage_status(repo)
+            storage_status = (
+                "FAIL"
+                if storage["active_conflicts"]
+                else (
+                    "WARN"
+                    if (
+                        storage["globally_superseded"]
+                        or storage["inactive_publications"]
+                    )
+                    else "PASS"
+                )
+            )
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_STORAGE",
+                    storage_status,
+                    (
+                        "active_conflicts="
+                        f"{storage['active_conflicts']} "
+                        "globally_superseded="
+                        f"{storage['globally_superseded']} "
+                        "inactive_publications="
+                        f"{storage['inactive_publications']}"
+                    ),
+                    (
+                        "Preview `maestro expertise reconcile`; archive only "
+                        "safe entries and request an owner decision for active "
+                        "content that differs from global Expertise."
+                    )
+                    if storage_status != "PASS"
+                    else "",
+                )
+            )
+            catalog = load_expertise_catalog(repo)
+            project_packs = [
+                pack
+                for pack in catalog
+                if pack["_maestro"]["origin"] == "project"
+            ]
+            ignored_project_packs = [
+                pack["_maestro"]["pack_path"]
+                for pack in project_packs
+                if git_ignored(repo, pack["_maestro"]["pack_path"]) is True
+            ]
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE",
+                    "FAIL" if ignored_project_packs else "PASS",
+                    (
+                        f"active={len(project_packs)} "
+                        f"ignored={ignored_project_packs}"
+                    ),
+                    (
+                        "Keep active project Expertise under tracked "
+                        ".agents/skills paths."
+                    )
+                    if ignored_project_packs
+                    else "",
+                )
+            )
+            missing_snapshots = [
+                pack["_maestro"]["pack_path"]
+                for pack in project_packs
+                if pack["_maestro"]["candidate_snapshot_path"] is None
+            ]
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_EVIDENCE",
+                    "WARN" if missing_snapshots else "PASS",
+                    (
+                        f"active={len(project_packs)} "
+                        f"missing_candidate_snapshot={missing_snapshots}"
+                    ),
+                    (
+                        "Publish the next reviewed update through "
+                        "`maestro expertise update`; legacy Packs remain "
+                        "usable but lack a durable candidate snapshot."
+                    )
+                    if missing_snapshots
+                    else "",
+                )
+            )
+
+            project_skill_roots = sorted(
+                {
+                    str(Path(pack["_maestro"]["pack_path"]).parent)
+                    for pack in project_packs
+                }
+            )
+            project_skill_files: list[str] = []
+            for root in project_skill_roots:
+                skill_root = safe_target(repo, root)
+                project_skill_files.extend(
+                    path.relative_to(repo).as_posix()
+                    for path in sorted(skill_root.rglob("*"))
+                    if path.is_file() and not path.is_symlink()
+                )
+            tracked_expertise_paths = [
+                *project_skill_files,
+                *([".maestro/project.json"] if project_packs else []),
+            ]
+            indexed = git_indexed_paths(repo, tracked_expertise_paths)
+            unindexed = (
+                sorted(set(tracked_expertise_paths) - indexed)
+                if indexed is not None
+                else []
+            )
+            tracking_status = (
+                "PASS"
+                if not project_packs or (indexed is not None and not unindexed)
+                else "WARN"
+            )
+            tracking_evidence = (
+                f"active={len(project_packs)} indexed={len(indexed or set())} "
+                f"unindexed={unindexed}"
+                if indexed is not None
+                else (
+                    f"active={len(project_packs)} "
+                    "git_index=unavailable"
+                )
+            )
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE_GIT_TRACKING",
+                    tracking_status,
+                    tracking_evidence,
+                    (
+                        "Run `git add -- "
+                        + " ".join(project_skill_roots)
+                        + " .maestro/project.json` and commit the reviewed "
+                        "project Expertise."
+                    )
+                    if tracking_status == "WARN" and project_skill_roots
+                    else "",
+                )
+            )
+        except MaestroError as exc:
+            checks.append(
+                _check(
+                    "PROJECT_EXPERTISE",
+                    "FAIL",
+                    f"{exc.code}: {exc.message}",
+                    "Repair or disable the invalid project Expertise Pack.",
+                )
+            )
         custom_errors: list[str] = []
         if documentation["provider"] == "custom":
             instructions_path = documentation["custom_adapter"]["instructions_path"]
@@ -540,15 +757,17 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
         )
     )
     indexed_metadata: list[tuple[str, dict[str, str]]] = []
+    document_contents: dict[str, str] = {}
     for path in document_paths:
         if "archive" in path.relative_to(docs_root).parts:
             continue
+        relative_path = path.relative_to(repo).as_posix()
+        content = path.read_text(encoding="utf-8", errors="replace")
+        document_contents[relative_path] = content
         indexed_metadata.append(
             (
-                path.relative_to(repo).as_posix(),
-                frontmatter_fields(
-                    path.read_text(encoding="utf-8", errors="replace")
-                ),
+                relative_path,
+                frontmatter_fields(content),
             )
         )
     metadata_failures = {
@@ -578,6 +797,20 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
         )
     )
     allowed_statuses = {"active", "draft", "superseded", "deprecated", "archived"}
+    allowed_types = {
+        "map",
+        "index",
+        "project",
+        "architecture",
+        "governance",
+        "decision",
+        "convention",
+        "plan",
+        "runbook",
+        "analysis",
+        "evidence",
+        "external-snapshot",
+    }
     allowed_authorities = {
         "repository",
         "external-snapshot",
@@ -587,6 +820,8 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
     invalid_values: dict[str, list[str]] = {}
     for path, metadata in indexed_metadata:
         problems: list[str] = []
+        if metadata.get("type") and metadata["type"] not in allowed_types:
+            problems.append(f"unsupported type={metadata['type']!r}")
         if metadata.get("status") and metadata["status"] not in allowed_statuses:
             problems.append(f"unsupported status={metadata['status']!r}")
         if metadata.get("authority") and metadata["authority"] not in allowed_authorities:
@@ -602,6 +837,180 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
             f"invalid={invalid_values}",
             "Use the documented status and authority vocabulary."
             if invalid_values
+            else "",
+        )
+    )
+    plan_lifecycle_issues: dict[str, list[str]] = {}
+    for path, metadata in indexed_metadata:
+        expected: tuple[str, str] | None = None
+        if path.startswith("docs/plans/active/"):
+            expected = ("plan", "active")
+        elif path.startswith("docs/plans/completed/"):
+            expected = ("plan", "archived")
+        if expected is None:
+            continue
+        expected_type, expected_status = expected
+        problems = []
+        if metadata.get("type") != expected_type:
+            problems.append(f"type must equal {expected_type!r}")
+        if metadata.get("status") != expected_status:
+            problems.append(f"status must equal {expected_status!r}")
+        if problems:
+            plan_lifecycle_issues[path] = problems
+    checks.append(
+        _check(
+            "DOC_PLAN_LIFECYCLE",
+            "FAIL" if plan_lifecycle_issues else "PASS",
+            f"issues={plan_lifecycle_issues}",
+            (
+                "Keep active plans typed active under docs/plans/active and "
+                "move completed plans to docs/plans/completed with archived status."
+            )
+            if plan_lifecycle_issues
+            else "",
+        )
+    )
+
+    document_ids = {
+        metadata.get("id", "")
+        for _, metadata in indexed_metadata
+        if metadata.get("id")
+    }
+    convention_metadata_issues: dict[str, list[str]] = {}
+    convention_supersession_issues: dict[str, list[str]] = {}
+    active_topics: dict[str, list[str]] = {}
+    convention_fields = {
+        "topic",
+        "scope",
+        "last_verified",
+        "supersedes",
+        "sensitivity",
+    }
+    entrypoint_content: str | None = None
+    documentation = project.get("documentation") if isinstance(project, dict) else None
+    if (
+        isinstance(documentation, dict)
+        and documentation.get("provider") == "markdown"
+        and isinstance(documentation.get("entrypoint"), str)
+    ):
+        entrypoint = safe_target(repo, documentation["entrypoint"])
+        if not entrypoint.is_symlink() and entrypoint.is_file():
+            entrypoint_content = entrypoint.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+    for path, metadata in indexed_metadata:
+        if metadata.get("type") != "convention":
+            continue
+        issues: list[str] = []
+        missing = sorted(
+            field
+            for field in convention_fields
+            if field not in metadata or not metadata[field].strip()
+        )
+        if missing:
+            issues.append(f"missing={missing}")
+        topic = metadata.get("topic")
+        if topic and re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", topic) is None:
+            issues.append("topic must be a lowercase ASCII slug")
+        scopes = frontmatter_list(metadata.get("scope"))
+        if "scope" in metadata and not scopes:
+            issues.append("scope must contain at least one path or topic")
+        for scope in scopes:
+            normalized = scope.replace("\\", "/")
+            if (
+                normalized.startswith("/")
+                or normalized.startswith("./")
+                or ".." in Path(normalized).parts
+            ):
+                issues.append(f"unsafe scope={scope!r}")
+        last_verified = metadata.get("last_verified")
+        if metadata.get("status") == "active":
+            try:
+                if last_verified is None:
+                    raise ValueError
+                verified_date = date.fromisoformat(last_verified)
+                if verified_date > date.today():
+                    issues.append("active last_verified cannot be in the future")
+            except ValueError:
+                issues.append("active last_verified must use YYYY-MM-DD")
+            content = document_contents.get(path, "")
+            missing_sections = [
+                section
+                for section in CONVENTION_BODY_SECTIONS
+                if not _nonempty_markdown_section(content, section)
+            ]
+            if missing_sections:
+                issues.append(
+                    f"empty or missing body sections={missing_sections}"
+                )
+            if entrypoint_content is not None:
+                relative_link = (
+                    Path(path).relative_to("docs").as_posix()
+                    if path.startswith("docs/")
+                    else path
+                )
+                if f"({relative_link})" not in entrypoint_content:
+                    issues.append(
+                        "active Convention is not reachable from the documentation entrypoint"
+                    )
+        elif last_verified not in {None, "null"}:
+            try:
+                date.fromisoformat(last_verified)
+            except ValueError:
+                issues.append("last_verified must be null or YYYY-MM-DD")
+        sensitivity = metadata.get("sensitivity")
+        if sensitivity and sensitivity not in {"public", "internal", "restricted"}:
+            issues.append(f"unsupported sensitivity={sensitivity!r}")
+        if issues:
+            convention_metadata_issues[path] = issues
+
+        supersedes = frontmatter_list(metadata.get("supersedes"))
+        missing_targets = sorted(
+            target for target in supersedes if target not in document_ids
+        )
+        if missing_targets:
+            convention_supersession_issues[path] = [
+                f"unknown document IDs: {missing_targets}"
+            ]
+        if metadata.get("status") == "active" and topic:
+            active_topics.setdefault(topic, []).append(path)
+
+    checks.append(
+        _check(
+            "CONVENTION_METADATA",
+            "WARN" if convention_metadata_issues else "PASS",
+            f"issues={convention_metadata_issues}",
+            (
+                "Add stable topic, scope, verification date, supersession, and "
+                "sensitivity metadata before activating or revising the Convention."
+            )
+            if convention_metadata_issues
+            else "",
+        )
+    )
+    duplicate_topics = {
+        topic: paths
+        for topic, paths in active_topics.items()
+        if len(paths) > 1
+    }
+    checks.append(
+        _check(
+            "CONVENTION_TOPIC_AUTHORITY",
+            "FAIL" if duplicate_topics else "PASS",
+            f"duplicates={duplicate_topics}",
+            "Keep one active Convention authority per stable topic."
+            if duplicate_topics
+            else "",
+        )
+    )
+    checks.append(
+        _check(
+            "CONVENTION_SUPERSESSION",
+            "FAIL" if convention_supersession_issues else "PASS",
+            f"issues={convention_supersession_issues}",
+            "Point supersedes only to an existing document ID."
+            if convention_supersession_issues
             else "",
         )
     )
@@ -739,6 +1148,9 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
             )
         )
 
+    if host_id is not None:
+        checks.extend(host_installation_checks(host_id, project_root=repo))
+
     failures = [item for item in checks if item["status"] == "FAIL"]
     warnings = [item for item in checks if item["status"] == "WARN"]
     return {
@@ -753,4 +1165,5 @@ def doctor_report(repo_path: str | Path) -> dict[str, Any]:
         },
         "writes_performed": False,
         "project_id": project.get("project_id") if project else None,
+        "host_id": host_id,
     }

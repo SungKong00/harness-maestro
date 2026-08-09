@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "overlap-generic-product-layout",
+  "baseline_observation": "The goal asks for typography, visual hierarchy, and responsive grid decisions owned by product-design.",
+  "candidate_observation": "The candidate remains unselected because no motion or interaction decision is explicit.",
+  "evidence_refs": [
+    "route-replay:overlap-generic-product-layout",
+    "registry:product-design"
+  ]
+}

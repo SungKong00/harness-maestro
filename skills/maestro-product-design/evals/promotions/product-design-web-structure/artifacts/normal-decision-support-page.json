@@ -1,0 +1,10 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-decision-support-page",
+  "baseline_observation": "The existing Pack can prioritize visible content but does not require shared versus role-dependent evidence, an end-to-end decision sequence, or correction continuity before CTA placement.",
+  "candidate_observation": "The candidate requires role and situation differences, decision evidence, page scope, primary and secondary actions, continuity, and correction paths before visual emphasis.",
+  "evidence_refs": [
+    "research:.maestro/state/work/web-design-expertise/research-bundle.json",
+    "evaluation:normal-decision-support-page"
+  ]
+}

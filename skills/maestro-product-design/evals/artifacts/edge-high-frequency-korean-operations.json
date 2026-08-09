@@ -1,0 +1,7 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "edge-high-frequency-korean-operations",
+  "baseline_observation": "Generic page-splitting and compact styling can remove the comparison context required by frequent operators or create density through unreadable Korean metadata.",
+  "candidate_observation": "The candidate compares keep-together and split structures with real task data, preserves batch and recovery context, and tests density through spacing, decoration, rendered Korean, zoom, and focus.",
+  "evidence_refs": ["research:govuk-internal-users", "research:claim-card-hierarchy", "candidate:visual-hierarchy-layout", "candidate:information-architecture-and-user-flow", "route-replay:4b7a7fc1541db6917cc343ba021e0b7c6281bad497932d903de81cc023028ef2", "revision:fc525ba9185b24a7f359cac4ba8cd8212b687d9e"]
+}

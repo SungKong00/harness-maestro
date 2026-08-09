@@ -1,0 +1,10 @@
+{
+  "action": "activate",
+  "approval_ref": "owner_decision:dashboard:product-design-web-structure",
+  "candidate_digest": "32c4e5a11b4bc9a8b5824899cd3f0414aa4f54c1bce7ce0ab0a6487d274d91ac",
+  "candidate_id": "product-design-web-structure",
+  "pack_version": 1,
+  "previous_definition_digest": null,
+  "schema_version": "maestro_expertise_publication_v1",
+  "source_candidate_path": ".maestro/state/candidates/expertise/product-design-web-structure"
+}

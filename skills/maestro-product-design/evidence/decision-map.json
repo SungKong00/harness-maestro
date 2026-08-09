@@ -1,0 +1,201 @@
+{
+  "schema_version": "maestro_expertise_decision_map_v1",
+  "candidate_id": "product-design-decision-system-v7",
+  "decision_areas": [
+    {
+      "area_id": "outcome-content",
+      "decision": "Bind the changed UI to a user, task, state, desired outcome, ranked content and action, evidence, constraints, and a question-matched validation plan.",
+      "failure_if_omitted": "Visual choices become plausible decoration without a defensible product outcome or stopping rule.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "owner-preference", "runtime-verification"],
+      "evidence_refs": ["govuk-user-needs", "govuk-prototyping", "project:target-product-context", "owner:product-priority", "verification:representative-task"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-brief",
+        "rationale": "The brief owns scope, assurance mode, evidence gaps, material decisions, and proportional validation."
+      }
+    },
+    {
+      "area_id": "information-architecture-navigation",
+      "decision": "Model tasks, objects, states, relationships, evidence, permissions, navigation, entry, exit, cancellation, and recovery before choosing page structure.",
+      "failure_if_omitted": "Navigation and regions mirror components or organization instead of the complete user task and recovery path.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["govuk-whole-journey", "material-canonical-layouts", "project:role-state-object-inventory", "verification:end-to-end-task-walkthrough"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "information-architecture-and-user-flow",
+        "rationale": "The information architecture Guide owns task and object modeling before visual structure."
+      }
+    },
+    {
+      "area_id": "typography-localization",
+      "decision": "Classify semantic text roles and hierarchy before deriving font, size, weight, line height, measure, fallback, wrapping, and responsive behavior from real Korean and mixed-script content.",
+      "failure_if_omitted": "A nominal type scale passes while real Hangul, fallback, long labels, controls, and mixed-script hierarchy fail.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-korean-script-resources", "w3c-klreq", "uswds-typesetting", "carbon-type-sets", "project:semantic-type-roles", "verification:representative-korean-render"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "typography-korean",
+        "rationale": "The typography Guide owns role classification, metric-aware token derivation, representative corpus, and rendered verification."
+      }
+    },
+    {
+      "area_id": "layout-spacing-responsive",
+      "decision": "Translate task priority into grouping, alignment, spacing roles, container math, scan order, action order, and responsive transformations with value lineage.",
+      "failure_if_omitted": "Arbitrary gaps and familiar grids create equal-weight regions, broken relationships, or desktop stacking rather than responsive design.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-wcag-reflow", "atlassian-spacing", "project:content-and-action-inventory", "verification:default-long-empty-error-reflow"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "visual-hierarchy-layout",
+        "rationale": "The hierarchy Guide owns priority-to-composition decisions and derived layout values."
+      }
+    },
+    {
+      "area_id": "color-surface-theme",
+      "decision": "Choose foreground, background, border, status, focus, and layered-surface roles through project semantic tokens, contrast constraints, and theme context.",
+      "failure_if_omitted": "Per-component colors and surfaces drift, encode meaning inconsistently, or pass brand taste without state and contrast evidence.",
+      "materiality": "important",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-wcag-22", "uswds-design-tokens", "carbon-color-tokens", "project:semantic-color-roles", "verification:state-theme-contrast"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "The system Guide owns semantic color and surface lineage while accessibility and rendered checks constrain outcomes."
+      }
+    },
+    {
+      "area_id": "shape-border-radius-elevation",
+      "decision": "Assign border, radius, elevation, and layer treatment from surface role and project lineage rather than styling each component independently.",
+      "failure_if_omitted": "Cards, dialogs, controls, and containers accumulate unrelated shapes and shadows with no information or interaction purpose.",
+      "materiality": "important",
+      "evidence_types": ["project-fact", "owner-preference", "runtime-verification"],
+      "evidence_refs": ["project:shape-and-surface-roles", "owner:brand-expression", "verification:layer-boundary-and-theme"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "Standards do not choose brand radii or elevation; the Guide requires project lineage and rendered proof without inventing universal pixels."
+      }
+    },
+    {
+      "area_id": "action-control-semantics",
+      "decision": "Classify destination, action, toggle, disclosure, menu, destructive consequence, priority, reversibility, frequency, permission, and state before selecting a control variant and size.",
+      "failure_if_omitted": "Buttons, links, toggles, menus, and destructive actions become interchangeable visual treatments with arbitrary dimensions and misleading emphasis.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-apg-button", "govuk-button", "w3c-wcag-22", "project:action-taxonomy", "verification:control-states-and-outcomes"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "The system Guide defines action taxonomy, component anatomy, token derivation, and state verification before appearance."
+      }
+    },
+    {
+      "area_id": "forms-validation",
+      "decision": "Define labels, constraints, prevention, validation timing, input preservation, error identification, correction, announcement, focus, confirmation, and recovery before styling fields.",
+      "failure_if_omitted": "A polished form loses user input, validates prematurely, hides correction, or cannot recover from consequential submission.",
+      "materiality": "blocking",
+      "evidence_types": ["external-current", "external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["govuk-validation", "uswds-validation", "w3c-wcag-22", "project:form-policy", "verification:form-error-recovery"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "interaction-responsive-accessibility",
+        "rationale": "The interaction Guide owns validation timing, feedback, focus, and recovery behavior; the system Guide supplies component lineage."
+      }
+    },
+    {
+      "area_id": "state-feedback-recovery",
+      "decision": "Inventory reachable states and define feedback, keyboard and focus outcomes, announcements, cancellation, retry, partial failure, and recovery.",
+      "failure_if_omitted": "A default render hides unreachable failure, loading, permission, recovery, focus, or announcement behavior.",
+      "materiality": "blocking",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-status-messages", "w3c-focus-not-obscured", "uswds-accessibility-process", "project:reachable-state-inventory", "verification:keyboard-focus-recovery"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "interaction-responsive-accessibility",
+        "rationale": "The interaction Guide owns relevance-filtered state and recovery contracts and in-context accessibility checks."
+      }
+    },
+    {
+      "area_id": "data-display",
+      "decision": "Choose graph, timeline, table, cards, list-detail, or visualization encoding from comparison, chronology, topology, investigation, precision, and provenance needs.",
+      "failure_if_omitted": "Data surfaces optimize for visual novelty while distorting relationships, comparison, units, uncertainty, or execution facts.",
+      "materiality": "important",
+      "evidence_types": ["external-current", "external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["github-actions-visualization", "argo-dag", "airflow-ui", "project:typed-data-relations", "verification:dense-representative-data"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "operational-workflow-interface",
+        "rationale": "The operations Guide owns the most specialized data-projection and provenance rules while the system Guide covers generic component contracts."
+      }
+    },
+    {
+      "area_id": "imagery-iconography",
+      "decision": "Classify assets as functional, informative, brand-bearing, decorative, or atmospheric and define semantics, labels, crop, aspect, focal point, fallback, contrast, resolution, and provenance.",
+      "failure_if_omitted": "Icons become ambiguous controls and imagery hides weak hierarchy, breaks at responsive crops, or lacks fallback and rights context.",
+      "materiality": "important",
+      "evidence_types": ["project-fact", "owner-preference", "runtime-verification"],
+      "evidence_refs": ["project:asset-role-and-rights", "owner:brand-expression", "verification:asset-content-responsive-fallback"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "The system Guide owns asset role, component integration, responsive behavior, and bounded project preference."
+      }
+    },
+    {
+      "area_id": "motion",
+      "decision": "Define the interaction or communication job, essential information, duration and easing lineage, interruption, performance, and reduced-motion behavior before adding motion.",
+      "failure_if_omitted": "Animation becomes decorative timing guessed by the model or hides state without an equivalent reduced-motion path.",
+      "materiality": "important",
+      "evidence_types": ["external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["w3c-animation-from-interactions", "project:motion-role-tokens", "verification:motion-and-reduced-motion"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "interaction-responsive-accessibility",
+        "rationale": "The Product Design Guide defines the motion job and accessibility outcome; mechanism-specific choreography remains outside this Pack."
+      }
+    },
+    {
+      "area_id": "token-component-governance",
+      "decision": "Prefer stable existing components and semantic tokens, use foundation to semantic to component-when-needed lineage, name bounded exceptions, and track local, experimental, stable, and deprecated maturity.",
+      "failure_if_omitted": "Each task invents plausible raw values and one-off variants, producing an inconsistent system or an overengineered token hierarchy.",
+      "materiality": "blocking",
+      "evidence_types": ["external-current", "external-stable", "project-fact", "runtime-verification"],
+      "evidence_refs": ["dtcg-token-format-2025", "uswds-design-tokens", "uswds-lifecycle", "govuk-component-modification", "govuk-contribution-criteria", "project:current-design-system", "verification:component-consumer-matrix"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "The new coherent Guide owns system audit, value lineage, component contracts, maturity, extension, and proportional scope."
+      }
+    },
+    {
+      "area_id": "rendered-verification",
+      "decision": "Bind every material decision to realistic browser states, interactions, responsive and localization fixtures, deterministic visual evidence where useful, and a human task/design-contract verdict.",
+      "failure_if_omitted": "Code inspection, a component test, or a passing pixel diff is incorrectly treated as evidence that the product result is coherent and usable.",
+      "materiality": "blocking",
+      "evidence_types": ["external-current", "external-stable", "runtime-verification"],
+      "evidence_refs": ["storybook-ui-testing", "playwright-visual-comparisons", "uswds-accessibility-process", "verification:decision-bound-render-artifacts"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "design-system-and-components",
+        "rationale": "The system Guide owns exact decision-to-scenario closure and separates change detection from human quality judgment."
+      }
+    },
+    {
+      "area_id": "reference-selection-transfer",
+      "decision": "Research exact task states, adjacent patterns, counterexamples, and standards; preserve provenance and uncertainty; transfer decisions rather than surfaces; and verify locally.",
+      "failure_if_omitted": "A fashionable screenshot or component library is copied as proof without matching semantics, states, context, or local system constraints.",
+      "materiality": "important",
+      "evidence_types": ["external-current", "external-stable", "runtime-verification"],
+      "evidence_refs": ["govuk-patterns", "uswds-principles", "verification:local-reference-transfer-prototype"],
+      "disposition": {
+        "kind": "proposed-guide",
+        "target_id": "reference-selection",
+        "rationale": "The reference Guide owns research roles, counterexamples, transfer limits, rejected rules, and local validation."
+      }
+    }
+  ]
+}

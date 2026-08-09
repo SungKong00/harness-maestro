@@ -1,0 +1,188 @@
+[
+  {
+    "case_id": "fast-mechanical-change",
+    "goal": "Rename a local variable",
+    "risk": "low",
+    "intent": "implementation",
+    "expected_depth": "fast",
+    "expected_lenses": [],
+    "expected_assignments": ["implementation", "verification"]
+  },
+  {
+    "case_id": "fast-contract-change",
+    "goal": "Implement the API response",
+    "risk": "low",
+    "intent": "implementation",
+    "explicit_lenses": ["contract"],
+    "expected_depth": "fast",
+    "expected_lenses": ["contract"],
+    "expected_assignments": ["implementation", "verification"]
+  },
+  {
+    "case_id": "standard-combined-review",
+    "goal": "Implement API behavior and tests",
+    "risk": "medium",
+    "intent": "implementation",
+    "explicit_lenses": ["contract", "test-proof"],
+    "expected_depth": "standard",
+    "expected_lenses": ["contract", "test-proof"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "deep-independent-review",
+    "goal": "Change authorization, transaction, and rollback behavior",
+    "risk": "high",
+    "intent": "implementation",
+    "explicit_lenses": ["auth-boundary", "transaction-concurrency", "rollback-observability"],
+    "expected_depth": "deep",
+    "expected_lenses": ["auth-boundary", "transaction-concurrency", "rollback-observability"],
+    "expected_assignments": ["review-auth-boundary", "review-transaction-concurrency", "review-rollback-observability", "implementation", "verification"]
+  },
+  {
+    "case_id": "read-only-api-review",
+    "goal": "Review the API contract",
+    "risk": "medium",
+    "intent": "review",
+    "expected_depth": "standard",
+    "expected_lenses": ["contract"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "read-only-research",
+    "goal": "Research recent storage alternatives",
+    "risk": "medium",
+    "intent": "research",
+    "explicit_lenses": ["delivery-feasibility"],
+    "expected_depth": "standard",
+    "expected_lenses": ["delivery-feasibility"],
+    "expected_assignments": ["research"]
+  },
+  {
+    "case_id": "deterministic-verification",
+    "goal": "Run the unit tests and lint command",
+    "risk": "medium",
+    "intent": "implementation",
+    "expected_depth": "standard",
+    "expected_lenses": [],
+    "expected_assignments": ["verification"]
+  },
+  {
+    "case_id": "automatic-auth",
+    "goal": "Change authorization behavior",
+    "risk": "medium",
+    "intent": "implementation",
+    "expected_depth": "standard",
+    "expected_lenses": ["auth-boundary"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "automatic-data-integrity",
+    "goal": "Migrate the persistence schema safely",
+    "risk": "high",
+    "intent": "implementation",
+    "expected_depth": "deep",
+    "expected_lenses": ["data-integrity", "contract"],
+    "expected_assignments": ["review-data-integrity", "review-contract", "implementation", "verification"]
+  },
+  {
+    "case_id": "automatic-transaction",
+    "goal": "Implement payment webhook retries",
+    "risk": "medium",
+    "intent": "implementation",
+    "expected_depth": "standard",
+    "expected_lenses": ["transaction-concurrency"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "automatic-deployment",
+    "goal": "Prepare the production deployment",
+    "risk": "medium",
+    "intent": "implementation",
+    "expected_depth": "standard",
+    "expected_lenses": ["rollback-observability"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "automatic-user-flow",
+    "goal": "Review the checkout user flow",
+    "risk": "medium",
+    "intent": "review",
+    "expected_depth": "standard",
+    "expected_lenses": ["user-flow"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "explicit-feasibility",
+    "goal": "Review whether the release plan is realistic",
+    "risk": "medium",
+    "intent": "review",
+    "explicit_lenses": ["delivery-feasibility"],
+    "expected_depth": "standard",
+    "expected_lenses": ["delivery-feasibility"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "korean-contract",
+    "goal": "API 응답 계약을 검토해줘",
+    "risk": "medium",
+    "intent": "review",
+    "expected_depth": "standard",
+    "expected_lenses": ["contract"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "korean-test-proof",
+    "goal": "테스트를 추가해줘",
+    "risk": "medium",
+    "intent": "implementation",
+    "expected_depth": "standard",
+    "expected_lenses": ["test-proof"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "korean-auth",
+    "goal": "권한을 변경해줘",
+    "risk": "high",
+    "intent": "implementation",
+    "expected_depth": "deep",
+    "expected_lenses": ["auth-boundary"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "korean-data",
+    "goal": "데이터를 마이그레이션해줘",
+    "risk": "high",
+    "intent": "implementation",
+    "expected_depth": "deep",
+    "expected_lenses": ["data-integrity"],
+    "expected_assignments": ["review", "implementation", "verification"]
+  },
+  {
+    "case_id": "korean-logging",
+    "goal": "로그 보존 동작을 검토해줘",
+    "risk": "medium",
+    "intent": "review",
+    "expected_depth": "standard",
+    "expected_lenses": ["rollback-observability"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "critical-fallback",
+    "goal": "Assess an irreversible internal choice",
+    "risk": "critical",
+    "intent": "review",
+    "expected_depth": "deep",
+    "expected_lenses": ["delivery-feasibility"],
+    "expected_assignments": ["review"]
+  },
+  {
+    "case_id": "high-risk-no-lens-warning",
+    "goal": "Compare competing approaches for an internal coordinator",
+    "risk": "high",
+    "intent": "implementation",
+    "expected_depth": "deep",
+    "expected_lenses": [],
+    "expected_assignments": ["implementation", "verification"],
+    "expected_warning": "HIGH_RISK_LENS_GAP"
+  }
+]

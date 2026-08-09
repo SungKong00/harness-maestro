@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maestro DevOps SRE"
+  short_description: "Apply reliability and production operations criteria"
+  default_prompt: "Use $maestro-devops-sre with only the Decision Guides selected by the Maestro route."
+policy:
+  allow_implicit_invocation: false

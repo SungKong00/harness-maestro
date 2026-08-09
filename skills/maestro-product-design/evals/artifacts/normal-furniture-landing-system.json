@@ -1,0 +1,16 @@
+{
+  "schema_version": "maestro_expertise_case_artifact_v1",
+  "case_id": "normal-furniture-landing-system",
+  "baseline_observation": "Product Design v6 provides briefs, reference transfer, hierarchy, and rendered-check guidance, but lacks a unified token and component lifecycle, fixed surface scan, material value lineage, and system assurance scope.",
+  "candidate_observation": "Product Design v7 requires exact-task shipped-state research, transfer limits, system scope, foundation-to-semantic-to-component-when-needed lineage, lifecycle, Korean and responsive scenarios, and decision-bound renders.",
+  "evidence_refs": [
+    "baseline:SKILL.md:research-gate",
+    "candidate:SKILL.md:research-gate",
+    "candidate:SKILL.md:proportional-scope",
+    "candidate:design-system-and-components:sections-2-6",
+    "candidate:reference-selection:checks-1-8",
+    "research:claim-semantic-token-layers",
+    "research:claim-rendered-verification",
+    "route-result:normal-furniture-landing-system"
+  ]
+}

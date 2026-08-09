@@ -1,0 +1,1020 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sungkong00.github.io/harness-maestro/schemas/design-assurance.schema.json",
+  "title": "Harness Maestro Product Design Assurance",
+  "$ref": "#/$defs/packet",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "longLine": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    },
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\r\\n\\u0000]+$",
+      "not": {
+        "const": "."
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "mode",
+        "activation",
+        "mutation_gate",
+        "verification_gate"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_product_design_assurance_requirement_v1"
+        },
+        "profile_id": {
+          "const": "product-design-evidence-v1"
+        },
+        "mode": {
+          "enum": [
+            "compact",
+            "standard",
+            "system"
+          ]
+        },
+        "activation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "work_kind",
+            "expertise_pack_id"
+          ],
+          "properties": {
+            "work_kind": {
+              "const": "user-interface"
+            },
+            "expertise_pack_id": {
+              "const": "product-design"
+            }
+          }
+        },
+        "mutation_gate": {
+          "const": "design-decision-packet"
+        },
+        "verification_gate": {
+          "const": "rendered-verification-pass"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "change_kind",
+        "target_refs",
+        "system_mode"
+      ],
+      "properties": {
+        "change_kind": {
+          "enum": [
+            "element",
+            "component",
+            "page",
+            "flow",
+            "system"
+          ]
+        },
+        "target_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "system_mode": {
+          "enum": [
+            "reuse",
+            "extend",
+            "establish"
+          ]
+        }
+      }
+    },
+    "systemArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "role",
+        "disposition",
+        "reason"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "role": {
+          "enum": [
+            "tokens",
+            "components",
+            "typography",
+            "layout",
+            "theme",
+            "documentation"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "retain",
+            "adapt",
+            "replace",
+            "not-applicable"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/longLine"
+        }
+      }
+    },
+    "systemSymbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref",
+        "artifact_path",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "token",
+            "component"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/line"
+        },
+        "artifact_path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "systemContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "artifacts",
+        "inventory",
+        "token_model",
+        "reuse_priority",
+        "raw_value_policy",
+        "component_lifecycle"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "existing",
+            "partial",
+            "absent"
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/systemArtifact"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/systemSymbol"
+          }
+        },
+        "token_model": {
+          "const": "foundation-semantic-component-when-needed"
+        },
+        "reuse_priority": {
+          "const": "existing-token-component-before-extension"
+        },
+        "raw_value_policy": {
+          "const": "token-or-explicit-derived-exception"
+        },
+        "component_lifecycle": {
+          "const": "local-experimental-stable-deprecated"
+        }
+      }
+    },
+    "compactEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "satisfied",
+        "evidence_refs"
+      ],
+      "properties": {
+        "satisfied": {
+          "type": "boolean"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "compactEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantic_role_unchanged",
+        "interaction_contract_unchanged",
+        "approved_tokens_only",
+        "no_new_variant",
+        "no_unresolved_accessibility_or_locale_risk",
+        "affected_contexts_known"
+      ],
+      "properties": {
+        "semantic_role_unchanged": {
+          "$ref": "#/$defs/compactEvidence"
+        },
+        "interaction_contract_unchanged": {
+          "$ref": "#/$defs/compactEvidence"
+        },
+        "approved_tokens_only": {
+          "$ref": "#/$defs/compactEvidence"
+        },
+        "no_new_variant": {
+          "$ref": "#/$defs/compactEvidence"
+        },
+        "no_unresolved_accessibility_or_locale_risk": {
+          "$ref": "#/$defs/compactEvidence"
+        },
+        "affected_contexts_known": {
+          "$ref": "#/$defs/compactEvidence"
+        }
+      }
+    },
+    "directionAlternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alternative_id",
+        "summary",
+        "material_differences",
+        "tradeoffs",
+        "basis_refs"
+      ],
+      "properties": {
+        "alternative_id": {
+          "$ref": "#/$defs/id"
+        },
+        "summary": {
+          "$ref": "#/$defs/longLine"
+        },
+        "material_differences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "tradeoffs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "basis_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "directionContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem",
+        "user_tasks",
+        "decision_criteria",
+        "uncertainty",
+        "selection_character",
+        "settled_reason",
+        "alternatives",
+        "selected_alternative_id",
+        "selection_authority",
+        "selection_refs"
+      ],
+      "properties": {
+        "problem": {
+          "$ref": "#/$defs/longLine"
+        },
+        "user_tasks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "decision_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "uncertainty": {
+          "enum": [
+            "settled",
+            "material"
+          ]
+        },
+        "selection_character": {
+          "enum": [
+            "evidence-dominant",
+            "preference-sensitive"
+          ]
+        },
+        "settled_reason": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/longLine"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/directionAlternative"
+          }
+        },
+        "selected_alternative_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selection_authority": {
+          "enum": [
+            "not-required",
+            "evidence",
+            "owner"
+          ]
+        },
+        "selection_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "research": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "reason_codes",
+        "evidence_digest"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "evidence_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "surfaceCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface_id",
+        "status",
+        "decision_ids",
+        "reason",
+        "evidence_refs"
+      ],
+      "properties": {
+        "surface_id": {
+          "enum": [
+            "outcome-content",
+            "information-architecture-navigation",
+            "typography-localization",
+            "layout-spacing-responsive",
+            "color-surface-theme",
+            "shape-border-radius-elevation",
+            "action-control-semantics",
+            "forms-validation",
+            "state-feedback-recovery",
+            "data-display",
+            "imagery-iconography",
+            "motion",
+            "token-component-governance",
+            "rendered-verification"
+          ]
+        },
+        "status": {
+          "enum": [
+            "covered",
+            "not_applicable"
+          ]
+        },
+        "decision_ids": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "reason": {
+          "$ref": "#/$defs/longLine"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "valueLineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref",
+        "exception_reason"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "existing-token",
+            "component-contract",
+            "new-semantic-token",
+            "new-component-contract",
+            "derived-local-value",
+            "owner-preference",
+            "asset",
+            "content-rule"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/line"
+        },
+        "exception_reason": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/longLine"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "target_ref",
+        "property_group",
+        "semantic_role",
+        "authority_class",
+        "basis_refs",
+        "chosen_rule",
+        "value_lineage",
+        "affected_states",
+        "verification_scenario_ids",
+        "rationale"
+      ],
+      "properties": {
+        "decision_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "property_group": {
+          "enum": [
+            "content",
+            "hierarchy",
+            "typography",
+            "spacing",
+            "color",
+            "shape",
+            "action",
+            "input",
+            "navigation",
+            "data",
+            "media",
+            "state",
+            "motion",
+            "responsive",
+            "localization"
+          ]
+        },
+        "semantic_role": {
+          "$ref": "#/$defs/line"
+        },
+        "authority_class": {
+          "enum": [
+            "standard",
+            "project-system",
+            "research",
+            "owner-preference",
+            "derived-local"
+          ]
+        },
+        "basis_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "chosen_rule": {
+          "$ref": "#/$defs/longLine"
+        },
+        "value_lineage": {
+          "$ref": "#/$defs/valueLineage"
+        },
+        "affected_states": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "verification_scenario_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "rationale": {
+          "$ref": "#/$defs/longLine"
+        }
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "compact",
+            "regular",
+            "wide"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 7680
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 7680
+        }
+      }
+    },
+    "verificationScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_id",
+        "target_ref",
+        "states",
+        "contexts",
+        "viewport",
+        "locale",
+        "input_methods",
+        "checks",
+        "artifact_path"
+      ],
+      "properties": {
+        "scenario_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_ref": {
+          "$ref": "#/$defs/line"
+        },
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "contexts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        },
+        "viewport": {
+          "$ref": "#/$defs/viewport"
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        },
+        "input_methods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "pointer",
+              "keyboard",
+              "touch",
+              "screen-reader"
+            ]
+          }
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "visual-hierarchy",
+              "token-lineage",
+              "content-fit",
+              "responsive",
+              "interaction",
+              "keyboard-focus",
+              "contrast",
+              "localization",
+              "overflow",
+              "state-feedback",
+              "visual-regression"
+            ]
+          }
+        },
+        "artifact_path": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/repositoryPath"
+            },
+            {
+              "pattern": "^\\.maestro/state/design-assurance/[a-f0-9]{64}/.+\\.png$"
+            }
+          ]
+        }
+      }
+    },
+    "packet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "packet_id",
+        "plan_id",
+        "goal_digest",
+        "expertise_pack_id",
+        "pack_definition_digest",
+        "assurance",
+        "scope",
+        "system_context",
+        "direction_context",
+        "compact_eligibility",
+        "research",
+        "surface_checks",
+        "decisions",
+        "verification_scenarios",
+        "unresolved",
+        "writes_performed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "maestro_product_design_decision_packet_v3"
+        },
+        "packet_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "goal_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "expertise_pack_id": {
+          "const": "product-design"
+        },
+        "pack_definition_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "assurance": {
+          "$ref": "#/$defs/requirement"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "system_context": {
+          "$ref": "#/$defs/systemContext"
+        },
+        "direction_context": {
+          "$ref": "#/$defs/directionContext"
+        },
+        "compact_eligibility": {
+          "$ref": "#/$defs/compactEligibility"
+        },
+        "research": {
+          "$ref": "#/$defs/research"
+        },
+        "surface_checks": {
+          "type": "array",
+          "minItems": 14,
+          "maxItems": 14,
+          "items": {
+            "$ref": "#/$defs/surfaceCheck"
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/decision"
+          }
+        },
+        "verification_scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/verificationScenario"
+          }
+        },
+        "unresolved": {
+          "const": []
+        },
+        "writes_performed": {
+          "const": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assurance": {
+                "properties": {
+                  "mode": {
+                    "const": "compact"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "change_kind": {
+                    "enum": [
+                      "element",
+                      "component"
+                    ]
+                  },
+                  "system_mode": {
+                    "const": "reuse"
+                  }
+                }
+              },
+              "system_context": {
+                "properties": {
+                  "status": {
+                    "const": "existing"
+                  },
+                  "artifacts": {
+                    "items": {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/systemArtifact"
+                        },
+                        {
+                          "properties": {
+                            "disposition": {
+                              "const": "retain"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "direction_context": {
+                "properties": {
+                  "uncertainty": {
+                    "const": "settled"
+                  },
+                  "alternatives": {
+                    "maxItems": 0
+                  },
+                  "selected_alternative_id": {
+                    "type": "null"
+                  },
+                  "selection_authority": {
+                    "const": "not-required"
+                  }
+                }
+              },
+              "compact_eligibility": {
+                "properties": {
+                  "semantic_role_unchanged": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "interaction_contract_unchanged": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "approved_tokens_only": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "no_new_variant": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "no_unresolved_accessibility_or_locale_risk": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "affected_contexts_known": {
+                    "properties": {
+                      "satisfied": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              },
+              "research": {
+                "properties": {
+                  "required": {
+                    "const": false
+                  },
+                  "evidence_digest": {
+                    "type": "null"
+                  }
+                }
+              },
+              "decisions": {
+                "maxItems": 1,
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "authority_class": {
+                          "const": "project-system"
+                        },
+                        "value_lineage": {
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "existing-token",
+                                "component-contract"
+                              ]
+                            },
+                            "exception_reason": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "verification_scenarios": {
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

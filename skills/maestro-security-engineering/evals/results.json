@@ -1,0 +1,50 @@
+{
+  "expertise_pack_id": "security-engineering",
+  "results": [
+    {
+      "case_id": "normal-tenant-authorization",
+      "observed_guides": [
+        "threat-model-and-security-requirements",
+        "authorization-and-tenant-isolation"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "security-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "normal-session-secrets",
+      "observed_guides": [
+        "authentication-and-session-lifecycle",
+        "secrets-and-key-lifecycle"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "security-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "edge-untrusted-upload",
+      "observed_guides": [
+        "threat-model-and-security-requirements",
+        "untrusted-data-and-output-controls"
+      ],
+      "observed_mode": "reuse",
+      "observed_pack_id": "security-engineering",
+      "verdict": "pass"
+    },
+    {
+      "case_id": "non-trigger-visual-design",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    },
+    {
+      "case_id": "overlap-security-test-plan",
+      "observed_guides": [],
+      "observed_mode": "reuse",
+      "observed_pack_id": null,
+      "verdict": "pass"
+    }
+  ],
+  "schema_version": "maestro_expertise_eval_results_v1"
+}

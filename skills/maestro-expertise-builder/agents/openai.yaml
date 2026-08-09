@@ -1,0 +1,7 @@
+interface:
+  display_name: "Maestro Expertise Builder"
+  short_description: "Compile evidence into an expertise candidate"
+  default_prompt: "Use $maestro-expertise-builder to create a project-local candidate only after its admission gate passes."
+policy:
+  allow_implicit_invocation: false
+

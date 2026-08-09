@@ -1,0 +1,94 @@
+{
+  "schema_version": "maestro_expertise_sources_v1",
+  "expertise_pack_id": "software-qa",
+  "verified_on": "2026-07-26",
+  "sources": [
+    {
+      "source_id": "iso-iec-ieee-29119-2",
+      "tier": 1,
+      "authority": "international software testing process standard",
+      "url": "https://www.iso.org/standard/79428.html",
+      "supports": [
+        "risk-based test planning, monitoring, design, execution, and completion"
+      ],
+      "used_by": [
+        "qa-risk-traceability",
+        "qa-quality-handoffs",
+        "qa-regression-release"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "iso-iec-ieee-29119-3",
+      "tier": 1,
+      "authority": "international software testing documentation standard",
+      "url": "https://www.iso.org/standard/79429.html",
+      "supports": [
+        "test documentation and evidence structure"
+      ],
+      "used_by": [
+        "qa-quality-handoffs",
+        "qa-defect-evidence"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "istqb-ctfl",
+      "tier": 1,
+      "authority": "international testing certification body syllabus",
+      "url": "https://www.istqb.org/certifications/certified-tester-foundation-level-ctfl-v4-0/",
+      "supports": [
+        "risk-based testing, equivalence partitioning, boundary analysis, decision tables, state transitions, and defect reporting"
+      ],
+      "used_by": [
+        "qa-risk-traceability",
+        "qa-test-design",
+        "qa-scenario-state-exploration",
+        "qa-defect-evidence"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "nist-ir-8397",
+      "tier": 1,
+      "authority": "United States government software verification guidance",
+      "url": "https://csrc.nist.gov/pubs/ir/8397/final",
+      "supports": [
+        "software verification techniques and evidence-oriented testing"
+      ],
+      "used_by": [
+        "qa-test-design",
+        "qa-regression-release"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "owasp-wstg",
+      "tier": 1,
+      "authority": "maintainer security testing guide",
+      "url": "https://owasp.org/www-project-web-security-testing-guide/",
+      "supports": [
+        "web security test scenario categories and explicit security handoff boundary"
+      ],
+      "used_by": [
+        "qa-scenario-state-exploration",
+        "qa-quality-handoffs"
+      ],
+      "freshness": "versioned"
+    },
+    {
+      "source_id": "w3c-wcag-22",
+      "tier": 1,
+      "authority": "W3C Recommendation",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "supports": [
+        "accessibility criteria that require specialized verification"
+      ],
+      "used_by": [
+        "qa-risk-traceability",
+        "qa-quality-handoffs"
+      ],
+      "freshness": "versioned"
+    }
+  ]
+}
