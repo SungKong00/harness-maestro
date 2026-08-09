@@ -3,16 +3,16 @@
   "registry": {
     "sha256": "0091b249b07d99d5b57d491715ded179acbf377743b35062725fd26f232194b7"
   },
-  "release_id": "cee19638e7ac1ffb30ca73884cc97e9c495abfddac022b7d1eb47817db3519be",
+  "release_id": "cdab117cb83931d94fcc726c128e05afa21e34cea3f0e185ab67ec1fef3d2c8e",
   "runtime": {
     "file_count": 149,
-    "sha256": "f46964959fbda19752ca80112c506f95d58e6f9d68262a9e4832b3c789a16a67"
+    "sha256": "24755df7177dcbf2ce550c3bc35b78f8daaf40da916e177408956707cf1e174a"
   },
   "schema_version": "maestro_release_manifest_v1",
   "skills": {
     "maestro": {
       "file_count": 12,
-      "sha256": "dd7e1f5ad3fff2afb9850366f499957f44265c16bc64b2d8505aec071288d049"
+      "sha256": "536db7ac31c7572f736232b0f849916326d08a7bb553642c19e6ed91d3cf5429"
     },
     "maestro-adapter-builder": {
       "file_count": 4,

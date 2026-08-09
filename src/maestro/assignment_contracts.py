@@ -588,6 +588,16 @@ def assignment_output_schema(
                 disposition["properties"]["decision_id"] = {
                     "enum": decision_ids
                 }
+                implementation_paths = sorted(
+                    {
+                        item["path"]
+                        for item in projected["surface_map"]["artifacts"]
+                        if item["state"] == "existing"
+                    }
+                )
+                disposition["properties"]["implementation_refs"][
+                    "items"
+                ] = {"enum": implementation_paths}
             artifact = schema["$defs"].get("designRenderedArtifact")
             if isinstance(artifact, dict):
                 artifact["properties"]["scenario_id"] = {

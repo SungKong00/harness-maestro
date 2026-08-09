@@ -61,55 +61,19 @@ Assignment/Host exact sidecars → one writer → verifier → finalize`.
    - Unknown `auto` wording defaults to read-only review.
    - A request that says to review, design, decide, or plan **before**
      implementation is staged. Do not create or run a mutation Assignment yet.
-   - Before choosing direct versus staged for any non-trivial implementation,
-     classify the solution direction as `settled` or `material` and preserve
-     the basis in the working plan. `settled` means the request or current
-     project authority already fixes the material outcome and acceptance
-     direction; a bounded bug fix or exact compatibility repair can qualify.
-     `material` means two plausible solutions differ in architecture, product
-     structure, technology, behavior contract, or owner preference. The
-     existence of inherited code, UI, or an early cleanup does not settle that
-     choice. Route material uncertainty through `decide` before any mutation;
-     keep small settled work direct.
-   - For a non-trivial implementation request in an initialized project, start
-     one run observation now, before routing. Use a concise task label in the
-     user's language. In Codex Desktop, allowlist the public request
-     `model`, `reasoning_effort`, `thread_id`, and `turn_id` into
-     `maestro observe desktop`; otherwise use `maestro observe start` with one
-     stable opaque `--request-key` created at intake. This is the only root
-     observation for that user request. Attach no fallback at intake.
-     `desktop_request` means only that the request
-     setting and correlation IDs were observed; it does not authorize
-     current-Host execution. Keep the returned run and observation IDs for the
-     whole workflow. Do not start this operational observation for a read-only request.
+   - Before choosing direct versus staged for any non-trivial implementation, classify the solution direction as `settled` or `material` and preserve the basis in the working plan. `settled` means the request or current project authority already fixes the material outcome and acceptance direction; a bounded bug fix or exact compatibility repair can qualify.
+     `material` means two plausible solutions differ in architecture, product structure, technology, behavior contract, or owner preference. The existence of inherited code, UI, or an early cleanup does not settle that choice. Route material uncertainty through `decide` before any mutation; keep small settled work direct.
+   - For a non-trivial implementation request in an initialized project, start one run observation now, before routing. Use a concise task label in the user's language. In Codex Desktop, allowlist the public request `model`, `reasoning_effort`, `thread_id`, and `turn_id` into `maestro observe desktop`; otherwise use `maestro observe start` with one stable opaque `--request-key` created at intake.
+     This is the only root observation for that user request. Attach no fallback at intake. `desktop_request` means only that the request setting and correlation IDs were observed; it does not authorize current-Host execution. Keep the returned run and observation IDs for the whole workflow. Do not start this operational observation for a read-only request.
    - If the user explicitly names another installed Skill, including
      `$reference-research-team` or `$orchestrated-work-session`, use it at the
      relevant step while Maestro remains workflow owner. Built-in Expertise
      research uses `$maestro-reference-research`; it must not depend on a
      user's unrelated global Skill installation.
-   - Treat an explicit request to create, add, revise, refresh, deprecate, or
-     otherwise improve an Expertise Pack or Decision Guide as
-     complete Expertise authoring intent. The user does not need to restate the
-     lifecycle. Inspect `maestro expertise list`, compile a closed surface
-     signal for `maestro govern classify`, open research only when the evidence
-     contract requires it, invoke `$maestro-expertise-builder`, run its frozen
-     evaluation and `validate-candidate`, and report the isolated candidate.
-     Mark this path `generation.mode=user-requested` with a null signal
-     fingerprint.
-     Attempt at most two bounded repairs for validator failures. Unless the
-     user separately requests activation or update, stop at the candidate and
-     never modify active Expertise. A non-expired, unambiguous candidate that
-     passes validation is immediately eligible for Maestro routing in this
-     project. If the same request already authorized implementation, reroute
-     the implementation goal so the existing mutation owner can apply its
-     Guides; if the request was authoring-only, do not start implementation.
-     Candidate validation and routing authority are separate. Only an
-     `ordinary-route` candidate may be immediately eligible; a task-gap
-     candidate needs its exact corrected producing route, and every merge,
-     split, move, copy, or multi-member ChangeSet stays `management-only`
-     until owner-approved atomic publication. Candidate selection never creates
-     a writer, widens allowed paths, or bypasses the ordinary Assignment and
-     verification contract.
+   - Treat an explicit request to create, add, revise, refresh, deprecate, or otherwise improve an Expertise Pack or Decision Guide as complete Expertise authoring intent. The user does not need to restate the
+     lifecycle. Inspect `maestro expertise list`, compile a closed surface signal for `maestro govern classify`, open research only when the evidence contract requires it, invoke `$maestro-expertise-builder`, run its frozen evaluation and `validate-candidate`, and report the isolated candidate. Mark this path `generation.mode=user-requested` with a null signal fingerprint.
+     Attempt at most two bounded repairs for validator failures. Unless the user separately requests activation or update, stop at the candidate and never modify active Expertise. A non-expired, unambiguous candidate that passes validation is immediately eligible for Maestro routing in this project. If the same request already authorized implementation, reroute the implementation goal so the existing mutation owner can apply its Guides; if the request was authoring-only, do not start implementation.
+     Candidate validation and routing authority are separate. Only an `ordinary-route` candidate may be immediately eligible; a task-gap candidate needs its exact corrected producing route, and every merge, split, move, copy, or multi-member ChangeSet stays `management-only` until owner-approved atomic publication. Candidate selection never creates a writer, widens allowed paths, or bypasses the ordinary Assignment and verification contract.
    - Before routing any non-trivial task, enter `expertise-check` in the working plan or progress update. Classify `not-needed`, `single-route`,
      `multi-pack`, `true-expertise-gap`, or `research-gate`; explain `not-needed` and never let an omitted checkpoint imply it.
      When repeated co-use, overlap, handoff, or scattered Guides suggest an
