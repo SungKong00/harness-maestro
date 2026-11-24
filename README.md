@@ -1,477 +1,88 @@
 # Harness Maestro
 
-> AI가 저장소의 모든 문서와 에이전트를 한꺼번에 쓰지 않고, 현재 작업에 필요한
-> 근거와 검토 관점만 골라 가장 작은 안전한 흐름으로 구현·검증하도록 돕는 범용
-> 프로젝트 하네스입니다.
+**작업마다 필요한 검토만 골라 쓰고, 무엇을 확인했는지 남기는 Codex 하네스.**
 
-Harness Maestro는 자율 멀티에이전트 런타임이 아니라 **프로젝트 지식, 라우팅,
-검증, 개선 기록을 관리하는 작은 제어 계층**입니다. 결정론적 CLI가 계획과 계약을
-만들고, `$maestro` Skill이 Codex 같은 에이전트 호스트에서 그 계약을 실행합니다.
+문서 오타 수정과 주문 API의 동시성 변경에 같은 절차를 적용할 필요는 없습니다. Maestro는 **CLI가 계획과 검증 조건을 만들고, Codex가 그 조건 안에서 작업**하도록 나눴습니다. 단순한 변경은 짧게 끝내고, 근거가 부족하거나 위험한 변경에만 검토를 더합니다.
 
-[전체 사용 흐름](#전체-사용-흐름) · [빠른 시작](#빠른-시작) ·
-[언제 무엇을 쓰나요?](#언제-무엇을-쓰나요) ·
-[문서 지도](docs/README.md) ·
-[전문성 팩 구조](docs/architecture/expertise-packs.md) ·
-[판단 우선 구조](docs/architecture/decision-workflow.md) ·
-[통합 운영 뷰어](docs/architecture/operations-viewer.md) ·
-[내부 리서치·전문성 경계](docs/decisions/0009-internal-research-and-expertise-boundary.md) ·
-[프로젝트 로컬 Expertise 활성화](docs/decisions/0010-project-local-expertise-activation.md) ·
-[설계 근거와 참고 자료](docs/research/design-foundations.md)
+## 기능 한눈에 보기
 
-## 먼저 이것만 알면 됩니다
+| 기능 | 이런 요청에 | 남는 결과 |
+| --- | --- | --- |
+| [초기화와 상태 점검](#초기화와-상태-점검) | “이 저장소에 연결하기 전에 바뀔 파일부터 보여줘.” | 초기화 계획, 준비 상태, `doctor` 점검 결과 |
+| [구현 라우팅](#구현-라우팅) | “주문 재시도에서 중복 생성되지 않도록 고쳐줘.” | 작업 계획, 변경 담당과 검토 역할, 검증 근거 |
+| [설계 판단과 구현 승인](#설계-판단과-구현-승인) | “이 화면의 대안을 비교만 해줘. 아직 코드는 바꾸지 마.” | 대안·근거·기술 제약을 묶은 결정 결과 |
+| [검토 관점과 조건부 리서치](#검토-관점과-조건부-리서치) | “화면을 개선하되 최신 브라우저 제약이 중요하면 확인해줘.” | 적용할 Lens·Guide, 필요할 때만 검증된 ResearchBundle |
+| [Snapshot과 Work Viewer](#snapshot과-work-viewer) | “어떤 검토가 실제 변경과 검증으로 이어졌는지 보고 싶어.” | 프로젝트별 JSON snapshot과 로컬 작업 지도 |
+| [규칙 제안과 활성화](#규칙-제안과-활성화) | “같은 변경에서 반복해서 빠진 검증을 규칙 후보로 정리해줘.” | 검토용 Convention 초안, 별도 활성화·갱신 계획 |
 
-Maestro에는 역할이 다른 두 부분이 있습니다.
+![Maestro CLI가 계획을 만들고 Codex가 실행하며 Work Viewer가 별도로 프로젝트 기록을 조회하는 구조](assets/maestro-system.png)
 
-| 구분 | 하는 일 | 평소 직접 사용할 때 |
-|---|---|---|
-| **`maestro` CLI** | 프로젝트 초기화, 문서 선택, 작업 경로 계산, 상태 검사와 기록 | 프로젝트를 처음 연결하거나 상태를 검사할 때 |
-| **`$maestro` Skill** | CLI가 고른 문서·Lens·검증 계약에 따라 실제 개발 작업을 진행 | 기능 구현, 버그 수정, 리팩터링, 아키텍처 검토를 요청할 때 |
+[SVG 원본](assets/maestro-system.svg) · [편집용 Mermaid](assets/maestro-system.mmd)
 
-즉, CLI가 코드를 대신 구현하는 것은 아닙니다. CLI는 안전한 실행 계획을 만들고,
-`$maestro`를 호출받은 Codex 같은 에이전트가 그 계획에 따라 코드를 읽고 수정하고
-검증합니다.
+## 초기화와 상태 점검
 
-### 용어를 이렇게 구분합니다
+**입력:** `$maestro 이 저장소에 연결하기 전에 생성하거나 수정할 파일부터 보여줘.`
 
-| 구성요소 | 질문 | 하는 일 | 새 Agent가 생기나? |
-|---|---|---|---|
-| **Lens** | 무엇을 볼까? | 데이터 무결성, 사용자 흐름, 테스트 증명처럼 놓치기 쉬운 실패 관점 | 아니오 |
-| **Expertise Pack** | 어떤 전문가 기준을 적용할까? | 디자인·마케팅·QA의 재사용 가능한 Decision Guide | 아니오 |
-| **Specialist** | 이번 판단을 누가 분리해서 검토할까? | decision-first 단계의 읽기 전용 임시 역할 | 상주 Agent 아님 |
-| **Executor** | 누가 어떤 권한으로 실행할까? | 구현, 리서치, 검증의 모델·도구·권한 경계 | 기존 Executor를 선택 |
-| **Component surface** | 새 지식을 어디에 둘까? | checker·Convention·Guide·Pack·Lens·Skill·Executor·Department·Adapter·Packet 중 가장 작은 경계 선택 | 분류만으로는 안 생김 |
-
-따라서 “마케팅 전문가를 불렀다”는 말은 마케팅 Pack의 기준으로 먼저 판단한다는
-뜻입니다. 곧바로 광고를 발행하거나 코드를 쓰는 별도 Agent를 만든다는 뜻이 아닙니다.
-현재는 한 작업에 Pack 최대 1개, Guide 최대 4개만 선택합니다.
-
-### 지금 포함된 전문성
-
-| Pack | 주로 다루는 판단 | 리서치가 열리는 경우 |
-|---|---|---|
-| `product-design` | 화면 목적, 한글 타이포그래피, 위계, 상호작용, 접근성 | 최신 레퍼런스·트렌드가 결정을 바꿀 때 |
-| `marketing` | 고객·오퍼, 포지셔닝, 메시지, claim 근거, 채널, 측정 | 현재 고객·시장·경쟁사·플랫폼·규제 정보가 필요할 때 |
-| `software-qa` | 위험·추적성, 테스트 설계, 상태·동시성, 회귀·릴리스 근거 | 현재 브라우저·기기·플랫폼·규정·사고·벤더 동작이 필요할 때 |
-
-세 Pack 모두 아직 `pilot`입니다. 결과가 그럴듯해 보이는지만으로 전역 활성화하지
-않으며, 실제 작업의 독립 평가와 owner 승인이 있어야 승격을 검토합니다.
-
-## 전체 사용 흐름
-
-```text
-[내 컴퓨터에서 한 번]
-Harness Maestro 설치 + $maestro Skill 연결
-              │
-              ▼
-[프로젝트마다 한 번]
-maestro init → project/architecture 초안 작성 → status → upgrade → doctor
-              │
-              ▼
-[개발 작업마다]
-"$maestro 로그인 API를 수정해줘"
-              │
-              ├─ 관련 문서만 선택
-              ├─ 작업에 맞는 전문가 기준만 선택
-              ├─ 최신·외부 근거가 필요할 때만 내부 reference research
-              │    └─ 독립 lane → 검증된 ResearchBundle → 같은 작업 재-route
-              ├─ 위험에 맞는 Fast / Standard / Deep 경로 선택
-              ├─ 실제 artifact로 작은 Surface Map·Engineering Baseline 작성
-              ├─ 각 context에는 허용된 Lens·Guide·reference만 투영
-              ├─ 필요한 경우 독립 Lens 검토
-              ├─ plan·Assignment에 결합된 Packet만 다음 단계로 전달
-              ├─ 방향이 정해진 변경: 한 명의 writer가 구현
-              ├─ 설계·기술 선택: decide → blind Specialist 판단 → 충돌만 합성
-              │                 → 기술 타당성 → enact 승인 → 한 명의 writer
-              └─ test·lint·diff로 검증
-              │
-              ▼
-[필요할 때만]
-doctor로 상태 검사 / upgrade로 프로젝트 갱신 / govern으로 개선 후보 검토
-```
-
-프레임워크 설치본과 Skill은 여러 프로젝트가 공유합니다. 반면 `.maestro/`,
-프로젝트 문서, Convention, 실행 기록과 개선 후보는 프로젝트마다 따로 유지됩니다.
-
-## 언제 무엇을 쓰나요?
-
-| 상황 | 사용 | 결과 |
-|---|---|---|
-| 새 프로젝트에 처음 적용 | `$maestro 이 프로젝트를 Maestro로 초기화해줘` | Markdown 문서 체계와 프로젝트 설정을 미리보기 후 생성 |
-| 기능 구현·버그 수정·리팩터링 | `$maestro <요청>` | 관련 문서만 읽고 작업 위험에 맞춰 구현·검증 |
-| 패턴·아키텍처를 판단만 함 | `$maestro <요청>` 또는 `maestro decide --intent review` | 읽기 전용 판단 결과만 반환하고 구현하지 않음 |
-| 판단한 뒤 구현 | `$maestro <요청>` | `decide`로 역할별 판단 후 검증된 결정 번들만 `enact`하여 구현 |
-| 디자인·전문 작업 | `$maestro <요청>` | Expertise Pack과 세부 Decision Guide를 역할별로 적용하고 최신 사례가 필요할 때만 조사 |
-| 현재 근거가 필요한 전문 판단 | `$maestro <요청>` | 내부 source lane 조사·ResearchBundle 검증 뒤에만 다음 단계 진행 |
-| 프로젝트 상태·문서 drift 확인 | `maestro doctor` | 설정, 링크, metadata와 관리 기준선 검사 |
-| Codex Desktop 설치 배선 확인 | `maestro doctor --host codex` | CLI 버전과 루트·companion Skill 연결을 읽기 전용 검사 |
-| Codex Skill 배선 유지 | 모든 `$maestro` 작업의 내부 preflight | 누락 링크만 자동 생성하고 실제 필요할 때만 재시작 안내 |
-| 프로젝트 Convention 초안 | `maestro convention draft` | preview/apply 뒤에도 활성화되지 않는 정형 draft 생성 |
-| 검증된 Convention 활성화·수정 | `maestro convention activate/update` | owner attestation 또는 의미 검증된 held-out artifact·checkout·문서 지도를 한 plan으로 적용 |
-| 설치된 Harness 버전 반영 | `maestro upgrade` | 프로젝트별 변경 plan을 미리보기 후 적용 |
-| Markdown 외 문서 체계 연결 | `$maestro-adapter-builder` | 프로젝트의 사용자 정의 문서 계약을 진단·연결 |
-| 반복 실패와 개선 후보 검토 | `$maestro-govern` | 최근 compact 기록을 읽기 전용으로 분석 |
-| 새 지식의 올바른 구성요소 분류 | `$maestro-govern` | 사용 횟수가 아니라 evidence·failure·execution 경계로 하나의 surface와 handoff 선택 |
-| 작업 흐름·비용·Expertise 확인 | `$maestro 대시보드 열어줘` | 명령 입력 없이 localhost 페이지를 열어 현재 metadata를 조회 |
-| 검증 명령 후보 승인 | 뷰어에서 `승인 검토 → 승인` 또는 `$maestro 이 검증 명령을 승인해줘` | 명령을 실행하지 않고 정확한 후보만 프로젝트 권위에 추가 |
-| 반복되는 전문성 공백을 후보로 만들기 | `$maestro-expertise-builder` | RED baseline·frozen case를 거친 프로젝트 로컬 후보만 생성 |
-| Lens·Executor·Adapter 등 후보 만들기 | `$maestro-registry-builder` | active Registry를 바꾸지 않는 격리 후보와 frozen case만 생성 |
-| 비-Expertise 후보 묶음 검사 | `maestro component validate-candidate` | 분류·digest·독립 경계·positive/non-trigger/regression case를 읽기 전용 검증 |
-| Expertise 후보 묶음 검사 | `maestro expertise validate-candidate` | 출처·Guide·평가 결과 artifact 연결을 쓰기 없이 검증 |
-| 검증된 로컬 Expertise 바로 쓰기 | `$maestro <작업 요청>` | 비만료·비충돌 최신 후보를 후보 표기 그대로 선택; 구현 권한은 기존 Executor 계약을 따름 |
-| 검증된 로컬 Expertise를 프로젝트 권위로 게시 | `maestro expertise activate` | 사용 중인 후보를 추적되는 project pilot으로 preview/apply 게시 |
-| 로컬 Expertise를 검토해 갱신 | `maestro expertise update` | 같은 Pack ID의 다음 버전을 preview/apply하고 감사 스냅샷 보존 |
-| 로컬 Expertise의 Maestro 라우팅 중지 | `maestro expertise deactivate` | allowlist에서만 빼고 Skill 파일은 rollback용으로 보존 |
-| 비활성·전역 승격 Expertise 정리 | 승격·비활성화의 내부 후처리 | 동일성 검증 뒤 Host 탐색 밖 `.agents/archive/expertise/`로 자동 이동 |
-| 아직 부적합한 Expertise 후보 보류·복원 | `maestro expertise reject-candidate/restore-candidate` | 후보 파일을 지우지 않고 disposition marker만 preview/apply |
-| 검증된 Expertise를 기본 Pack에 반영 | 대시보드의 `기본 Pack으로 올리기` | Harness 소스 checkout에서 후보를 Registry·bundled Skill에 직접 preview/apply; commit·push·릴리스는 별도 |
-| Expertise를 다른 저장소로 전달 | `maestro expertise export` | 일반 사용자 단계가 아닌 content-addressed 내부 운반 묶음만 생성 |
-| 저장소와 관계없는 단순 질문 | 사용하지 않아도 됨 | 일반 대화로 처리 |
-
-## 빠른 시작
-
-요구 사항은 Python 3.11~3.13과 [`uv`](https://docs.astral.sh/uv/)입니다.
-
-### 1. 컴퓨터에서 한 번: 프레임워크 설치
-
-현재 checkout을 바로 사용하거나 프레임워크를 개발할 때:
+**결과:** `init`은 먼저 파일·경로별 변경 계획을 냅니다. 검토한 계획을 적용한 뒤 프로젝트 설명과 아키텍처 초안을 실제 내용으로 채웁니다. `status`는 준비 상태와 다음 조치를, `doctor`는 설정·관리 기준선·문서 링크 등을 표시합니다. `doctor --host codex`로 Codex 연결도 별도로 확인할 수 있습니다.
 
 ```bash
-git clone https://github.com/SungKong00/harness-maestro.git /path/to/harness-maestro
-uv tool install --editable /path/to/harness-maestro
-command -v maestro
-maestro --version
+maestro init --repo /path/to/project --json
+maestro status --repo /path/to/project
+maestro doctor --repo /path/to/project --host codex
 ```
 
-검토된 tag가 발행된 뒤 재현 가능한 버전을 고정할 때:
+이 예시에서 첫 명령은 **미리보기**입니다. 적용 방법과 Python 3.11–3.13·`uv`·Codex 설치 조건은 [설치 및 초기화 가이드](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/runbooks/getting-started.md)를 참고하세요.
 
-```bash
-git -C /path/to/harness-maestro fetch --tags
-git -C /path/to/harness-maestro checkout --detach <published-tag>
-python3 /path/to/harness-maestro/scripts/release_manifest.py \
-  --check --tag-ref <published-tag>
-uv tool install /path/to/harness-maestro
-```
+## 구현 라우팅
 
-`<published-tag>`에는 원격에 실제 존재하는 태그만 사용합니다. release workflow는
-태그, 패키지 버전과 content-addressed release manifest가 다르면 artifact를 만들지
-않습니다. 저장소 관리자는 GitHub ruleset으로 `v*` 태그의 수정·삭제를 막아 이미
-발행한 release identity가 다른 commit으로 이동하지 않게 해야 합니다.
+**입력:** `$maestro 같은 요청이 재시도돼도 주문이 한 번만 생성되게 바꿔줘.`
 
-### 2. 컴퓨터에서 한 번: `$maestro` Skill 연결
+**결과:** 문서·목표·위험도에 따라 Fast / Standard / Deep 경로에서 작업 계획을 만듭니다. 예시 주문 작업은 동시성·응답 계약·테스트 조건을 따로 검토한 뒤, **변경 담당 한 명이** 수정하고 검증 결과를 남기는 흐름입니다. 반대로 가이드 오탈자는 짧은 경로로 처리할 수 있습니다. 검토 역할이 늘어도 수정 담당을 그만큼 늘리지는 않습니다.
 
-```bash
-maestro host sync --host codex \
-  --source-root /path/to/harness-maestro \
-  --json > /tmp/maestro-host-sync.json
-maestro host sync \
-  --apply-plan /tmp/maestro-host-sync.json \
-  --json
-```
+계획에는 담당 역할·선행 관계·계획한 확인 사항이 들어갑니다. 완료 여부는 실행 기록과 검증 근거로 따로 확인합니다. [작업 계획 구조](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/typed-assignment-plan.md)
 
-위 명령은 아직 `$maestro` 자체가 설치되지 않은 새 컴퓨터의 최초 bootstrap만
-보여줍니다. 루트 Skill이 한 번 연결된 뒤에는 모든 `$maestro` 작업이 같은 sync를
-내부 preflight로 수행하므로 별도 요청이나 명령이 필요 없습니다. 기존 경로가
-있으면 sync는 덮어쓰지 않고 중단합니다. 현재 작업에 새 Skill이 실제로 필요할
-때만 **restart the agent client** 해서 목록을 다시 읽습니다.
+## 설계 판단과 구현 승인
 
-연결 상태와 설치 버전뿐 아니라 CLI runtime, Registry와 모든 bundled Skill이 같은
-`release_id`인지 함께 확인합니다.
+**입력:** `$maestro 관리자 폼을 한 화면과 단계형으로 나눠 비교해줘. 아직 코드는 바꾸지 마.`
 
-```bash
-maestro doctor --repo /path/to/harness-maestro --host codex --strict --json
-```
+**결과:** `decide`는 읽기 전용으로 대안을 비교하고, 독립 검토와 기술 타당성 확인을 거쳐 결정 결과(`DecisionBundle`)를 만듭니다. 그렇게 방향을 정했다고 바로 변경하지 않습니다. 구현을 요청하면 `enact`가 결정 묶음·현재 소스·변경 범위·승인을 다시 확인해 실행에 넘깁니다. 고위험 작업은 별도의 명시적 사용자 승인이 필요합니다. [판단·실행 계약](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/decision-workflow.md)
 
-### 3. 프로젝트마다 한 번: 초기화
+## 검토 관점과 조건부 리서치
 
-Codex Desktop에서는 먼저 다음처럼 말하는 것으로 충분합니다.
+**입력:** `$maestro 상품 검색 폼의 키보드 사용성과 오류 복구를 검토해줘. 최신 브라우저 동작이 결론을 바꿀 때만 조사해줘.`
 
-```text
-$maestro 이 프로젝트를 Maestro로 초기화하고, 기존 문서를 보존하면서 현재 구조를 점검해줘.
-```
+| 구분 | 예시 | 역할 |
+| --- | --- | --- |
+| **Lens** | 사용자 흐름, 동시성, 검증 근거 | 이번 작업에서 놓치기 쉬운 실패를 보는 관점 |
+| **Expertise Pack / Guide** | 디자인의 접근성 가이드, QA의 회귀 기준 | 여러 작업에서 재사용하는 판단 기준 |
+| **조건부 리서치** | 현재 브라우저 제약 확인 | 기존 근거가 충분하면 생략. 조사할 때는 출처·주장·검증 결과를 ResearchBundle로 묶은 뒤 계획에 반영 |
 
-`$maestro`가 init 미리보기, 적용 전 검토, 초안 보완 순서를 안내합니다. 아래 CLI는
-CI·자동화나 수동으로 정확히 같은 절차를 실행하고 싶을 때 사용합니다.
+Pack을 고른 것은 별도 에이전트가 떴거나 그 기준을 실제 적용했다는 증거가 아닙니다. 어떤 기준이 선택·전달됐는지와 실제 본문 로드·결과 반영을 구분합니다. [전문성·리서치 구조](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/expertise-packs.md)
 
-`init`은 바로 쓰지 않고 변경 plan을 먼저 보여줍니다. 검토한 같은 plan만 적용할 수
-있습니다.
+## Snapshot과 Work Viewer
 
-```bash
-maestro_plan="$(mktemp -t maestro-init.XXXXXX.json)"
-maestro init --repo /path/to/project --json > "$maestro_plan"
-maestro init --repo /path/to/project --apply-plan "$maestro_plan" --json
-maestro status --repo /path/to/project --json
-rm -- "$maestro_plan"
-```
+**입력:** 실행 결과가 기록된 프로젝트에서 `maestro snapshot --repo /path/to/project --json` 또는 `maestro dashboard --repo /path/to/project`.
 
-생성된 `docs/project.md`와 `docs/architecture.md`의 초안을 실제 프로젝트 내용으로
-채우고 frontmatter의 `status`를 `active`로 바꿉니다. 그러면 `status`가 문서
-기준선을 반영할 `upgrade`를 안내합니다. 해당 plan을 검토·적용한 뒤
-`status`의 `readiness.state`가 `ready`인지 확인하고
-`maestro doctor --strict`를 통과하면 문서·구조 준비가 끝납니다. 후보 검증 명령이
-있다면 실제로 실행해 확인한 항목만 `verification_commands`로 승인합니다.
+**결과:** CLI는 프로젝트 설정과 계획·관측·최종 기록을 읽어 JSON snapshot을 합성합니다. Work Viewer에서는 목록을 검색하고, 작업을 열어 완료 여부와 검증 결과를 따로 보고, 카드에서 각 단계의 관계와 근거를 확인합니다. **권고 모델은 실제 모델이 아니고, 기록 없는 토큰은 0이 아닙니다.**
 
-프로젝트가 여러 개라면 같은 명령을 각 프로젝트 경로에 한 번씩 실행합니다. 문서와
-실행 기록은 해당 프로젝트 안에 남으므로 서로 섞이지 않습니다.
+![실제 Work Viewer 실행 지도: 주문 재시도 합성 작업에서 독립 검토 세 건이 구현과 검증으로 이어짐](assets/work-viewer-graph.png)
 
-### 4. 개발 작업마다: `$maestro`로 요청
+*실행 지도: 독립 검토 결과가 변경 단계로 모이고 검증으로 이어집니다. 같은 줄은 선행 관계상 같은 단계이며 동시 실행을 증명하지 않습니다.*
 
-방향이 이미 정해진 작은 변경:
+![실제 Work Viewer 작업 요약: 완료 상태와 검증이 분리되고 실측 모델과 토큰은 기록 없음으로 표시됨](assets/work-viewer.png)
 
-```text
-$maestro 인증 API를 변경해줘. 현재 Convention을 확인하고 구현한 뒤 계약과 회귀 테스트로 검증해줘.
-```
+*작업 요약: 완료와 검증은 별개입니다. 두 스크린샷은 공개 main의 실제 UI이며 [샘플]의 결과·시간은 시연 데이터입니다. 실제 Codex 작업, 테스트 실행 또는 성능 측정이 아닙니다.*
 
-구현 전에 여러 전문 관점으로 방향을 확정할 작업:
+**범위:** Work Viewer는 프로젝트 기록을 조회하는 localhost 화면입니다. Codex 전체 활동을 실시간 중계·수집하거나, 작업을 재생·자동 재개하는 런타임이 아닙니다. 검증 명령 등록 같은 별도 관리 동작은 확인을 요구합니다. [뷰어 계약](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/operations-viewer.md)
 
-```text
-$maestro 결제 화면의 정보 구조와 시각 위계를 먼저 판단하고, 기술 타당성 확인까지 끝난 뒤 구현해줘.
-```
+## 규칙 제안과 활성화
 
-마케팅 또는 QA 기준이 중요한 작업:
+**입력:** “최근 주문 변경에서 재시도 회귀 검증이 반복해서 빠졌는지 보고, 필요하면 규칙 초안만 만들어줘.”
 
-```text
-$maestro 새 기능의 포지셔닝과 claim 근거를 먼저 판단하고, 방향이 확정되면 랜딩 페이지를 구현해줘.
+**결과:** `govern report`는 최근 기록을 읽고 반복 신호를 보여줍니다. 그 신호는 확정 규칙이 아닙니다. 규칙이 적합하면 Convention 초안을 검토용으로 만들고, 프로젝트에 적용하려면 근거를 붙인 **별도의 활성화 계획**을 검토·적용합니다. 기존 규칙의 갱신도 같은 방식으로 구분합니다. [구성요소 변경과 활성화 기준](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/governance/component-lifecycle.md)
 
-$maestro 이 결제 변경의 QA 위험·회귀 범위를 먼저 정하고, 근거가 충분할 때만 구현과 검증을 진행해줘.
-```
+CLI와 Skill은 여러 저장소에서 쓸 수 있지만, 설정·문서·규칙·작업 기록은 프로젝트마다 따로 둡니다. CLI 버전을 올리는 것과 프로젝트의 관리 기준선을 `upgrade`하는 것도 별개입니다.
 
-두 번째 요청은 곧바로 코드를 수정하지 않습니다. 디자인과 UX가 서로의 최초 결론을
-보지 않고 읽기 전용으로 판단하고, Maestro가 공통점·충돌을 합성한 뒤 기술 타당성을
-확인합니다. blocking question이 없고 결정 번들·현재 checkout이 유효할 때만 별도
-실행 승인을 만들어 기존 한 명 writer 경로로 넘어갑니다. `판단만`, `코드는
-수정하지 마`라고 요청하면 이 승인 단계 자체가 금지됩니다.
+**만든 부분:** 프로젝트 소유자로서 작업 위험에 맞춘 라우팅, 판단과 구현의 분리, 프로젝트 규칙의 근거·승인 흐름을 설계하고 구현했습니다. 변경 범위는 [공개 PR #1](https://github.com/SungKong00/harness-maestro/pull/1)에서 확인할 수 있습니다.
 
-설정 과정, custom 문서 Adapter, CLI별 사용법은
-[시작 및 운용 가이드](docs/runbooks/getting-started.md)에 있습니다.
-
-## 한 작업 안에서는 어떻게 동작하나요?
-
-예를 들어 다음 요청이 들어왔다고 가정합니다.
-
-```text
-$maestro 결제 webhook 재시도 로직을 안전하게 변경해줘.
-```
-
-Maestro workflow는 다음 순서로 진행합니다.
-
-1. `docs/project.md`와 `docs/architecture.md`에서 프로젝트 목표와 현재 경계를
-   확인합니다.
-2. 결제 webhook과 관련된 ADR·Convention만 필수 문서로 선택합니다. 큰 research
-   문서와 active plan은 조건부 후보로만 반환하고 근거 경계가 열릴 때만 읽습니다.
-3. 변경 범위와 위험을 보고 Fast, Standard, Deep 중 가장 작은 충분한 경로를
-   고릅니다.
-4. 등록된 Expertise Pack이 있으면 작업에 필요한 전문가 판단 가이드만 최대 네 개
-   선택합니다. 예를 들어 한글 UI는 font·글자 위계 검증을 추가합니다.
-5. 최신 레퍼런스나 아직 없는 전문 분야가 결정을 바꾸면 내부 reference research가
-   기본 한 source lane에서 시작합니다. exact query, 실제 검토 근거, source
-   tier·role·version, claim authority·검증 상태·project fit·confidence, 채택·기각·
-   충돌을 보존한 v2 `ResearchPacket`을 합성하고, goal·Pack·Guide에 묶인
-   `ResearchBundle` **파일**로 같은 작업을 다시 route합니다. 임의 digest,
-   insufficient·legacy·다른 작업 bundle은 gate를 통과할 수 없습니다.
-6. 방향 선택이 필요한 요청은 구현 전에 읽기 전용 Decision Plan을 만듭니다.
-   Specialist는 자신의 `owns`에 속한 finding만 반환하고, 다른 역할의 문제는 typed
-   escalation으로 넘깁니다.
-7. 아키텍처·데이터 같은 별도 실패 관점이 필요하면 Lens가 다른 결론을 보지 않고
-   먼저 검토합니다.
-8. affected artifact·boundary·failure state와 여섯 Engineering Baseline check를
-   짧게 만들고, reviewer에는 해당 Lens·Guide·reference만 전달합니다. Lens 밖의
-   중요한 공백은 최대 2개의 근거 있는 coverage gap으로 남깁니다.
-9. reviewer 결과가 plan·Assignment·Lens와 일치하고 evidence가 있는 Packet인지
-   검증한 뒤에만 writer가 현재 파일을 다시 읽습니다.
-10. 중요한 충돌이 있을 때만 근거를 한 번 교환하고, 다수결이 아니라 근거 강도와
-   실패 영향으로 결정합니다.
-11. 결정 번들에 열린 blocker가 없고 checkout·Registry·research bundle digest가 그대로일
-   때만 실행 승인을 만들며, 그 뒤 한 명의 writer가 코드를 수정하고
-   test·lint·schema·diff 같은 실제 artifact로 검증합니다.
-12. 재사용할 만한 새 규칙은 현재 프로젝트의 candidate로만 기록합니다. 같은 작업의
-   성공만으로 Convention이나 전역 Skill을 바로 바꾸지는 않습니다.
-13. 구성요소 개선이 필요하면 checker, Convention, Guide, Pack, Lens, Skill,
-   Executor, Department, Adapter, Research Lane, Specialist Contract, Packet 중
-   가장 작은 surface를 먼저 분류합니다. 비-Expertise Registry 후보는 명시적으로
-   요청된 경우에만 격리 bundle로 만들고 active Registry에는 연결하지 않습니다.
-14. 작업 종료 시 대화 원문 없이 최종 결과·시간·가능한 token·사용한 Expertise를
-    compact RunReceipt 한 건으로 연결합니다.
-15. 서로 다른 실행에서 같은 전문성 공백이 세 번 반복되거나 critical 신호가
-    생기면, mutation 작업당 최대 한 건의 격리 Expertise 후보를 자동 작성할 수
-    있습니다. 후보는 `자동 생성`으로 표시되고 active Pack 승격은 하지 않습니다.
-16. 후보와 하위 Guide는 선택 5회 또는 음성 신호 3회·critical 1회에 검토하며,
-    사용자가 통합 뷰어에서 게시·기각·복원 여부를 결정합니다.
-
-## 무엇을 해결하나요?
-
-- **방향 고착 방지** — 서로의 결론을 보지 않은 Lens가 먼저 판단하고, 중요한
-  충돌만 한 번 반박합니다.
-- **컨텍스트 절약** — `project`, `architecture`, 관련 ADR·Convention만 제한된
-  예산 안에서 선택합니다.
-- **선택형 전문성** — generic persona 대신 실제 판단 기준을 Pack과 작은 Guide로
-  두고, 디자인·마케팅·QA 중 필요한 최대 한 팩·네 가이드만 읽습니다.
-- **판단과 실행 분리** — 디자인·아키텍처·기술 선택은 read-only `decide`로
-  확정하고, digest와 checkout에 묶인 `enact` 승인 뒤에만 writer를 엽니다.
-- **역할 오염 제한** — Specialist는 소유 concern과 claim 종류만 반환합니다.
-  코드 지시나 다른 역할의 결론은 packet validation에서 거부합니다.
-- **입력·출력 경계** — context를 넘길 때 작은 Engineering Baseline과 허용
-  reference만 투영하고, plan·Assignment·Lens에 결합된 Packet만 다음 단계가
-  소비합니다. 실제 fresh context 강제 여부는 Host conformance에서 따로 확인합니다.
-- **조건부 리서치** — 안정적인 기준은 재사용하고 최신 사례, source 갱신, 없는
-  전문 분야에서만 내부 `$maestro-reference-research` gate를 엽니다. 검증된
-  bound v2 ResearchBundle 파일 없이는 gate를 통과하지 못하며, writer는 adopted
-  claim을 어떻게 적용했는지 project evidence와 함께 보고합니다. 토큰은 연구 내용을
-  삭제하지 않고 기본 한 lane·최대 세 initial lane·충돌 follow-up 한 번으로 제한합니다.
-- **전문가 팩 생성** — 반복되는 공백은 `$maestro-expertise-builder`가 RED
-  baseline과 frozen case를 거쳐 프로젝트 후보로 만듭니다. 검증된 최신 후보는
-  후보로 표시한 채 즉시 작업 기준으로 사용할 수 있고, 쓰기 권한은 기존 Executor
-  계약을 그대로 따릅니다. 자동 작성과 사용자 요청 후보는 같은 격리 목록에서
-  출처를 구분하고, Guide 추가·수정·폐기와 여러 기존 Pack의 통합도 정확한
-  `component_change`로 관찰합니다. 계속 유지할 후보만 `.agents/skills`의 tracked
-  pilot으로 명시적으로 게시합니다. 다음 버전도 새 후보와 검토된 update plan을
-  거칩니다. 기본 Pack 반영은 사용자가 승인한 Harness source preview/apply로만
-  수행하고, 원격 commit·push·릴리스나 Agent 설치는 자동화하지 않습니다.
-- **작업에 맞는 강도** — 작은 변경은 Fast로 끝내고, 위험과 불확실성이 클 때만
-  Standard·Deep 검토를 추가합니다.
-- **근거 있는 완료 판정** — 다수 의견이 아니라 test, lint, schema, diff 같은 실제
-  artifact로 검증합니다.
-- **안전한 프로젝트 로컬 개선** — 한 번의 성공은 candidate일 뿐입니다. 사용자
-  결정이나 분리된 평가를 거쳐야 Convention이 됩니다.
-- **Markdown 우선, custom 가능** — 기본 문서 체계를 제공하되 프로젝트가 원하면
-  저장소 안의 사용자 정의 Adapter 계약으로 문서 권위를 바꿀 수 있습니다.
-
-| 강도 | 사용할 때 | 기본 검토 |
-|---|---|---|
-| **Fast** | 작고 되돌릴 수 있는 기존 패턴 변경 | main context, Lens 0~1개 |
-| **Standard** | 여러 파일 또는 하나의 의미 있는 경계 변경 | Lens 1~2개 |
-| **Deep** | 보안·데이터·호환성·비가역 선택, 큰 불확실성 | fresh context의 독립 Lens 최대 3개 |
-
-Lens는 “무엇을 어떤 기준으로 검토할지”, Executor는 “어떤 모델·도구·권한으로
-실행할지”를 정합니다. Lens 수가 곧 에이전트 수는 아니며, CLI 자체도 에이전트를
-생성하는 scheduler가 아닙니다.
-
-## 프로젝트에 무엇이 생기나요?
-
-```text
-project/
-├── AGENTS.md               # 짧은 진입 규칙과 문서 포인터
-├── .maestro/
-│   ├── project.json        # 기계가 읽는 프로젝트 설정
-│   ├── managed.json        # Maestro 관리 경계
-│   ├── lock.json           # framework·registry 기준선
-│   └── state/              # Git에서 제외되는 compact 실행 기록과 전문성 후보
-└── docs/
-    ├── README.md           # 활성 문서 지도
-    ├── project.md          # 목표·사용자·범위·비목표·우선순위
-    ├── architecture.md     # 현재 구조·경계·제약·품질 목표
-    ├── decisions/          # 중요한 선택과 이유
-    ├── conventions/        # 반복 적용할 검증된 개발 규칙
-    └── plans/              # 실제 계획이 있을 때만 생성
-```
-
-문서는 쌓이는 대로 전부 읽지 않습니다. 한 주제의 활성 권위는 하나만 유지하고,
-실행 기록은 compact JSONL로 보관하며, 반복해서 재사용할 지식만 Markdown으로
-승격합니다. 기존 Markdown 본문과 `AGENTS.md`는 Maestro 관리 블록 밖에서
-보존됩니다.
-
-### 작업 흐름을 한눈에 보고 싶을 때
-
-Codex Desktop에서 다음처럼 말하면 됩니다.
-
-```text
-$maestro 이 프로젝트의 대시보드 열어줘.
-$maestro 진행 중인 Maestro 프로젝트를 한 대시보드에서 전환해서 보여줘.
-```
-
-Maestro가 `127.0.0.1`의 임시 서버와 브라우저를 열고 종료까지 맡습니다. 매 작업마다
-HTML 파일을 만들지 않으며, 새로고침할 때 최근 작업·걸린 시간·token·채팅에서 선택한 모델·
-선택한 추론 강도·실제로 실행된 모델·Maestro 권장 모델과 권장 추론 강도·전문 지식
-출처·검토 후보를 다시 읽습니다.
-여러 프로젝트를 요청하면 Host가 알고 있는 로컬 프로젝트 중 Maestro가 초기화된
-경로만 하나의 서버 allowlist에 넣고, 화면 상단의 `보는 프로젝트` 선택기로
-전환합니다. 프로젝트마다 새 페이지를 열거나 token을 따로 관리할 필요가 없습니다.
-선택지는 세션을 시작할 때 고정되고, 브라우저가 임의 경로를 추가할 수 없습니다.
-프로젝트를 바꾸면 체크한 작업과 승인 미리보기도 지워지며, 한 프로젝트에서 만든
-미리보기는 다른 프로젝트에 적용할 수 없습니다.
-드롭다운 옆 `이름 바꾸기`로 화면에 보이는 프로젝트 이름을 바꿀 수 있습니다.
-이 기능은 `project_id`를 건드리지 않고 프로젝트의 Git 제외 로컬 상태에 표시 이름만
-저장하므로 다음에 대시보드를 열어도 유지됩니다.
-Maestro 권장값은 실제 실행값으로 대체 표시하지 않습니다. 채팅 설정·실행값은 실행 환경이 안정적인
-공개 인터페이스와 완전한 model event 구간으로 제공할 때만 기록합니다. Desktop이
-현재 요청의 모델·추론 강도만 제공하면 `채팅에서 선택한 설정만 기록됨`, 전체
-이벤트까지 있으면 `실제 실행 모델 기록됨`, 아무 정보도 없으면 `모델·토큰 기록
-없음`으로 구분하며 값을 추정하지 않습니다. 작업 상세는 이 값을 `작업 기준`,
-`작업 결과`, `모델과 사용량 기록`으로 나눠 설명하고, 내부 enum과 연결 ID는
-`기술 기록 보기`에 접어 둡니다.
-
-뷰어에서 할 수 있는 변경은 탐지된 검증 명령 승인, 작업 묶음, 과거 작업의 표시
-이름 변경과 검증을 통과한 프로젝트 전문 지식 후보 관리로 제한됩니다. 작업 행을
-체크한 뒤 새 이름 또는 기존 묶음을 고르면, 원본 최종 작업 기록(RunReceipt)은
-지우지 않고 최근 목록에서 접어 위의 `작업 묶음`으로 옮깁니다. 전문 지식은
-`사용 기록 없음`·`사용 결과 수집 중`·`정기 검토 필요`·`문제 검토 필요`를 구분하고
-실제 Skill 본문을 불러온 기록이 없으면 별도로 `불러옴 기록 없음`이라 표시합니다.
-판단 가이드(Guide) 선택 5회 또는 반복 문제 신호는
-검토를 열 뿐 자동 수정하지 않으며, 하위 Guide 변경도 완전한 다음 Pack 후보로
-처리합니다. 모든 권위 변경과 묶음 생성은 미리보기 뒤 두 번째 확인이 필요하고
-명령 자체, 자동 커밋·푸시는 실행하지 않습니다.
-
-상태값의 전체 뜻과 서로 섞으면 안 되는 축은
-[운영 뷰어의 표시 언어 계약](docs/architecture/operations-viewer.md#표시-언어-계약)에
-정리되어 있습니다.
-
-일반 개발 요청에서는 사용자가 `observe`, `stage`, `finalize` 명령을 외울 필요가
-없습니다. `$maestro`가 요청 접수 시 관측을 시작하고, route 확정 시 계획을 결합하며,
-각 실행 단계가 끝날 때 terminal 결과를 남긴 뒤 최종 기록을 자동 생성합니다.
-현재 Desktop에서 직접 실행해야 하는 작업도 공개 요청 설정을 시작과 동시에
-연결하므로 요청 모델과 추론 강도를 별도 명령 사이에서 빠뜨리지 않습니다.
-`dashboard`는 보고 싶을 때만 여는 on-demand 운영 도구이며 영구 daemon을 설치하지
-않습니다.
-
-새 Codex 작업을 Maestro가 직접 시작하는 경우에는 내장 `host codex` 경로가
-ephemeral App Server turn을 소유합니다. 검증된 Assignment에서 읽기 전용 또는
-저장소 루트 한정 writer 권한, 선택 모델과 추론 강도를 파생하고, 완료까지의
-reroute·token 이벤트를 자동 연결합니다. 현재 열려 있는 Desktop 대화를 사후
-스크래핑하는 기능은 아니므로 이미 시작된 작업은 공개 요청 메타데이터 범위까지만
-표시됩니다. 이 token은 App Server가 소유한 Executor turn만의 실측값이며 상위
-Desktop 오케스트레이터까지 합친 전체 비용으로 표시하지 않습니다. 상세 저수준 계약은
-[시작 및 운용 가이드](docs/runbooks/getting-started.md)와
-[Codex Host conformance](docs/runbooks/codex-host-conformance.md)에 있습니다.
-
-## 문서 안내
-
-| 원하는 것 | 읽을 문서 |
-|---|---|
-| 설치, 초기화, 일반 운용 | [시작 및 운용 가이드](docs/runbooks/getting-started.md) |
-| 현재 구조와 CLI 흐름 | [Maestro v0 구조](docs/architecture/maestro-v0.md) |
-| 현재 릴리스 TODO | [v0.3 릴리스 계획](docs/plans/active/v0.3-release.md) |
-| Assignment Plan·검증·HTML 도입 경계 | [Typed Assignment Plan](docs/architecture/typed-assignment-plan.md) |
-| 작업 흐름·비용·Expertise 통합 조회 | [통합 운영 뷰어](docs/architecture/operations-viewer.md) |
-| 전문가 기준 재사용·조건부 조사·후보 관리 | [Expertise Pack](docs/architecture/expertise-packs.md) |
-| 내부 research·Skill·Custom Agent의 경계 | [ADR-0009](docs/decisions/0009-internal-research-and-expertise-boundary.md) |
-| 판단·역할 검토·결정 번들·실행 승인 | [Decision Workflow](docs/architecture/decision-workflow.md) |
-| Lens·Executor·권한 모델 | [Lens·Executor 모델](docs/architecture/lens-executor-model.md) |
-| 문서가 쌓이고 정리되는 규칙 | [문서 생명주기](docs/governance/document-lifecycle.md) |
-| 개선 후보가 Convention이 되는 조건 | [구성요소 생명주기](docs/governance/component-lifecycle.md) |
-| 논문·공식 저장소와 설계의 연결 | [설계 근거와 참고 자료](docs/research/design-foundations.md) |
-| 현재 범위와 보류 기능 | [제외·보류 목록](docs/governance/deferred-and-excluded.md) |
-| 모든 활성 문서 | [문서 지도](docs/README.md) |
-
-## 현재 경계
-
-현재 v0는 다음을 의도적으로 하지 않습니다.
-
-- CLI가 agent를 직접 생성하거나 자유 토론을 자동 실행
-- 모든 Lens마다 별도 agent를 자동 배정
-- 다수결이나 자기평가만으로 완료 판정
-- 모든 작업에서 외부 리서치를 강제하거나 raw digest만으로 근거를 인정
-- Notion 같은 외부 문서 시스템의 양방향 동기화
-- 한 작업의 성공만으로 전역 Skill·Agent·Lens·Executor 자동 수정
-- 매 실행마다 대화 전문이나 장문 Markdown 보고서 축적
-
-이 경계는 권한과 관리 비용을 제한하기 위한 것입니다. host에서 실제 read-only
-격리가 강제되는지는 [Codex host conformance
-runbook](docs/runbooks/codex-host-conformance.md)으로 별도 확인합니다.
-
-## 기여와 라이선스
-
-개발 환경, 전체 검증과 문서 변경 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를
-확인하세요. 버그와 제안은
-[GitHub Issues](https://github.com/SungKong00/harness-maestro/issues), 변경안은
-[Pull Requests](https://github.com/SungKong00/harness-maestro/pulls)로 받습니다.
-
-Harness Maestro는 [MIT License](LICENSE)로 배포됩니다.
+[문서 지도](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/README.md) · [MIT License](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/LICENSE)

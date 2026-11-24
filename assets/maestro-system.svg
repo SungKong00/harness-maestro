@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="720" viewBox="0 0 1440 720" role="img" aria-labelledby="title desc">
+<title id="title">Harness Maestro 실행과 기록 구조</title><desc id="desc">CLI가 계획을 만들고 Codex 호스트가 실행한다. 조건부 리서치와 독립 리뷰를 거칠 수 있다. 프로젝트 기록을 로컬 Work Viewer가 읽으며 뷰어는 작업을 실행하지 않는다.</desc>
+<defs>
+  <linearGradient id="bg" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#F8FAFF"/><stop offset="1" stop-color="#F1F5FC"/></linearGradient>
+  <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5 0 7z" fill="#3C5D88"/></marker>
+</defs>
+<style>
+ text{font-family:"Apple SD Gothic Neo","Noto Sans CJK KR",system-ui,sans-serif;fill:#172741}
+ .title{font-size:38px;font-weight:750;letter-spacing:-1px}.subtitle{font-size:22px;fill:#465A76}
+ .kicker{font-size:13px;letter-spacing:1.5px;fill:#395983;font-weight:700}.lbl{font-size:22px;font-weight:720}.detail{font-size:17px;fill:#465A76}.legend{font-size:16px;fill:#3D516E}
+ .box{fill:#fff;stroke:#CAD9EE;stroke-width:1.5}.flow{stroke:#3C5D88;stroke-width:2;fill:none;marker-end:url(#arr)}.dash{stroke-dasharray:5 5}
+ .icon{fill:none;stroke:#315F9C;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+</style>
+<rect width="1440" height="720" rx="24" fill="url(#bg)"/>
+<text x="62" y="73" class="kicker">HARNESS MAESTRO / SYSTEM MAP</text><text x="62" y="122" class="title">계획은 CLI가, 실행은 호스트가</text>
+<text x="62" y="161" class="subtitle">필요한 판단과 검증만 추가하고, 실행 뒤에는 무엇을 확인했는지 남깁니다.</text>
+<rect x="59" y="196" width="1322" height="301" rx="24" fill="#EAF1FC" stroke="#D1DDF1"/>
+<text x="84" y="234" class="kicker">01 / WORKFLOW</text>
+<g transform="translate(84 269)"><rect class="box" width="223" height="110" rx="16"/><path class="icon" d="M20 21h22v14H29l-6 5v-5h-3z M25 26h12m-12 4h8"/><text x="54" y="34" class="lbl">요청</text><text x="19" y="68" class="detail">사용자가 Codex에</text><text x="19" y="92" class="detail">작업 요청 + $maestro</text></g>
+<g transform="translate(369 269)"><rect class="box" width="238" height="110" rx="16"/><path class="icon" d="M20 22h22v16H20z M24 26l4 4-4 4m8 0h6"/><text x="54" y="34" class="lbl">Maestro CLI</text><text x="19" y="68" class="detail">문서·Lens·Guide 선택</text><text x="19" y="92" class="detail">위험도에 맞춘 작업 계획</text></g>
+<g transform="translate(672 269)"><rect class="box" width="271" height="110" rx="16"/><path class="icon" d="M20 29h8m4-7v14m-4-7h13m-3-4 4 4-4 4"/><text x="54" y="34" class="lbl">Codex 호스트</text><text x="19" y="68" class="detail">Skill이 계약에 따라 작업</text><text x="19" y="92" class="detail">변경 담당 한 명 · 결과 검증</text></g>
+<g transform="translate(1008 269)"><rect class="box" width="348" height="110" rx="16"/><path class="icon" d="M21 19h16l5 5v18H21z M36 19v6h6m-15 8 3 3 6-7"/><text x="54" y="34" class="lbl">프로젝트 기록</text><text x="19" y="68" class="detail">계획과 관측한 단계, 검증 근거</text><text x="19" y="92" class="detail">→ 실행 결과 영수증(RunReceipt)</text></g>
+<path class="flow" d="M307 324H359"/><path class="flow" d="M607 324H662"/><path class="flow" d="M943 324H997"/>
+<rect x="518" y="412" width="423" height="54" rx="13" fill="#F6F9FF" stroke="#ACC2E4" stroke-dasharray="5 5"/>
+<text x="538" y="445" class="detail">필요할 때만  ·  근거 조사 / 독립 검토 / 방향 승인</text>
+<path class="flow dash" d="M489 379 V439 H510"/><path class="flow dash" d="M942 439 H983 V354 H951"/>
+<rect x="59" y="523" width="1322" height="133" rx="24" fill="#EEF8F6" stroke="#C9E5DF"/>
+<text x="84" y="562" class="kicker">02 / OBSERVATION</text>
+<text x="84" y="605" class="lbl">실행 대신 기록을 탐색</text><text x="84" y="630" class="detail">관측하지 못한 값은 추정하지 않습니다.</text>
+<g transform="translate(500 555)"><rect class="box" width="260" height="74" rx="15"/><text x="18" y="30" class="lbl">Snapshot</text><text x="18" y="56" class="detail">프로젝트 상태 합성 · 조회</text></g>
+<g transform="translate(849 555)"><rect class="box" width="331" height="74" rx="15"/><path class="icon" d="M20 15h22v15H20z m5 20h12m-6-5v5"/><text x="54" y="30" class="lbl">Work Viewer</text><text x="19" y="56" class="detail">localhost · 실행 지도 / 검증</text></g>
+<path class="flow" d="M760 592H839"/><path class="flow" d="M1230 380V508H630V546"/>
+<text x="62" y="691" class="legend">실선  작업·관측 기록 흐름     ···  조건부 판단 흐름     |     논리 구조: 별도 서버 인프라나 상주 에이전트를 뜻하지 않음</text>
+</svg>

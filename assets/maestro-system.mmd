@@ -1,0 +1,16 @@
+flowchart LR
+    subgraph work["01 · 작업 흐름"]
+        REQ["사용자 요청<br/>Codex + $maestro"] --> PLAN["Maestro CLI<br/>문서·Lens·Guide 선택 → 작업 계획"]
+        PLAN --> HOST["Codex 호스트<br/>Skill 계약 · 변경 담당 한 명 · 결과 검증"]
+        PLAN -. "필요할 때만" .-> GATE["근거 조사 / 독립 검토 / 방향 승인"]
+        GATE -. "근거 또는 승인 반영" .-> HOST
+        HOST --> RECORD["프로젝트 기록<br/>계획·관측·검증 → RunReceipt"]
+    end
+    subgraph observe["02 · 기록 탐색 (별도 실행 아님)"]
+        SNAP["Snapshot<br/>프로젝트 상태 읽기"] --> VIEW["Work Viewer<br/>localhost · 실행 지도 / 검증"]
+    end
+    RECORD --> SNAP
+    classDef control fill:#eaf1fc,stroke:#9fb8db,color:#172741
+    classDef view fill:#eef8f6,stroke:#a8cfc6,color:#172741
+    class REQ,PLAN,GATE,HOST,RECORD control
+    class SNAP,VIEW view
