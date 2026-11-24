@@ -33,6 +33,42 @@ maestro doctor --repo /path/to/project --host codex
 
 이 예시에서 첫 명령은 **미리보기**입니다. 적용 방법과 Python 3.11–3.13·`uv`·Codex 설치 조건은 [설치 및 초기화 가이드](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/runbooks/getting-started.md)를 참고하세요.
 
+<details>
+<summary>CLI 설치와 Codex Skill 연결 명령</summary>
+
+**개발용 체크아웃:** 아래 경로는 실제 설치할 위치로 바꿉니다. 편집 가능한 설치는 소스 변경을 바로 반영합니다.
+
+```bash
+git clone https://github.com/SungKong00/harness-maestro.git /path/to/harness-maestro
+uv tool install --editable /path/to/harness-maestro
+command -v maestro
+maestro --version
+```
+
+**발행된 버전 고정:** 원격에 실제로 발행된 태그가 있을 때만 `<published-tag>`를 그 태그로 바꿔 실행합니다.
+
+```bash
+git -C /path/to/harness-maestro fetch --tags
+git -C /path/to/harness-maestro checkout --detach <published-tag>
+python3 /path/to/harness-maestro/scripts/release_manifest.py \
+  --check --tag-ref <published-tag>
+uv tool install /path/to/harness-maestro
+```
+
+**Codex에 처음 연결:** 같은 설치 원본으로 연결 계획을 만든 뒤, 변경 내용을 검토하고 적용합니다.
+
+```bash
+host_plan="$(mktemp -t maestro-host-sync.XXXXXX)"
+maestro host sync --host codex --source-root /path/to/harness-maestro --json > "$host_plan"
+# 계획을 검토한 뒤:
+maestro host sync --apply-plan "$host_plan" --json
+maestro doctor --repo /path/to/harness-maestro --host codex --strict --json
+```
+
+연결 뒤 현재 Codex 세션에 새 Skill이 보이지 않을 때만 Codex를 다시 시작합니다(restart the agent client). 프로젝트 초기화와 plan 적용은 위 가이드를 따릅니다.
+
+</details>
+
 ## 구현 라우팅
 
 **입력:** `$maestro 같은 요청이 재시도돼도 주문이 한 번만 생성되게 바꿔줘.`
@@ -79,7 +115,7 @@ Pack을 고른 것은 별도 에이전트가 떴거나 그 기준을 실제 적�
 
 **입력:** “최근 주문 변경에서 재시도 회귀 검증이 반복해서 빠졌는지 보고, 필요하면 규칙 초안만 만들어줘.”
 
-**결과:** `govern report`는 최근 기록을 읽고 반복 신호를 보여줍니다. 그 신호는 확정 규칙이 아닙니다. 규칙이 적합하면 Convention 초안을 검토용으로 만들고, 프로젝트에 적용하려면 근거를 붙인 **별도의 활성화 계획**을 검토·적용합니다. 기존 규칙의 갱신도 같은 방식으로 구분합니다. [구성요소 변경과 활성화 기준](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/governance/component-lifecycle.md)
+**결과:** `govern report`는 최근 기록을 읽고 반복 신호를 보여줍니다. 그 신호는 확정 규칙이 아닙니다. 규칙이 적합하면 `maestro convention draft`로 Convention 초안을 검토용으로 만들고, 프로젝트에 적용하려면 근거를 붙인 **별도의 활성화 계획**을 검토·적용합니다. 기존 규칙의 갱신도 같은 방식으로 구분합니다. [구성요소 변경과 활성화 기준](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/governance/component-lifecycle.md)
 
 CLI와 Skill은 여러 저장소에서 쓸 수 있지만, 설정·문서·규칙·작업 기록은 프로젝트마다 따로 둡니다. CLI 버전을 올리는 것과 프로젝트의 관리 기준선을 `upgrade`하는 것도 별개입니다.
 
