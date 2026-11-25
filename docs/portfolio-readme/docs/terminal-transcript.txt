@@ -1,0 +1,25 @@
+$ preview
+{"planned_files":9}
+Preview: no files written
+$ add-team-rules
+# Team rules: use metric units
+$ apply-old-plan
+{
+  "code": "PLAN_STALE",
+  "message": "File changed after preview: AGENTS.md",
+  "schema_version": "maestro_error_v1",
+  "status": "error"
+}
+Exit: 3
+No partial install
+$ preview-again
+{"path":"AGENTS.md","op":"replace_managed_content"}
+$ apply-new-plan
+{"status":"applied","changed_files":9}
+# Team rules: use metric units
+
+<!-- MAESTRO:BEGIN -->
+## Harness Maestro
+$ diagnose
+{"status":"PASS","summary":{"fail":0,"pass":33,"warn":0},"writes_performed":false}
+$

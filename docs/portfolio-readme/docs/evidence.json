@@ -1,0 +1,30 @@
+{
+  "source_commit": "9233917b9a48df29298d43aa76a338fe9e3db69b",
+  "preview": {
+    "requested_operations": 9,
+    "writes": false
+  },
+  "stale": {
+    "error": "PLAN_STALE",
+    "message": "File changed after preview: AGENTS.md",
+    "exit": 3,
+    "partial_install": false
+  },
+  "revised": {
+    "existing_rules_operation": "replace_managed_content"
+  },
+  "applied": {
+    "status": "applied",
+    "changed_files": 9,
+    "original_rule_line": "# Team rules: use metric units"
+  },
+  "doctor": {
+    "status": "PASS",
+    "summary": {
+      "fail": 0,
+      "pass": 33,
+      "warn": 0
+    },
+    "writes_performed": false
+  }
+}

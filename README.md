@@ -13,12 +13,12 @@
 
 ## 기존 팀 규칙을 보존하면서 새 저장소에 연결하기
 
-초기화 계획을 만든 뒤 팀원이 `AGENTS.md`를 추가했습니다. 처음 승인한 계획은 지금의 파일 상태와 달라 적용이 거부됩니다. 새 계획을 검토해 적용하면 원래 규칙은 남고 Maestro 관리 블록만 추가됩니다. 마지막으로 `doctor`에서 설정을 점검합니다.
+팀 저장소에 Maestro를 붙이려던 관리자가 변경 파일을 먼저 확인합니다. 그사이 팀원이 `AGENTS.md`를 추가하자 CLI가 예전 계획을 거부합니다. 관리자는 새 계획만 적용하고, 기존 규칙이 남았는지 확인한 뒤 `doctor`를 실행합니다.
 
 ![초기화 미리보기, 오래된 계획 거부, 기존 팀 규칙 보존, 읽기 전용 진단의 실제 터미널 시연](docs/portfolio-readme/assets/maestro-safe-onboarding.gif)
 
 재검토한 계획을 적용하면 기존 규칙을 유지하면서 9개 파일이 갱신되고, `doctor`의 33개 항목을 통과합니다.
-[결과 한 장](docs/portfolio-readme/assets/onboarding-result.png) · 명령 출력 · 확인 결과
+[결과 한 장](docs/portfolio-readme/assets/onboarding-result.png) · [명령 출력](docs/portfolio-readme/docs/terminal-transcript.txt) · [확인 결과](docs/portfolio-readme/docs/evidence.json)
 
 ## 어떤 문제를 풀었나
 
@@ -38,7 +38,7 @@
 
 ![초기화 미리보기 이후 파일이 바뀌면 예전 계획을 거부하고 새 계획으로 진단하는 순서](docs/portfolio-readme/assets/onboarding-flow.png)
 
-미리보기 다음에 파일이 바뀌면 다시 검토합니다. 그동안 CLI가 파일을 분리해서 조금씩 적용하지 않으므로, 처음 만든 계획이 기존 팀 규칙을 덮지 않습니다. [초기화 워크플로 편집용 draw.io](docs/portfolio-readme/assets/onboarding-flow.drawio) · 명령 출력
+미리보기 다음에 파일이 바뀌면 다시 검토합니다. 그동안 CLI가 파일을 분리해서 조금씩 적용하지 않으므로, 처음 만든 계획이 기존 팀 규칙을 덮지 않습니다. [초기화 워크플로 편집용 draw.io](docs/portfolio-readme/assets/onboarding-flow.drawio) · [명령 출력](docs/portfolio-readme/docs/terminal-transcript.txt)
 
 ### 의사결정자 · 방향을 먼저 고르는 요청
 
@@ -46,9 +46,11 @@
 
 ## Work Viewer에서 검토 결과 찾기
 
-결제 재시도 때 같은 주문이 두 번 생기지 않도록 한 작업을 예시로, 작업 목록에서 이름을 검색하고 완료 상태와 검증 결과를 확인합니다. 이어 검증 카드에서 어떤 요청을 보냈고 어떤 응답을 확인했는지 살펴봅니다.
+재시도 수정이 끝난 뒤, 검토자가 같은 결제로 주문이 두 번 생기지 않았는지 확인합니다. Work Viewer에서 ‘결제 재시도’를 검색해 작업을 열고 완료 상태와 검증 카드를 따로 봅니다.
 
 ![작업 검색에서 검증 카드를 펼쳐 결과를 확인하는 Work Viewer](docs/portfolio-readme/assets/work-viewer-demo.gif)
+
+*로컬 Work Viewer · 예시 작업 기록*
 
 ## 시스템 구조
 
@@ -66,7 +68,7 @@ CLI는 역할과 선행 조건을 저장소에 남깁니다. Snapshot은 계획,
 
 ### 초기화는 검토 당시 파일에만 적용
 
-미리보기와 적용 사이에 팀원이 `AGENTS.md`를 수정할 수 있습니다. 미리보기 때 대상 파일별 해시를 기록하고, 적용 직전에 현재 파일과 먼저 대조합니다. 파일이 달라졌다면 `PLAN_STALE`로 중단하며 변경 계획 전체를 다시 검토합니다. 온보딩 시연에서 먼저 만든 계획은 아무 파일도 쓰지 않았고, 새 계획은 **기존 팀 규칙을 그대로 둔 채 Maestro 관리 영역만 추가**했습니다. 온보딩 실행 기록
+미리보기와 적용 사이에 팀원이 `AGENTS.md`를 수정할 수 있습니다. 미리보기 때 대상 파일별 해시를 기록하고, 적용 직전에 현재 파일과 먼저 대조합니다. 파일이 달라졌다면 `PLAN_STALE`로 중단하며 변경 계획 전체를 다시 검토합니다. 온보딩 시연에서 먼저 만든 계획은 아무 파일도 쓰지 않았고, 새 계획은 **기존 팀 규칙을 그대로 둔 채 Maestro 관리 영역만 추가**했습니다. [온보딩 실행 기록](docs/portfolio-readme/docs/terminal-transcript.txt)
 
 ### 검토 결과가 좋아도 구현 권한은 따로 열기
 
@@ -85,7 +87,6 @@ CLI는 역할과 선행 조건을 저장소에 남깁니다. Snapshot은 계획,
 Python CLI와 프로젝트 기록은 저장소별로 관리하며 Work Viewer는 localhost에서 해당 기록을 읽습니다. Codex는 작업을 실행하고, CLI는 변경 확인과 최종 기록을 맡습니다.
 
 [전체 기능과 실행 경계](docs/portfolio-readme/docs/flows.md) · [설치 가이드](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/runbooks/getting-started.md) · [MIT License](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/LICENSE)
-
 
 <details>
 <summary>기존 설치·개발 안내</summary>
