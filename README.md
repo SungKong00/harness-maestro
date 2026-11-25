@@ -1,5 +1,97 @@
 # Harness Maestro
 
+**Codex 작업에 필요한 검토를 고르고, 계획한 일과 실제로 확인한 일을 구분하는 CLI 하네스.**
+
+문서 오타 수정과 주문 API의 동시성 변경에 같은 절차를 적용할 필요는 없습니다. Harness Maestro는 위험도에 따라 검토 범위와 담당을 정하고, 실제 실행 결과와 확인한 근거는 계획과 별도로 남깁니다.
+
+| 프로젝트 정보 | 내용 |
+| --- | --- |
+| 형태 | 저장소에 연결해 쓰는 Python CLI와 Codex 스킬, 로컬 Work Viewer |
+| 기준 버전 | [공개 저장소에 병합된 커밋 `9233917`](https://github.com/SungKong00/harness-maestro/commit/9233917b9a48df29298d43aa76a338fe9e3db69b) |
+| 실행 환경 | Python 3.11–3.13, Git. 에이전트 실행은 Codex 호스트가 필요합니다. |
+| 담당 범위 | 위험도 기반 작업 분류, 판단과 구현 승인 분리, 프로젝트 규칙의 근거·승인 흐름 설계 및 구현. [공개 PR #1](https://github.com/SungKong00/harness-maestro/pull/1) |
+
+## 기존 팀 규칙을 보존하면서 새 저장소에 연결하기
+
+초기화 계획을 만든 뒤 팀원이 `AGENTS.md`를 추가했습니다. 처음 승인한 계획은 지금의 파일 상태와 달라 적용이 거부됩니다. 새 계획을 검토해 적용하면 원래 규칙은 남고 Maestro 관리 블록만 추가됩니다. 마지막으로 `doctor`에서 설정을 점검합니다.
+
+![초기화 미리보기, 오래된 계획 거부, 기존 팀 규칙 보존, 읽기 전용 진단의 실제 터미널 시연](docs/portfolio-readme/assets/maestro-safe-onboarding.gif)
+
+재검토한 계획을 적용하면 기존 규칙을 유지하면서 9개 파일이 갱신되고, `doctor`의 33개 항목을 통과합니다.
+[결과 한 장](docs/portfolio-readme/assets/onboarding-result.png) · 명령 출력 · 확인 결과
+
+## 어떤 문제를 풀었나
+
+작업에 검토자를 더 붙였다는 사실만으로 더 안전해지지는 않습니다. 같은 파일을 여러 주체가 고치면 변경 책임이 흐려지고, 계획한 검토가 실제로 실행됐는지도 별도로 확인해야 합니다. 그래서 **작업을 나누는 규칙**, **쓰기 권한**, **실행 근거**를 서로 다른 단계에서 다룹니다.
+
+## 역할별 작업 흐름
+
+| 시작하는 사람 | 하려는 일 | 실제 경로와 결과 |
+| --- | --- | --- |
+| 저장소 관리자 | 기존 팀 규칙을 유지한 채 처음 연결 | `init` 미리보기 → 검토한 계획 적용 → `doctor`. 적용 범위와 진단 결과를 확인합니다. |
+| 개발자 | 방향이 정해진 변경을 맡기기 | 위험도에 따라 Fast / Standard / Deep으로 분류합니다. 단일 수정 담당, 검토자, 확인 기준을 Assignment 계획에 남깁니다. |
+| 의사결정자 | 코드를 바꾸기 전에 대안 비교 | `decide`가 읽기 전용 판단을 수집하고, 승인이 있을 때만 `enact`가 실행 계획을 엽니다. |
+| 검토자 | 작업이 끝난 뒤 근거 확인 | Work Viewer에서 작업을 검색하고 완료 상태·검증 결과·단계별 근거를 확인합니다. |
+| 프로젝트 관리자 | 반복해서 빠지는 검증을 규칙으로 정리 | 기록에서 후보를 만들고 원래 근거를 확인합니다. 승인한 후보만 프로젝트 규칙에 반영합니다. |
+
+### 저장소 관리자 · 승인한 설치 계획 적용
+
+![초기화 미리보기 이후 파일이 바뀌면 예전 계획을 거부하고 새 계획으로 진단하는 순서](docs/portfolio-readme/assets/onboarding-flow.png)
+
+미리보기 다음에 파일이 바뀌면 다시 검토합니다. 그동안 CLI가 파일을 분리해서 조금씩 적용하지 않으므로, 처음 만든 계획이 기존 팀 규칙을 덮지 않습니다. [초기화 워크플로 편집용 draw.io](docs/portfolio-readme/assets/onboarding-flow.drawio) · 명령 출력
+
+### 의사결정자 · 방향을 먼저 고르는 요청
+
+“결제 재시도를 어떤 방식으로 처리할지 비교해 달라”면 `decide`로 진입합니다. 검토자가 대안과 근거를 정리하고, 선택이 확정되면 승인 범위를 묶어 `enact`로 넘깁니다. 반대로 변경 방법이 이미 정해져 있다면 일반 구현 경로에서 필요한 역할만 배정합니다. [판단과 실행의 흐름](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/decision-workflow.md)
+
+## Work Viewer에서 검토 결과 찾기
+
+결제 재시도 때 같은 주문이 두 번 생기지 않도록 한 작업을 예시로, 작업 목록에서 이름을 검색하고 완료 상태와 검증 결과를 확인합니다. 이어 검증 카드에서 어떤 요청을 보냈고 어떤 응답을 확인했는지 살펴봅니다.
+
+![작업 검색에서 검증 카드를 펼쳐 결과를 확인하는 Work Viewer](docs/portfolio-readme/assets/work-viewer-demo.gif)
+
+## 시스템 구조
+
+![CLI의 계획·검증, Codex 실행, 저장소 기록과 읽기 전용 Work Viewer의 경계](docs/portfolio-readme/assets/system.png)
+
+CLI는 역할과 선행 조건을 저장소에 남깁니다. Snapshot은 계획, 단계별 결과, 최종 기록을 한 번에 읽어 Work Viewer에 전달합니다. 작업마다 결과 페이지를 따로 만드는 대신 하나의 화면에서 최근 작업과 확인 근거를 살펴볼 수 있게 했습니다.
+
+[편집용 draw.io](docs/portfolio-readme/assets/system.drawio) · [SVG](docs/portfolio-readme/assets/system.svg) · [작업 계획 구조](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/typed-assignment-plan.md)
+
+## 주요 설계 결정
+
+### 공통 커널은 작게 유지하고 프로젝트 지식은 필요한 만큼만 불러오기
+
+저장소마다 하네스를 통째로 복사하면 같은 규칙이 다른 버전으로 흩어집니다. 반대로 설치·검토·도메인 지식을 하나의 스킬에 넣으면 간단한 요청도 모든 지침을 읽게 됩니다. CLI에는 **설치 계획, 검증, 작업 분류, 버전이 있는 규칙 목록**을 두고, 프로젝트별 판단은 Adapter와 선택형 Expertise Pack에 맡겼습니다. 단순 변경에는 필요한 문서와 검토 관점만 고르고, 프로젝트 고유 규칙은 CLI에 상수로 넣지 않아도 됩니다. [작은 커널을 선택한 이유](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/decisions/0001-small-kernel.md)
+
+### 초기화는 검토 당시 파일에만 적용
+
+미리보기와 적용 사이에 팀원이 `AGENTS.md`를 수정할 수 있습니다. 미리보기 때 대상 파일별 해시를 기록하고, 적용 직전에 현재 파일과 먼저 대조합니다. 파일이 달라졌다면 `PLAN_STALE`로 중단하며 변경 계획 전체를 다시 검토합니다. 온보딩 시연에서 먼저 만든 계획은 아무 파일도 쓰지 않았고, 새 계획은 **기존 팀 규칙을 그대로 둔 채 Maestro 관리 영역만 추가**했습니다. 온보딩 실행 기록
+
+### 검토 결과가 좋아도 구현 권한은 따로 열기
+
+“두 설계를 비교해 달라”는 요청까지 기존 구현 경로로 보내면 검토가 끝나기 전에 수정 담당이 열립니다. 그래서 `decide`는 읽기 전용 역할만 사용하는 별도 경로로 두고, 대안·근거·제약을 `DecisionBundle`에 담습니다. `enact`는 근거 묶음과 현재 Git 리비전, 승인 범위, 해결된 차단 조건을 대조한 뒤 별도 실행 계획을 만듭니다. 실행 계획이 열리면 기존 단일 수정 담당·읽기 전용 검증 경로를 그대로 씁니다. 덕분에 검토가 필요한 일만 한 단계를 더 거치고, 방향이 이미 정해진 수정에는 같은 절차를 강제로 붙이지 않습니다. [판단과 실행을 분리한 ADR](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/decisions/0007-separate-decision-and-execution.md)
+
+### 작업마다 화면을 만들지 않고 하나의 스냅샷으로 보여주기
+
+계획에 적힌 모델과 호스트에서 실제로 관측한 모델은 같은 값이 아닙니다. 요청에서 역할을 정한 계획, 단계별 관측, 완료 기록을 각각 저장하고, **같은 프로젝트 스냅샷이 세 기록을 한 화면에서 읽도록** 했습니다. Work Viewer는 목록·상세·검증 카드에서 같은 작업을 이어서 보여주고, 완료 상태와 검증 결과를 나눠 표시합니다. 작업마다 HTML을 생성하거나 실시간 이벤트 서버를 띄우는 대신, 화면이 열려 있는 동안 1분마다 로컬 스냅샷을 갱신합니다. [스냅샷과 Viewer 설계](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/operations-viewer.md)
+
+## 실행 환경
+
+![Python CLI, 프로젝트별 파일, localhost Work Viewer와 별도 Codex 호스트의 실행 경계](docs/portfolio-readme/assets/environment.png)
+
+[실행 환경 편집용 draw.io](docs/portfolio-readme/assets/environment.drawio) · [SVG](docs/portfolio-readme/assets/environment.svg)
+
+Python CLI와 프로젝트 기록은 저장소별로 관리하며 Work Viewer는 localhost에서 해당 기록을 읽습니다. Codex는 작업을 실행하고, CLI는 변경 확인과 최종 기록을 맡습니다.
+
+[전체 기능과 실행 경계](docs/portfolio-readme/docs/flows.md) · [설치 가이드](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/runbooks/getting-started.md) · [MIT License](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/LICENSE)
+
+
+<details>
+<summary>기존 설치·개발 안내</summary>
+
+# Harness Maestro
+
 **작업마다 필요한 검토만 골라 쓰고, 무엇을 확인했는지 남기는 Codex 하네스.**
 
 문서 오타 수정과 주문 API의 동시성 변경에 같은 절차를 적용할 필요는 없습니다. Maestro는 **CLI가 계획과 검증 조건을 만들고, Codex가 그 조건 안에서 작업**하도록 나눴습니다. 단순한 변경은 짧게 끝내고, 근거가 부족하거나 위험한 변경에만 검토를 더합니다.
@@ -101,11 +193,11 @@ Pack을 고른 것은 별도 에이전트가 떴거나 그 기준을 실제 적�
 
 **결과:** CLI는 프로젝트 설정과 계획·관측·최종 기록을 읽어 JSON snapshot을 합성합니다. Work Viewer에서는 목록을 검색하고, 작업을 열어 완료 여부와 검증 결과를 따로 보고, 카드에서 각 단계의 관계와 근거를 확인합니다. **권고 모델은 실제 모델이 아니고, 기록 없는 토큰은 0이 아닙니다.**
 
-![실제 Work Viewer 실행 지도: 주문 재시도 합성 작업에서 독립 검토 세 건이 구현과 검증으로 이어짐](assets/work-viewer-graph.png)
+![실제 Work Viewer 실행 지도: 주문 재시도 합성 작업에서 독립 검토 세 건이 구현과 검증으로 이어짐](docs/portfolio-readme/assets/work-viewer-graph.png)
 
 *실행 지도: 독립 검토 결과가 변경 단계로 모이고 검증으로 이어집니다. 같은 줄은 선행 관계상 같은 단계이며 동시 실행을 증명하지 않습니다.*
 
-![실제 Work Viewer 작업 요약: 완료 상태와 검증이 분리되고 실측 모델과 토큰은 기록 없음으로 표시됨](assets/work-viewer.png)
+![실제 Work Viewer 작업 요약: 완료 상태와 검증이 분리되고 실측 모델과 토큰은 기록 없음으로 표시됨](docs/portfolio-readme/assets/work-viewer.png)
 
 *작업 요약: 완료와 검증은 별개입니다. 두 스크린샷은 공개 main의 실제 UI이며 [샘플]의 결과·시간은 시연 데이터입니다. 실제 Codex 작업, 테스트 실행 또는 성능 측정이 아닙니다.*
 
@@ -122,3 +214,5 @@ CLI와 Skill은 여러 저장소에서 쓸 수 있지만, 설정·문서·규칙
 **만든 부분:** 프로젝트 소유자로서 작업 위험에 맞춘 라우팅, 판단과 구현의 분리, 프로젝트 규칙의 근거·승인 흐름을 설계하고 구현했습니다. 변경 범위는 [공개 PR #1](https://github.com/SungKong00/harness-maestro/pull/1)에서 확인할 수 있습니다.
 
 [문서 지도](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/README.md) · [MIT License](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/LICENSE)
+
+</details>
