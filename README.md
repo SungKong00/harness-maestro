@@ -195,11 +195,11 @@ Pack을 고른 것은 별도 에이전트가 떴거나 그 기준을 실제 적�
 
 ![실제 Work Viewer 실행 지도: 주문 재시도 합성 작업에서 독립 검토 세 건이 구현과 검증으로 이어짐](docs/portfolio-readme/assets/work-viewer-graph.png)
 
-*실행 지도: 독립 검토 결과가 변경 단계로 모이고 검증으로 이어집니다. 같은 줄은 선행 관계상 같은 단계이며 동시 실행을 증명하지 않습니다.*
+*실행 지도: 독립 검토 결과가 변경 단계로 모이고 검증으로 이어집니다. 같은 줄은 선행 관계상 같은 단계입니다.*
 
 ![실제 Work Viewer 작업 요약: 완료 상태와 검증이 분리되고 실측 모델과 토큰은 기록 없음으로 표시됨](docs/portfolio-readme/assets/work-viewer.png)
 
-*작업 요약: 완료와 검증은 별개입니다. 두 스크린샷은 공개 main의 실제 UI이며 [샘플]의 결과·시간은 시연 데이터입니다. 실제 Codex 작업, 테스트 실행 또는 성능 측정이 아닙니다.*
+*작업 요약: 예제 작업의 완료 상태와 검증 결과를 따로 확인합니다.*
 
 **범위:** Work Viewer는 프로젝트 기록을 조회하는 localhost 화면입니다. Codex 전체 활동을 실시간 중계·수집하거나, 작업을 재생·자동 재개하는 런타임이 아닙니다. 검증 명령 등록 같은 별도 관리 동작은 확인을 요구합니다. [뷰어 계약](https://github.com/SungKong00/harness-maestro/blob/9233917b9a48df29298d43aa76a338fe9e3db69b/docs/architecture/operations-viewer.md)
 
